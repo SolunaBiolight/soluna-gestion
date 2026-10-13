@@ -21352,7 +21352,7 @@ function AdmIngresos({ctx, stats}) {
 // ═══════════════════════════════════════════════════════════════════════════
 const GH_DEP_CHUNK=700000;
 const GH_DEP_CANAL={andreani:"Andreani",ml:"Mercado Libre",retiro:"Retiro en persona",otro:"Otro"};
-const GH_DEP_ESTADO={pendiente:"Pendiente",impresa:"Impresa",armada:"Armada",entregada:"Impresa",cancelada:"Cancelada",pospuesta:"Pospuesta"};
+const GH_DEP_ESTADO={pendiente:"Pendiente",impresa:"Impresa",armada:"Armada",entregada:"Lista",cancelada:"Cancelada",pospuesta:"Pospuesta"};
 // Cobro por unidad (mismo cálculo que extraItemsDe en api/deposito.js): un pedido con hasta
 // `extraItemsIncluidos` unidades paga el precio por paquete; con más, paga `extraItemPrecio` por
 // CADA unidad (todas) EN VEZ del precio por paquete (uno u otro, nunca los dos).
@@ -21828,7 +21828,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     return [...m.entries()].map(([v,o])=>({v,...o})).sort((a,b)=>a.l.localeCompare(b.l)).slice(0,400); })();
   // Dos pasos: pendiente → impresa. Todo lo que no está pendiente ni cancelado ya salió impreso.
   const colorCanal=t=>t.tipo==="especial"?T.purple:t.canal==="andreani"?T.red:t.canal==="ml"?T.yellow:t.canal==="retiro"?T.blue:T.textMd;
-  const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:["Impresa",T.green];
+  const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:t.estado==="entregada"?["Lista",T.green]:["Impresa",T.accent];
   const vivas=st.tandas.filter(t=>t.estado==="pendiente").sort((a,b)=>(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
   const cerradas=st.tandas.filter(t=>t.estado!=="pendiente");
   const nVivos=vivas.reduce((a,t)=>a+(t.n||0),0), nHoy=vivas.filter(t=>t.fechaDespacho<=hoy).reduce((a,t)=>a+(t.n||0),0);
@@ -21886,7 +21886,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         </div>
         <div style={{minWidth:120,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:3,flexShrink:0}}>
           {cancelada?chip("Cancelada",T.textSm)
-            :!pendiente?<>{chip("Impresa",T.green)}<span style={{fontSize:DS.font.sm,color:T.textSm}}>despacho {ghDepFechaLinda(t.fechaDespacho)}</span></>
+            :!pendiente?<>{t.estado==="entregada"?chip("Lista",T.green):chip("Impresa",T.accent)}<span style={{fontSize:DS.font.sm,color:T.textSm}}>despacho {ghDepFechaLinda(t.fechaDespacho)}</span></>
             :t.fechaDespacho<hoy?<>{chip("Atrasada",T.red,true)}<span style={{fontSize:DS.font.sm,color:T.textSm}}>era el {ghDepFechaLinda(t.fechaDespacho)}</span></>
             :t.fechaDespacho===hoy?chip("Sale hoy",T.accent,true):chip(`Sale el ${ghDepFechaLinda(t.fechaDespacho)}`,T.blue)}
         </div>
@@ -21898,7 +21898,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
       {open&&(<div style={{padding:"14px 18px 16px",background:T.surface,borderTop:`1px solid ${T.borderL||T.border}`}}>
         <div style={{display:"flex",gap:18,flexWrap:"wrap",fontSize:DS.font.md,color:T.textMd,marginBottom:10}}>
           {t.total>0&&<span>Importe: <strong style={{color:T.text}}>{fmtMoney(t.total)}</strong>{t.extraItems>0?<span style={{color:T.textSm}}> ({t.extraDetalle?.pedidosConExtra||""} pedido{t.extraDetalle?.pedidosConExtra!==1?"s":""} cobrado{t.extraDetalle?.pedidosConExtra!==1?"s":""} por unidad)</span>:null}</span>}
-          {(t.hist||[]).map((h,i)=><span key={i} style={{color:T.textSm}}>{h.a==="pospuesta"?"Pospuesta":h.a==="entregada"||h.a==="impresa"?"Impresa":(GH_DEP_ESTADO[h.a]||h.a)} · {ghDepFechaHora(h.at)}</span>)}
+          {(t.hist||[]).map((h,i)=><span key={i} style={{color:T.textSm}}>{h.a==="pospuesta"?"Pospuesta":(GH_DEP_ESTADO[h.a]||h.a)} · {ghDepFechaHora(h.at)}</span>)}
         </div>
         {t.nota&&<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:10,whiteSpace:"pre-wrap"}}><span style={{color:T.textSm}}>Tu nota:</span> {t.nota}</div>}
         {t.notaDeposito&&<DepNota T={T} titulo="Nota del depósito" color={T.blue} ico="hand" style={{marginBottom:10}}>{t.notaDeposito}</DepNota>}
@@ -22110,7 +22110,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     return ()=>{ vivo=false; }; },[tab,esDep,owner,ver]);
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
-      {(()=>{ const TABS=[["cola","Cola","box"],...(owner?[["clientes","Clientes y pagos","users"]]:[]),["historial","Movimientos","clock"],...(owner?[["accesos","Configuración","key"]]:[]),...(info?.cliente?[["mio","Mis envíos","truck"]]:[])];
+      {(()=>{ const TABS=[["cola","Cola","box"],...(owner?[["resumen","Resumen","M4 20V10M10 20V4M16 20v-7M2 20h20"]]:[]),...(owner?[["clientes","Clientes y pagos","users"]]:[]),["historial","Movimientos","clock"],...(owner?[["accesos","Configuración","key"]]:[]),...(info?.cliente?[["mio","Mis envíos","truck"]]:[])];
         const tabs=esDep&&<div className="no-scrollbar" style={{display:"flex",gap:2,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:4,overflowX:"auto",maxWidth:"100%",WebkitOverflowScrolling:"touch"}}>
           {TABS.map(([k,l,ic])=>(<button key={k} onClick={()=>setTab(k)} style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",fontSize:DS.font.base,border:"none",borderRadius:DS.r.full,background:tab===k?T.card:"transparent",color:tab===k?T.text:T.textMd,fontWeight:tab===k?700:500,whiteSpace:"nowrap",flexShrink:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:tab===k?DS.shadow.sm:"none",transition:"all .15s"}}>{l}{badges[k]>0&&<span style={{minWidth:18,height:18,padding:"0 5px",borderRadius:99,background:k==="clientes"?T.yellow:T.accentSolid,color:k==="clientes"?"#1c1400":"#fff",fontSize:DS.font.xs,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",fontVariantNumeric:"tabular-nums",lineHeight:1}}>{badges[k]}</span>}</button>))}
         </div>;
@@ -22162,6 +22162,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
         {!esDep? <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>
           : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner} ver={ver} enVivo={enVivo}/>
           : tab==="historial"? (owner? <><div style={{marginBottom:14}}><DepSeg T={T} size="md" value={mov} onChange={setMov} items={[["tandas","Tandas del mes"],["ingresos","Mercadería recibida"]]}/></div>{mov==="tandas"?<DepositoHistorial T={T} api={apiDep}/>:<DepositoIngresos T={T} api={apiDep} owner={owner}/>}</> : <DepositoIngresos T={T} api={apiDep} owner={owner}/>)
+          : tab==="resumen"? <DepositoResumen T={T} api={apiDep}/>
           : tab==="clientes"? <DepositoCuentas T={T} api={apiDep} onClientes={onClientes}/>
           : tab==="accesos"? <DepositoAccesos T={T} api={apiDep} panel={!!panel}/>
           : <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>}
@@ -22252,7 +22253,7 @@ const ghDepFechaHora=ms=>new Date(ms).toLocaleString("es-AR",{day:"2-digit",mont
 // Pasos de una tanda (pendiente → impresa → armada → entregada) como stepper compacto.
 // Dos pasos (8/oct/2026): al imprimir la tanda queda LISTA (estado "entregada" en los datos, que
 // se muestra como "Impresa"). "impresa"/"armada" quedan solo para tandas viejas en curso.
-const GH_DEP_PASOS=[["pendiente","Pendiente"],["entregada","Impresa"]];
+const GH_DEP_PASOS=[["pendiente","Pendiente"],["impresa","Impresa"],["entregada","Lista"]];
 // Inicial en círculo (quién hizo qué).
 function DepAvatar({T,name,size=22,color}){ const c=color||T.accent; const ini=String(name||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase()||"?"; return <span style={{width:size,height:size,borderRadius:99,background:c+"22",color:c,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:Math.round(size*0.42),fontWeight:800,flexShrink:0,letterSpacing:0}}>{ini}</span>; }
 // Control segmentado (Picking | Pedidos | Historial).
@@ -22350,6 +22351,27 @@ function DepositoCuentaModal({T,api,cliente,onClose,onAjustar,datos,reloadKey=0,
       {(d.pagos||[]).some(p=>p.estado==="a_verificar")&&(<div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:16,padding:"10px 12px",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:DS.r.lg}}>
         Informó {d.pagos.filter(p=>p.estado==="a_verificar").length} transferencia{d.pagos.filter(p=>p.estado==="a_verificar").length!==1?"s":""} por {fmtMoney(d.porVerificar)} que todavía no verificaste. Se verifican desde "Transferencias por verificar", arriba de la lista de clientes.
       </div>)}
+      {d.actividad&&(()=>{ const a=d.actividad; const tot=a.canales.andreani+a.canales.ml+a.canales.otro; const dd=ghDepDiasDe(a.ultimoEnvio); const inact=dd==null||dd>=14; const dDeu=ghDepDiasDe(a.deudaDesde);
+        const ms6=[...(d.meses||[])].slice(0,6).reverse(); const mx=Math.max(1,...ms6.map(m=>m.etiquetas||0));
+        const dato=(l,v,col)=>(<div style={{flex:"1 1 130px",minWidth:0}}><div style={{fontSize:DS.font.sm,color:T.textSm}}>{l}</div><div style={{fontSize:DS.font.lg,fontWeight:700,color:col||T.text,marginTop:2}}>{v}</div></div>);
+        return (<div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 18px",marginBottom:12}}>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+            {dato("Último envío",a.ultimoEnvio?ghDepHace(a.ultimoEnvio):"nunca",inact?T.yellow:null)}
+            {dato("Por semana",a.porSemana?`${a.porSemana} etiquetas`:"—")}
+            {dato("Último pago",a.ultimoPago?ghDepHace(a.ultimoPago):"nunca")}
+            {s.n>0&&dDeu!=null&&dato("Debe desde",ghDepHace(a.deudaDesde),dDeu>=30?T.red:dDeu>=15?T.yellow:null)}
+          </div>
+          {inact&&a.ultimoEnvio&&<div style={{fontSize:DS.font.md,color:T.yellow,marginTop:10}}>Cliente inactivo: lleva {dd} días sin mandar nada.</div>}
+          {tot>0&&<div style={{marginTop:12}}>
+            <div style={{display:"flex",height:8,borderRadius:99,overflow:"hidden",background:T.surface}}>{[["andreani",T.red],["ml",T.yellow],["otro",T.textSm]].map(([k,c])=>a.canales[k]>0&&<div key={k} style={{width:`${a.canales[k]/tot*100}%`,background:c}}/>)}</div>
+            <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:DS.font.sm,color:T.textMd,marginTop:6}}>{[["andreani","Andreani",T.red],["ml","Mercado Libre",T.yellow],["otro","Otro",T.textSm]].filter(([k])=>a.canales[k]>0).map(([k,l,c])=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:6}}><span style={{width:8,height:8,borderRadius:99,background:c}}/>{l} {a.canales[k]} ({Math.round(a.canales[k]/tot*100)} %)</span>)}</div>
+          </div>}
+          {ms6.length>1&&<div style={{display:"flex",alignItems:"flex-end",gap:8,height:86,marginTop:14}}>{ms6.map(m=>(<div key={m.mes} style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",gap:4,height:"100%"}}>
+            <div style={{fontSize:DS.font.xs,color:T.textMd,fontVariantNumeric:"tabular-nums"}}>{m.etiquetas||0}</div>
+            <div style={{flex:1,width:"100%",display:"flex",alignItems:"flex-end"}}><div style={{width:"100%",height:`${Math.max(3,(m.etiquetas||0)/mx*100)}%`,borderRadius:4,background:T.accentSolid+(m===ms6[ms6.length-1]?"":"77")}}/></div>
+            <div style={{fontSize:DS.font.xs,color:T.textSm}}>{m.mes.slice(5)}/{m.mes.slice(2,4)}</div>
+          </div>))}</div>}
+        </div>); })()}
       {d.meses?.length>0&&(<>
         <DepLabel T={T}>Resumen por mes</DepLabel>
         <DepTable T={T} minWidth={520} empty="" rows={d.meses.map(m=>({...m,id:m.mes}))} cols={[
@@ -22398,6 +22420,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   // Productos leídos del PDF de una tanda de Mercado Libre que llegó sin ellos: id → pedidos | "cargando" | "nada".
   // Solo para mostrar "Qué bajar" al desplegarla; no se guarda ni cambia lo que se cobra.
   const [mlPick,setMlPick]=useState({});
+  const [fCli,setFCli]=useState(""); const [fCanal,setFCanal]=useState(""); const [bajar,setBajar]=useState(null); // null | "hoy" | "todo"
   useEffect(()=>{ const t=st?.tandas?.find(x=>x.id===abierta); if(!t||t.canal!=="ml"||t.tipo==="especial"||mlPick[t.id]) return; if((t.pedidos||[]).some(p=>(p.items||[]).length)||!t.pdf||t.pdf.purgado) return;
     setMlPick(m=>({...m,[t.id]:"cargando"}));
     (async()=>{ let r=[]; try{ r=ghDepMlPedidos(await ghDepLineasPaginas(await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks))); }catch(_){ } setMlPick(m=>({...m,[t.id]:r.length?r:"nada"})); })(); },[abierta,st]);
@@ -22444,7 +22467,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   }
   async function imprimir(t){
     setBusy(t.id); const w=ghDepVentana("application/pdf");
-    try{ const bytes=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); ghDepAbrirBytes(bytes,"application/pdf",`${t.clienteNombre}_${t.fechaDespacho}.pdf`,w); if(t.estado!=="entregada"){ await api("tanda_estado",{id:t.id,estado:"entregada"}); await cargar(); } }
+    try{ const bytes=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); ghDepAbrirBytes(bytes,"application/pdf",`${t.clienteNombre}_${t.fechaDespacho}.pdf`,w); if(t.estado==="pendiente"){ await api("tanda_estado",{id:t.id,estado:"impresa"}); await cargar(); } }
     catch(x){ if(w&&!w.closed) w.close(); toast(x.message,"error"); } setBusy(null);
   }
   // Un solo PDF con todas las tandas pendientes de hoy, en el orden de la cola; cada una queda impresa.
@@ -22454,7 +22477,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   async function imprimirTodoHoy(lista){
     if(!lista.length||todoHoy) return;
     const nE=lista.reduce((a,t)=>a+t.n,0), una=lista.length===1;
-    if(!(await appConfirm(una?`Se descarga el PDF de la tanda de ${lista[0].clienteNombre} (${nE} etiquetas) y queda marcada como impresa. ¿Seguimos?`:`Se descarga un archivo .zip con ${lista.length} PDF, uno por cada tanda sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"}: ${nE} etiquetas en total. Quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Descargar"}))) return;
+    if(!(await appConfirm(una?`Se descarga el PDF de la tanda de ${lista[0].clienteNombre} (${nE} etiquetas) y queda marcada como impresa (después la marcás como lista). ¿Seguimos?`:`Se descarga un archivo .zip con ${lista.length} PDF, uno por cada tanda sin imprimir${lista.some(t=>t.fechaDespacho>st.hoy)?" (hoy y próximos días)":" de hoy"}: ${nE} etiquetas en total. Quedan marcadas como impresas. ¿Seguimos?`,{okLabel:"Descargar"}))) return;
     try{
       const bajados=new Array(lista.length); let listos=0; setTodoHoy({done:0,total:lista.length});
       await ghPool(lista,3,async(t,i)=>{ bajados[i]=await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks); listos++; setTodoHoy({done:listos,total:lista.length}); });
@@ -22471,7 +22494,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         bajar(await z.generateAsync({type:"blob"}),`deposito_${st.hoy}_${lista.length}tandas.zip`);
       }
       const fallidas=[];
-      for(const t of lista){ try{ await api("tanda_estado",{id:t.id,estado:"entregada"}); }catch(x){ fallidas.push(`${t.clienteNombre} (${x.message})`); } }
+      for(const t of lista){ try{ await api("tanda_estado",{id:t.id,estado:"impresa"}); }catch(x){ fallidas.push(`${t.clienteNombre} (${x.message})`); } }
       if(fallidas.length) toast(`La descarga salió, pero ${fallidas.length} tanda${fallidas.length!==1?"s":""} no quedó marcada como impresa: ${fallidas.join("; ")}. Marcala a mano para que no se vuelva a imprimir.`,"warning",10000);
       else toast(una?"PDF descargado":`Descargado: ${lista.length} PDF, uno por tanda${Object.keys(cuenta).length>1?`, en carpetas separadas (${Object.keys(cuenta).map(k=>k.replace(/_/g," ")).join(" y ")})`:""}`,"success");
       await cargar();
@@ -22517,10 +22540,25 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
   // En la cola solo lo que falta imprimir; lo impreso (incluidas tandas del flujo viejo) va a "recientes".
   const vivas=st.tandas.filter(t=>t.estado==="pendiente");
-  const hechas=st.tandas.filter(t=>["entregada","impresa","armada"].includes(t.estado));
+  const hechas=st.tandas.filter(t=>t.estado==="entregada");
+  // Paso del medio: ya impresas, falta marcarlas como listas (cuando el pedido quedó armado y cerrado).
+  const impresas=st.tandas.filter(t=>["impresa","armada"].includes(t.estado));
+  async function listasTodas(l){ if(!l.length) return; if(!(await appConfirm(`¿Marcar como listas las ${l.length} tandas impresas (${l.reduce((a,t)=>a+t.n,0)} pedidos)?`,{okLabel:"Marcar como listas"}))) return;
+    setBusy("listas"); const fallas=[]; for(const t of l){ try{ await api("tanda_estado",{id:t.id,estado:"entregada"}); }catch(x){ fallas.push(t.clienteNombre); } }
+    if(fallas.length) toast(`No se pudieron marcar: ${fallas.join(", ")}`,"error",7000); else toast("Tandas marcadas como listas","success"); await cargar(); setBusy(null); }
   const urg=t=>t.tipo==="especial"&&t.especial?.urgente;
   const atencion=vivas.filter(t=>urg(t)||t.fechaDespacho<st.hoy);
-  const grupos=[["Atención",atencion,T.red],["Hoy",vivas.filter(t=>!urg(t)&&t.fechaDespacho===st.hoy),T.text],["Próximos días",vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy),T.text]].filter(g=>g[1].length);
+  // Filtro rápido por cliente y por correo: achica SOLO la lista de tandas (los números de arriba siguen siendo del total).
+  const pasa=t=>(!fCli||t.clienteId===fCli)&&(!fCanal||t.canal===fCanal); const filtrando=!!(fCli||fCanal);
+  const grupos=[["Atención",atencion.filter(pasa),T.red],["Hoy",vivas.filter(t=>!urg(t)&&t.fechaDespacho===st.hoy&&pasa(t)),T.text],["Próximos días",vivas.filter(t=>!urg(t)&&t.fechaDespacho>st.hoy&&pasa(t)),T.text]].filter(g=>g[1].length);
+  const cliVivas=[...new Map(vivas.map(t=>[t.clienteId,t.clienteNombre])).entries()].sort((a,b)=>String(a[1]).localeCompare(String(b[1])));
+  const canVivas=[...new Set(vivas.map(t=>t.canal))];
+  // "Qué bajar": una sola lista con los productos de todas las tandas pendientes (respeta el filtro).
+  const bajarTandas=bajar?vivas.filter(t=>pasa(t)&&(bajar==="todo"||t.fechaDespacho<=st.hoy)):[]; const bajarInfo=bajar?ghDepPickingTandas(bajarTandas,mlPick):null;
+  const imprimirBajar=()=>{ const w=window.open("","_blank"); if(!w){ toast("El navegador bloqueó la ventana. Permití las ventanas emergentes y probá de nuevo.","warning"); return; }
+    const e=x=>String(x??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    w.document.write(`<title>Qué bajar</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:20px;margin:0 0 4px}p{color:#555;font-size:12px;margin:0 0 14px}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ccc;padding:7px 6px;text-align:left;font-size:14px}td.n,th.n{text-align:right;width:90px;font-weight:700}td.c{width:36px}td.c span{display:inline-block;width:16px;height:16px;border:1.5px solid #333;border-radius:3px}</style><h1>Qué bajar ${bajar==="todo"?"· todo lo pendiente":"· hoy"}</h1><p>${e(ghDepFechaLinda(st.hoy))} · ${bajarTandas.length} tandas · ${bajarInfo.unidades} unidades${fCli?" · "+e(cliVivas.find(c=>c[0]===fCli)?.[1]||""):""}${fCanal?" · "+e(GH_DEP_CANAL[fCanal]||fCanal):""}${bajarInfo.sin?` · ${bajarInfo.sin} etiquetas sin detalle de productos`:""}</p><table><tr><th class="c"></th><th>Producto</th><th class="n">Cantidad</th></tr>${bajarInfo.items.map(x=>`<tr><td class="c"><span></span></td><td>${e(x.sku)}</td><td class="n">${x.cant}</td></tr>`).join("")}</table>`);
+    w.document.close(); setTimeout(()=>{ try{ w.focus(); w.print(); }catch(_){ } },300); };
   const paraHoy=vivas.filter(t=>t.fechaDespacho<=st.hoy);
   const atrasadas=vivas.filter(t=>!urg(t)&&t.fechaDespacho<st.hoy);
   const nPed=l=>l.reduce((a,t)=>a+t.n,0);
@@ -22540,7 +22578,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const Tanda=({t,primera})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const mlLeido=Array.isArray(mlPick[t.id])?mlPick[t.id]:null; const pick=ghDepPicking(mlLeido||t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=!!mlLeido||t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length;
     // Color por CANAL (quién retira): Andreani rojo, Mercado Libre amarillo, retiro azul, otro gris; especial violeta.
     const esp=t.tipo==="especial"; const cCanal=esp?T.purple:colCanal(t.canal);
-    const entregada=t.estado!=="pendiente"; const atras=!entregada&&t.fechaDespacho<st.hoy; const esHoy=t.fechaDespacho===st.hoy;
+    const entregada=t.estado!=="pendiente"; const esLista=t.estado==="entregada"; const atras=!entregada&&t.fechaDespacho<st.hoy; const esHoy=t.fechaDespacho===st.hoy;
     const ult=t.hist?.length?t.hist[t.hist.length-1]:null;
     const toggle=()=>setAbierta(open?null:t.id);
     const vistaAct=(v==="picking"&&!conItems)?(t.pedidos.length>0?"pedidos":"hist"):v;
@@ -22572,7 +22610,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:3}}>pedido{t.n!==1?"s":""}</div>
         </div>
         <div style={{minWidth:120,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:3,flexShrink:0}}>
-          {entregada?<>{chip("Impresa",T.green)}{ult&&<span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>{ult.porNombre} · {ghDepFechaHora(ult.at)}</span>}</>
+          {entregada?<>{esLista?chip("Lista",T.green):chip("Impresa · falta marcar lista",T.accent)}{ult&&<span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>{ult.porNombre} · {ghDepFechaHora(ult.at)}</span>}</>
             :atras?<>{chip("Atrasada",T.red,true)}<span style={{fontSize:DS.font.sm,color:T.textSm}}>era el {ghDepFechaLinda(t.fechaDespacho)}</span></>
             :esHoy?chip("Sale hoy",T.accent,true):chip(`Sale el ${ghDepFechaLinda(t.fechaDespacho)}`,T.blue)}
         </div>
@@ -22580,11 +22618,13 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           {conPdf&&<DepBtn T={T} ico="eye" disabled={busy===t.id} onClick={()=>verPrevia(t)}>{entregada?"Ver PDF":"Vista previa"}</DepBtn>}
           {conPdf&&!entregada?<DepBtn T={T} variant="primary" ico="print" disabled={busy===t.id} onClick={()=>imprimir(t)}>Imprimir</DepBtn>
             // Sin PDF no hay nada que imprimir (envío especial solo con instrucciones): se cierra a mano.
-            :!entregada?<DepBtn T={T} variant="success" ico="check" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Ya está hecho</DepBtn>:null}
+            :!entregada?<DepBtn T={T} variant="success" ico="check" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Ya está hecho</DepBtn>
+            :!esLista?<DepBtn T={T} variant="success" ico="check" disabled={busy===t.id} onClick={()=>estado(t,"entregada")}>Marcar como lista</DepBtn>:null}
           <DepMenu T={T} disabled={busy===t.id} items={[
             conPdf&&entregada&&{ico:"print",label:"Reimprimir etiquetas",onClick:()=>imprimir(t)},
             !entregada&&{ico:"calendar",label:"Posponer",onClick:()=>setPosponer(t)},
             {ico:"note",label:t.notaDeposito?"Editar nota al cliente":"Nota al cliente",onClick:()=>notaDep(t)},
+            esLista&&{ico:"undo",label:"Volver a impresa",onClick:()=>estado(t,"impresa")},
             entregada&&{ico:"undo",label:"Volver a pendiente",onClick:()=>estado(t,"pendiente")},
             owner&&{ico:"alert",label:"Cancelar tanda",danger:true,sep:true,onClick:()=>cancelarTanda(t)},
             owner&&{ico:"trash",label:"Eliminar tanda",danger:true,onClick:()=>eliminarTanda(t)},
@@ -22665,7 +22705,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         <DepStrip T={T} items={[
           {l:"Pendientes en total",v:nPed(vivas),c:vivas.length?T.text:null,s:vivas.length?`${pl(vivas.length,"tanda")} sin imprimir, de hoy y próximos días`:"nada pendiente"},
           {l:"Pedidos de hoy",v:nDia,c:nDia?T.accent:null,s:nDia?<span style={{display:"flex",columnGap:10,rowGap:2,flexWrap:"wrap",alignItems:"center",color:T.textMd,fontWeight:600}}>{diaCanal.map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}</span>:"todavía no llegó nada"},
-          {l:"Falta imprimir hoy",v:nHoy,c:nHoy?T.yellow:null,s:`${dsp.hoy} ya impreso${dsp.hoy!==1?"s":""} hoy${owner?` · ${dsp.mes} en el mes`:""}`},
+          {l:"Falta imprimir hoy",v:nHoy,c:nHoy?T.yellow:null,s:`${nPed(impresas)?`${nPed(impresas)} impresos sin marcar · `:""}${dsp.hoy} listo${dsp.hoy!==1?"s":""} hoy${owner?` · ${dsp.mes} en el mes`:""}`},
           {l:"Atrasados y urgentes",v:nAtr+nUrg,c:nAtr||nUrg?T.red:null,s:nAtr||nUrg?[nAtr?`${nAtr} de días anteriores`:"",nUrg?pl(nUrg,"urgente"):""].filter(Boolean).join(" · "):"todo al día"},
           {l:"Próximos días",v:nMan+nDesp,c:nMan+nDesp?T.blue:null,s:nMan?`${nMan} para mañana`:nDesp?"ya cargados":"sin tandas cargadas"},
         ]}/>
@@ -22727,7 +22767,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
         {h2("Pedidos apartados",T.red,`${apartados.length} · quedan acá hasta que los reincorpores o los canceles`)}
         <div style={caja}>
           {apartados.map((a,i)=>(<div key={a.tandaId+"_"+a.idx} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 16px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",borderLeft:`4px solid ${T.red}`,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:220}}><div style={{fontSize:DS.font.base,color:T.text}}><strong>#{a.numero}</strong> · {a.comprador} <span style={{color:T.textSm}}>· {a.clienteNombre} · tanda del {ghDepFechaLinda(a.fechaDespacho)}{a.tandaEstado==="entregada"?" (ya impresa)":""}</span></div><div style={{fontSize:DS.font.md,color:T.red,marginTop:2}}>{a.nota} <span style={{color:T.textSm}}>· {a.porNombre} · {ghDepFechaHora(a.at)}</span>{a.items.length?<span style={{color:T.textSm}}> · {a.items.join(", ")}</span>:null}</div></div>
+            <div style={{flex:1,minWidth:220}}><div style={{fontSize:DS.font.base,color:T.text}}><strong>#{a.numero}</strong> · {a.comprador} <span style={{color:T.textSm}}>· {a.clienteNombre} · tanda del {ghDepFechaLinda(a.fechaDespacho)}{a.tandaEstado==="entregada"?" (ya lista)":a.tandaEstado==="impresa"?" (ya impresa)":""}</span></div><div style={{fontSize:DS.font.md,color:T.red,marginTop:2}}>{a.nota} <span style={{color:T.textSm}}>· {a.porNombre} · {ghDepFechaHora(a.at)}</span>{a.items.length?<span style={{color:T.textSm}}> · {a.items.join(", ")}</span>:null}</div></div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               {a.pdfChunks&&a.pags?.length>0&&<DepBtn T={T} size="sm" ico="print" onClick={()=>reimprimir(a)}>Reimprimir etiqueta</DepBtn>}
               <DepBtn T={T} variant="success" size="sm" disabled={busy===a.tandaId} onClick={()=>resolver(a,"reincorporar")}>Reincorporar</DepBtn>
@@ -22736,13 +22776,37 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           </div>))}
         </div>
       </div>)}
-      {grupos.length===0&&<div style={{...caja,borderStyle:"dashed",padding:"18px",marginTop:18,fontSize:DS.font.base,color:T.textSm}}>{st.clientes.length?<>No hay tandas esperando. Cuando un cliente mande etiquetas aparecen acá, agrupadas por día de despacho.{owner?" Para probar, usá \"Cargar tanda\".":""}</>:"Primero cargá tus clientes en la pestaña Clientes y pagos."}</div>}
+      {vivas.length>0&&(<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:18}}>
+        {cliVivas.length>1&&<select value={fCli} onChange={e=>setFCli(e.target.value)} style={{...iS,marginBottom:0,width:"auto",minWidth:170,height:36,padding:"0 12px",borderRadius:DS.r.full}}><option value="">Todos los clientes</option>{cliVivas.map(([id,n])=><option key={id} value={id}>{n}</option>)}</select>}
+        {canVivas.length>1&&<DepSeg T={T} value={fCanal} onChange={setFCanal} items={[["","Todos"],...canVivas.map(c=>[c,GH_DEP_CANAL[c]||c])]}/>}
+        {filtrando&&<DepBtn T={T} variant="ghost" size="sm" onClick={()=>{ setFCli(""); setFCanal(""); }}>Quitar filtro</DepBtn>}
+        <span style={{flex:1}}/>
+        <DepBtn T={T} size="sm" ico="box" onClick={()=>setBajar("hoy")}>Qué bajar hoy</DepBtn>
+      </div>)}
+      {bajar&&bajarInfo&&(<Modal T={T} open onClose={()=>setBajar(null)} title="Qué bajar" width={520} zIndex={1700}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+          <DepSeg T={T} value={bajar} onChange={setBajar} items={[["hoy","Hasta hoy"],["todo","Todo lo pendiente"]]}/>
+          <span style={{flex:1}}/>
+          <DepBtn T={T} variant="primary" size="sm" ico="print" disabled={!bajarInfo.items.length} onClick={imprimirBajar}>Imprimir lista</DepBtn>
+        </div>
+        <div style={{fontSize:DS.font.md,color:T.textMd,marginBottom:10}}>{pl(bajarTandas.length,"tanda")} · {pl(nPed(bajarTandas),"pedido")} · <strong style={{color:T.text}}>{pl(bajarInfo.unidades,"unidad","unidades")}</strong>{filtrando?" · con el filtro puesto":""}</div>
+        {bajarInfo.items.length===0?<div style={{fontSize:DS.font.base,color:T.textSm,padding:"18px 0"}}>Ninguna de estas tandas trae el detalle de productos.</div>
+        :<div style={{border:`1px solid ${T.border}`,borderRadius:DS.r.xl,overflow:"hidden",maxHeight:"52vh",overflowY:"auto"}}>{bajarInfo.items.map((x,i)=>(<div key={x.sku} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none"}}><span style={{flex:1,minWidth:0,fontSize:DS.font.base,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span><strong style={{fontSize:DS.font.xl,color:T.text,fontVariantNumeric:"tabular-nums"}}>{x.cant}</strong></div>))}</div>}
+        {bajarInfo.sin>0&&<div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:10}}>{pl(bajarInfo.sin,"etiqueta")} no {bajarInfo.sin===1?"trae":"traen"} el detalle de productos y no {bajarInfo.sin===1?"está":"están"} en esta lista. Las de Mercado Libre se leen al desplegar su tanda.</div>}
+      </Modal>)}
+      {grupos.length===0&&filtrando&&vivas.length>0&&<div style={{...caja,borderStyle:"dashed",padding:"18px",marginTop:12,fontSize:DS.font.base,color:T.textSm}}>Ninguna tanda pendiente coincide con ese filtro.</div>}
+      {grupos.length===0&&!filtrando&&<div style={{...caja,borderStyle:"dashed",padding:"18px",marginTop:18,fontSize:DS.font.base,color:T.textSm}}>{st.clientes.length?<>No hay tandas esperando. Cuando un cliente mande etiquetas aparecen acá, agrupadas por día de despacho.{owner?" Para probar, usá \"Cargar tanda\".":""}</>:"Primero cargá tus clientes en la pestaña Clientes y pagos."}</div>}
       {grupos.map(([titulo,lista,color])=>(<div key={titulo}>
-        {h2(titulo,color,`${pl(lista.length,"tanda")} · ${pl(nPed(lista),"pedido")}`)}
+        {h2(titulo,color,(()=>{ const u=ghDepPickingTandas(lista,mlPick).unidades; return `${pl(lista.length,"tanda")} · ${pl(nPed(lista),"pedido")}${u?` · ${pl(u,"unidad","unidades")} a bajar`:""}`; })())}
         {tabla(lista,false)}
       </div>))}
+      {impresas.filter(pasa).length>0&&(()=>{ const l=impresas.filter(pasa); return (<div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><div style={{flex:1,minWidth:200}}>{h2("Impresas",T.accent,`${pl(l.length,"tanda")} · ${pl(nPed(l),"pedido")} · falta marcarlas como listas`)}</div>
+          {l.length>1&&<DepBtn T={T} variant="success" size="sm" ico="check" disabled={!!busy} onClick={()=>listasTodas(l)}>Marcar todas como listas</DepBtn>}</div>
+        {tabla(l,true)}
+      </div>); })()}
       {hechas.length>0&&(<div style={{marginTop:22}}>
-        <DepBtn T={T} size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar impresas":`Ver impresas recientes (${hechas.length})`}</DepBtn>
+        <DepBtn T={T} size="sm" onClick={()=>setVerHechas(v=>!v)}>{verHechas?"Ocultar listas":`Ver listas recientes (${hechas.length})`}</DepBtn>
         {verHechas&&<div style={{marginTop:10}}>{tabla(hechas,true)}</div>}
       </div>)}
       {nuevoPara&&<DepositoEnvioModal T={T} api={(a,b)=>api(a,{...b,clienteId:nuevoPara.cliente.id})} cliente={nuevoPara.cliente} especial={nuevoPara.especial} corte={st.corteHora??15} extraCfg={{extraItemsIncluidos:st.extraItemsIncluidos,extraItemPrecio:st.extraItemPrecio}} onClose={()=>setNuevoPara(null)} onDone={cargar}/>}
@@ -22762,6 +22826,129 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     </div>
   );
 }
+// Hace cuánto pasó algo ("hoy", "ayer", "hace 12 días"), a partir de milisegundos.
+const ghDepHace=ms=>{ if(!ms) return ""; const d=Math.floor((Date.now()-ms)/86400000); return d<=0?"hoy":d===1?"ayer":`hace ${d} días`; };
+const ghDepDiasDe=ms=>ms?Math.floor((Date.now()-ms)/86400000):null;
+// Productos a bajar de un grupo de tandas (pendientes): suma lo de cada pedido y, en un envío especial,
+// lo que viaja en las instrucciones ("Productos:\n2x …"). `mlPick` = productos leídos del PDF de ML.
+function ghDepPickingTandas(tandas,mlPick){
+  const peds=[]; let sin=0;
+  for(const t of tandas||[]){ let ps=(t.pedidos||[]).filter(p=>!p.cancelado);
+    if(!ps.some(p=>(p.items||[]).length)&&Array.isArray(mlPick?.[t.id])) ps=mlPick[t.id];
+    if(t.tipo==="especial"){ const m=String(t.especial?.instrucciones||"").match(/Productos:\n([\s\S]*)$/); if(m) ps=[...ps,{items:m[1].split("\n").map(x=>x.trim()).filter(Boolean)}]; }
+    if(ps.some(p=>(p.items||[]).length)) peds.push(...ps); else sin+=t.n||0; }
+  const items=ghDepPicking(peds); return {items,sin,unidades:items.reduce((a,x)=>a+x.cant,0)};
+}
+// Barritas de los últimos meses (etiquetas por mes) para ver de un vistazo si un cliente sube o baja.
+function DepSpark({T,meses,w=64,h=22}){ const v=(meses||[]).map(m=>m.etiquetas||0); if(!v.length) return null; const mx=Math.max(1,...v);
+  return <span title={(meses||[]).map(m=>`${m.mes.slice(5)}/${m.mes.slice(2,4)}: ${m.etiquetas}`).join(" · ")} style={{display:"inline-flex",alignItems:"flex-end",gap:2,height:h,width:w}}>{v.map((x,i)=><span key={i} style={{flex:1,height:Math.max(2,Math.round(x/mx*h)),borderRadius:2,background:i===v.length-1?T.accentSolid:T.textSm+"66"}}/>)}</span>; }
+// Resumen del depósito (solo la dueña): cuánto se despacha, quién manda más, qué productos salen,
+// quién hizo qué y los pedidos con problemas. Todo sale de `deposito?action=stats` (solo lectura).
+function DepositoResumen({T,api}){
+  const [d,setD]=useState(null); const [err,setErr]=useState("");
+  const [skuMes,setSkuMes]=useState("actual"); const [skuCli,setSkuCli]=useState(""); const [verSku,setVerSku]=useState(false);
+  const [prob,setProb]=useState("todos"); const [probCli,setProbCli]=useState("");
+  const cargar=()=>api("stats").then(x=>{ setD(x); setErr(""); }).catch(e=>setErr(e.message));
+  useEffect(()=>{ cargar(); },[]);
+  if(err) return <DSEmpty T={T} title="No pudimos cargar el resumen" subtitle={err} action={<DepBtn T={T} onClick={cargar}>Reintentar</DepBtn>}/>;
+  if(!d) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
+  const A=d.meses.actual, P=d.meses.anteriorAlDia, PM=d.meses.anterior;
+  const mesTxt=m=>new Date(`${m}-15T12:00:00Z`).toLocaleDateString("es-AR",{month:"long"});
+  const dif=(a,b)=>{ if(!b) return a?<span style={{color:T.textSm}}>el mes pasado a esta altura no había nada</span>:null; const pct=Math.round((a-b)/b*100); return <span><strong style={{color:pct>0?T.green:pct<0?T.red:T.textMd}}>{pct>0?"+":""}{pct} %</strong> contra {mesTxt(d.mesAnterior)} a esta altura</span>; };
+  const cC={andreani:T.red,ml:T.yellow,otro:T.textSm};
+  const mxDia=Math.max(1,...d.dias.map(x=>x.total)); const tot28=d.dias.reduce((a,x)=>a+x.total,0); const diasCon=d.dias.filter(x=>x.total>0).length;
+  const caja={background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"16px 18px",marginBottom:14};
+  const h2=(t,sub,extra)=>(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",margin:"26px 0 10px"}}><div style={{flex:1,minWidth:200}}><div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>{t}</div>{sub&&<div style={{fontSize:DS.font.md,color:T.textSm,marginTop:2}}>{sub}</div>}</div>{extra}</div>);
+  const sel={...InputStyle(T),marginBottom:0,width:"auto",minWidth:170,height:34,padding:"0 12px",borderRadius:DS.r.full};
+  const conMov=d.clientes.filter(c=>c.etiquetas>0||Math.abs(c.saldo)>0.5||c.activo);
+  const skusBase=d.skus[skuMes]||[]; const skus=(skuCli?skusBase.map(x=>({...x,unidades:x.clientes[skuCli]||0})).filter(x=>x.unidades>0).sort((a,b)=>b.unidades-a.unidades):skusBase);
+  const mxSku=Math.max(1,...skus.map(x=>x.unidades)); const cob=d.cobertura[skuMes]||{con:0,sin:0};
+  const probs=d.problemas.filter(x=>(prob==="todos"||x.tipo===prob)&&(!probCli||x.clienteId===probCli));
+  const probPorCli=Object.values(d.problemas.reduce((m,x)=>{ (m[x.clienteId]=m[x.clienteId]||{id:x.clienteId,nombre:x.clienteNombre,n:0}).n++; return m; },{})).sort((a,b)=>b.n-a.n);
+  return (<div>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
+      <div style={{flex:1,minWidth:200}}><div style={{fontSize:DS.font["2xl"],fontWeight:800,color:T.text,letterSpacing:-0.4}}>Resumen</div><div style={{fontSize:DS.font.md,color:T.textSm,marginTop:2}}>Cómo viene {mesTxt(d.mes)} y las últimas cuatro semanas.</div></div>
+      <DepBtn T={T} size="sm" ico="undo" onClick={()=>{ setD(null); cargar(); }}>Actualizar</DepBtn>
+    </div>
+    <DepStrip T={T} items={[
+      {l:"Etiquetas este mes",v:A.etiquetas,c:T.accentSolid,s:<div><div>Andreani {A.andreani} · Mercado Libre {A.ml}{A.otro?` · Otro ${A.otro}`:""}</div><div style={{marginTop:2}}>{dif(A.etiquetas,P.etiquetas)}</div></div>},
+      {l:"Facturado este mes",v:fmtMoney(A.facturado),c:T.blue,s:<div><div>{A.tandas} tanda{A.tandas!==1?"s":""}</div><div style={{marginTop:2}}>{dif(A.facturado,P.facturado)}</div></div>},
+      {l:"Cobrado este mes",v:fmtMoney(A.cobrado),c:T.green,s:<div><div>{mesTxt(d.mesAnterior)} entero: {fmtMoney(PM.cobrado)}</div></div>},
+      {l:"Te deben",v:fmtMoney(d.teDeben),c:d.teDeben>0?T.yellow:T.textSm,s:`${d.clientes.filter(c=>c.saldo>0.5).length} cliente${d.clientes.filter(c=>c.saldo>0.5).length!==1?"s":""} con saldo`},
+    ]}/>
+    <div style={caja}>
+      <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",marginBottom:14}}>
+        <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,flex:1,minWidth:180}}>Etiquetas por día · últimas 4 semanas</div>
+        <span style={{fontSize:DS.font.md,color:T.textMd}}><strong style={{color:T.text}}>{tot28}</strong> en total · <strong style={{color:T.text}}>{diasCon?Math.round(tot28/diasCon):0}</strong> por día con despacho</span>
+        {[["andreani","Andreani"],["ml","Mercado Libre"],["otro","Otro"]].filter(([k])=>d.dias.some(x=>x[k]>0)).map(([k,l])=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:cC[k]}}/>{l}</span>)}
+      </div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:3,height:150}}>
+        {d.dias.map(x=>{ const dia=new Date(`${x.f}T12:00:00Z`); const finde=[0,6].includes(dia.getUTCDay()); return (<div key={x.f} title={`${ghDepFechaLinda(x.f)}: ${x.total} etiqueta${x.total!==1?"s":""}${x.total?` (Andreani ${x.andreani} · Mercado Libre ${x.ml}${x.otro?` · Otro ${x.otro}`:""})`:""}`} style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",gap:4,height:"100%"}}>
+          <div style={{fontSize:9,color:T.textSm,height:11,lineHeight:"11px",fontVariantNumeric:"tabular-nums"}}>{x.total||""}</div>
+          <div style={{flex:1,width:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",borderRadius:4,overflow:"hidden",background:x.f===d.hoy?T.accentSolid+"14":"transparent"}}>
+            {["otro","ml","andreani"].map(k=>x[k]>0&&<div key={k} style={{height:`${x[k]/mxDia*100}%`,background:cC[k],minHeight:2}}/>)}
+            {!x.total&&<div style={{height:2,background:T.border}}/>}
+          </div>
+          <div style={{fontSize:9,color:x.f===d.hoy?T.accent:finde?T.textSm+"99":T.textSm,fontWeight:x.f===d.hoy?700:400,fontVariantNumeric:"tabular-nums"}}>{x.f.slice(8)}</div>
+        </div>); })}
+      </div>
+    </div>
+
+    {h2("Clientes",`Quién manda más en ${mesTxt(d.mes)}, cuánto te debe cada uno y desde cuándo.`)}
+    <DepTable T={T} minWidth={940} empty="Todavía no hay clientes." rows={conMov.map(c=>({...c,id:c.clienteId,_dim:!c.activo}))} cols={[
+      {h:"Cliente",w:"1.4fr",render:c=>{ const dd=ghDepDiasDe(c.ultimoEnvio); const inact=c.activo&&(dd==null||dd>=14); return <div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre||"—"}</div>{depSub(T,c.ultimoEnvio?<span style={{color:inact?T.yellow:T.textSm}}>{inact?"Sin envíos ":"Último envío "}{ghDepHace(c.ultimoEnvio)}</span>:<span style={{color:T.yellow}}>Nunca mandó nada</span>)}</div>; }},
+      {h:"Etiquetas",w:"120px",align:"right",render:c=><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{c.etiquetas}</div>{depSub(T,c.etiquetas?`A ${c.andreani} · ML ${c.ml}${c.otro?` · O ${c.otro}`:""}`:"este mes")}</div>},
+      {h:"6 meses",w:"84px",render:c=><DepSpark T={T} meses={c.meses}/>},
+      {h:"Por semana",w:"90px",align:"right",render:c=><span style={{color:T.textMd}}>{c.porSemana||"—"}</span>},
+      {h:"Facturado",w:"110px",align:"right",render:c=><span>{fmtMoney(c.facturado)}</span>},
+      {h:"Cobrado",w:"110px",align:"right",render:c=><span style={{color:c.cobrado>0?T.green:T.textSm}}>{fmtMoney(c.cobrado)}</span>},
+      {h:"Saldo",w:"170px",align:"right",render:c=>{ const sd=ghDepSaldo(T,c.saldo); const dias=ghDepDiasDe(c.deudaDesde); return <div style={{textAlign:"right"}}><strong style={{color:sd.n>0?T.text:sd.col}}>{sd.txt}</strong>{sd.n>0&&dias!=null?depSub(T,<span style={{color:dias>=30?T.red:dias>=15?T.yellow:T.textSm}}>debe desde {ghDepHace(c.deudaDesde)}</span>):null}</div>; }},
+      {h:"Último pago",w:"110px",align:"right",render:c=><span style={{color:T.textMd}}>{c.ultimoPago?ghDepHace(c.ultimoPago):"nunca"}</span>},
+    ]}/>
+
+    {h2("Productos más despachados",skus.length?`${skus.reduce((a,x)=>a+x.unidades,0)} unidades en ${skus.length} producto${skus.length!==1?"s":""}.`:null,<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <select style={sel} value={skuCli} onChange={e=>setSkuCli(e.target.value)}><option value="">Todos los clientes</option>{d.clientes.filter(c=>skusBase.some(x=>x.clientes[c.clienteId])).map(c=><option key={c.clienteId} value={c.clienteId}>{c.nombre}</option>)}</select>
+      <DepSeg T={T} value={skuMes} onChange={setSkuMes} items={[["actual",mesTxt(d.mes)],["anterior",mesTxt(d.mesAnterior)]]}/>
+    </div>)}
+    <div style={{...caja,padding:0,overflow:"hidden"}}>
+      {skus.length===0?<div style={{padding:"26px 18px",fontSize:DS.font.base,color:T.textSm,textAlign:"center"}}>No hay tandas con el detalle de productos en ese período.</div>
+      :(verSku?skus:skus.slice(0,12)).map((x,i)=>(<div key={x.sku} style={{display:"grid",gridTemplateColumns:"minmax(120px,1fr) minmax(80px,2fr) 70px 90px",gap:12,alignItems:"center",padding:"9px 18px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none"}}>
+        <div style={{fontSize:DS.font.base,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={x.sku}>{x.sku}</div>
+        <div style={{height:8,borderRadius:99,background:T.surface,overflow:"hidden"}}><div style={{width:`${x.unidades/mxSku*100}%`,height:"100%",borderRadius:99,background:T.accentSolid}}/></div>
+        <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{x.unidades}</div>
+        <div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"right"}}>{skuCli?"unidades":`${x.pedidos} pedido${x.pedidos!==1?"s":""}`}</div>
+      </div>))}
+      {skus.length>12&&<div style={{padding:"10px 18px",borderTop:`1px solid ${T.borderL||T.border}`}}><DepBtn T={T} size="sm" onClick={()=>setVerSku(v=>!v)}>{verSku?"Ver menos":`Ver los ${skus.length}`}</DepBtn></div>}
+    </div>
+    {cob.sin>0&&!skuCli&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:-6,marginBottom:6}}>Cuenta {cob.con} de {cob.con+cob.sin} etiquetas: las otras {cob.sin} llegaron sin el detalle de productos (PDF subido sin aclarar qué lleva).</div>}
+
+    {h2("Quién hizo qué",`En ${mesTxt(d.mes)}. Sale del nombre que queda al imprimir y al escanear.`)}
+    <DepTable T={T} minWidth={520} empty="Todavía no hay movimientos este mes." rows={d.operarios.map(o=>({...o,id:o.nombre}))} cols={[
+      {h:"Persona",w:"1.4fr",render:o=><span style={{display:"inline-flex",alignItems:"center",gap:8,fontWeight:600}}><DepAvatar T={T} name={o.nombre} size={24}/>{o.nombre}</span>},
+      {h:"Etiquetas impresas",w:"150px",align:"right",render:o=><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{o.impresas}</div>{depSub(T,`${o.tandas} tanda${o.tandas!==1?"s":""}`)}</div>},
+      {h:"Pedidos escaneados",w:"150px",align:"right",render:o=><strong>{o.escaneados}</strong>},
+      {h:"Hoy",w:"170px",align:"right",render:o=><span style={{color:T.textMd}}>{o.hoyImpresas||o.hoyEscaneados?`${o.hoyImpresas} impresas · ${o.hoyEscaneados} escaneados`:"—"}</span>},
+    ]}/>
+
+    {h2("Pedidos con problemas",`Apartados y cancelados por el depósito desde ${mesTxt(d.mesAnterior)}.`,d.problemas.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <select style={sel} value={probCli} onChange={e=>setProbCli(e.target.value)}><option value="">Todos los clientes</option>{probPorCli.map(c=><option key={c.id} value={c.id}>{c.nombre} ({c.n})</option>)}</select>
+      <DepSeg T={T} value={prob} onChange={setProb} items={[["todos","Todos"],["apartado","Apartados"],["cancelado","Cancelados"]]}/>
+    </div>)}
+    {d.problemas.length>0&&probPorCli.length>1&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>{probPorCli.slice(0,8).map(c=><span key={c.id} onClick={()=>setProbCli(probCli===c.id?"":c.id)} style={{display:"inline-flex",alignItems:"center",gap:6,height:28,padding:"0 12px",borderRadius:DS.r.full,border:`1px solid ${probCli===c.id?T.textSm:T.border}`,background:probCli===c.id?T.surface:"transparent",fontSize:DS.font.md,color:T.text,cursor:"pointer"}}>{c.nombre}<strong style={{color:T.red}}>{c.n}</strong></span>)}</div>}
+    <div style={{...caja,padding:0,overflow:"hidden"}}>
+      {probs.length===0?<div style={{padding:"26px 18px",fontSize:DS.font.base,color:T.textSm,textAlign:"center"}}>{d.problemas.length?"Ninguno coincide con ese filtro.":"Ningún pedido apartado ni cancelado. Todo en orden."}</div>
+      :probs.slice(0,60).map((x,i)=>(<div key={x.tandaId+"_"+x.idx} style={{display:"flex",gap:12,alignItems:"flex-start",padding:"11px 18px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",flexWrap:"wrap"}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.md,fontWeight:600,color:T.text,minWidth:96}}><span style={{width:8,height:8,borderRadius:99,background:x.tipo==="cancelado"?T.red:T.yellow}}/>{x.tipo==="cancelado"?"Cancelado":"Apartado"}</span>
+        <div style={{flex:1,minWidth:220}}>
+          <div style={{fontSize:DS.font.base,color:T.text}}><strong>{x.numero?`#${x.numero}`:"Sin número"}</strong>{x.comprador?` · ${x.comprador}`:""} <span style={{color:T.textSm}}>· {x.clienteNombre} · tanda del {ghDepFechaLinda(x.fechaDespacho)}</span></div>
+          <div style={{fontSize:DS.font.md,color:T.textMd,marginTop:2}}>{x.nota||"Sin motivo escrito"}{x.items.length?<span style={{color:T.textSm}}> · {x.items.join(", ")}</span>:null}</div>
+        </div>
+        <span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>{x.por||""}{x.at?` · ${ghDepFechaHora(x.at)}`:""}</span>
+      </div>))}
+    </div>
+  </div>);
+}
+
 function DepositoHistorial({T,api}){
   const iS=InputStyle(T);
   const [mes,setMes]=useState(hoyAR().slice(0,7)); const [d,setD]=useState(null); const [rk,setRk]=useState(0); const [q,setQ]=useState("");
@@ -22771,7 +22958,7 @@ function DepositoHistorial({T,api}){
     try{ await api("tanda_eliminar",{id:t.id}); toast("Tanda eliminada","success"); setRk(k=>k+1); }catch(x){ toast(x.message,"error"); }
   }
   const colCanal=t=>t.tipo==="especial"?T.purple:({andreani:T.red,ml:T.yellow,retiro:T.blue}[t.canal]||T.textMd);
-  const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:["Impresa",T.green];
+  const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:t.estado==="entregada"?["Lista",T.green]:["Impresa",T.accent];
   const qq=q.trim().toLowerCase();
   const ok=d?d.tandas.filter(t=>t.estado!=="cancelada"):[];
   const vis=d?d.tandas.filter(t=>!qq||String(t.clienteNombre||"").toLowerCase().includes(qq)):[];
@@ -22951,12 +23138,13 @@ function DepositoCuentas({T,api,onClientes}){
       {sub==="pagos"&&<select style={{...pildora,padding:"0 12px",width:"auto"}} value={filtro} onChange={e=>setFiltro(e.target.value)}><option value="">Todos los clientes</option>{d.clientes.map(c=><option key={c.id} value={c.id}>{c.nombre}</option>)}</select>}
       {sub==="mes"&&<><input type="month" style={{...pildora,padding:"0 12px",width:170}} value={mes} onChange={e=>setMes(e.target.value||hoyAR().slice(0,7))}/>{res&&res.clientes.length>0&&<DepBtn T={T} size="sm" ico="file" onClick={exportar}>Descargar resumen</DepBtn>}{hist&&hist.length>0&&<DepBtn T={T} size="sm" ico="file" onClick={exportarPedidos}>Descargar pedidos</DepBtn>}</>}
     </div>
-    {sub==="clientes"&&(<DepTable T={T} minWidth={820} empty={d.clientes.length?"Ningún cliente coincide.":"Todavía no hay clientes. Cargá el primero con su precio por pedido."} rows={clientesVis.map(c=>({...c,_dim:!c.activo}))} cols={[
+    {sub==="clientes"&&(<DepTable T={T} minWidth={940} empty={d.clientes.length?"Ningún cliente coincide.":"Todavía no hay clientes. Cargá el primero con su precio por pedido."} rows={clientesVis.map(c=>({...c,_dim:!c.activo}))} cols={[
       {h:"Cliente",w:"1.5fr",render:c=><div style={{minWidth:0}}><div style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}{!c.activo&&<span style={{fontWeight:500,color:T.textSm}}> · inactivo</span>}</div>{depSub(T,c.growithUid?`Usa Growith · ${c.growithEmail||"vinculado"}`:"Sin Growith · entra por su link")}</div>},
       {h:"Precio",w:"80px",align:"right",render:c=><span style={{color:T.textMd}}>{fmtMoney(c.precio)}</span>},
       {h:"Este mes",w:"130px",align:"right",render:c=><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{fmtMoney(c.stats.mesTotal)}</div>{depSub(T,`${c.stats.mesPedidos} pedido${c.stats.mesPedidos!==1?"s":""}`)}</div>},
       {h:"Cobrado",w:"110px",align:"right",render:c=><span style={{color:c.stats.mesCobrado>0?T.green:T.textSm}}>{fmtMoney(c.stats.mesCobrado||0)}</span>},
-      {h:"Saldo",w:"150px",align:"right",render:c=>{ const s=saldoDe(c); return <div style={{textAlign:"right"}}><strong style={{color:s.n>0?T.text:s.col}}>{s.txt}</strong>{c.stats.porVerificar>0?depSub(T,`${fmtMoney(c.stats.porVerificar)} por verificar`):null}</div>; }},
+      {h:"Saldo",w:"150px",align:"right",render:c=>{ const s=saldoDe(c); return <div style={{textAlign:"right"}}><strong style={{color:s.n>0?T.text:s.col}}>{s.txt}</strong>{c.stats.porVerificar>0?depSub(T,`${fmtMoney(c.stats.porVerificar)} por verificar`):null}{s.n>0&&c.stats.deudaDesde?depSub(T,(()=>{ const dd=ghDepDiasDe(c.stats.deudaDesde); return <span style={{color:dd>=30?T.red:dd>=15?T.yellow:T.textSm}}>debe desde {ghDepHace(c.stats.deudaDesde)}</span>; })()):null}</div>; }},
+      {h:"Último pago",w:"110px",align:"right",render:c=><div style={{textAlign:"right"}}><span style={{color:T.textMd}}>{c.stats.ultimoPago?ghDepHace(c.stats.ultimoPago):"nunca"}</span>{c.activo&&(()=>{ const dd=ghDepDiasDe(c.stats.ultimoEnvio); return dd==null||dd>=14?depSub(T,<span style={{color:T.yellow}}>{dd==null?"nunca mandó":`sin envíos ${ghDepHace(c.stats.ultimoEnvio)}`}</span>):null; })()}</div>},
       {h:"",w:"120px",align:"right",render:c=><DepBtn T={T} size="sm" onClick={()=>abrir(c)}>Ver cliente</DepBtn>},
     ]}/>)}
     {sub==="pagos"&&(<DepTable T={T} minWidth={720} empty="Todavía no hay pagos ni ajustes" rows={movimientos} cols={[

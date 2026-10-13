@@ -120,6 +120,79 @@ export function ledgerDe(tandas, pagos) {
   return { saldo, cargos: +cargos.toFixed(2), creditos: +creditos.toFixed(2), porVerificar: +porVerificar.toFixed(2), movs: movs.reverse(),
     meses: Object.values(meses).sort((a, b) => b.mes.localeCompare(a.mes)).map(r => ({ ...r, cargos: +r.cargos.toFixed(2), pagos: +r.pagos.toFixed(2) })) };
 }
+// Cobranza (puro): desde cuándo se debe el saldo y cuándo fue el último pago. La deuda de hoy
+// corresponde a los cargos MÁS NUEVOS (lo viejo ya quedó cubierto por los pagos): se camina del
+// más nuevo al más viejo hasta juntar el saldo; la fecha del último cargo sumado = "debe desde".
+export function cobranzaDe(L) {
+  let ultimoPago = 0, deudaDesde = 0;
+  for (const m of L?.movs || []) if (m.haber > 0) { ultimoPago = Math.max(ultimoPago, m.fecha || 0); }
+  if (num(L?.saldo) > 0.5) { let falta = L.saldo; for (const m of L.movs || []) { if (!(m.debe > 0)) continue; deudaDesde = m.fecha || deudaDesde; falta -= m.debe; if (falta <= 0.5) break; } }
+  return { ultimoPago: ultimoPago || null, deudaDesde: deudaDesde || null };
+}
+// "2x ROJ-NN" / "ROJ-NN (x2)" / "ROJ-NN" → {sku, cant}
+export function itemSkuCant(it) {
+  const s = String(it || "").trim(); if (!s) return null;
+  const x = s.match(/^(\d+)\s*x\s+(.+)$/i); const y = x ? null : s.match(/^(.+?)\s*\(x\s*(\d+)\)$/i);
+  const sku = (x ? x[2] : y ? y[1] : s).trim(); const cant = Math.max(1, Math.round(num(x ? x[1] : y ? y[2] : 1)) || 1);
+  return sku ? { sku: sku.slice(0, 80), cant } : null;
+}
+const canalK = c => (c === "andreani" || c === "ml") ? c : "otro";
+const diaAR = v => { const t = ms(v) ?? (typeof v === "number" ? v : 0); return t ? new Date(t - 3 * 3600000).toISOString().slice(0, 10) : ""; };
+// Números del depósito (puro, testeable). `tandas` = [{id,t}] con pedidos e historial de los
+// últimos dos meses; `todas` = [{id,t}] de siempre con los campos del ledger + canal;
+// `pagos` = [{id,p}]; `clientes` = [{id,nombre,activo}]; `hoy` = "YYYY-MM-DD".
+export function statsDeposito({ tandas = [], todas = [], pagos = [], clientes = [], hoy }) {
+  const mes = hoy.slice(0, 7); const dHoy = Number(hoy.slice(8, 10));
+  const pm = new Date(Date.parse(`${mes}-01T12:00:00Z`) - 86400000).toISOString().slice(0, 7);
+  const vale = t => t && !["borrador", "cancelada"].includes(t.estado);
+  const nombres = {}; for (const c of clientes) nombres[c.id] = c.nombre;
+  // 1) Etiquetas por día (últimos 28) y comparación de meses
+  const dias = {}; for (let i = 27; i >= 0; i--) { const f = new Date(Date.parse(`${hoy}T12:00:00Z`) - i * 86400000).toISOString().slice(0, 10); dias[f] = { f, andreani: 0, ml: 0, otro: 0, total: 0 }; }
+  const vacio = () => ({ etiquetas: 0, tandas: 0, facturado: 0, cobrado: 0, andreani: 0, ml: 0, otro: 0 });
+  const M = { actual: vacio(), anterior: vacio(), anteriorAlDia: vacio() };
+  const porCli = {}; const cli = k => (porCli[k] = porCli[k] || { clienteId: k, nombre: nombres[k] || "", etiquetas: 0, tandas: 0, facturado: 0, cobrado: 0, andreani: 0, ml: 0, otro: 0, ult28: 0, ultimoEnvio: null });
+  for (const x of todas) { const t = x.t; if (!vale(t)) continue; const f = String(t.fechaDespacho || ""), n = num(t.n), k = canalK(t.canal);
+    const c = cli(t.clienteId); if (!c.nombre) c.nombre = t.clienteNombre || ""; const cr = ms(t.createdAt) || 0; if (cr > (c.ultimoEnvio || 0)) c.ultimoEnvio = cr;
+    if (dias[f]) { dias[f][k] += n; dias[f].total += n; c.ult28 += n; }
+    const suma = r => { r.etiquetas += n; r.tandas++; r.facturado += num(t.total); r[k] += n; };
+    if (f.startsWith(mes)) { suma(M.actual); c.etiquetas += n; c.tandas++; c.facturado += num(t.total); c[k] += n; }
+    else if (f.startsWith(pm)) { suma(M.anterior); if (Number(f.slice(8, 10)) <= dHoy) suma(M.anteriorAlDia); } }
+  const g = {}; const gr = k => (g[k] = g[k] || { t: [], p: [] });
+  for (const x of todas) gr(x.t.clienteId).t.push(x);
+  for (const x of pagos) { const p = x.p; gr(p.clienteId).p.push(x);
+    if (p.estado !== "verificado" || num(p.monto) <= 0 || !["transferencia", "ajuste"].includes(p.tipo || "transferencia")) continue;
+    const d = diaAR(p.verificadoAt); if (d.startsWith(mes)) { M.actual.cobrado += num(p.monto); cli(p.clienteId).cobrado += num(p.monto); }
+    else if (d.startsWith(pm)) { M.anterior.cobrado += num(p.monto); if (Number(d.slice(8, 10)) <= dHoy) M.anteriorAlDia.cobrado += num(p.monto); } }
+  let teDeben = 0;
+  for (const c of clientes) cli(c.id);
+  const lista = Object.values(porCli).map(c => { const L = ledgerDe(g[c.clienteId]?.t || [], g[c.clienteId]?.p || []); const cb = cobranzaDe(L); if (L.saldo > 0.5) teDeben += L.saldo;
+    const act = clientes.find(k => k.id === c.clienteId);
+    return { ...c, facturado: +c.facturado.toFixed(2), cobrado: +c.cobrado.toFixed(2), saldo: L.saldo, porVerificar: L.porVerificar, ...cb, activo: act ? act.activo !== false : false, porSemana: +(c.ult28 / 4).toFixed(1),
+      meses: L.meses.slice(0, 6).map(r => ({ mes: r.mes, etiquetas: r.etiquetas })).reverse() }; })
+    .filter(c => c.activo || c.etiquetas || Math.abs(c.saldo) > 0.5).sort((a, b) => b.etiquetas - a.etiquetas || b.saldo - a.saldo || a.nombre.localeCompare(b.nombre));
+  for (const r of Object.values(M)) { r.facturado = +r.facturado.toFixed(2); r.cobrado = +r.cobrado.toFixed(2); }
+  // 2) Productos despachados (este mes y el anterior), 6) quién hizo qué, 7) pedidos con problemas
+  const skus = { [mes]: {}, [pm]: {} }; const cobertura = { [mes]: { con: 0, sin: 0 }, [pm]: { con: 0, sin: 0 } };
+  const ops = {}; const op = n => (ops[n] = ops[n] || { nombre: n, impresas: 0, tandas: 0, escaneados: 0, hoyImpresas: 0, hoyEscaneados: 0 });
+  const problemas = [];
+  for (const x of tandas) { const t = x.t; if (!t || t.estado === "borrador") continue; const f = String(t.fechaDespacho || ""), m = f.slice(0, 7);
+    if (vale(t) && skus[m]) { let hubo = false;
+      const sumar = (it, pedido) => { const r = itemSkuCant(it); if (!r) return; hubo = true; const e = skus[m][r.sku] = skus[m][r.sku] || { sku: r.sku, unidades: 0, pedidos: 0, clientes: {} }; e.unidades += r.cant; if (pedido) e.pedidos++; e.clientes[t.clienteId] = (e.clientes[t.clienteId] || 0) + r.cant; };
+      for (const p of t.pedidos || []) { if (p.cancelado) continue; const vistos = new Set(); for (const it of p.items || []) { const r = itemSkuCant(it); sumar(it, r && !vistos.has(r.sku)); if (r) vistos.add(r.sku); } }
+      if (t.tipo === "especial") { const mm = String(t.especial?.instrucciones || "").match(/Productos:\n([\s\S]*)$/); if (mm) for (const l of mm[1].split("\n")) sumar(l, true); }
+      cobertura[m][hubo ? "con" : "sin"] += num(t.n); }
+    const imp = (t.hist || []).find(h => ["entregada", "impresa"].includes(h.a));
+    if (imp && diaAR(imp.at).startsWith(mes) && vale(t)) { const o = op(txt(imp.porNombre, 80) || "Sin nombre"); o.impresas += num(t.n); o.tandas++; if (diaAR(imp.at) === hoy) o.hoyImpresas += num(t.n); }
+    (t.pedidos || []).forEach((p, idx) => {
+      if (p.armado && diaAR(p.armado.at).startsWith(mes)) { const o = op(txt(p.armado.porNombre, 80) || "Sin nombre"); o.escaneados++; if (diaAR(p.armado.at) === hoy) o.hoyEscaneados++; }
+      const pr = p.cancelado ? { tipo: "cancelado", nota: p.cancelado.nota || p.apartado?.nota || "", at: p.cancelado.at, por: p.cancelado.porNombre } : p.apartado ? { tipo: "apartado", nota: p.apartado.nota || "", at: p.apartado.at, por: p.apartado.porNombre } : null;
+      if (pr) problemas.push({ ...pr, tandaId: x.id, idx, clienteId: t.clienteId, clienteNombre: t.clienteNombre || nombres[t.clienteId] || "", numero: p.numero || "", comprador: p.comprador || "", items: p.items || [], fechaDespacho: f, canal: t.canal }); }); }
+  const top = m => Object.values(skus[m]).sort((a, b) => b.unidades - a.unidades || a.sku.localeCompare(b.sku)).slice(0, 80);
+  return { hoy, mes, mesAnterior: pm, dias: Object.values(dias), meses: M, teDeben: +teDeben.toFixed(2), clientes: lista,
+    skus: { actual: top(mes), anterior: top(pm) }, cobertura: { actual: cobertura[mes], anterior: cobertura[pm] },
+    operarios: Object.values(ops).sort((a, b) => b.impresas + b.escaneados - a.impresas - a.escaneados),
+    problemas: problemas.sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 150) };
+}
 // Campos de una tanda que necesita el ledger (sin los pedidos: las listas de clientes no los cargan).
 const LEDGER_SEL = ["clienteId", "estado", "total", "n", "fechaDespacho", "createdAt", "tipo", "especial", "extraDetalle", "ajuste", "pago"];
 const porCliente = (ts, ps) => { const g = {}; const r = k => (g[k] = g[k] || { t: [], p: [] }); for (const d of ts.docs) r(d.data().clienteId).t.push({ id: d.id, t: d.data() }); for (const d of ps.docs) r(d.data().clienteId).p.push({ id: d.id, p: d.data() }); return r; };
@@ -590,15 +663,8 @@ export default async function handler(req, res) {
         db.collection("deposito_tandas").where("estado", "in", ["pendiente", "impresa", "armada"]).get(),
         db.collection("deposito_tandas").where("entregadaAt", ">=", Math.min(inicioMes, hace4, Date.now() - 60 * 86400000)).get(),
       ]);
-      // Tandas del flujo viejo que quedaron "impresa"/"armada": ya están impresas, así que
-      // pasan solas a listas (estado final) con la fecha de su último movimiento. Se hace
-      // una sola vez por tanda; después no queda ninguna en esos estados.
-      const viejas = vivas.docs.filter(d => ["impresa", "armada"].includes(d.data().estado));
-      if (viejas.length) {
-        const b = db.batch();
-        for (const d of viejas.slice(0, 400)) { const t = d.data(); const at = num((t.hist || []).slice(-1)[0]?.at) || Date.now(); const upd = { estado: "entregada", entregadaAt: at }; b.update(d.ref, upd); Object.assign(t, upd); d.data = () => t; }
-        await b.commit().catch(e => console.warn("[deposito] migrar impresas:", e.message));
-      }
+      // Tres pasos (13/oct/2026): pendiente → impresa → lista ("entregada"). Las impresas siguen en la cola
+      // hasta que alguien las marca como listas; ya NO se pasan solas.
       // Pedidos apartados sin resolver, de cualquier tanda (también entregadas): no se pierden.
       const apartados = [];
       for (const d of [...vivas.docs, ...rec.docs]) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue;
@@ -677,10 +743,9 @@ export default async function handler(req, res) {
         const s = await tx.get(ref); if (!s.exists) return null;
         const t = s.data(); if (["borrador", "cancelada"].includes(t.estado)) return { error: "La tanda está cancelada." };
         if (t.estado === estado) return { ok: true };
-        // Dos pasos (8/oct/2026, decisión de Lautaro): pendiente → entregada ("Impresa"); al
-        // imprimir la tanda queda lista, sin "armada" ni "entregada al correo". Se puede
-        // volver a pendiente. "impresa"/"armada" siguen siendo válidos para tandas viejas en curso.
-        tx.set(ref, { estado, ...(estado === "entregada" ? { entregadaAt: Date.now() } : {}), ...(t.estado === "entregada" ? { entregadaAt: FieldValue.delete() } : {}), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
+        // Tres pasos (13/oct/2026, pedido de Lautaro): pendiente → impresa (al imprimir) → entregada
+        // ("Lista", con el botón "Marcar como lista"). Se puede volver atrás sin restricciones.
+        tx.set(ref, { estado, ...(estado === "entregada" ? { entregadaAt: Date.now() } : {}), ...(estado === "impresa" ? { impresaAt: Date.now() } : {}), ...(t.estado === "entregada" ? { entregadaAt: FieldValue.delete() } : {}), hist: [...(t.hist || []).slice(-40), { at: Date.now(), por: dep.user.uid, porNombre: txt(dep.nombre, 80), de: t.estado, a: estado }] }, { merge: true });
         return { ok: true };
       });
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
@@ -812,11 +877,14 @@ export default async function handler(req, res) {
     if (action === "cuenta_cliente") {
       if (!soloOwner()) return;
       const cid = String(body.clienteId || "");
-      const [c, ts, ps] = await Promise.all([db.collection("deposito_clientes").doc(cid).get(), db.collection("deposito_tandas").where("clienteId", "==", cid).select(...LEDGER_SEL).get(), db.collection("deposito_pagos").where("clienteId", "==", cid).get()]);
+      const [c, ts, ps] = await Promise.all([db.collection("deposito_clientes").doc(cid).get(), db.collection("deposito_tandas").where("clienteId", "==", cid).select(...LEDGER_SEL, "canal").get(), db.collection("deposito_pagos").where("clienteId", "==", cid).get()]);
       if (!c.exists) return res.status(404).json({ error: "Cliente inexistente." });
       const L = ledgerDe(ts.docs.map(d => ({ id: d.id, t: d.data() })), ps.docs.map(d => ({ id: d.id, p: d.data() })));
+      const act = { ultimoEnvio: null, ult28: 0, canales: { andreani: 0, ml: 0, otro: 0 }, ...cobranzaDe(L) }; const d28 = new Date(Date.now() - 3 * 3600000 - 28 * 86400000).toISOString().slice(0, 10);
+      for (const d of ts.docs) { const t = d.data(); if (["borrador", "cancelada"].includes(t.estado)) continue; const cr = ms(t.createdAt) || 0; if (cr > (act.ultimoEnvio || 0)) act.ultimoEnvio = cr; act.canales[canalK(t.canal)] += num(t.n); if (String(t.fechaDespacho) >= d28) act.ult28 += num(t.n); }
+      act.porSemana = +(act.ult28 / 4).toFixed(1);
       const pagos = ps.docs.map(d => pagoPublico(d.id, d.data())).filter(p => ["a_verificar", "rechazado"].includes(p.estado)).sort((a, b) => (b.informadoAt || 0) - (a.informadoAt || 0)).slice(0, 30);
-      return res.json({ cliente: clientePublico(c.id, c.data(), true), saldo: L.saldo, cargos: L.cargos, creditos: L.creditos, porVerificar: L.porVerificar, movs: L.movs.slice(0, 300), meses: L.meses.slice(0, 12), pagos });
+      return res.json({ cliente: clientePublico(c.id, c.data(), true), saldo: L.saldo, cargos: L.cargos, creditos: L.creditos, porVerificar: L.porVerificar, movs: L.movs.slice(0, 300), meses: L.meses.slice(0, 12), pagos, actividad: act });
     }
     // Ajuste manual: monto > 0 = pago recibido (baja la deuda); monto < 0 = cargo extra
     // (la sube). Es un movimiento más del ledger (pago tipo "ajuste") que el cliente ve.
@@ -893,7 +961,7 @@ export default async function handler(req, res) {
       const [cs, ts, ps] = await Promise.all([db.collection("deposito_clientes").get(), db.collection("deposito_tandas").select(...LEDGER_SEL).get(), db.collection("deposito_pagos").get()]);
       const mes = hoyAR().slice(0, 7); const g = porCliente(ts, ps);
       const mesDe = m => { const v = ms(m); return v ? new Date(v - 3 * 3600000).toISOString().slice(0, 7) : ""; };
-      const statsDe = id => { const { t, p } = g(id); const L = ledgerDe(t, p); const st = { mesPedidos: 0, mesTotal: 0, mesCobrado: 0, saldo: L.saldo, porVerificar: L.porVerificar };
+      const statsDe = id => { const { t, p } = g(id); const L = ledgerDe(t, p); const st = { mesPedidos: 0, mesTotal: 0, mesCobrado: 0, saldo: L.saldo, porVerificar: L.porVerificar, ...cobranzaDe(L), ultimoEnvio: t.reduce((a, x) => ["borrador", "cancelada"].includes(x.t.estado) ? a : Math.max(a, ms(x.t.createdAt) || 0), 0) || null };
         for (const x of t) { if (["borrador", "cancelada"].includes(x.t.estado) || !String(x.t.fechaDespacho).startsWith(mes)) continue; st.mesPedidos += num(x.t.n); st.mesTotal += num(x.t.total); }
         for (const x of p) { if (x.p.estado !== "verificado" || num(x.p.monto) <= 0 || !["transferencia", "ajuste"].includes(x.p.tipo || "transferencia") || mesDe(x.p.verificadoAt) !== mes) continue; st.mesCobrado += num(x.p.monto); }
         st.mesTotal = +st.mesTotal.toFixed(2); st.mesCobrado = +st.mesCobrado.toFixed(2); return st; };
@@ -987,6 +1055,14 @@ export default async function handler(req, res) {
       if (!out) return res.status(404).json({ error: "Tanda inexistente." });
       await borrarArchivos(db, id);
       return res.json(out);
+    }
+
+    // Números del depósito para la pestaña Resumen (solo la dueña).
+    if (action === "stats") {
+      if (!soloOwner()) return;
+      const hoy = hoyAR(); const pmIni = `${new Date(Date.parse(`${hoy.slice(0, 7)}-01T12:00:00Z`) - 86400000).toISOString().slice(0, 7)}-01`;
+      const [det, ts, ps, cs] = await Promise.all([db.collection("deposito_tandas").where("fechaDespacho", ">=", pmIni).get(), db.collection("deposito_tandas").select(...LEDGER_SEL, "canal", "clienteNombre").get(), db.collection("deposito_pagos").get(), db.collection("deposito_clientes").get()]);
+      return res.json(statsDeposito({ hoy, tandas: det.docs.map(d => ({ id: d.id, t: d.data() })), todas: ts.docs.map(d => ({ id: d.id, t: d.data() })), pagos: ps.docs.map(d => ({ id: d.id, p: d.data() })), clientes: cs.docs.map(d => ({ id: d.id, nombre: d.data().nombre, activo: d.data().activo !== false })) }));
     }
 
     if (action === "resumen") {

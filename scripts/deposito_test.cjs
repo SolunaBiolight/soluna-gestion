@@ -77,4 +77,32 @@ eq("vacío",M.ledgerDe([],[]),{saldo:0,cargos:0,creditos:0,porVerificar:0,movs:[
   eq("ML: página de cada pedido",r.map(x=>x.pags[0]),[1,2,3]);
   eq("ML: un PDF que no es de Mercado Libre no devuelve nada",ml(["Orden de Ruteo 36000123","Destinatario Juan"]),[]);
 }
+// Números del depósito (pestaña Resumen) y cobranza
+{ const txt="const txt = (v, max) => String(v ?? \"\").replace(/[\\x00-\\x1f]+/g, \" \").trim().slice(0, max);";
+  const aux=src.slice(src.indexOf("const canalK = "),src.indexOf("// Números del depósito (puro"));
+  const S=new Function(num+txt+fn("ledgerDe")+fn("cobranzaDe")+fn("itemSkuCant")+aux+fn("statsDeposito")+"\nreturn {statsDeposito,cobranzaDe,ledgerDe,itemSkuCant};")();
+  eq("item 2x",S.itemSkuCant("2x ROJ-NN"),{sku:"ROJ-NN",cant:2}); eq("item (x3)",S.itemSkuCant("LIQ (x3)"),{sku:"LIQ",cant:3}); eq("item solo",S.itemSkuCant("CLIP-ON"),{sku:"CLIP-ON",cant:1});
+  const d=f=>Date.parse(f+"T15:00:00Z");
+  const T=(id,cli,f,nn,total,canal,extra={})=>({id,t:{clienteId:cli,clienteNombre:cli.toUpperCase(),estado:"entregada",fechaDespacho:f,n:nn,total,canal,createdAt:d(f),...extra}});
+  const tandas=[T("a","c1","2026-10-10",4,4000,"andreani",{pedidos:[{items:["2x ROJ-NN","1x LIQ"],armado:{at:d("2026-10-10"),porNombre:"Ana"}},{items:["ROJ-NN"],apartado:{nota:"falta stock",at:d("2026-10-10"),porNombre:"Ana"}},{items:["1x LIQ"],cancelado:{at:d("2026-10-11"),porNombre:"Ana",nota:"sin stock"}}],hist:[{at:d("2026-10-10"),porNombre:"Ana",de:"pendiente",a:"entregada"}]}),
+    T("b","c2","2026-10-12",2,2000,"ml",{pedidos:[]}), T("c","c1","2026-09-05",10,10000,"andreani",{pedidos:[{items:["3x NARAN-TT"]}]}), T("e","c1","2026-09-28",5,5000,"andreani",{pedidos:[]}),
+    {id:"x",t:{clienteId:"c1",estado:"cancelada",fechaDespacho:"2026-10-09",n:99,total:99000,canal:"andreani",createdAt:d("2026-10-09")}}];
+  const pagos=[{id:"p1",p:{clienteId:"c1",monto:12000,estado:"verificado",tipo:"transferencia",verificadoAt:d("2026-10-02")}}];
+  const R=S.statsDeposito({hoy:"2026-10-13",tandas,todas:tandas,pagos,clientes:[{id:"c1",nombre:"Uno",activo:true},{id:"c2",nombre:"Dos",activo:true},{id:"c3",nombre:"Tres",activo:true}]});
+  eq("mes actual: etiquetas, tandas, facturado, cobrado",[R.meses.actual.etiquetas,R.meses.actual.tandas,R.meses.actual.facturado,R.meses.actual.cobrado],[6,2,6000,12000]);
+  eq("por correo en el mes",[R.meses.actual.andreani,R.meses.actual.ml],[4,2]);
+  eq("mes anterior entero y a la misma altura",[R.meses.anterior.etiquetas,R.meses.anteriorAlDia.etiquetas],[15,10]);
+  eq("28 días: hoy último, total del período",[R.dias.length,R.dias[27].f,R.dias.reduce((a,x)=>a+x.total,0)],[28,"2026-10-13",11]);
+  const c1=R.clientes.find(c=>c.clienteId==="c1"), c2=R.clientes.find(c=>c.clienteId==="c2");
+  eq("ranking: primero el que más manda, el sin movimientos al final",R.clientes.map(c=>c.clienteId),["c1","c2","c3"]);
+  eq("saldo de c1 = 19000 − 12000",[c1.saldo,R.teDeben],[7000,9000]);
+  eq("c1 debe desde la tanda de fin de septiembre (lo más viejo ya está pago)",[c1.deudaDesde,c1.ultimoPago],[d("2026-09-28"),d("2026-10-02")]);
+  eq("c2 sin pagos",[c2.deudaDesde,c2.ultimoPago],[d("2026-10-12"),null]);
+  eq("productos del mes (el cancelado no cuenta)",R.skus.actual.map(x=>[x.sku,x.unidades,x.pedidos]),[["ROJ-NN",3,2],["LIQ",1,1]]);
+  eq("productos del mes anterior",R.skus.anterior.map(x=>[x.sku,x.unidades]),[["NARAN-TT",3]]);
+  eq("etiquetas con y sin detalle de productos",R.cobertura.actual,{con:4,sin:2});
+  eq("quién hizo qué",R.operarios.map(o=>[o.nombre,o.impresas,o.escaneados]),[["Ana",4,1]]);
+  eq("pedidos con problemas, el más nuevo primero",R.problemas.map(x=>[x.tipo,x.nota]),[["cancelado","sin stock"],["apartado","falta stock"]]);
+  eq("sin deuda no hay 'debe desde'",S.cobranzaDe(S.ledgerDe([T("z","c9","2026-10-01",1,1000,"andreani")],[{id:"q",p:{clienteId:"c9",monto:1000,estado:"verificado",verificadoAt:d("2026-10-03")}}])),{ultimoPago:d("2026-10-03"),deudaDesde:null});
+}
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);
