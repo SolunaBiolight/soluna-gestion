@@ -21856,9 +21856,9 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={c}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     const items=[...new Set(peds.filter(p=>!p.cancelado).flatMap(p=>p.items||[]))];
-    return (<div key={t.id} style={{background:T.card,border:`1px solid ${open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
+    return (<div key={t.id} style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${c}${pendiente?"1c":"12"} 0%, transparent 42%)`,border:`1px solid ${c}${open?"77":"33"}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
       <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:40,height:40,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 200px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{esp?(t.especial?.titulo||"Envío especial"):(GH_DEP_CANAL[t.canal]||t.canal)}</span>
@@ -22541,9 +22541,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={cCanal}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     return (
-    <div style={{background:T.card,border:`1px solid ${urg(t)||atras?T.red+"66":open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
+    <div style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"1c"} 0%, transparent 42%)`,border:`1px solid ${urg(t)||atras?T.red+"66":cCanal+(open?"77":"33")}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
       <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:40,height:40,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 220px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
