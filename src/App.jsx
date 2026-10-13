@@ -31395,7 +31395,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       } while(ronda < 12);
       clearInterval(simInterval); simInterval = null;
       if(d?.error){
-        if(resAcum.length) toast(`Se facturaron ${resAcum.filter(r=>r.ok).length} y después falló: ${d.error}. Las que faltan siguen en pendientes.`,"error");
+        // Punto de venta que no es de Web Services: ARCA rechaza TODO el lote y
+        // antes era un toast que se perdía (parecía que "cargaba 1 y volvía").
+        if(/punto de venta no se encuentra habilitado/i.test(d.error)){
+          await appAlert(`ARCA no deja facturar con el punto de venta ${pvElegido?.numero||""} desde Growith.\n\nEse punto de venta no es de "Web Services". Hay que crear uno nuevo en ARCA:\n1. Entrá a arca.gob.ar con clave fiscal → "Administración de puntos de venta y domicilios".\n2. Agregar → elegí el sistema "Factura Electrónica - Monotributo - Web Services" (o "RECE para aplicativo y web services" si sos Responsable Inscripto).\n3. Anotá el número nuevo y cargalo en Growith → Config → ARCA → Punto de venta.\n\nNo se emitió ninguna factura.`);
+        } else if(resAcum.length) toast(`Se facturaron ${resAcum.filter(r=>r.ok).length} y después falló: ${d.error}. Las que faltan siguen en pendientes.`,"error");
         else toast(d.error,"error");
         if(!resAcum.length){ setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]}); return; }
       }
