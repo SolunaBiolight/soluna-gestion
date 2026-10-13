@@ -21827,9 +21827,9 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={c}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     const items=[...new Set(peds.filter(p=>!p.cancelado).flatMap(p=>p.items||[]))];
-    return (<div key={t.id} style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${c}${pendiente?"1c":"12"} 0%, transparent 42%)`,border:`1px solid ${c}${open?"77":"33"}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
+    return (<div key={t.id} style={{background:T.card,border:`1px solid ${open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
       <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:40,height:40,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 200px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{esp?(t.especial?.titulo||"Envío especial"):(GH_DEP_CANAL[t.canal]||t.canal)}</span>
@@ -22169,20 +22169,20 @@ function DepLabel({T,color,children,style}){ return <div style={{display:"flex",
 // Franja de números del tablero: celdas neutras; el color del dato va solo en el número y en su punto.
 // items: [{l, v, s, c}]
 function DepStrip({T,items}){
-  // Una sola pieza con divisiones finas (no tarjetas sueltas): el fondo del contenedor hace de línea entre celdas.
-  return (<div style={{display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${items.length>4?150:170}px,1fr))`,gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",marginBottom:14}}>
+  return (<div style={{display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${items.length>4?150:170}px,1fr))`,gap:10,marginBottom:14}}>
     {items.map((it,i)=><DepStripCell key={i} T={T} it={it}/>)}
   </div>);
 }
-// Celda: etiqueta con el punto del color del dato, número grande y una línea de detalle. Sin recuadro propio.
+// Celda "sobria" (opción 2 elegida por Lautaro el 12/oct/2026): tarjeta suelta y neutra, número en blanco,
+// y el color del dato SOLO en el punto junto a la etiqueta.
 function DepStripCell({T,it}){
-  const [h,setH]=useState(false); const c=it.c||T.textSm; const clic=!!it.onClick;
+  const [h,setH]=useState(false); const clic=!!it.onClick;
   return (<div onClick={it.onClick} title={it.accion||undefined} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-    style={{background:clic&&h?T.surface:T.card,padding:"16px 18px 15px",minWidth:0,overflow:"hidden",cursor:clic?"pointer":"default",transition:"background .14s"}}>
-    <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,fontWeight:600,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{width:8,height:8,borderRadius:99,background:it.c?c:T.border,flexShrink:0}}/>{it.l}</div>
-    <div style={{fontSize:DS.font["4xl"]-4,fontWeight:800,color:it.c?c:T.text,letterSpacing:-1,lineHeight:1.1,fontVariantNumeric:"tabular-nums",marginTop:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
-    {it.s?<div style={typeof it.s==="string"?{fontSize:DS.font.sm,color:T.textSm,marginTop:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:{fontSize:DS.font.sm,color:T.textSm,marginTop:5}}>{it.s}</div>:null}
-    {it.accion?<div style={{fontSize:DS.font.sm,fontWeight:700,color:T.accent,marginTop:6}}>{it.accion} →</div>:null}
+    style={{background:clic&&h?T.surface:T.card,border:`1px solid ${clic&&h?T.textSm:T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px",minWidth:0,overflow:"hidden",cursor:clic?"pointer":"default",transition:"background .14s, border-color .14s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,fontWeight:500,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{width:8,height:8,borderRadius:99,background:it.c||T.border,flexShrink:0}}/>{it.l}</div>
+    <div style={{fontSize:DS.font["4xl"]-6,fontWeight:700,color:T.text,letterSpacing:-0.8,lineHeight:1.15,fontVariantNumeric:"tabular-nums",marginTop:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
+    {it.s?<div style={typeof it.s==="string"?{fontSize:DS.font.sm,color:T.textSm,marginTop:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>{it.s}</div>:null}
+    {it.accion?<div style={{fontSize:DS.font.sm,fontWeight:600,color:T.accent,marginTop:6}}>{it.accion} →</div>:null}
   </div>);
 }
 // cols: [{h, w:"1fr"|"120px", align:"right", render:(row)=>node}]
@@ -22512,9 +22512,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={cCanal}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     return (
-    <div style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"1c"} 0%, transparent 42%)`,border:`1px solid ${urg(t)||atras?T.red+"66":cCanal+(open?"77":"33")}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
+    <div style={{background:T.card,border:`1px solid ${urg(t)||atras?T.red+"66":open?T.textSm:T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
       <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:40,height:40,borderRadius:DS.r.xl,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 220px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
