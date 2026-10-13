@@ -21419,21 +21419,34 @@ const ghDepFechaLinda=f=>{ if(!f) return "—"; const [y,m,d]=f.split("-"); retu
 function ghDepMlPedidos(textos){
   const out=[]; let conSku=0;
   (textos||[]).forEach((tx,i)=>{
-    const L=String(tx||"").split(/\n+/).map(l=>l.trim()).filter(Boolean);
-    const skuIdx=L.map((l,k)=>/^SKU\s*:/i.test(l)?k:-1).filter(k=>k>=0);
-    // unidades del paquete: el número pegado al renglón "Unidad(es)" (antes, después o en el mismo)
-    let total=0; const u=L.findIndex(l=>/^(\d{1,3}\s+)?Unidad(es)?(\s+\d{1,3})?$/i.test(l));
-    if(u>=0){ const m=L[u].match(/\d{1,3}/); total=m?Number(m[0]):(/^\d{1,3}$/.test(L[u-1]||"")?Number(L[u-1]):/^\d{1,3}$/.test(L[u+1]||"")?Number(L[u+1]):0); }
-    const items=skuIdx.map((k,j)=>{ const sku=L[k].replace(/^SKU\s*:\s*/i,"").trim(); if(!sku) return null;
-      let q=0; if(skuIdx.length===1) q=total; // varios productos: las unidades de cada uno vienen como "| 2 u." cerca de su SKU
-      if(!q){ const hasta=skuIdx[j+1]??L.length, desde=j?skuIdx[j-1]+1:0; const cerca=[...L.slice(k+1,hasta),...L.slice(desde,k)].join(" "); const m=cerca.match(/\|\s*(\d{1,3})\s*u\b/i); q=m?Number(m[1]):1; }
-      return `${Math.max(1,q||1)}x ${sku}`; }).filter(Boolean);
+    const L=String(tx||"").split(/\n+/).map(l=>l.replace(/\s+/g," ").trim()).filter(Boolean);
+    // "SKU:" puede venir pegado al valor ("SKU: AN + RN") o en un texto aparte del PDF (valor en el renglón siguiente)
+    const skus=[]; L.forEach((l,k)=>{ const m=l.match(/\bSKU\s*:\s*(.*)$/i); if(!m) return; let v=m[1].trim(); if(!v&&L[k+1]&&!/^(Unidad|Remitente|Pack ID|Venta)/i.test(L[k+1])) v=L[k+1].trim(); if(v) skus.push({k,sku:v}); });
+    // unidades del paquete: el número junto al renglón "Unidad(es)" (mismo renglón, el de arriba o el de abajo,
+    // solo o al principio de un renglón con el título del producto)
+    let total=0; const u=L.findIndex(l=>/(^|\s)Unidad(es)?(\s|$)/i.test(l)&&l.length<40);
+    if(u>=0){ const m=L[u].match(/\b(\d{1,3})\b/); if(m) total=Number(m[1]);
+      else for(const d of [-1,1,-2,-3]){ const x=L[u+d]||""; const n=x.match(/^(\d{1,3})(\s+\D|$)/); if(n&&!/^SKU/i.test(x)){ total=Number(n[1]); break; } } }
+    const items=skus.map((it,j)=>{ let q=0;
+      const hasta=skus[j+1]?.k??L.length, desde=j?skus[j-1].k+1:0; const cerca=[...L.slice(it.k+1,hasta),...L.slice(desde,it.k)].join(" "); const m=cerca.match(/\|\s*(\d{1,3})\s*u\b/i); if(m) q=Number(m[1]);
+      if(!q&&skus.length===1) q=total;
+      return `${Math.max(1,q||1)}x ${it.sku}`; });
     if(items.length) conSku++;
     const id=(String(tx||"").match(/(?:Venta|Pack)\s*ID\s*:\s*(\d{6,})/i)||[])[1]||"";
-    const nom=(L.find(l=>/^[^()]{2,60}\s\([A-Z0-9_.\-]{3,}\)$/.test(l))||"").replace(/\s*\([^()]*\)$/,"");
+    const nom=((L.map(l=>l.match(/([^()|:]{2,60})\s\([A-Z0-9_.\-]{3,}\)\s*$/)).find(Boolean)||[])[1]||"").trim();
     out.push({numero:id||`etiqueta ${i+1}`,comprador:nom,items,pags:[i+1]});
   });
   return out.length&&conSku>=out.length/2?out:[];
+}
+// Texto de cada página reconstruido por RENGLONES visuales (los textos del PDF agrupados por su altura
+// y ordenados de izquierda a derecha): no depende de en cuántos pedazos venga cada texto.
+async function ghDepLineasPaginas(bytes){
+  await ghDepTextoPaginas(new Uint8Array(0)).catch(()=>{}); // asegura pdf.js cargado
+  const pdf=await window.pdfjsLib.getDocument({data:bytes.slice(0)}).promise; const out=[];
+  for(let i=1;i<=pdf.numPages;i++){ const c=await (await pdf.getPage(i)).getTextContent(); const filas=[];
+    for(const it of c.items){ const t=String(it.str||""); if(!t.trim()) continue; const y=it.transform?.[5]||0, x=it.transform?.[4]||0; let f=filas.find(r=>Math.abs(r.y-y)<=2.5); if(!f){ f={y,its:[]}; filas.push(f); } f.its.push({x,t}); }
+    out.push(filas.sort((a,b)=>b.y-a.y).map(f=>f.its.sort((a,b)=>a.x-b.x).map(o=>o.t).join(" ")).join("\n")); }
+  return out;
 }
 async function ghDepTextoPaginas(bytes,sep=" "){
   if(!window.pdfjsLib){ await new Promise((ok,ko)=>{ const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"; s.onload=ok; s.onerror=ko; document.head.appendChild(s); }); window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }
@@ -21529,7 +21542,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     if(f.size>22*1024*1024){ toast("El PDF supera los 22 MB. Dividilo en dos tandas.","warning"); return; }
     try{ const bytes=await leer(f); let pages=0, resumen=0; let resumenIdx=[]; try{ const c=await ghDepContarEtiquetas(bytes); pages=c.pages; resumen=c.resumen; resumenIdx=c.resumenIdx; }catch(_){}
       // Mercado Libre: los productos de cada paquete vienen impresos en la etiqueta → se leen para el picking del depósito.
-      let mlPeds=[]; if(!resumen){ try{ mlPeds=ghDepMlPedidos(await ghDepTextoPaginas(bytes,"\n")); }catch(_){ } }
+      let mlPeds=[]; if(!resumen){ try{ mlPeds=ghDepMlPedidos(await ghDepLineasPaginas(bytes)); if(!mlPeds.length) mlPeds=ghDepMlPedidos(await ghDepTextoPaginas(bytes,"\n")); }catch(_){ } }
       setPdf({bytes,nombre:f.name,pages,resumen,resumenIdx,mlPeds}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
   }
   async function elegirOtro(f,setter,max){ if(!f) return; if(f.size>max){ toast(`El archivo supera los ${Math.round(max/1024/1024)} MB`,"warning"); return; } try{ setter({bytes:await leer(f),nombre:f.name,mime:f.type||"application/octet-stream"}); }catch(e){ toast(e.message,"error"); } }
