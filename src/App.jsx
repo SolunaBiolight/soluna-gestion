@@ -21432,7 +21432,7 @@ function ghDepMlPedidos(textos){
       if(!q&&skus.length===1) q=total;
       return `${Math.max(1,q||1)}x ${it.sku}`; });
     if(items.length) conSku++;
-    const id=(String(tx||"").match(/(?:Venta|Pack)\s*ID\s*:\s*(\d{6,})/i)||[])[1]||"";
+    const id=((String(tx||"").match(/(?:Venta|Pack)\s*ID\s*:\s*(\d[\d ]{5,}\d)/i)||[])[1]||"").replace(/\s+/g,"");
     const nom=((L.map(l=>l.match(/([^()|:]{2,60})\s\([A-Z0-9_.\-]{3,}\)\s*$/)).find(Boolean)||[])[1]||"").trim();
     out.push({numero:id||`etiqueta ${i+1}`,comprador:nom,items,pags:[i+1]});
   });
@@ -21906,7 +21906,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         const colC=c=>({andreani:T.red,ml:T.yellow,retiro:T.blue}[c]||T.textMd);
         return [
           {l:"Pedidos de hoy",v:nDia,c:nDia?T.accent:null,s:nDia?<span style={{display:"flex",columnGap:10,rowGap:2,flexWrap:"wrap",alignItems:"center",color:T.textMd,fontWeight:600}}>{canales.map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:99,background:colC(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}</span>:`corte a las ${corte}:00`},
-          {l:"Falta imprimir",v:nVivos,c:nAtras?T.red:nVivos?T.yellow:null,s:nAtras?`${nAtras} de días anteriores`:nVivos?(nProx?`${nProx} salen más adelante`:impDia?`${impDia} ya impresos hoy`:"salen hoy"):impDia?`los ${impDia} de hoy ya están impresos`:"nada pendiente"},
+          {l:"Pendientes en el depósito",v:nVivos,c:nAtras?T.red:nVivos?T.yellow:null,s:nAtras?`${nAtras} de días anteriores`:nVivos?(nProx?`${nProx} salen más adelante`:impDia?`${impDia} ya impresos hoy`:"salen hoy"):impDia?`los ${impDia} de hoy ya están impresos`:"nada pendiente"},
           {l:"Este mes",v:nMes,c:nMes?T.green:null,s:`pedidos · ${fmtMoney(factMes)} facturado`,onClick:()=>{ setTab("envios"); setMes(mesAct); },accion:nMes?"Ver los del mes":null},
           {l:saldo.n<0?"A favor":saldo.n>0?"Para pagar":"Tu cuenta",v:saldo.n>0?fmtMoney(saldo.n):saldo.n<0?fmtMoney(-saldo.n):"Al día",c:saldo.n>0?T.yellow:saldo.n<0?T.green:null,s:porVerificar>0?`${fmtMoney(porVerificar)} en verificación`:saldo.n>0?"transferí e informá el pago":"sin deuda",onClick:()=>setTab("cuenta"),accion:saldo.n>0?"Informar un pago":"Ver la cuenta"},
         ]; })()}/>
@@ -22169,7 +22169,7 @@ function DepLabel({T,color,children,style}){ return <div style={{display:"flex",
 // Franja de números del tablero: celdas neutras; el color del dato va solo en el número y en su punto.
 // items: [{l, v, s, c}]
 function DepStrip({T,items}){
-  return (<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:14}}>
+  return (<div style={{display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${items.length>4?150:170}px,1fr))`,gap:10,marginBottom:14}}>
     {items.map((it,i)=>{ const c=it.c||T.textSm; return (<div key={i} onClick={it.onClick} title={it.accion||undefined} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px",minWidth:0,overflow:"hidden",cursor:it.onClick?"pointer":"default"}}>
       <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,fontWeight:600,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:c,flexShrink:0}}/>{it.l}</div>
       <div style={{fontSize:DS.font["4xl"]-4,fontWeight:800,color:it.c?c:T.text,letterSpacing:-1,lineHeight:1.1,fontVariantNumeric:"tabular-nums",marginTop:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
@@ -22347,6 +22347,12 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const [verHechas,setVerHechas]=useState(false);
   const [posponer,setPosponer]=useState(null);
   const [previa,setPrevia]=useState(null);
+  // Productos leídos del PDF de una tanda de Mercado Libre que llegó sin ellos: id → pedidos | "cargando" | "nada".
+  // Solo para mostrar "Qué bajar" al desplegarla; no se guarda ni cambia lo que se cobra.
+  const [mlPick,setMlPick]=useState({});
+  useEffect(()=>{ const t=st?.tandas?.find(x=>x.id===abierta); if(!t||t.canal!=="ml"||t.tipo==="especial"||mlPick[t.id]) return; if((t.pedidos||[]).some(p=>(p.items||[]).length)||!t.pdf||t.pdf.purgado) return;
+    setMlPick(m=>({...m,[t.id]:"cargando"}));
+    (async()=>{ let r=[]; try{ r=ghDepMlPedidos(await ghDepLineasPaginas(await ghDepBajar(api,"file_get",t.id,"pdf",t.pdf.chunks))); }catch(_){ } setMlPick(m=>({...m,[t.id]:r.length?r:"nada"})); })(); },[abierta,st]);
   // Vista previa: muestra el PDF adentro de la consola SIN marcar la tanda como impresa.
   async function verPrevia(t){
     setBusy(t.id);
@@ -22483,7 +22489,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   // Cada tanda es una tarjeta teñida del color de su correo (como los botones por canal del cliente):
   // logo, cliente, cantidad grande, cuándo sale y acciones; abajo los productos a bajar. El detalle se abre al tocarla.
   const tabla=lista=>(<div style={{display:"flex",flexDirection:"column",gap:10}}>{lista.map(t=><React.Fragment key={t.id}>{Tanda({t})}</React.Fragment>)}</div>);
-  const Tanda=({t,primera})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const pick=ghDepPicking(t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length;
+  const Tanda=({t,primera})=>{ const open=abierta===t.id; const v=vista[t.id]||"picking"; const mlLeido=Array.isArray(mlPick[t.id])?mlPick[t.id]:null; const pick=ghDepPicking(mlLeido||t.pedidos.filter(p=>!p.cancelado)); const ap=t.pedidos.filter(p=>p.apartado&&!p.cancelado).length; const canc=t.pedidos.filter(p=>p.cancelado).length; const conItems=!!mlLeido||t.pedidos.some(p=>p.items.length); const arm=t.pedidos.filter(p=>p.armado&&!p.cancelado).length; const nP=t.pedidos.filter(p=>!p.cancelado).length;
     // Color por CANAL (quién retira): Andreani rojo, Mercado Libre amarillo, retiro azul, otro gris; especial violeta.
     const esp=t.tipo==="especial"; const cCanal=esp?T.purple:colCanal(t.canal);
     const entregada=t.estado!=="pendiente"; const atras=!entregada&&t.fechaDespacho<st.hoy; const esHoy=t.fechaDespacho===st.hoy;
@@ -22548,6 +22554,8 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           <span style={{flex:1}}/>
           {!t.adjPurgados&&(t.especial?.adj||[]).map(a=><DepBtn key={a.kind} T={T} size="sm" ico="file" onClick={()=>abrirArchivo(t,a.kind,a)}>{a.nombre||"Adjunto"}</DepBtn>)}
         </div>
+        {mlPick[t.id]==="cargando"&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textSm,marginBottom:12}}><Spinner size={12} color={T.textSm}/> Leyendo los productos de las etiquetas…</div>}
+        {mlPick[t.id]==="nada"&&<div style={{fontSize:DS.font.md,color:T.textSm,marginBottom:12}}>No pudimos leer los productos de estas etiquetas: mirá el PDF con "Vista previa".</div>}
         {vistaAct==="picking"&&conItems&&(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",columnGap:24,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,background:T.card,padding:"4px 16px"}}>
           {pick.map(x=>(<div key={x.sku} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,padding:"8px 0",borderBottom:`1px solid ${T.borderL||T.border}`}}>
             <span style={{fontSize:DS.font.base,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span>
@@ -22607,8 +22615,9 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
           </div>)}
         </div>
         <DepStrip T={T} items={[
+          {l:"Pendientes en total",v:nPed(vivas),c:vivas.length?T.text:null,s:vivas.length?`${pl(vivas.length,"tanda")} sin imprimir, de hoy y próximos días`:"nada pendiente"},
           {l:"Pedidos de hoy",v:nDia,c:nDia?T.accent:null,s:nDia?<span style={{display:"flex",columnGap:10,rowGap:2,flexWrap:"wrap",alignItems:"center",color:T.textMd,fontWeight:600}}>{diaCanal.map(([c,n])=>(<span key={c} style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:99,background:colCanal(c)}}/>{GH_DEP_CANAL[c]||c} {n}</span>))}</span>:"todavía no llegó nada"},
-          {l:"Falta imprimir",v:nHoy,c:nHoy?T.yellow:null,s:`${dsp.hoy} ya impreso${dsp.hoy!==1?"s":""} hoy${owner?` · ${dsp.mes} en el mes`:""}`},
+          {l:"Falta imprimir hoy",v:nHoy,c:nHoy?T.yellow:null,s:`${dsp.hoy} ya impreso${dsp.hoy!==1?"s":""} hoy${owner?` · ${dsp.mes} en el mes`:""}`},
           {l:"Atrasados y urgentes",v:nAtr+nUrg,c:nAtr||nUrg?T.red:null,s:nAtr||nUrg?[nAtr?`${nAtr} de días anteriores`:"",nUrg?pl(nUrg,"urgente"):""].filter(Boolean).join(" · "):"todo al día"},
           {l:"Próximos días",v:nMan+nDesp,c:nMan+nDesp?T.blue:null,s:nMan?`${nMan} para mañana`:nDesp?"ya cargados":"sin tandas cargadas"},
         ]}/>
