@@ -21866,7 +21866,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
             {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
             {t.fueraDeCorte&&pendiente&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
           </div>
-          <div style={{fontSize:DS.font.base,color:hallados.length?T.accent:T.textMd,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hallados.length?`${hallados.slice(0,3).map(p=>`#${p.numero} ${p.comprador||""}`.trim()).join(" · ")}${hallados.length>3?` y ${hallados.length-3} más`:""}`:esp?"Envío especial":items.length?`${items.slice(0,4).join(" · ")}${items.length>4?` · +${items.length-4} más`:""}`:`Enviada el ${ghDepFechaLinda(t.fechaDespacho)}`}</div>
+          <div style={{fontSize:DS.font.base,color:hallados.length?T.accent:T.textMd,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hallados.length?`${hallados.slice(0,3).map(p=>`#${p.numero} ${p.comprador||""}`.trim()).join(" · ")}${hallados.length>3?` y ${hallados.length-3} más`:""}`:esp?"Envío especial":items.length?`${items.slice(0,4).join(" · ")}${items.length>4?` · +${items.length-4} más`:""}`:(t.createdAt?`Enviada el ${ghDepFechaHora(t.createdAt)}`:`Despacho ${ghDepFechaLinda(t.fechaDespacho)}`)}</div>
         </div>
         <div style={{textAlign:"center",minWidth:64,flexShrink:0}}>
           <div style={{fontSize:DS.font["2xl"]+2,fontWeight:800,color:T.text,letterSpacing:-0.6,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{t.n}</div>
@@ -22553,7 +22553,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
             {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
             {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
           </div>
-          <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{esp?`Envío especial · ${t.especial?.titulo||"con instrucciones"}${t.especial?.bultos>0?` · ${pl(t.especial.bultos,"bulto")}`:""}`:(GH_DEP_CANAL[t.canal]||t.canal)}{arm>0?<span style={{color:arm>=nP?T.green:T.textMd,fontWeight:600}}> · {arm} de {nP} armados</span>:null}</div>
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{esp?`Envío especial · ${t.especial?.titulo||"con instrucciones"}${t.especial?.bultos>0?` · ${pl(t.especial.bultos,"bulto")}`:""}`:(GH_DEP_CANAL[t.canal]||t.canal)}{t.createdAt?<span style={{color:T.textSm}}> · enviada el {ghDepFechaHora(t.createdAt)}</span>:null}{arm>0?<span style={{color:arm>=nP?T.green:T.textMd,fontWeight:600}}> · {arm} de {nP} armados</span>:null}</div>
         </div>
         <div style={{textAlign:"center",minWidth:64,flexShrink:0}}>
           <div style={{fontSize:DS.font["2xl"]+2,fontWeight:800,color:T.text,letterSpacing:-0.6,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{t.n}</div>
