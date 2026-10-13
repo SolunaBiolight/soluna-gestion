@@ -21520,8 +21520,10 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,bultos:1});
   // Envío especial: productos elegidos de un desplegable (catálogo de la tienda, o lo que el cliente ya mandó antes).
   // Viajan dentro de las instrucciones ("Productos: 2x ROJ-NN …"), así el depósito los ve y no cambia lo que se cobra.
-  const [espItems,setEspItems]=useState([]); const [espSel,setEspSel]=useState(""); const [espOtro,setEspOtro]=useState(""); const [espCant,setEspCant]=useState(1);
-  const agregarEspItem=()=>{ const sku=(espSel==="__otro"?espOtro:espSel).trim(); const c=Math.max(1,Math.round(Number(espCant)||1)); if(!sku) return; setEspItems(l=>{ const i=l.findIndex(x=>x.sku===sku); return i>=0?l.map((x,k)=>k===i?{...x,cant:x.cant+c}:x):[...l,{sku,cant:c}]; }); setEspSel(""); setEspOtro(""); setEspCant(1); };
+  const [espItems,setEspItems]=useState([]); const [espQ,setEspQ]=useState(""); const [espCant,setEspCant]=useState(1);
+  const agregarEspItem=valor=>{ const sku=String(valor||"").trim(); const c=Math.max(1,Math.round(Number(espCant)||1)); if(!sku) return; setEspItems(l=>{ const i=l.findIndex(x=>x.sku===sku); return i>=0?l.map((x,k)=>k===i?{...x,cant:x.cant+c}:x):[...l,{sku,cant:c}]; }); setEspQ(""); setEspCant(1); };
+  const espNrm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const espHits=(()=>{ const toks=espNrm(espQ).split(/\s+/).filter(Boolean); if(!toks.length) return []; return (catalogo||[]).filter(o=>{ const n=espNrm(o.l+" "+o.v); return toks.every(t=>n.includes(t)); }).slice(0,8); })();
   const espInstr=[esp.instrucciones.trim(),espItems.length?"Productos:\n"+espItems.map(x=>`${x.cant}x ${x.sku}`).join("\n"):""].filter(Boolean).join("\n\n");
   const [adj,setAdj]=useState([]);
   const [prog,setProg]=useState(null);
@@ -21532,7 +21534,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const pedidosLista=listaInfo.pedidos;
   const mlLeidos=esML&&pdf?.mlPeds?.length>0&&pdf.mlPeds.length===etiquetasPdf&&!verCant;
   const pedidos=prefill?.pedidos?.length?prefill.pedidos:mlLeidos?pdf.mlPeds:pedidosLista;
-  const cant=tipo==="especial"?Math.max(1,Number(n)||1):(prefill?.pedidos?.length||etiquetasPdf||pedidos.length||0);
+  const cant=tipo==="especial"?Math.max(1,pdf?.pages||1):(prefill?.pedidos?.length||etiquetasPdf||pedidos.length||0);
   const notaFinal=listaInfo.modo==="nota"&&!prefill?.pedidos?.length?[nota.trim(),"Productos:\n"+lista.trim()].filter(Boolean).join("\n").slice(0,600):nota;
   const extra=ghDepExtra(pedidos,extraCfg);
   const conBase=Math.max(0,cant-(cliente?.precio>0?extra.pedidosConExtra:0));
@@ -21555,12 +21557,26 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     if(prog) return;
     if(tipo==="tanda"&&!pdf){ toast("Subí el PDF con las etiquetas","warning"); return; }
     if(tipo==="tanda"&&!cant){ toast("No pudimos contar las etiquetas del PDF: indicá cuántos pedidos tiene la tanda","warning"); return; }
-    if(tipo==="especial"&&!espInstr&&!esp.titulo.trim()){ toast("Contale al depósito qué hay que armar","warning"); return; }
+    if(tipo==="especial"&&!pdf){ toast("Subí la etiqueta del envío","warning"); return; }
+    if(tipo==="especial"&&!espInstr&&!esp.titulo.trim()){ toast("Decile al depósito qué va en el paquete: elegí los productos o escribí las instrucciones","warning"); return; }
     if(!borrRef.current&&fueraDeCorte&&!(await appConfirm(`Ya pasó el corte de las ${corte}:00. El depósito la va a ver como "fuera de corte" y puede salir recién el próximo día hábil. ¿La mandás igual con fecha de hoy?`,{okLabel:"Mandar igual"}))) return;
     // PDF subido a mano: lo que se escribió en "Qué va en cada paquete" se IMPRIME en
     // cada etiqueta (pedido k = etiqueta k, salteando hojas de resumen), así no se
     // pierde cuando el depósito imprime todo junto.
     let pdfEnv=pdf;
+    // Envío especial: los productos elegidos se IMPRIMEN en la etiqueta (en todas sus páginas), igual que un despacho personalizado.
+    if(tipo==="especial"&&pdf&&espItems.length){
+      const key="esp|"+espItems.map(x=>x.cant+"x"+x.sku).join(",")+"|"+pdf.nombre+"|"+pdf.bytes.length;
+      if(estRef.current?.key!==key){
+        setProg("Escribiendo los productos en la etiqueta…");
+        const lineas=espItems.map(x=>`${x.cant}x ${x.sku}`); let listo=null, cortado=false;
+        try{ const inf={}; const b64=await ghEstamparSkuPdf(ghBytesToB64(pdf.bytes),()=>lineas,inf); if(inf.ok!==false&&!(inf.fallas||[]).length){ listo=ghB64ToBytes(b64); cortado=!!inf.cortado; } }catch(e){ console.error("productos en etiqueta (especial):",e); }
+        if(!listo){ setProg(null); if(!(await appConfirm("No pudimos escribir los productos en la etiqueta porque no reconocemos su diseño. El depósito los va a ver en las instrucciones, pero NO impresos. ¿Lo mandás igual?",{okLabel:"Mandar igual"}))) return; }
+        if(cortado) toast("El texto era largo y se cortó en la etiqueta: revisala en la vista previa del depósito.","warning",7000);
+        estRef.current={key,bytes:listo||pdf.bytes};
+      }
+      pdfEnv={...pdf,bytes:estRef.current.bytes};
+    }
     if(tipo==="tanda"&&pdf&&!prefill?.pdfBytes&&pedidosLista.some(p=>p.items.length)){
       const key=lista+"|"+pdf.nombre+"|"+pdf.bytes.length;
       if(estRef.current?.key!==key){
@@ -21611,41 +21627,33 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
         {tipo==="especial"&&(<>
           <div>{lbl("Qué es")}<input style={iS} placeholder="Ej.: Pedido mayorista Óptica Sur" value={esp.titulo} onChange={e=>setEsp(s=>({...s,titulo:e.target.value}))}/></div>
           <div>{lbl("Productos")}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              <select style={{...iS,marginBottom:0,flex:"1 1 220px",minWidth:0}} value={espSel} onChange={e=>setEspSel(e.target.value)}>
-                <option value="">Elegí un producto…</option>
-                {(catalogo||[]).map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
-                <option value="__otro">Otro (escribirlo)…</option>
-              </select>
-              {espSel==="__otro"&&<input style={{...iS,marginBottom:0,flex:"1 1 160px",minWidth:0}} autoFocus placeholder="Nombre o SKU" value={espOtro} onChange={e=>setEspOtro(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); agregarEspItem(); } }}/>}
-              <input style={{...iS,marginBottom:0,width:76}} type="number" min="1" title="Cantidad" value={espCant} onChange={e=>setEspCant(e.target.value)}/>
-              <DepBtn T={T} ico="plus" onClick={agregarEspItem} disabled={!(espSel==="__otro"?espOtro.trim():espSel)}>Agregar</DepBtn>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <input style={{...iS,marginBottom:0,width:72,textAlign:"center"}} type="number" min="1" title="Cantidad" value={espCant} onChange={e=>setEspCant(e.target.value)}/>
+              <div style={{position:"relative",flex:1,minWidth:0}}>
+                <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",display:"flex",pointerEvents:"none"}}><DepIco d="search" size={14} color={T.textSm}/></span>
+                <input style={{...iS,marginBottom:0,paddingLeft:34}} placeholder={(catalogo||[]).length?"Buscá por SKU o nombre y elegilo":"Escribí el producto o SKU y Enter"} value={espQ} onChange={e=>setEspQ(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); agregarEspItem(espHits[0]?.v||espQ); } }}/>
+              </div>
             </div>
+            {espQ.trim()&&(<div style={{marginTop:6,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,background:T.card,overflow:"hidden"}}>
+              {espHits.map((o,i)=>(<div key={o.v} onClick={()=>agregarEspItem(o.v)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",cursor:"pointer",fontSize:DS.font.base,color:T.text,borderTop:i?`1px solid ${T.borderL||T.border}`:"none",background:i===0?T.surface:"transparent"}}><DepIco d="plus" size={13} color={T.accent}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.l}</span></div>))}
+              {!espHits.some(o=>espNrm(o.v)===espNrm(espQ))&&<div onClick={()=>agregarEspItem(espQ)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",cursor:"pointer",fontSize:DS.font.md,color:T.textMd,borderTop:espHits.length?`1px solid ${T.borderL||T.border}`:"none"}}><DepIco d="plus" size={13} color={T.textSm}/>Agregar "{espQ.trim()}" tal cual</div>}
+            </div>)}
             {espItems.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
               {espItems.map((x,i)=>(<span key={x.sku} style={{display:"inline-flex",alignItems:"center",gap:7,height:30,padding:"0 6px 0 12px",borderRadius:DS.r.full,background:T.surface,border:`1px solid ${T.border}`,fontSize:DS.font.md,fontWeight:600,color:T.text,maxWidth:"100%"}}><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.sku}</span><strong style={{color:T.accent}}>×{x.cant}</strong><button onClick={()=>setEspItems(l=>l.filter((_,k)=>k!==i))} title="Quitar" style={{width:22,height:22,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontSize:13,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button></span>))}
             </div>}
-            {!(catalogo||[]).length&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>Todavía no hay una lista de productos para elegir: usá "Otro" y escribilo.</div>}
+            <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>Poné la cantidad, buscá el producto y tocalo (o Enter). Se imprimen en la etiqueta.</div>
           </div>
           <div>{lbl("Instrucciones para el depósito")}<textarea style={{...iS,minHeight:90,resize:"vertical"}} placeholder="Cómo embalar, qué documentación va adentro, a quién se entrega…" value={esp.instrucciones} onChange={e=>setEsp(s=>({...s,instrucciones:e.target.value}))}/></div>
-          <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
-            <div style={{width:110}}>{lbl("Bultos")}<input style={iS} type="number" min="1" value={esp.bultos} onChange={e=>setEsp(s=>({...s,bultos:e.target.value}))}/></div>
-            <div style={{width:130}}>{lbl("Pedidos a cobrar")}<input style={iS} type="number" min="1" value={n||1} onChange={e=>setN(e.target.value)}/></div>
-            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer",paddingBottom:9}} onClick={()=>setEsp(s=>({...s,urgente:!s.urgente}))}><DSToggle T={T} active={esp.urgente} onToggle={()=>{}}/><span>Urgente</span></label>
+          <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setEsp(s=>({...s,urgente:!s.urgente}))}><DSToggle T={T} active={esp.urgente} onToggle={()=>{}}/><span>Urgente</span></label>
           </div>
         </>)}
         {/* PDF de etiquetas: es LO principal del formulario. Zona grande para elegir o arrastrar. */}
-        {tipo==="especial"?(<div>
-          {lbl("Etiqueta (opcional)")}
-          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-            {filePick("application/pdf",elegirPdf,pdf?"Cambiar PDF":"Elegir PDF")}
-            <span style={{fontSize:DS.font.md,color:pdf?T.text:T.textSm}}>{pdf?`${pdf.nombre}${pdf.pages?` · ${pdf.pages} página${pdf.pages!==1?"s":""}`:""}`:"Sin etiqueta"}</span>
-          </div>
-        </div>)
-        :!pdf?(
+        {!pdf?(
           <label onDragOver={e=>{ e.preventDefault(); setDrag(true); }} onDragLeave={()=>setDrag(false)} onDrop={e=>{ e.preventDefault(); setDrag(false); elegirPdf(e.dataTransfer?.files?.[0]); }}
             style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,textAlign:"center",padding:"28px 20px",border:`2px dashed ${drag?T.accentSolid:T.accentSolid+"88"}`,borderRadius:DS.r["2xl"],background:drag?T.accentSolid+"26":T.accentSolid+"12",cursor:"pointer",transition:`all .15s ${DS.ease}`}}>
             <DepTile T={T} color={T.accent} ico="file" size={48}/>
-            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text,letterSpacing:-0.3}}>Subí el PDF con las etiquetas</div>
+            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text,letterSpacing:-0.3}}>{tipo==="especial"?"Subí la etiqueta del envío":"Subí el PDF con las etiquetas"}</div>
             <div style={{fontSize:DS.font.base,color:T.textMd,maxWidth:360,lineHeight:1.5}}>Arrastralo acá o elegilo desde tu computadora. Contamos las etiquetas solos.</div>
             <span style={{display:"inline-flex",alignItems:"center",gap:8,height:42,padding:"0 22px",borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.lg,fontWeight:DS.w.bold,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:`0 3px 14px ${T.accentSolid}55`,marginTop:2}}><DepIco d="plus" size={16} color="#fff" sw={2.6}/>Elegir PDF</span>
             <input type="file" accept="application/pdf" style={{display:"none"}} onChange={e=>{ elegirPdf(e.target.files?.[0]); e.target.value=""; }}/>
@@ -21669,19 +21677,19 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages+(pdf.resumen||0)} página{pdf.pages+(pdf.resumen||0)!==1?"s":""}{pdf.resumen?` (${pdf.resumen} de resumen)`:""}.</span>}
           </div>)}
           {mlLeidos&&!prefill?.pedidos?.length&&<div style={{fontSize:DS.font.sm,color:T.green}}>Leímos los productos de las {pdf.mlPeds.length} etiquetas (el SKU que trae cada rótulo): el depósito los ve en la tanda.</div>}
-          {verLista&&!esML&&(<div>{lbl("Qué va en cada paquete · se imprime en la etiqueta")}
+          {verLista&&!esML&&tipo!=="especial"&&(<div>{lbl("Qué va en cada paquete · se imprime en la etiqueta")}
             <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={listaTxt} onChange={e=>setLista(e.target.value)}/>
             {listaInfo.modo==="un_pedido"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>Es 1 etiqueta: todo esto se imprime en esa etiqueta.</div>}
             {listaInfo.modo==="uno_por_renglon"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>{cant>1?`${listaInfo.filas} renglones para ${cant} etiquetas: uno por paquete, en el orden del PDF. Cada uno se imprime en su etiqueta.`:"Se imprime en la etiqueta."}</div>}
             {listaInfo.modo==="nota"&&<div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:-6}}>El PDF tiene {cant} etiquetas y escribiste {listaInfo.filas} renglón{listaInfo.filas!==1?"es":""}: se cuentan {cant} pedidos y esto le llega al depósito como nota, SIN imprimirse en las etiquetas. Para que salga impreso, escribí un renglón por etiqueta.</div>}
           </div>)}
-          {((!verLista&&!esML)||(!verCant&&pdf.pages>0))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {tipo!=="especial"&&((!verLista&&!esML)||(!verCant&&pdf.pages>0))&&(<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {!verLista&&!esML&&<DepBtn T={T} size="sm" ico="plus" onClick={()=>setVerLista(true)}>Agregar los productos de cada pedido</DepBtn>}
             {!verCant&&pdf.pages>0&&<DepBtn T={T} size="sm" onClick={()=>setVerCant(true)}>La cantidad no es {cant}</DepBtn>}
           </div>)}
         </div>)}
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-          {!canalFijo&&<div style={{flex:1,minWidth:150}}>{lbl("Lo retira")}<select style={iS} value={canal} onChange={e=>setCanal(e.target.value)}>{Object.entries(GH_DEP_CANAL).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>}
+          {!canalFijo&&<div style={{flex:1,minWidth:150}}>{lbl("Lo retira")}<select style={iS} value={canal} onChange={e=>setCanal(e.target.value)}>{Object.entries(GH_DEP_CANAL).filter(([k])=>!especial||k!=="ml").map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></div>}
           <div style={{flex:1,minWidth:150}}>{lbl("Día de despacho")}<input style={iS} type="date" value={fecha} min={hoy} onChange={e=>setFecha(e.target.value)}/></div>
         </div>
         {fueraDeCorte
@@ -21701,7 +21709,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
         {prefill?.seg?.length>0&&<div style={{fontSize:DS.font.md,color:T.textMd}}>Al enviar, tu tienda también le avisa a {prefill.seg.length===1?"el comprador":`los ${prefill.seg.length} compradores`} con su número de seguimiento.</div>}
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
           <DepBtn T={T} variant="secondary" size="lg" onClick={onClose} disabled={!!prog}>Cancelar</DepBtn>
-          <DepBtn T={T} variant="success" size="lg" ico={prog?undefined:"truck"} onClick={enviar} disabled={!!prog||(tipo==="tanda"&&!pdf)} style={prog||(tipo==="tanda"&&!pdf)?{}:{background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:"0 3px 14px rgba(22,163,74,0.4)"}}>{prog||(fallo?"Reintentar":tipo==="tanda"&&!pdf?"Primero subí el PDF":cant>0&&tipo==="tanda"?`Enviar ${cant} etiqueta${cant!==1?"s":""} al depósito`:"Enviar al depósito")}</DepBtn>
+          <DepBtn T={T} variant="success" size="lg" ico={prog?undefined:"truck"} onClick={enviar} disabled={!!prog||!pdf} style={prog||!pdf?{}:{background:T.isDark?"#16a34a":"#15803d",borderColor:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:"0 3px 14px rgba(22,163,74,0.4)"}}>{prog||(fallo?"Reintentar":tipo==="tanda"&&!pdf?"Primero subí el PDF":cant>0&&tipo==="tanda"?`Enviar ${cant} etiqueta${cant!==1?"s":""} al depósito`:"Enviar al depósito")}</DepBtn>
         </div>
       </div>
     </Modal>
