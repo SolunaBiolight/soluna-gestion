@@ -10254,6 +10254,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [skuBlob,setSkuBlob]=useState(null);
   // "Todo de una" en rótulos con SKU: el botón principal (Enviar al depósito / Descargar) también manda los seguimientos a la tienda.
   const [skuSegAuto,setSkuSegAuto]=useState(()=>{ try{ return localStorage.getItem("growith_sku_segauto")!=="0"; }catch(_){ return true; } });
+  // Doble chequeo: qué PDF de rótulos ya se mandó al depósito (por nombre + tamaño, en este navegador),
+  // para no crear dos veces la misma tanda por error.
+  const skuDepKey=f=>f?`${f.name}|${f.size}`:"";
+  const skuDepLeer=()=>{ try{ return JSON.parse(localStorage.getItem(ghKey("growith_sku_dep_enviados"))||"{}"); }catch(_){ return {}; } };
+  const [skuDepEnviados,setSkuDepEnviados]=useState(skuDepLeer);
+  const marcarSkuDepEnviado=f=>{ const k=skuDepKey(f); if(!k) return; const m={...skuDepLeer(),[k]:Date.now()}; const rec=Object.fromEntries(Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,30)); try{ localStorage.setItem(ghKey("growith_sku_dep_enviados"),JSON.stringify(rec)); }catch(_){ } setSkuDepEnviados(rec); };
   const [skuConSku,setSkuConSku]=useState(()=>{ try{ return localStorage.getItem("growith_sku_consku")!=="0"; }catch(_){ return true; } });
   const toggleSkuConSku=()=>setSkuConSku(v=>{ try{ localStorage.setItem("growith_sku_consku",v?"0":"1"); }catch(_){ } return !v; });
   const toggleSkuSegAuto=()=>setSkuSegAuto(v=>{ try{ localStorage.setItem("growith_sku_segauto",v?"0":"1"); }catch(_){ } return !v; });
@@ -12449,6 +12455,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     finally{ setDepArmando(null); }
   }
   async function enviarDepositoSku(){
+    const yaAt=skuDepEnviados[skuDepKey(skuFile)];
+    if(yaAt&&!(await appConfirm(`Este PDF ya lo mandaste al depósito el ${new Date(yaAt).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}. Si lo mandás de nuevo se crea OTRA tanda con los mismos pedidos y el depósito los armaría dos veces. ¿Mandarlo igual?`,{danger:true,okLabel:"Mandar de nuevo"}))) return;
     // Sin "Productos en la etiqueta": va el PDF tal cual se subió (pasado a 10x15), en su orden
     // original; los productos viajan igual como dato para el picking del depósito.
     if(!skuConSku){
@@ -13415,6 +13423,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 {found.length>0&&(()=>{ const segPendN=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length;
                   const segOk=Object.values(trackingSent).filter(v=>v==="ok"||v==="warn").length;
                   const conSeg=skuSegAuto&&segPendN>0; const verde=T.isDark?"#16a34a":"#15803d"; const off=skuGenerating;
+                  const depAt=depositoCliente?skuDepEnviados[skuDepKey(skuFile)]:0; const depHora=depAt?new Date(depAt).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
                   const descargar=async()=>{ const blob=skuConSku?(skuBlob||await autoGenerateSkuPdf(skuResults,skuFile)):skuFile; if(!blob) return; const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=skuConSku?`rotulos-con-sku-${hoyAR()}.pdf`:`rotulos-${hoyAR()}.pdf`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),60000); if(!depositoCliente&&conSeg) sendAllTracking(); };
                   const opcion=(on,toggle,titulo,desc,apagada)=>(<div onClick={apagada?undefined:toggle} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",borderRadius:12,background:T.card,border:`1px solid ${on&&!apagada?T.green+"55":T.border}`,cursor:apagada?"default":"pointer",opacity:apagada?0.55:1,userSelect:"none",flex:"1 1 260px",minWidth:0}}>
                     <DSToggle T={T} active={on&&!apagada} onToggle={()=>{}}/>
@@ -13433,11 +13442,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       {opcion(skuSegAuto,toggleSkuSegAuto,"Enviar seguimientos a la tienda",segPendN>0?`Avisa a ${segPendN} comprador${segPendN!==1?"es":""} y activa el seguimiento.`:segOk>0?`Ya se enviaron (${segOk}). Estado en la pestaña Seguimientos.`:"No hay seguimientos para enviar.",segPendN===0)}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12,color:T.textMd}}>{off?"Preparando el PDF con los productos…":resumen}</div>
+                      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12,color:depAt?T.green:T.textMd,fontWeight:depAt?600:400}}>{off?"Preparando el PDF con los productos…":depAt?`✓ Ya está en el depósito (enviado el ${depHora}). No hace falta mandarlo de nuevo.`:resumen}</div>
                       {segPendN>0&&<AsyncButton onClick={sendAllTracking} disabled={off} title="Sube los seguimientos a tu tienda sin descargar ni mandar nada al depósito" style={btnS}>Solo enviar seguimientos</AsyncButton>}
                       {depositoCliente&&<AsyncButton onClick={descargar} disabled={off} style={btnS}>{icoBajar}Descargar PDF</AsyncButton>}
                       {depositoCliente
-                        ? <AsyncButton onClick={enviarDepositoSku} disabled={off} style={btnP}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Enviar al depósito</AsyncButton>
+                        ? <AsyncButton onClick={enviarDepositoSku} disabled={off} style={depAt?{...btnS,fontSize:13,padding:"11px 16px"}:btnP}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>{depAt?"Volver a enviar":"Enviar al depósito"}</AsyncButton>
                         : <AsyncButton onClick={descargar} disabled={off} style={btnP}>{icoBajar}{conSeg?"Descargar y enviar seguimientos":"Descargar PDF"}</AsyncButton>}
                     </div>
                   </div>
@@ -14269,7 +14278,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       {depEnvio&&depositoCliente&&<DepositoEnvioModal T={T} api={depApi} cliente={depositoCliente} prefill={depEnvio} corte={depositoCfg?.corteHora??15} extraCfg={depositoCfg} onClose={()=>setDepEnvio(null)} onDone={()=>{ const seg=depEnvio?.seg||[];
         // Flujo Excel (rótulos con SKU): al quedar la tanda en el depósito se suben solos los seguimientos del mismo PDF.
-        if(depEnvio?.segPdf){ if(!skuSegAuto){ toast("Tanda enviada al depósito","success"); return; } const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; if(pend){ toast(`Tanda enviada al depósito. Enviando ${pend} seguimiento${pend!==1?"s":""} a tu tienda…`,"success"); sendAllTracking(); } return; }
+        if(depEnvio?.segPdf){ marcarSkuDepEnviado(skuFile); if(!skuSegAuto){ toast("Tanda enviada al depósito","success"); return; } const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; if(pend){ toast(`Tanda enviada al depósito. Enviando ${pend} seguimiento${pend!==1?"s":""} a tu tienda…`,"success"); sendAllTracking(); } return; }
         if(seg.length){ toast(`Tanda enviada al depósito. Avisando a ${seg.length} comprador${seg.length!==1?"es":""}…`,"success"); enviarSeguimientosApi(seg); } }}/>}
 
       {/* Modal: pedidos con esquina excluidos del export */}
