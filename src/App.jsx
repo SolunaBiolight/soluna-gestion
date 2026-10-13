@@ -22169,18 +22169,18 @@ function DepLabel({T,color,children,style}){ return <div style={{display:"flex",
 // Franja de números del tablero: celdas neutras; el color del dato va solo en el número y en su punto.
 // items: [{l, v, s, c}]
 function DepStrip({T,items}){
-  return (<div style={{display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${items.length>4?150:170}px,1fr))`,gap:10,marginBottom:14}}>
+  // Una sola pieza con divisiones finas (no tarjetas sueltas): el fondo del contenedor hace de línea entre celdas.
+  return (<div style={{display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(${items.length>4?150:170}px,1fr))`,gap:1,background:T.border,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],overflow:"hidden",marginBottom:14}}>
     {items.map((it,i)=><DepStripCell key={i} T={T} it={it}/>)}
   </div>);
 }
-// Celda: barrita del color del dato a la izquierda, tinte muy suave que se apaga, etiqueta chica, número grande.
+// Celda: etiqueta con el punto del color del dato, número grande y una línea de detalle. Sin recuadro propio.
 function DepStripCell({T,it}){
   const [h,setH]=useState(false); const c=it.c||T.textSm; const clic=!!it.onClick;
   return (<div onClick={it.onClick} title={it.accion||undefined} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
-    style={{position:"relative",backgroundColor:T.card,backgroundImage:it.c?`linear-gradient(120deg, ${c}14 0%, transparent 55%)`:"none",border:`1px solid ${clic&&h?T.textSm:T.border}`,borderRadius:DS.r["2xl"],padding:"14px 16px 13px 20px",minWidth:0,overflow:"hidden",cursor:clic?"pointer":"default",transition:"border-color .14s, transform .14s",transform:clic&&h?"translateY(-1px)":"none"}}>
-    <span style={{position:"absolute",left:0,top:14,bottom:14,width:4,borderRadius:"0 4px 4px 0",background:it.c?c:T.border}}/>
-    <div style={{fontSize:DS.font.sm,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase",color:T.textSm,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.l}</div>
-    <div style={{fontSize:DS.font["4xl"]-2,fontWeight:800,color:it.c?c:T.text,letterSpacing:-1.2,lineHeight:1.1,fontVariantNumeric:"tabular-nums",marginTop:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
+    style={{background:clic&&h?T.surface:T.card,padding:"16px 18px 15px",minWidth:0,overflow:"hidden",cursor:clic?"pointer":"default",transition:"background .14s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,fontWeight:600,color:T.textMd,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}><span style={{width:8,height:8,borderRadius:99,background:it.c?c:T.border,flexShrink:0}}/>{it.l}</div>
+    <div style={{fontSize:DS.font["4xl"]-4,fontWeight:800,color:it.c?c:T.text,letterSpacing:-1,lineHeight:1.1,fontVariantNumeric:"tabular-nums",marginTop:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{it.v}</div>
     {it.s?<div style={typeof it.s==="string"?{fontSize:DS.font.sm,color:T.textSm,marginTop:5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}:{fontSize:DS.font.sm,color:T.textSm,marginTop:5}}>{it.s}</div>:null}
     {it.accion?<div style={{fontSize:DS.font.sm,fontWeight:700,color:T.accent,marginTop:6}}>{it.accion} →</div>:null}
   </div>);
