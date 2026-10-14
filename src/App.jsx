@@ -1302,7 +1302,7 @@ function RastrearPedidosModal({T,uid,onClose,puedeDeposito=false,onDescargar,onD
   const fh=ms=>ms?new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
   const horaDe=ms=>new Date(ms-3*3600000).getUTCHours();
   // Se puede volver a bajar / mandar al depósito lo que tiene etiqueta por API y no está anulado.
-  const reenviable=x=>x.via==="api"&&x.tracking&&!x.anulada;
+  const reenviable=x=>!!x.tracking&&!x.anulada;
   async function rastrear(lista){ if(!lista.length||busy) return; setBusy(true); setErr(""); setRes(null);
     try{ const r=await authFetch(`/api/update-shipping?action=rastrear&uid=${encodeURIComponent(uid)}&numeros=${encodeURIComponent(lista.slice(0,100).join(","))}`); const j=await r.json(); if(!r.ok) throw new Error(j.error||"No se pudo rastrear");
       const orden={error:0,nada:1,aviso:2,ok:3}; const l=[...j.resultados].sort((a,b)=>orden[a.nivel]-orden[b.nivel]); setRes({...j,resultados:l});
@@ -1317,7 +1317,7 @@ function RastrearPedidosModal({T,uid,onClose,puedeDeposito=false,onDescargar,onD
   const cuenta=k=>res?res.resultados.filter(x=>x.nivel===k).length:0;
   const elegidos=res?res.resultados.filter(x=>sel[x.numero]&&reenviable(x)):[];
   const nReenv=res?res.resultados.filter(reenviable).length:0;
-  const excelSinPdf=res?res.resultados.filter(x=>x.via==="excel"&&!x.anulada).length:0;
+  const excelSinPdf=res?res.resultados.filter(x=>x.via==="excel"&&!x.tracking&&!x.anulada).length:0;
   const porHora=lote?Object.entries(lote.reduce((m,e)=>{ const h=horaDe(e.at); (m[h]=m[h]||[]).push(e); return m; },{})).sort((a,b)=>a[0]-b[0]):[];
   const delLote=lote?lote.filter(e=>horas[horaDe(e.at)]).map(e=>e.numero):[];
   const iS=InputStyle(T);
@@ -1357,15 +1357,15 @@ function RastrearPedidosModal({T,uid,onClose,puedeDeposito=false,onDescargar,onD
         {nReenv>0&&(<div style={{border:`1px solid ${T.accentSolid}44`,background:T.accentSolid+"10",borderRadius:DS.r["2xl"],padding:"12px 16px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{flex:1,minWidth:220}}>
             <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{elegidos.length} etiqueta{elegidos.length!==1?"s":""} elegida{elegidos.length!==1?"s":""} para volver a sacar</div>
-            <div style={{fontSize:DS.font.sm,color:T.textMd,marginTop:2}}>Se bajan de Andreani con los productos impresos, ordenadas por producto. Ya vienen tildadas las que tienen problema y no están en el depósito.</div>
+            <div style={{fontSize:DS.font.sm,color:T.textMd,marginTop:2}}>Se bajan de Andreani con los productos impresos, ordenadas por producto. Ya vienen tildadas las que tienen problema y no están en el depósito.{res.resultados.some(x=>sel[x.numero]&&x.via==="excel")?" Las del Excel se piden a Andreani con su número: si Andreani no las entrega, te avisamos y van por SKU en Rótulos.":""}</div>
           </div>
           <DepBtn T={T} size="sm" onClick={()=>{ const t={}; const todos=elegidos.length<nReenv; res.resultados.forEach(x=>{ if(reenviable(x)&&todos) t[x.numero]=true; }); setSel(t); }}>{elegidos.length<nReenv?`Elegir las ${nReenv}`:"Ninguna"}</DepBtn>
           <DepBtn T={T} size="md" ico="print" disabled={!elegidos.length} onClick={()=>onDescargar&&onDescargar(elegidos)}>Descargar con productos</DepBtn>
           {puedeDeposito&&<DepBtn T={T} variant="success" size="md" ico="truck" disabled={!elegidos.length} onClick={()=>{ const ya=elegidos.filter(x=>x.enDeposito).length; if(ya){ appConfirm(`${ya} de estas etiquetas ya están en una tanda del depósito. Si las mandás de nuevo el depósito las arma dos veces. ¿Mandarlas igual?`,{danger:true,okLabel:"Mandar igual"}).then(ok=>{ if(ok) onDeposito&&onDeposito(elegidos); }); return; } onDeposito&&onDeposito(elegidos); }}>Enviar {elegidos.length||""} al depósito</DepBtn>}
         </div>)}
         {(excelSinPdf>0||nReenv===0)&&(<div style={{border:`1px solid ${T.yellow}55`,background:T.yellow+"10",borderRadius:DS.r["2xl"],padding:"12px 16px",display:"flex",flexDirection:"column",gap:6}}>
-          <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{nReenv===0?"Estas etiquetas no se pueden volver a sacar desde acá":`${excelSinPdf} pedido${excelSinPdf!==1?"s":""} del flujo Excel no se pueden volver a sacar desde acá`}</div>
-          <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.55}}>{excelSinPdf>0?<>Se exportaron con el <strong>Excel</strong>: esas etiquetas las creó y las guarda <strong>Andreani Empresas</strong>, no Growith, así que no hay nada para tildar acá. Para mandarlas al depósito con los productos: 1) en Andreani Empresas bajá de nuevo el PDF de rótulos de ese día; 2) en Growith, Envíos → <strong>SKU en Rótulos</strong>, subí ese PDF; 3) tocá <strong>Enviar al depósito</strong>. Growith le pone los productos a cada etiqueta y las ordena solo.</>:"Solo se pueden volver a sacar las etiquetas emitidas por la API de Growith que no estén anuladas."}</div>
+          <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{nReenv===0?"Estas etiquetas no se pueden volver a sacar desde acá":`${excelSinPdf} pedido${excelSinPdf!==1?"s":""} sin número de envío no se pueden volver a sacar desde acá`}</div>
+          <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.55}}>{excelSinPdf>0?<>Se exportaron con el <strong>Excel</strong> pero nunca se subió a Growith el PDF de rótulos, así que Growith no sabe su número de envío. Para mandarlas al depósito con los productos: 1) en Andreani Empresas bajá de nuevo el PDF de rótulos de ese día; 2) en Growith, Envíos → <strong>SKU en Rótulos</strong>, subí ese PDF; 3) tocá <strong>Enviar al depósito</strong>. Growith le pone los productos a cada etiqueta y las ordena solo.</>:"Solo se pueden volver a sacar las etiquetas que tienen número de envío y no están anuladas."}</div>
         </div>)}
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {res.resultados.map(x=>{ const ab=!!abierto[x.numero]; const rv=reenviable(x); return (<div key={x.numero} style={{border:`1px solid ${x.nivel==="error"?T.red+"55":T.border}`,borderRadius:DS.r["2xl"],background:T.card,overflow:"hidden"}}>
@@ -12393,7 +12393,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const res=await fetchEtiquetaRaw(n.envio);
         if(res.pdf){ pdfs.set(String(n.envio),res.pdf); hechas++; onProg&&onProg(hechas); }
         else if(res.pending) faltan.push(n);
-        else { conError.push(n); hechas++; onProg&&onProg(hechas); }
+        else { conError.push({...n,error:res.error}); hechas++; onProg&&onProg(hechas); }
       });
       cola=faltan; ronda++;
     }
@@ -12557,10 +12557,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         pdfDe.set(r.numero,b64); }
       if(sinSkuDep.length&&!(await appConfirm(`${sinSkuDep.length} etiqueta${sinSkuDep.length!==1?"s quedaron":" quedó"} SIN los productos impresos (${sinSkuDep.slice(0,12).join(", ")}${sinSkuDep.length>12?"…":""}) porque Andreani cambió el diseño de esa etiqueta. El depósito no va a saber qué va en esos paquetes mirando la etiqueta. ¿Mandar la tanda igual?`,{danger:true,okLabel:"Mandar igual"}))) return;
       const listas=rows.filter(r=>pdfDe.has(r.numero));
-      if(!listas.length){ toast("Andreani todavía está generando las etiquetas. Probá de nuevo en unos segundos.","warning"); return; }
+      if(!listas.length){ if(t.conError.length) toast(`No se pudo bajar ninguna etiqueta: ${t.conError[0].error||"error de Andreani"}`,"error",12000); else toast("Andreani todavía está generando las etiquetas. Probá de nuevo en unos segundos.","warning"); return; }
       const pend=rows.length-listas.length-conError.length;
       if(pend>0) toast(`${pend} etiqueta${pend!==1?"s":""} todavía en proceso: no entran en esta tanda`,"warning");
-      if(conError.length) toast(`No se pudo descargar la etiqueta de ${conError.join(", ")}: no entran en esta tanda`,"error",8000);
+      if(conError.length) toast(`No se pudo descargar la etiqueta de ${conError.join(", ")}: no entran en esta tanda${t.conError[0]?.error?` (${t.conError[0].error})`:""}`,"error",12000);
       const armado=await ghDepPdfDeEtiquetas(listas.map(r=>pdfDe.get(r.numero)));
       // Al confirmar la tanda también se avisa a la tienda (seguimientos) de los pedidos que van en ella.
       const seg=listas.filter(r=>segDe?segDe(r):!["ok","warn","cola"].includes(trackingSent[String(r.numero)])).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio)}));

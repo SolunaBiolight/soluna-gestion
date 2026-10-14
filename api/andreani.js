@@ -2525,11 +2525,18 @@ export default async function handler(req, res) {
       const numero = String(body.numero || "").trim();
       if (!numero) return res.status(400).json({ error: "numero requerido" });
       const esAdmin = await isPlatformAdmin(db, uid);
+      // Etiqueta del flujo Excel (creada en Andreani Empresas): no está en el índice de la API, pero el
+      // número quedó en users/{uid}/envios/{pedido}.tracking al subir el PDF de rótulos (14/oct/2026,
+      // rastreador: volver a sacar un lote exportado que nunca llegó al depósito).
+      let deExcel = false;
       if (!esAdmin && !(await envioPerteneceAlUid(db, uid, numero))) {
-        return res.status(403).json({ error: "Ese envío no pertenece a tu cuenta." });
+        const q = await userRef.collection("envios").where("tracking", "==", numero).limit(1).get().catch(() => ({ empty: true }));
+        if (q.empty) return res.status(403).json({ error: "Ese envío no pertenece a tu cuenta." });
+        deExcel = true;
       }
       const r = await andreaniFetch(db, env, `/v2/ordenes-de-envio/${encodeURIComponent(numero)}/etiquetas`);
-      if (r.status === 404) return res.json({ pending: true });
+      if (r.status === 404) return deExcel ? res.json({ error: "Andreani no deja bajar esta etiqueta desde Growith (se creó en Andreani Empresas con el Excel). Bajá el PDF de rótulos en Andreani Empresas y usá SKU en Rótulos → Enviar al depósito.", code: "etiqueta_excel" }) : res.json({ pending: true });
+      if (!r.ok && deExcel) return res.json({ error: "Andreani no deja bajar esta etiqueta desde Growith (se creó en Andreani Empresas con el Excel). Bajá el PDF de rótulos en Andreani Empresas y usá SKU en Rótulos → Enviar al depósito.", code: "etiqueta_excel" });
       if (!r.ok) return res.status(502).json({ error: await andreaniError(r, "No se pudo obtener la etiqueta") });
       const ct = String(r.headers.get("content-type") || "");
       const buf = Buffer.from(await r.arrayBuffer());
