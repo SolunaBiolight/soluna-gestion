@@ -1166,6 +1166,27 @@ export default async function handler(req, res) {
   // Miembros de equipo: el refresco de canjes es sección "canjes", el resto "envios".
   if (!(await guardUid(req, res, uid, req.query.action === 'canjes_refresh' ? 'canjes' : 'envios'))) return;
 
+  // ── Rastrear por día: qué etiquetas / exportaciones hubo un día (hora de Argentina) ──
+  // Junta los envíos con `creado` ese día (Excel y API) y los emitidos por API ese día
+  // (`andreani.ts`), para encontrar un lote entero aunque no se tengan los números.
+  if (req.query.action === 'rastrear_dia') {
+    try {
+      const db = initAdmin(); const fecha = String(req.query.fecha || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: "Elegí un día." });
+      const desde = Date.parse(`${fecha}T03:00:00Z`), hasta = desde + 86400000;
+      const col = db.collection("users").doc(uid).collection("envios");
+      const [a, b] = await Promise.all([
+        col.where("creado", ">=", new Date(desde).toISOString()).where("creado", "<", new Date(hasta).toISOString()).get(),
+        col.where("andreani.ts", ">=", new Date(desde)).where("andreani.ts", "<", new Date(hasta)).get().catch(() => ({ docs: [] })),
+      ]);
+      const out = new Map();
+      for (const d of [...a.docs, ...b.docs]) { if (out.has(d.id)) continue; const e = d.data(); const tsApi = e.andreani?.ts?.toMillis?.() || null; const cr = Date.parse(e.creado || "") || null;
+        const at = tsApi && tsApi >= desde && tsApi < hasta ? tsApi : cr; if (!at) continue;
+        out.set(d.id, { numero: d.id, at, via: e.andreani?.numeroDeEnvio ? "api" : "excel", tracking: e.andreani?.numeroDeEnvio || e.tracking || null, cliente: String(e.cliente || "").slice(0, 60), anulada: !!e.andreani?.anulada }); }
+      return res.json({ fecha, envios: [...out.values()].sort((x, y) => x.at - y.at).slice(0, 600) });
+    } catch (e) { console.error("[rastrear_dia]", e); return res.status(500).json({ error: e.message }); }
+  }
+
   // ── Rastrear pedidos: qué pasó con cada uno (etiqueta, depósito, tienda, Andreani) ──
   // Solo lectura. Lee users/{uid}/envios/{numero} por id, las tandas del depósito de esta
   // cuenta (deposito_tandas.growithUid) y las gestiones abiertas; consulta Andreani EN VIVO
@@ -1202,7 +1223,12 @@ export default async function handler(req, res) {
           if (out?.estado) { let at = null; for (const ev of out.eventos || []) { const tt = fechaDeEvento(ev); if (tt != null && (at == null || tt > at)) at = tt; } vivo[n] = { estado: out.estado, cat: clasificarEstado(out.estado), at }; } } catch (_) { } } };
       await Promise.all(Array.from({ length: Math.min(8, cola.length) }, worker));
       const ahora = Date.now(); const anulDias = Number(cfg?.anulacionDias) || 14;
-      const resultados = numeros.map(n => ({ ...diagnosticoRastreo({ numero: n, e: envios[n], tandas: tandasDe[n] || [], vivo: vivo[n] || null, casos: casosDe[n] || [], ahora, anulDias }), vivo: !!vivo[n] }));
+      const resultados = numeros.map(n => { const e = envios[n]; const td = tandasDe[n] || [];
+        return { ...diagnosticoRastreo({ numero: n, e, tandas: td, vivo: vivo[n] || null, casos: casosDe[n] || [], ahora, anulDias }), vivo: !!vivo[n],
+          // Para volver a armar la etiqueta con productos y mandarla al depósito desde el rastreador.
+          comprador: String(e?.cliente || e?.destinatario?.nombre || "").slice(0, 80), productos: Array.isArray(e?.productos) ? e.productos.slice(0, 30) : [], skus: Array.isArray(e?.skus) ? e.skus.slice(0, 30) : [],
+          anulada: !!e?.andreani?.anulada, enDeposito: td.some(t => t.estado !== "cancelada" && !t.cancelado),
+          tiendaOk: !!(e && (e.tnDone === true || e.trackingTienda?.ok || (e.fulfillOk !== undefined && !e.avisoManual && e.estado === "despachado")) && !e.tiendaPendiente) }; });
       return res.json({ resultados, sinVivo: cola.filter(n => !vivo[n]).length, anulDias });
     } catch (e) { console.error("[rastrear]", e); return res.status(500).json({ error: e.message }); }
   }

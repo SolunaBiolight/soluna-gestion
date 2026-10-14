@@ -1292,47 +1292,93 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
 // Rastrear pedidos (14/oct/2026): pegás números de pedido y dice, uno por uno, en qué paso quedó
 // (etiqueta por API o Excel, depósito, aviso a la tienda y estado EN VIVO en Andreani) y qué pasó.
 // Todo sale de `update-shipping?action=rastrear` (solo lectura; diagnóstico en diagnosticoRastreo).
-function RastrearPedidosModal({T,uid,onClose}){
+function RastrearPedidosModal({T,uid,onClose,puedeDeposito=false,onDescargar,onDeposito}){
+  const [modo,setModo]=useState("numeros"); // numeros | dia
   const [txt,setTxt]=useState(""); const [busy,setBusy]=useState(false); const [res,setRes]=useState(null); const [err,setErr]=useState(""); const [abierto,setAbierto]=useState({});
+  const [dia,setDia]=useState(()=>new Date(Date.now()-3*3600000-86400000).toISOString().slice(0,10)); const [lote,setLote]=useState(null); const [horas,setHoras]=useState({});
+  const [sel,setSel]=useState({});
   const nums=[...new Set((txt.match(/#?\d{3,12}/g)||[]).map(x=>x.replace("#","")))];
   const col={error:T.red,aviso:T.yellow,ok:T.green,nada:T.textSm};
   const fh=ms=>ms?new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
-  async function correr(){ if(!nums.length||busy) return; setBusy(true); setErr(""); setRes(null);
-    try{ const r=await authFetch(`/api/update-shipping?action=rastrear&uid=${encodeURIComponent(uid)}&numeros=${encodeURIComponent(nums.slice(0,100).join(","))}`); const j=await r.json(); if(!r.ok) throw new Error(j.error||"No se pudo rastrear");
-      const orden={error:0,nada:1,aviso:2,ok:3}; const l=[...j.resultados].sort((a,b)=>orden[a.nivel]-orden[b.nivel]); setRes({...j,resultados:l}); const ab={}; l.forEach(x=>{ if(x.nivel!=="ok") ab[x.numero]=true; }); setAbierto(ab); }
+  const horaDe=ms=>new Date(ms-3*3600000).getUTCHours();
+  // Se puede volver a bajar / mandar al depósito lo que tiene etiqueta por API y no está anulado.
+  const reenviable=x=>x.via==="api"&&x.tracking&&!x.anulada;
+  async function rastrear(lista){ if(!lista.length||busy) return; setBusy(true); setErr(""); setRes(null);
+    try{ const r=await authFetch(`/api/update-shipping?action=rastrear&uid=${encodeURIComponent(uid)}&numeros=${encodeURIComponent(lista.slice(0,100).join(","))}`); const j=await r.json(); if(!r.ok) throw new Error(j.error||"No se pudo rastrear");
+      const orden={error:0,nada:1,aviso:2,ok:3}; const l=[...j.resultados].sort((a,b)=>orden[a.nivel]-orden[b.nivel]); setRes({...j,resultados:l});
+      const ab={}, s0={}; l.forEach(x=>{ if(x.nivel!=="ok") ab[x.numero]=true; if(reenviable(x)&&!x.enDeposito&&x.nivel==="error") s0[x.numero]=true; }); setAbierto(ab); setSel(s0); }
+    catch(e){ setErr(e.message||"error de conexión"); } setBusy(false); }
+  async function buscarDia(){ if(busy) return; setBusy(true); setErr(""); setLote(null); setRes(null);
+    try{ const r=await authFetch(`/api/update-shipping?action=rastrear_dia&uid=${encodeURIComponent(uid)}&fecha=${dia}`); const j=await r.json(); if(!r.ok) throw new Error(j.error||"No se pudo buscar");
+      setLote(j.envios||[]); const h={}; (j.envios||[]).forEach(e=>{ h[horaDe(e.at)]=true; }); setHoras(h); }
     catch(e){ setErr(e.message||"error de conexión"); } setBusy(false); }
   const copiar=async t=>{ try{ await navigator.clipboard.writeText(t); toast("Copiado","success"); }catch(_){ toast("No se pudo copiar","warning"); } };
   const resumen=()=>res.resultados.map(x=>`#${x.numero} — ${x.titulo}${x.tracking?` — ${x.tracking}`:""}`).join("\n");
   const cuenta=k=>res?res.resultados.filter(x=>x.nivel===k).length:0;
+  const elegidos=res?res.resultados.filter(x=>sel[x.numero]&&reenviable(x)):[];
+  const nReenv=res?res.resultados.filter(reenviable).length:0;
+  const excelSinPdf=res?res.resultados.filter(x=>x.via==="excel"&&!x.anulada).length:0;
+  const porHora=lote?Object.entries(lote.reduce((m,e)=>{ const h=horaDe(e.at); (m[h]=m[h]||[]).push(e); return m; },{})).sort((a,b)=>a[0]-b[0]):[];
+  const delLote=lote?lote.filter(e=>horas[horaDe(e.at)]).map(e=>e.numero):[];
   const iS=InputStyle(T);
-  return (<Modal T={T} open onClose={busy?()=>{}:onClose} title="Rastrear pedidos" width={760} zIndex={1700}>
+  const pill=(on,txt,onClick)=>(<button onClick={onClick} style={{height:34,padding:"0 16px",borderRadius:DS.r.full,border:`1px solid ${on?T.textSm:T.border}`,background:on?T.surface:"transparent",color:T.text,fontSize:DS.font.base,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{txt}</button>);
+  return (<Modal T={T} open onClose={busy?()=>{}:onClose} title="Rastrear pedidos" width={780} zIndex={1700}>
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>Pegá los números de pedido (como te los pasaron, uno por renglón o separados por coma). Te decimos qué pasó con cada uno: si tiene etiqueta, si pasó por el depósito, si la tienda tiene el seguimiento y qué dice Andreani ahora.</div>
-      <textarea style={{...iS,minHeight:96,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:0}} placeholder={"7385\n7387\n7388"} value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)) correr(); }}/>
-      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-        <span style={{fontSize:DS.font.md,color:T.textSm,flex:1,minWidth:160}}>{nums.length?`${nums.length} pedido${nums.length!==1?"s":""}${nums.length>100?" (se rastrean los primeros 100)":""}`:"Todavía no pegaste ningún número"}</span>
-        {res&&<DepBtn T={T} size="md" onClick={()=>copiar(resumen())}>Copiar resumen</DepBtn>}
-        <DepBtn T={T} variant="primary" size="md" disabled={!nums.length||busy} onClick={correr}>{busy?`Consultando Andreani…`:"Rastrear"}</DepBtn>
-      </div>
-      {err&&<DepNota T={T} titulo="No se pudo rastrear" color={T.red} ico="alert">{err}</DepNota>}
+      <DepSeg T={T} size="md" value={modo} onChange={m=>{ setModo(m); setErr(""); }} items={[["numeros","Pegar números"],["dia","Por día de emisión"]]}/>
+      {modo==="numeros"?(<>
+        <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>Pegá los números de pedido (como te los pasaron, uno por renglón o separados por coma). Te decimos qué pasó con cada uno: si tiene etiqueta, si pasó por el depósito, si la tienda tiene el seguimiento y qué dice Andreani ahora.</div>
+        <textarea style={{...iS,minHeight:96,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:0}} placeholder={"7385\n7387\n7388"} value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)) rastrear(nums); }}/>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:DS.font.md,color:T.textSm,flex:1,minWidth:160}}>{nums.length?`${nums.length} pedido${nums.length!==1?"s":""}${nums.length>100?" (se rastrean los primeros 100)":""}`:"Todavía no pegaste ningún número"}</span>
+          <DepBtn T={T} variant="primary" size="md" disabled={!nums.length||busy} onClick={()=>rastrear(nums)}>{busy?"Consultando Andreani…":"Rastrear"}</DepBtn>
+        </div>
+      </>):(<>
+        <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>Elegí el día y te mostramos todas las etiquetas y exportaciones de ese día, por hora. Marcá las horas del lote que querés revisar.</div>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <input type="date" style={{...iS,marginBottom:0,width:"auto"}} value={dia} max={new Date(Date.now()-3*3600000).toISOString().slice(0,10)} onChange={e=>{ setDia(e.target.value); setLote(null); }}/>
+          <DepBtn T={T} variant={lote?"secondary":"primary"} size="md" disabled={busy||!dia} onClick={buscarDia}>{busy&&!res?"Buscando…":"Buscar ese día"}</DepBtn>
+        </div>
+        {lote&&(lote.length===0?<div style={{fontSize:DS.font.base,color:T.textSm}}>Ese día no hay etiquetas ni exportaciones registradas en Growith.</div>:<>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{porHora.map(([h,l])=>pill(!!horas[h],`${String(h).padStart(2,"0")}:00 · ${l.length} ${l.length===1?"pedido":"pedidos"}${l.some(e=>e.via==="api")?"":" · Excel"}`,()=>setHoras(x=>({...x,[h]:!x[h]}))))}</div>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:DS.font.md,color:T.textSm,flex:1,minWidth:160}}>{delLote.length} pedido{delLote.length!==1?"s":""} en las horas marcadas{delLote.length>100?" (se rastrean los primeros 100)":""}</span>
+            <DepBtn T={T} variant="primary" size="md" disabled={!delLote.length||busy} onClick={()=>rastrear(delLote)}>{busy?"Consultando Andreani…":`Rastrear ${Math.min(100,delLote.length)}`}</DepBtn>
+          </div>
+        </>)}
+      </>)}
+      {err&&<DepNota T={T} titulo="No se pudo" color={T.red} ico="alert">{err}</DepNota>}
       {res&&(<>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           {[["error","Con problema"],["nada","Sin registro en Growith"],["aviso","Para revisar"],["ok","Bien"]].filter(([k])=>cuenta(k)).map(([k,l])=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:7,height:30,padding:"0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,fontSize:DS.font.md,fontWeight:600,color:T.text}}><span style={{width:8,height:8,borderRadius:99,background:col[k]}}/>{l} <strong>{cuenta(k)}</strong></span>)}
+          <span style={{flex:1}}/>
+          <DepBtn T={T} size="sm" onClick={()=>copiar(resumen())}>Copiar resumen</DepBtn>
         </div>
         {res.sinVivo>0&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:-6}}>De {res.sinVivo} envío{res.sinVivo!==1?"s":""} no pudimos consultar Andreani ahora: se muestra el último estado que había guardado.</div>}
+        {nReenv>0&&(<div style={{border:`1px solid ${T.accentSolid}44`,background:T.accentSolid+"10",borderRadius:DS.r["2xl"],padding:"12px 16px",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:220}}>
+            <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>{elegidos.length} etiqueta{elegidos.length!==1?"s":""} elegida{elegidos.length!==1?"s":""} para volver a sacar</div>
+            <div style={{fontSize:DS.font.sm,color:T.textMd,marginTop:2}}>Se bajan de Andreani con los productos impresos, ordenadas por producto. Ya vienen tildadas las que tienen problema y no están en el depósito.</div>
+          </div>
+          <DepBtn T={T} size="sm" onClick={()=>{ const t={}; const todos=elegidos.length<nReenv; res.resultados.forEach(x=>{ if(reenviable(x)&&todos) t[x.numero]=true; }); setSel(t); }}>{elegidos.length<nReenv?`Elegir las ${nReenv}`:"Ninguna"}</DepBtn>
+          <DepBtn T={T} size="md" ico="print" disabled={!elegidos.length} onClick={()=>onDescargar&&onDescargar(elegidos)}>Descargar con productos</DepBtn>
+          {puedeDeposito&&<DepBtn T={T} variant="success" size="md" ico="truck" disabled={!elegidos.length} onClick={()=>{ const ya=elegidos.filter(x=>x.enDeposito).length; if(ya){ appConfirm(`${ya} de estas etiquetas ya están en una tanda del depósito. Si las mandás de nuevo el depósito las arma dos veces. ¿Mandarlas igual?`,{danger:true,okLabel:"Mandar igual"}).then(ok=>{ if(ok) onDeposito&&onDeposito(elegidos); }); return; } onDeposito&&onDeposito(elegidos); }}>Enviar {elegidos.length||""} al depósito</DepBtn>}
+        </div>)}
+        {excelSinPdf>0&&<div style={{fontSize:DS.font.sm,color:T.textMd,lineHeight:1.5}}>{excelSinPdf} pedido{excelSinPdf!==1?"s son":" es"} del flujo Excel: esas etiquetas las tiene Andreani Empresas, no Growith. Para mandarlas al depósito, bajá de nuevo el PDF de rótulos en Andreani Empresas y usá Envíos → SKU en Rótulos → Enviar al depósito.</div>}
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {res.resultados.map(x=>{ const ab=!!abierto[x.numero]; return (<div key={x.numero} style={{border:`1px solid ${x.nivel==="error"?T.red+"55":T.border}`,borderRadius:DS.r["2xl"],background:T.card,overflow:"hidden"}}>
+          {res.resultados.map(x=>{ const ab=!!abierto[x.numero]; const rv=reenviable(x); return (<div key={x.numero} style={{border:`1px solid ${x.nivel==="error"?T.red+"55":T.border}`,borderRadius:DS.r["2xl"],background:T.card,overflow:"hidden"}}>
             <div onClick={()=>setAbierto(a=>({...a,[x.numero]:!ab}))} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",cursor:"pointer",flexWrap:"wrap"}}>
+              {rv?<input type="checkbox" checked={!!sel[x.numero]} onClick={e=>e.stopPropagation()} onChange={e=>setSel(s=>({...s,[x.numero]:e.target.checked}))} title="Elegir para volver a sacar la etiqueta" style={{width:17,height:17,accentColor:T.accentSolid,cursor:"pointer",flexShrink:0}}/>:<span style={{width:17,flexShrink:0}}/>}
               <span style={{width:10,height:10,borderRadius:99,background:col[x.nivel],flexShrink:0}}/>
               <strong style={{fontSize:DS.font.lg,color:T.accent,fontVariantNumeric:"tabular-nums",minWidth:64}}>#{x.numero}</strong>
               <span style={{flex:1,minWidth:200,fontSize:DS.font.base,fontWeight:600,color:T.text}}>{x.titulo}</span>
               {x.via&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>{x.via==="api"?"Etiqueta por API":"Flujo Excel"}{x.emitidaAt?` · ${fh(x.emitidaAt)}`:""}</span>}
               <span style={{color:T.textSm,fontSize:DS.font.sm}}>{ab?"▲":"▼"}</span>
             </div>
-            {ab&&(<div style={{padding:"0 16px 14px 38px",display:"flex",flexDirection:"column",gap:8}}>
+            {ab&&(<div style={{padding:"0 16px 14px 67px",display:"flex",flexDirection:"column",gap:8}}>
               <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>{x.detalle}</div>
               <div style={{display:"flex",flexDirection:"column",gap:5,borderLeft:`2px solid ${T.border}`,paddingLeft:12}}>
                 {x.pasos.map((p,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"baseline",fontSize:DS.font.md,color:T.text}}><span style={{color:p.ok?T.green:T.red,fontWeight:700,width:14,flexShrink:0}}>{p.ok?"✓":"✕"}</span><span style={{flex:1,minWidth:0}}>{p.txt}{p.at?<span style={{color:T.textSm}}> · {fh(p.at)}</span>:null}</span></div>)}
+                {(x.productos?.length||x.skus?.length)?<div style={{fontSize:DS.font.md,color:T.textMd}}>Productos: {ghSkuLinesDe(x).join(", ")}</div>:null}
               </div>
               {x.tracking&&<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                 <span style={{fontSize:DS.font.md,color:T.textMd,fontVariantNumeric:"tabular-nums"}}>Envío {x.tracking}</span>
@@ -12489,7 +12535,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     toast(`Pág. ${pagina} → pedido #${num} · ${skuLines.length} producto${skuLines.length!==1?"s":""}`,"success");
   }
   async function enviarDepositoBulk(){
-    const rows=ghDepOrdenar(bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada),r=>ghSkuLinesDe(r.order));
+    const rows=bulkRowsRef.current.filter(r=>r.emitido?.numeroDeEnvio&&!r.anulada);
+    return armarTandaDeposito(rows);
+  }
+  // Núcleo de "Enviar al depósito" con etiquetas emitidas por API: baja cada etiqueta, le imprime los
+  // productos, arma un PDF 10x15 ordenado por producto y abre el formulario del depósito. Lo usan la
+  // pantalla de resultado del lote y el rastreador (rows = {numero, emitido:{numeroDeEnvio}, order:{comprador, productos|skus}}).
+  async function armarTandaDeposito(rowsIn,{segDe=null}={}){
+    const rows=ghDepOrdenar(rowsIn,r=>ghSkuLinesDe(r.order));
     if(!rows.length) return;
     setDepArmando({done:0,total:rows.length});
     try{
@@ -12507,7 +12560,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(conError.length) toast(`No se pudo descargar la etiqueta de ${conError.join(", ")}: no entran en esta tanda`,"error",8000);
       const armado=await ghDepPdfDeEtiquetas(listas.map(r=>pdfDe.get(r.numero)));
       // Al confirmar la tanda también se avisa a la tienda (seguimientos) de los pedidos que van en ella.
-      const seg=listas.filter(r=>!["ok","warn","cola"].includes(trackingSent[String(r.numero)])).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio)}));
+      const seg=listas.filter(r=>segDe?segDe(r):!["ok","warn","cola"].includes(trackingSent[String(r.numero)])).map(r=>({numero:r.numero,envio:String(r.emitido.numeroDeEnvio)}));
       setDepEnvio({seg,pdfBytes:armado.bytes,pages:armado.pages,origen:"api",canal:"andreani",pedidos:listas.map((r,i)=>({numero:String(r.numero),comprador:r.order?.comprador||"",items:ghSkuLinesDe(r.order),pags:armado.pags[i],tracking:String(r.emitido?.numeroDeEnvio||"")}))});
     }catch(e){ toast("No se pudo preparar la tanda: "+e.message,"error"); }
     finally{ setDepArmando(null); }
@@ -12561,7 +12614,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return true;
   }
   // Varias etiquetas en un solo PDF (resultado del lote y reimpresión desde Seguimientos).
-  async function descargarVarias(nums,ventana){
+  async function descargarVarias(nums,ventana,{conSku=false}={}){
     if(!nums.length){ try{ ventana&&ventana.close(); }catch(_){} return; }
     const salida=(bytes,nombre)=>ventana?ghDepAbrirBytes(bytes,"application/pdf",nombre,ventana):ghDescargarPdfBytes(bytes,nombre);
     setBulkDl({done:0,total:nums.length});
@@ -12570,7 +12623,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const t=await traerEtiquetas(nums,h=>setBulkDl({done:h,total:nums.length}));
       for(const n of [...t.conError,...t.enProceso]) pendientes.push(`#${n.numero}`);
       for(const n of nums){ let b64=t.pdfs.get(String(n.envio)); if(!b64) continue;
-        if(dlSkuRef.current&&n.skus?.length){ const inf={}; try{ b64=await ghEstamparSkuPdf(b64,n.skus,inf); }catch(e){ console.error("sku en etiqueta:",e); inf.ok=false; } if(inf.ok===false) sinSku.push(`#${n.numero}`); }
+        if((conSku||dlSkuRef.current)&&n.skus?.length){ const inf={}; try{ b64=await ghEstamparSkuPdf(b64,n.skus,inf); }catch(e){ console.error("sku en etiqueta:",e); inf.ok=false; } if(inf.ok===false) sinSku.push(`#${n.numero}`); }
         pdfs.push(b64); }
       if(sinSku.length) toast(`Atención: ${sinSku.length} etiqueta${sinSku.length!==1?"s salieron":" salió"} SIN los productos impresos (${sinSku.slice(0,12).join(", ")}${sinSku.length>12?"…":""}): Andreani cambió el diseño de esa etiqueta. Avisanos para corregirlo.`,"error",15000);
       if(pdfs.length){
@@ -13049,7 +13102,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           Rastrear pedidos
         </button>
       </AppTopbar>
-      {rastrearOpen&&<RastrearPedidosModal T={T} uid={user?.uid} onClose={()=>setRastrearOpen(false)}/>}
+      {(depArmando||bulkDl)&&!rastrearOpen&&<div style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",zIndex:1650,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:"10px 18px",boxShadow:DS.shadow.lg,display:"flex",alignItems:"center",gap:10,fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}><Spinner size={14} color={T.accent}/>{depArmando?`Preparando la tanda… ${depArmando.done}/${depArmando.total}`:`Armando el PDF… ${bulkDl.done}/${bulkDl.total}`}</div>}
+      {rastrearOpen&&<RastrearPedidosModal T={T} uid={user?.uid} onClose={()=>setRastrearOpen(false)}
+        puedeDeposito={!!depositoCliente}
+        onDescargar={sel=>{ const w=ghDepVentana("application/pdf"); const l=ghDepOrdenar(sel,x=>ghSkuLinesDe(x)); descargarVarias(l.map(x=>({numero:x.numero,envio:String(x.tracking),skus:ghSkuLinesDe(x)})),w,{conSku:true}); }}
+        onDeposito={sel=>{ setRastrearOpen(false); armarTandaDeposito(sel.map(x=>({numero:x.numero,emitido:{numeroDeEnvio:x.tracking},order:{comprador:x.comprador,productos:x.productos,skus:x.skus}})),{segDe:r=>!sel.find(x=>x.numero===r.numero)?.tiendaOk}); }}/>}
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
       <div style={{padding:"16px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
