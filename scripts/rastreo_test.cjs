@@ -1,0 +1,21 @@
+// Pruebas del diagnóstico de "Rastrear pedidos" (api/update-shipping.js). Sin dependencias: node scripts/rastreo_test.cjs
+const fs=require("fs");
+const src=fs.readFileSync("api/update-shipping.js","utf8");
+const i=src.indexOf("\nexport function diagnosticoRastreo("); const j=src.indexOf("\n}\n",i);
+const D=new Function(src.slice(i,j+3).replace("export function","function")+"\nreturn diagnosticoRastreo;")();
+let n=0,fails=0; const ok=(d,c)=>{ n++; if(!c){ fails++; console.log("FAIL",d); } };
+const ahora=Date.parse("2026-10-14T15:00:00Z"), dia=86400000;
+const api={andreani:{numeroDeEnvio:"360002000000001",ts:ahora-4*dia},avisoManual:true,estado:"despachado",creado:new Date(ahora-4*dia).toISOString()};
+let r=D({numero:"7385",e:null,ahora}); ok("sin nada",r.nivel==="nada"&&/no tiene nada/.test(r.titulo));
+r=D({numero:"7385",e:{estado:"etiqueta_generada",creado:new Date(ahora-4*dia).toISOString()},ahora}); ok("excel sin rótulos",r.nivel==="error"&&/sin número de envío/.test(r.titulo)&&r.via==="excel");
+r=D({numero:"7385",e:api,tandas:[{estado:"pendiente",createdAt:ahora-4*dia,fechaDespacho:"2026-10-10"}],ahora}); ok("en depósito sin imprimir",/sin imprimir/.test(r.titulo)&&/anula sola el/.test(r.detalle));
+r=D({numero:"7385",e:api,tandas:[{estado:"entregada",createdAt:ahora-4*dia,fechaDespacho:"2026-10-10",impresaAt:ahora-4*dia+3600000,impresaPor:"Ana",listaAt:ahora-4*dia+7200000,listaPor:"Ana"}],vivo:{estado:"Pendiente de ingreso",cat:"otro"},ahora});
+ok("impreso y no ingresado",r.nivel==="error"&&/Andreani no lo recibió/.test(r.titulo)&&/Ana/.test(r.detalle)&&/360002000000001/.test(r.detalle));
+ok("paso tienda pendiente de aviso",r.pasos.some(p=>p.k==="tienda"&&!p.ok&&/Todavía no se le avisó/.test(p.txt)));
+r=D({numero:"7385",e:api,ahora}); ok("sin depósito",/no pasó por el depósito/.test(r.detalle));
+r=D({numero:"7385",e:{...api,avisoManual:false,tnDone:true},vivo:{estado:"En camino — vamos hacia tu domicilio",cat:"en_camino"},ahora}); ok("en camino ok",r.nivel==="ok"&&/Andreani lo tiene/.test(r.titulo));
+r=D({numero:"7385",e:{...api,avisoManual:false,tiendaPendiente:{error:"429",intentos:2}},vivo:{estado:"Ingresado",cat:"en_camino"},ahora}); ok("tienda no avisada = aviso",r.nivel==="aviso"&&/no recibió el seguimiento/i.test(r.detalle));
+r=D({numero:"7385",e:{...api,andreani:{...api.andreani,anulada:true,anulacionAutoTs:ahora}},ahora,anulDias:14}); ok("anulada automática",r.nivel==="error"&&/anuló sola/.test(r.detalle));
+r=D({numero:"7385",e:{tracking:"360009",estado:"despachado",fulfillOk:true,creado:new Date(ahora-3*dia).toISOString()},vivo:{estado:"Entregado",cat:"entregado"},ahora}); ok("excel con rótulos entregado",r.nivel==="ok"&&r.via==="excel"&&r.pasos.find(p=>p.k==="tienda").ok);
+r=D({numero:"7385",e:{tracking:"360009",estado:"despachado",fulfillOk:true,creado:new Date(ahora-3*dia).toISOString()},ahora}); ok("excel sin estado: no habla de anular sola",r.nivel==="error"&&!/anula sola/.test(r.detalle));
+console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);

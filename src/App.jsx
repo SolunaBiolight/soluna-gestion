@@ -1289,6 +1289,63 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
 // pedido es lo principal (grande, en violeta), después cliente y localidad, productos en píldoras, tipo de envío (domicilio /
 // sucursal) con su punto de color y, a la derecha, total y costo de la etiqueta. El estado solo se muestra
 // en la búsqueda. Pura: todo llega por props (se puede ver sin sesión con el arnés /?env=1).
+// Rastrear pedidos (14/oct/2026): pegás números de pedido y dice, uno por uno, en qué paso quedó
+// (etiqueta por API o Excel, depósito, aviso a la tienda y estado EN VIVO en Andreani) y qué pasó.
+// Todo sale de `update-shipping?action=rastrear` (solo lectura; diagnóstico en diagnosticoRastreo).
+function RastrearPedidosModal({T,uid,onClose}){
+  const [txt,setTxt]=useState(""); const [busy,setBusy]=useState(false); const [res,setRes]=useState(null); const [err,setErr]=useState(""); const [abierto,setAbierto]=useState({});
+  const nums=[...new Set((txt.match(/#?\d{3,12}/g)||[]).map(x=>x.replace("#","")))];
+  const col={error:T.red,aviso:T.yellow,ok:T.green,nada:T.textSm};
+  const fh=ms=>ms?new Date(ms).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+  async function correr(){ if(!nums.length||busy) return; setBusy(true); setErr(""); setRes(null);
+    try{ const r=await authFetch(`/api/update-shipping?action=rastrear&uid=${encodeURIComponent(uid)}&numeros=${encodeURIComponent(nums.slice(0,100).join(","))}`); const j=await r.json(); if(!r.ok) throw new Error(j.error||"No se pudo rastrear");
+      const orden={error:0,nada:1,aviso:2,ok:3}; const l=[...j.resultados].sort((a,b)=>orden[a.nivel]-orden[b.nivel]); setRes({...j,resultados:l}); const ab={}; l.forEach(x=>{ if(x.nivel!=="ok") ab[x.numero]=true; }); setAbierto(ab); }
+    catch(e){ setErr(e.message||"error de conexión"); } setBusy(false); }
+  const copiar=async t=>{ try{ await navigator.clipboard.writeText(t); toast("Copiado","success"); }catch(_){ toast("No se pudo copiar","warning"); } };
+  const resumen=()=>res.resultados.map(x=>`#${x.numero} — ${x.titulo}${x.tracking?` — ${x.tracking}`:""}`).join("\n");
+  const cuenta=k=>res?res.resultados.filter(x=>x.nivel===k).length:0;
+  const iS=InputStyle(T);
+  return (<Modal T={T} open onClose={busy?()=>{}:onClose} title="Rastrear pedidos" width={760} zIndex={1700}>
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>Pegá los números de pedido (como te los pasaron, uno por renglón o separados por coma). Te decimos qué pasó con cada uno: si tiene etiqueta, si pasó por el depósito, si la tienda tiene el seguimiento y qué dice Andreani ahora.</div>
+      <textarea style={{...iS,minHeight:96,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif",marginBottom:0}} placeholder={"7385\n7387\n7388"} value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)) correr(); }}/>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+        <span style={{fontSize:DS.font.md,color:T.textSm,flex:1,minWidth:160}}>{nums.length?`${nums.length} pedido${nums.length!==1?"s":""}${nums.length>100?" (se rastrean los primeros 100)":""}`:"Todavía no pegaste ningún número"}</span>
+        {res&&<DepBtn T={T} size="md" onClick={()=>copiar(resumen())}>Copiar resumen</DepBtn>}
+        <DepBtn T={T} variant="primary" size="md" disabled={!nums.length||busy} onClick={correr}>{busy?`Consultando Andreani…`:"Rastrear"}</DepBtn>
+      </div>
+      {err&&<DepNota T={T} titulo="No se pudo rastrear" color={T.red} ico="alert">{err}</DepNota>}
+      {res&&(<>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[["error","Con problema"],["nada","Sin registro en Growith"],["aviso","Para revisar"],["ok","Bien"]].filter(([k])=>cuenta(k)).map(([k,l])=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:7,height:30,padding:"0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,fontSize:DS.font.md,fontWeight:600,color:T.text}}><span style={{width:8,height:8,borderRadius:99,background:col[k]}}/>{l} <strong>{cuenta(k)}</strong></span>)}
+        </div>
+        {res.sinVivo>0&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:-6}}>De {res.sinVivo} envío{res.sinVivo!==1?"s":""} no pudimos consultar Andreani ahora: se muestra el último estado que había guardado.</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {res.resultados.map(x=>{ const ab=!!abierto[x.numero]; return (<div key={x.numero} style={{border:`1px solid ${x.nivel==="error"?T.red+"55":T.border}`,borderRadius:DS.r["2xl"],background:T.card,overflow:"hidden"}}>
+            <div onClick={()=>setAbierto(a=>({...a,[x.numero]:!ab}))} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",cursor:"pointer",flexWrap:"wrap"}}>
+              <span style={{width:10,height:10,borderRadius:99,background:col[x.nivel],flexShrink:0}}/>
+              <strong style={{fontSize:DS.font.lg,color:T.accent,fontVariantNumeric:"tabular-nums",minWidth:64}}>#{x.numero}</strong>
+              <span style={{flex:1,minWidth:200,fontSize:DS.font.base,fontWeight:600,color:T.text}}>{x.titulo}</span>
+              {x.via&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>{x.via==="api"?"Etiqueta por API":"Flujo Excel"}{x.emitidaAt?` · ${fh(x.emitidaAt)}`:""}</span>}
+              <span style={{color:T.textSm,fontSize:DS.font.sm}}>{ab?"▲":"▼"}</span>
+            </div>
+            {ab&&(<div style={{padding:"0 16px 14px 38px",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>{x.detalle}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5,borderLeft:`2px solid ${T.border}`,paddingLeft:12}}>
+                {x.pasos.map((p,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"baseline",fontSize:DS.font.md,color:T.text}}><span style={{color:p.ok?T.green:T.red,fontWeight:700,width:14,flexShrink:0}}>{p.ok?"✓":"✕"}</span><span style={{flex:1,minWidth:0}}>{p.txt}{p.at?<span style={{color:T.textSm}}> · {fh(p.at)}</span>:null}</span></div>)}
+              </div>
+              {x.tracking&&<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                <span style={{fontSize:DS.font.md,color:T.textMd,fontVariantNumeric:"tabular-nums"}}>Envío {x.tracking}</span>
+                <DepBtn T={T} size="sm" onClick={()=>copiar(x.tracking)}>Copiar número</DepBtn>
+                <a href={`https://www.andreani.com/envio/${encodeURIComponent(x.tracking)}`} target="_blank" rel="noopener noreferrer" style={{fontSize:DS.font.md,color:T.accent,fontWeight:600,textDecoration:"none"}}>Ver en Andreani ↗</a>
+              </div>}
+            </div>)}
+          </div>); })}
+        </div>
+      </>)}
+    </div>
+  </Modal>);
+}
 const GH_ENVIO_GRID="24px minmax(230px,1.15fr) minmax(220px,1.35fr) minmax(190px,1fr) 150px";
 function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,idx=0,verEstado=false}){
   const [h,setH]=useState(false);
@@ -10151,6 +10208,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 // APP ENVIOS
 // ===========================================
 function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPedidos={}, depositoCliente=null, depositoCfg=null, tab:tabProp, setTab:setTabProp}) {
+  const [rastrearOpen,setRastrearOpen]=useState(false);
   const [tab,setTabState]=useState(tabProp||"panel");
   React.useEffect(()=>{ if(tabProp!==undefined&&tabProp!==tab) setTabState(tabProp); },[tabProp]);
   const setTab=(v)=>{ setTabState(v); setTabProp&&setTabProp(v); };
@@ -12986,7 +13044,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 11-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
           Sincronizar
         </AsyncButton>
+        <button onClick={()=>setRastrearOpen(true)} title="Pegá números de pedido y mirá qué pasó con cada uno" style={{display:"inline-flex",alignItems:"center",gap:7,height:36,padding:"0 14px",borderRadius:DS.r.full,boxSizing:"border-box",border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 21l-4.3-4.3M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
+          Rastrear pedidos
+        </button>
       </AppTopbar>
+      {rastrearOpen&&<RastrearPedidosModal T={T} uid={user?.uid} onClose={()=>setRastrearOpen(false)}/>}
       {/* Tabs internos removidos — navegación va por el sidebar izquierdo */}
 
       <div style={{padding:"16px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>

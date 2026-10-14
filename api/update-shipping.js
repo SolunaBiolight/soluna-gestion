@@ -465,6 +465,65 @@ function eventoPublico(ev) {
   return out.estado || out.descripcion ? out : null;
 }
 
+
+// ── Rastrear pedidos (14/oct/2026) ─────────────────────────────────────────
+// Diagnóstico de UN pedido a partir de lo que Growith tiene guardado (puro, con tests en
+// scripts/rastreo_test.cjs). `e` = users/{uid}/envios/{numero} (o null), `tandas` = las tandas
+// del depósito donde está el pedido [{estado, createdAt, fechaDespacho, impresaAt, impresaPor,
+// listaAt, listaPor, canal, armado, apartado, cancelado}], `vivo` = estado actual en Andreani
+// {estado, cat, at} (o null), `ahora` en ms, `anulDias` = días sin ingreso hasta la anulación.
+// Devuelve { nivel: ok|aviso|error|nada, titulo, detalle, via, tracking, pasos[] }.
+export function diagnosticoRastreo({ numero, e, tandas = [], vivo = null, casos = [], ahora = Date.now(), anulDias = 14 }) {
+  const msDe = v => { if (!v) return null; if (typeof v === "number") return v; if (v.toMillis) return v.toMillis(); if (typeof v === "object") { const sec = v._seconds ?? v.seconds; if (isFinite(sec)) return sec * 1000; } const t = Date.parse(v); return isFinite(t) ? t : null; };
+  const f = ms => { if (!ms) return ""; const d = new Date(ms - 3 * 3600000); const p = n => String(n).padStart(2, "0"); return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`; };
+  const a = e?.andreani || {};
+  const via = a.numeroDeEnvio ? "api" : e ? "excel" : null;
+  const tracking = String(a.numeroDeEnvio || e?.tracking || "") || null;
+  const emitidaAt = msDe(a.ts) || (via === "excel" ? msDe(e?.creado) : null);
+  const pasos = [];
+  // 1) Etiqueta
+  if (!e) pasos.push({ k: "etiqueta", ok: false, txt: "Growith no tiene registro de etiqueta ni de exportación" });
+  else if (via === "api") pasos.push({ k: "etiqueta", ok: !a.anulada, at: msDe(a.ts), txt: a.anulada ? `Etiqueta por API ${tracking}, ANULADA${a.anuladaAt ? " el " + f(msDe(a.anuladaAt)) : ""}${a.anulacionAutoTs ? " (automática, sin ingreso)" : ""}` : `Etiqueta emitida por API · ${tracking}` });
+  else if (tracking) pasos.push({ k: "etiqueta", ok: true, at: msDe(e.creado), txt: `Exportado al Excel y número de envío cargado desde el PDF de rótulos · ${tracking}` });
+  else pasos.push({ k: "etiqueta", ok: false, at: msDe(e.creado), txt: "Exportado al Excel, pero nunca se cargó el PDF de rótulos: Growith no conoce su número de envío" });
+  if (e?.emisionError?.msg && !tracking) pasos.push({ k: "error", ok: false, at: msDe(e.emisionError.ts), txt: `Falló la emisión: ${String(e.emisionError.msg).slice(0, 160)}` });
+  // 2) Depósito
+  const t = [...tandas].sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0))[0] || null;
+  if (t) {
+    const est = t.estado === "pendiente" ? "sin imprimir" : t.estado === "entregada" ? "lista" : t.estado === "cancelada" ? "tanda cancelada" : "impresa";
+    pasos.push({ k: "deposito", ok: !["pendiente", "cancelada"].includes(t.estado) && !t.cancelado, at: t.createdAt, txt: `En el depósito: tanda del ${String(t.fechaDespacho || "").split("-").reverse().slice(0, 2).join("/")} · ${est}${t.impresaAt ? ` · impresa ${f(t.impresaAt)}${t.impresaPor ? " por " + t.impresaPor : ""}` : ""}${t.listaAt ? ` · lista ${f(t.listaAt)}${t.listaPor ? " por " + t.listaPor : ""}` : ""}${t.armado ? " · escaneado" : ""}${t.apartado ? ` · APARTADO: ${t.apartado}` : ""}${t.cancelado ? " · CANCELADO por el depósito" : ""}${tandas.length > 1 ? ` · está en ${tandas.length} tandas` : ""}` });
+  }
+  // 3) Aviso a la tienda
+  if (e && tracking) {
+    const tp = e.tiendaPendiente;
+    const avisada = e.tnDone === true || e.trackingTienda?.ok || (e.fulfillOk !== undefined && !e.avisoManual && e.estado === "despachado");
+    pasos.push({ k: "tienda", ok: !!avisada && !tp, txt: tp ? `La tienda NO recibió el seguimiento${tp.abandonado ? " (se dejó de reintentar)" : " (en cola de reintento)"}: ${String(tp.error || "").slice(0, 120)}` : avisada ? "La tienda recibió el número de seguimiento" : e.avisoManual ? "Todavía no se le avisó a la tienda (falta enviar los seguimientos)" : "Sin confirmación de que la tienda tenga el seguimiento" });
+  }
+  // 4) Andreani
+  const cat = vivo?.cat || e?.categoria || null; const estTxt = vivo?.estado || e?.estadoAndreani || "";
+  const sinIngreso = !!tracking && !a.anulada && !e?.entregadoAt && !["en_camino", "en_sucursal", "entregado", "devolucion", "visita_fallida"].includes(cat || "");
+  if (tracking && !a.anulada) pasos.push({ k: "andreani", ok: !sinIngreso, at: vivo?.at || null, txt: sinIngreso ? `Andreani NO registra ingreso${estTxt ? ` (“${estTxt}”)` : ""}` : `Andreani: ${estTxt || cat}` });
+  const caso = casos.find(c => ["abierto", "enviado", "respondido"].includes(c.estado));
+  if (caso) pasos.push({ k: "caso", ok: false, txt: `Hay una gestión abierta con Andreani (${caso.motivo || "caso"})` });
+  // Diagnóstico
+  const dias = emitidaAt ? Math.floor((ahora - emitidaAt) / 86400000) : null;
+  let nivel = "ok", titulo = "", detalle = "";
+  if (!e && !t) { nivel = "nada"; titulo = "Growith no tiene nada de este pedido"; detalle = "No se exportó ni se emitió etiqueta desde Growith y no pasó por el depósito. Si se despachó, fue por fuera de Growith (o el número está mal)."; }
+  else if (a.anulada) { nivel = "error"; titulo = "La etiqueta se anuló"; detalle = a.anulacionAutoTs ? `Growith la anuló sola porque pasaron ${anulDias} días sin que Andreani la recibiera, y devolvió el saldo. Si el paquete salió con esa etiqueta, hay que reclamarlo a Andreani.` : "Se anuló a mano. Si el pedido sigue sin despachar, hay que emitir una etiqueta nueva."; }
+  else if (!tracking) { nivel = t ? "aviso" : "error"; titulo = e?.emisionError?.msg ? "La etiqueta no se pudo crear" : "Exportado al Excel, sin número de envío"; detalle = e?.emisionError?.msg ? `Andreani rechazó la emisión: ${String(e.emisionError.msg).slice(0, 200)}` : `Se exportó${e?.creado ? " el " + f(msDe(e.creado)) : ""}, pero nunca se subió a Growith el PDF de rótulos con este pedido. Fijate en Andreani Empresas si la etiqueta se creó; si no, el pedido nunca se despachó.`; }
+  else if (sinIngreso) {
+    nivel = "error";
+    const anul = via === "api" && emitidaAt ? ` Si sigue así, Growith la anula sola el ${f(emitidaAt + anulDias * 86400000).slice(0, 5)}.` : "";
+    if (t && t.estado === "pendiente") { titulo = "Está en el depósito sin imprimir"; detalle = `La etiqueta existe${dias != null ? ` desde hace ${dias} día${dias !== 1 ? "s" : ""}` : ""} y la tanda sigue pendiente en el depósito.${anul}`; }
+    else if (t && !t.cancelado && t.estado !== "cancelada") { titulo = "Se imprimió, pero Andreani no lo recibió"; detalle = `${t.impresaAt ? `El depósito la imprimió el ${f(t.impresaAt)}${t.impresaPor ? " (" + t.impresaPor + ")" : ""}` : "La tanda figura impresa"}${t.listaAt ? ` y la marcó lista el ${f(t.listaAt)}` : ""}, pero Andreani no registra el ingreso: el paquete no se le entregó al correo o Andreani no lo escaneó. Reclamalo con el número ${tracking}.${anul}`; }
+    else { titulo = "Etiqueta creada, pero Andreani no lo recibió"; detalle = `La etiqueta es ${emitidaAt ? "del " + f(emitidaAt) : "de antes"}${t ? " y el depósito canceló el pedido" : " y no pasó por el depósito de Growith"}. Andreani no registra el ingreso: no se despachó o no se escaneó.${anul}`; }
+  }
+  else { titulo = `Andreani lo tiene: ${estTxt || cat}`; detalle = "El envío ya está en manos de Andreani."; if (cat === "devolucion" || cat === "visita_fallida") nivel = "aviso"; }
+  const tiendaMal = pasos.find(x => x.k === "tienda" && !x.ok);
+  if (nivel === "ok" && tiendaMal) { nivel = "aviso"; detalle += ` Ojo: ${tiendaMal.txt.charAt(0).toLowerCase() + tiendaMal.txt.slice(1)}.`; }
+  return { numero, nivel, titulo, detalle, via, tracking, emitidaAt, pasos };
+}
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1106,6 +1165,47 @@ export default async function handler(req, res) {
   if (!uid) return res.status(401).json({ error: "uid requerido" });
   // Miembros de equipo: el refresco de canjes es sección "canjes", el resto "envios".
   if (!(await guardUid(req, res, uid, req.query.action === 'canjes_refresh' ? 'canjes' : 'envios'))) return;
+
+  // ── Rastrear pedidos: qué pasó con cada uno (etiqueta, depósito, tienda, Andreani) ──
+  // Solo lectura. Lee users/{uid}/envios/{numero} por id, las tandas del depósito de esta
+  // cuenta (deposito_tandas.growithUid) y las gestiones abiertas; consulta Andreani EN VIVO
+  // para los que tienen número de envío (de a 8, con tope de tiempo).
+  if (req.query.action === 'rastrear') {
+    try {
+      const db = initAdmin(); const t0 = Date.now();
+      const nrm = x => String(x || "").replace(/^#/, "").trim();
+      const numeros = [...new Set(String(req.query.numeros || "").split(/[\s,;]+/).map(nrm).filter(x => /^[\w.\-]{1,40}$/.test(x)))].slice(0, 100);
+      if (!numeros.length) return res.status(400).json({ error: "Pegá al menos un número de pedido." });
+      const col = db.collection("users").doc(uid).collection("envios");
+      const [docs, ts, cs, cfg, uSnap] = await Promise.all([
+        db.getAll(...numeros.map(n => col.doc(n))),
+        db.collection("deposito_tandas").where("growithUid", "==", uid).get().catch(() => ({ docs: [] })),
+        db.collection("envios_casos").where("uid", "==", uid).get().catch(() => ({ docs: [] })),
+        getGlobalConfig(db).catch(() => ({})),
+        db.collection("users").doc(uid).get(),
+      ]);
+      const demo = esDemo(uSnap.data() || {});
+      const envios = {}; docs.forEach((d, i) => { envios[numeros[i]] = d.exists ? d.data() : null; });
+      const msDe = v => v?.toMillis?.() ?? (v?._seconds ? v._seconds * 1000 : (typeof v === "number" ? v : null));
+      const tandasDe = {};
+      for (const d of ts.docs) { const t = d.data(); if (t.estado === "borrador") continue;
+        const hist = t.hist || []; const imp = hist.find(h => ["impresa", "entregada"].includes(h.a)); const lista = [...hist].reverse().find(h => h.a === "entregada");
+        (t.pedidos || []).forEach(p => { const n = nrm(p.numero); const trk = String(p.tracking || "");
+          const clave = numeros.find(x => x === n || (trk && (envios[x]?.andreani?.numeroDeEnvio === trk || envios[x]?.tracking === trk)));
+          if (!clave) return;
+          (tandasDe[clave] = tandasDe[clave] || []).push({ tandaId: d.id, estado: t.estado, canal: t.canal, origen: t.origen, createdAt: msDe(t.createdAt), fechaDespacho: t.fechaDespacho, impresaAt: imp?.at || msDe(t.impresaAt) || null, impresaPor: imp?.porNombre || "", listaAt: t.estado === "entregada" ? (lista?.at || msDe(t.entregadaAt)) : null, listaPor: t.estado === "entregada" ? (lista?.porNombre || "") : "", armado: !!p.armado, apartado: p.apartado?.nota || (p.apartado ? "sin motivo" : ""), cancelado: !!p.cancelado }); }); }
+      const casosDe = {}; for (const d of cs.docs) { const c = d.data(); const n = nrm(c.numero); if (numeros.includes(n)) (casosDe[n] = casosDe[n] || []).push({ estado: c.estado, motivo: c.motivo }); }
+      // Estado EN VIVO en Andreani (oficial → público), de a 8 y sin pasar de ~40 s en total.
+      const vivo = {}; const cola = numeros.filter(n => { const e = envios[n]; const trk = e?.andreani?.numeroDeEnvio || e?.tracking; return trk && !e?.andreani?.anulada && !demo && !esNumeroEnvioDemo(String(trk)); });
+      let i = 0; const worker = async () => { while (i < cola.length && Date.now() - t0 < 40000) { const n = cola[i++]; const e = envios[n]; const trk = String(e.andreani?.numeroDeEnvio || e.tracking).replace(/\s+/g, "");
+        try { let out = estadoOficial(await trazasOficialAndreani(db, trk)); if (!out) out = await trackAndreani(trk);
+          if (out?.estado) { let at = null; for (const ev of out.eventos || []) { const tt = fechaDeEvento(ev); if (tt != null && (at == null || tt > at)) at = tt; } vivo[n] = { estado: out.estado, cat: clasificarEstado(out.estado), at }; } } catch (_) { } } };
+      await Promise.all(Array.from({ length: Math.min(8, cola.length) }, worker));
+      const ahora = Date.now(); const anulDias = Number(cfg?.anulacionDias) || 14;
+      const resultados = numeros.map(n => ({ ...diagnosticoRastreo({ numero: n, e: envios[n], tandas: tandasDe[n] || [], vivo: vivo[n] || null, casos: casosDe[n] || [], ahora, anulDias }), vivo: !!vivo[n] }));
+      return res.json({ resultados, sinVivo: cola.filter(n => !vivo[n]).length, anulDias });
+    } catch (e) { console.error("[rastrear]", e); return res.status(500).json({ error: e.message }); }
+  }
 
   // ── Historial de envíos en Firestore (vía Admin SDK — no depende de las
   // reglas de seguridad del cliente, que no cubren subcolecciones nuevas) ──
