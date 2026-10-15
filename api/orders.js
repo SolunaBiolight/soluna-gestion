@@ -298,6 +298,38 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
   return all;
 }
 
+
+// ── Dirección y documento de Shopify (15/oct/2026, auditoría del Excel de zensleep) ──────────
+// Shopify mete calle, número y a veces piso/depto en address1: "Av. Siempreviva 742 piso 3",
+// "Belgrano 1234, 3B", "Ruta 143 12330". Antes se tomaba el ÚLTIMO número ("3") como altura.
+// Devuelve {calle, numero, extra}: el resto (piso, depto, torre…) va a `extra` para el campo Piso.
+export function partirDireccion(addr1) {
+  let t = String(addr1 || "").replace(/\s+/g, " ").trim();
+  if (!t) return { calle: "", numero: "", extra: "" };
+  let extra = "";
+  // 1) Lo que viene después de una marca de unidad o de una coma que sigue a un número.
+  const marca = t.match(/^(.*?\d[a-zA-Z]?)\s*(?:,\s*|\s+)((?:piso|p\.?|pb|planta|dto|dpto|depto|departamento|dept|torre|t\.|casa|lote|lt|of|oficina|local|ph|unidad|uf|block|blk|monoblock|manzana|mz|mza|esc|escalera|entre|e\/|barrio|b°|bº)\b.*)$/i);
+  if (marca) { t = marca[1].trim(); extra = marca[2].trim(); }
+  else { const coma = t.match(/^(.*?\d[a-zA-Z]?)\s*,\s*(.+)$/); if (coma && /\D/.test(coma[1])) { t = coma[1].trim(); extra = coma[2].trim(); } }
+  // 2) "Belgrano 1234 3B" / "Belgrano 1234 B": altura seguida de un depto corto.
+  const letra = x => /[a-zA-ZÀ-ÿ]/.test(x);
+  const depto = t.match(/^(.+?)\s(\d{1,6})\s+(\d{1,2}\s?[a-zA-Z]|[a-zA-Z])$/);
+  if (depto && letra(depto[1])) return { calle: depto[1].replace(/[\s,]+$/, "").trim(), numero: depto[2], extra: [depto[3], extra].filter(Boolean).join(" ") };
+  // 3) Altura al final ("Ruta 143 12330" → calle "Ruta 143", 12330) o al principio ("742 Siempreviva").
+  let m = t.match(/^(.+?)[\s,]+(\d{1,6}[a-zA-Z]?)$/);
+  if (m && letra(m[1])) return { calle: m[1].replace(/[\s,]+$/, "").trim(), numero: m[2], extra };
+  m = t.match(/^(\d{1,6}[a-zA-Z]?)[\s,]+(.+)$/);
+  if (m) return { calle: m[2].trim(), numero: m[1], extra };
+  return { calle: t, numero: "", extra };
+}
+// DNI / CUIT escrito solo (con o sin puntos): "31.737.977", "20-31737977-5". Si no es eso, "".
+export function soloDocumento(v) {
+  const t = String(v || "").trim();
+  if (!/^[\d.\s\-]{7,15}$/.test(t)) return "";
+  const d = t.replace(/\D/g, "");
+  return d.length >= 7 && d.length <= 11 ? d : "";
+}
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||/^https:\/\/[a-z0-9-]+-soluna1\.vercel\.app$/.test(_o)||/^http:\/\/localhost(:\d+)?$/.test(_o))?_o:"https://www.growithapp.com"); } // allowlist CORS (regex anclada)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -2831,11 +2863,8 @@ export default async function handler(req, res) {
       // Shopify mete calle y número juntos en address1 ("Av. Siempreviva 742");
       // Andreani (XLSX y API) los necesita separados. Número al final o al
       // principio; si no hay, queda todo como calle y número vacío.
-      const addr1 = (sh.address1 || "").trim();
-      let calle = addr1, numero = "";
-      let m = addr1.match(/^(.*?)[\s,]+(\d+[a-zA-Z]?)$/);
-      if (m) { calle = m[1].trim(); numero = m[2]; }
-      else { m = addr1.match(/^(\d+[a-zA-Z]?)[\s,]+(.+)$/); if (m) { numero = m[1]; calle = m[2].trim(); } }
+      const dir = partirDireccion(sh.address1);
+      let calle = dir.calle, numero = dir.numero;
       // Sin número parseable → "0": la API de Andreani (action=emitir) exige
       // `numero` no vacío para envíos a domicilio o devuelve 400 (el XLSX ya
       // hace el mismo fallback). Andreani interpreta "0" como sin numeración.
@@ -2846,7 +2875,12 @@ export default async function handler(req, res) {
       // documento del destinatario.
       const notas = Array.isArray(o.note_attributes) ? o.note_attributes : [];
       const docAttr = notas.find(a => /dni|documento|cuit|cuil|identific/i.test(String(a?.name || "")));
-      const contactDoc = String(docAttr?.value || "").replace(/\D/g, "");
+      // En Argentina muchas tiendas Shopify piden el DNI en el campo "Empresa" (company) del
+      // checkout, y algunas en "Dirección 2": si ese campo es SOLO un documento, se usa como DNI
+      // y no se manda como piso (15/oct/2026, zensleep: el DNI salía vacío en el Excel).
+      const docA2 = soloDocumento(sh.address2);
+      const contactDoc = String(docAttr?.value || "").replace(/\D/g, "") || soloDocumento(sh.company) || soloDocumento(o.billing_address?.company) || docA2;
+      const piso = [docA2 ? "" : String(sh.address2 || "").trim(), dir.extra].filter(Boolean).join(" ").slice(0, 60);
       return {
         id: o.id,
         number: o.order_number || (o.name || "").replace("#", "") || o.id,
@@ -2870,7 +2904,7 @@ export default async function handler(req, res) {
           last_name: sh.last_name || "",
           address: calle,
           number: numero,
-          floor: sh.address2 || "",
+          floor: piso,
           locality: sh.city || "",
           city: sh.city || "",
           zipcode: sh.zip || "",

@@ -102,5 +102,11 @@ eq("zonas: 1896 y 1900 son vecinas",M.ghLocCpCerca("1896","1900"),true);
 eq("zonas: 1636 y 1842 no",M.ghLocCpCerca("1636","1842"),false);
 eq("zonas: 7600 y 1900 no",M.ghLocCpCerca("7600","1900"),false);
 eq("verif con provincia mal pero CP + localidad iguales",M.ghLocVerif({cp:"3100",provincia:"Santa Fe",localidad:"Paraná"},"ENTRE RIOS / PARANA / 3100",locs),"ok");
+// ── 15/oct/2026: zensleep #7254 (Shopify) "Ruta 143 12330, 5601 San Rafael, Mendoza" salía a CAPITAN MONTOYA ──
+eq("#7254: San Rafael con CP 5601 (que no tiene San Rafael) → SAN RAFAEL con su CP pegado",m("5601","Mendoza",["San Rafael","San Rafael"]),"MENDOZA / SAN RAFAEL / 5600");
+eq("#7254 con la calle: igual San Rafael",M.ghMatchLocalidad(locs,"5601","Mendoza",["San Rafael"],"Ruta 143 12330 ")?.loc,"MENDOZA / SAN RAFAEL / 5600");
+eq("#7254 la verificación final lo da por bueno",M.ghLocVerif({cp:"5601",provincia:"Mendoza",localidad:"San Rafael"},"MENDOZA / SAN RAFAEL / 5600",locs),"ok");
+eq("una localidad del 5601 escrita tal cual sigue ganando",m("5601","Mendoza","Las Paredes"),"MENDOZA / LAS PAREDES / 5601");
+eq("en el área 1000-1999 no se cambia el CP (Lomas de Zamora con el 1834 de Temperley)",M.ghLocPartes(m("1834","Buenos Aires","Lomas de Zamora"))?.cp,"1834");
 console.log(`barrido: ${list.length} localidades · ${nulos} van a mano con sus propios datos (${(nulos/list.length*100).toFixed(1)} %)`);
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);

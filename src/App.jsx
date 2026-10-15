@@ -1395,6 +1395,29 @@ function RastrearPedidosModal({T,uid,onClose,puedeDeposito=false,onDescargar,onD
     </div>
   </Modal>);
 }
+// Teléfono argentino → {cod, num} para las columnas "código de área" y "número" del Excel de Andreani
+// (15/oct/2026, auditoría zensleep). Antes se cortaba SIEMPRE en los últimos 8 dígitos, que solo sirve
+// para el 11: "260 4271496" salía 26 / 04271496, "2942 547411" 29 / 42547411, y "+54 9 11 …" dejaba
+// el 9 pegado (911). Códigos de área: 11, los de 3 dígitos de la lista, y el resto de 4. Se quitan
+// +54, el 0 de larga distancia, el 9 de celular y el 15 después del código. Tests: scripts/export_test.cjs
+const GH_TEL_COD3=new Set(["220","221","223","230","236","237","249","260","261","263","264","266","280","291","294","297","298","299","336","341","342","343","345","348","351","353","358","362","364","370","376","379","380","381","383","385","387","388"]);
+// Códigos de 4 dígitos que empiezan como uno de 3 (Zapala 2942 / Bariloche 294, Reconquista 3482 /
+// Escobar 348…): el plan de numeración no se superpone, así que si el número empieza así es de 4.
+const GH_TEL_COD4=new Set(["2202","2302","2646","2647","2648","2940","2942","2945","2946","2948","2972","2982","2983","3435","3436","3437","3438","3454","3455","3456","3458","3482","3483","3487","3489","3532","3533","3537","3582","3583","3584","3585","3835","3837","3838","3854","3855","3856","3857","3858","3876","3877","3878","3885","3886","3887","3888"]);
+function ghTelAR(raw){
+  let d=String(raw||"").replace(/\D/g,"");
+  if(!d) return {cod:"",num:""};
+  if(d.startsWith("00")) d=d.slice(2);
+  if(d.startsWith("54")&&d.length>=12) d=d.slice(2);
+  if(d.startsWith("0")) d=d.slice(1);
+  if(d.startsWith("9")&&d.length===11) d=d.slice(1);
+  if(d.length<10) return {cod:"",num:d.replace(/^15(?=\d{6,8}$)/,"")};
+  const largo=d.startsWith("11")?2:GH_TEL_COD4.has(d.slice(0,4))?4:GH_TEL_COD3.has(d.slice(0,3))?3:4;
+  const cod=d.slice(0,largo); let num=d.slice(largo);
+  if(num.startsWith("15")&&num.length===12-largo) num=num.slice(2);
+  if(num.length!==10-largo){ num=d.slice(-(10-largo)); } // largo raro: se quedan los últimos dígitos que corresponden a ese código
+  return {cod,num};
+}
 const GH_ENVIO_GRID="24px minmax(230px,1.15fr) minmax(220px,1.35fr) minmax(190px,1fr) 150px";
 function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,idx=0,verEstado=false}){
   const [h,setH]=useState(false);
@@ -4586,6 +4609,7 @@ function buildOrdersFromAPI(data) {
       tnId:String(o.id||""), // id REAL de la orden en TN (para acciones como /pack)
       fecha:o.created_at?new Date(o.created_at).toLocaleDateString('es-AR'):'',
       comprador:(`${sh.name||''} ${sh.last_name||''}`.trim()||o.contact_name||o.billing_address?.name||'').trim(),
+      compNombre:sh.last_name?String(sh.name||'').trim():'', compApellido:sh.last_name?String(sh.last_name).trim():'',
       email:o.contact_email||o.billing_address?.email||'',
       telefono:o.contact_phone||o.billing_address?.phone||'',
       dni:o.contact_identification||'',
@@ -4735,6 +4759,16 @@ function ghLocElegirDelCp(locs,lista,prov,localidad,pista){
   const pn=" "+ghNrmSuc(pista||"")+" "; const nombrada=k=>k.x.loc.length>=4&&pn.includes(" "+k.x.loc+" ")?1:0;
   return [...pool].sort((a,b)=>nombrada(b)-nombrada(a)||b.x.loc.length*nombrada(b)-a.x.loc.length*nombrada(a)||peso(b)-peso(a)||a.x.loc.localeCompare(b.x.loc))[0];
 }
+// Ciudad escrita por el comprador que existe en la provincia con un CP pegado al del pedido
+// (|diferencia| <= 3, fuera del área 1000-1999). Devuelve la entrada del CP más cercano, o null.
+function ghLocCiudadVecina(locs,c,prov,textos){
+  if(!prov||!textos.length||Number(c)<2000) return null;
+  const hits=[];
+  for(const t of textos){ if(t===prov||ghLocProv(t)===prov) continue;
+    for(const l of (locs?.provIndex?.[prov]||[])){ const x=ghLocPartes(l); if(x&&x.loc===t&&x.cp!==c){ const d=Math.abs(Number(x.cp)-Number(c)); if(d<=3) hits.push({l,x,d}); } } }
+  if(!hits.length||new Set(hits.map(h=>h.x.loc)).size!==1) return null;
+  return hits.sort((a,b)=>a.d-b.d||Number(a.x.cp)-Number(b.x.cp))[0].l;
+}
 // → {loc, motivo} o null. `motivo` explica por qué se aceptó (para diagnóstico y tests).
 // `localidad`: un texto o la lista [localidad, ciudad] del pedido.
 function ghMatchLocalidad(locs,cp,provincia,localidad,pista){
@@ -4780,6 +4814,15 @@ function ghMatchLocalidad(locs,cp,provincia,localidad,pista){
     // Ninguna localidad del CP se parece (el comprador puso un barrio): solo si el CP
     // tiene UNA entrada y la provincia coincide exacta — no queda nada que elegir.
     if(cands.length===1&&sc[0].ok===true) return {loc:cands[0].l,motivo:"cp_unico_provincia"};
+    // 15/oct/2026 (zensleep #7254, "Ruta 143 12330, 5601 San Rafael, Mendoza" salía a CAPITAN MONTOYA):
+    // el CP del pedido tiene varias localidades y ninguna se llama como la ciudad que escribió el
+    // comprador, pero ESA ciudad existe en la provincia con un CP pegado (SAN RAFAEL 5600 / 5602).
+    // Antes se elegía una localidad cualquiera del 5601; ahora va la ciudad del comprador con su CP
+    // vecino (hasta 3 de diferencia, solo en el interior: en 1000-1999 los CP son barrios distintos).
+    // Si la calle nombra una de las localidades del CP, sigue ganando esa.
+    const vec=ghLocCiudadVecina(locs,c,prov,textos);
+    const pn=" "+ghNrmSuc(pista||"")+" ";
+    if(vec&&!sc.some(k=>k.x.loc.length>=4&&pn.includes(" "+k.x.loc+" "))) return {loc:vec,motivo:"localidad_cp_vecino"};
     const e=ghLocElegirDelCp(locs,sc,prov,textos,[pista,...textos].filter(Boolean).join(" ")); return e?{loc:e.l,motivo:"cp_zona"}:null;
   }
   // Sin CP legible: provincia + localidad EXACTA, y solo si esa localidad tiene una única entrada.
@@ -4797,6 +4840,7 @@ function ghLocVerif(o,ubicacion,locs){
   const pOk=ghLocProvOk(prov,x.prov), igual=ghLocScoreMax(textos,x.loc)===3;
   if(c&&x.cp===c) return pOk!==false||igual?"ok":"warn";
   if(pOk===false) return "warn";
+  if(c&&igual&&locs&&ghLocCiudadVecina(locs,c,prov,textos)===ubicacion) return "ok"; // la ciudad del comprador con su CP pegado (ver ghLocCiudadVecina)
   if(c) return igual&&ghLocCpCerca(x.cp,c)&&!!locs&&!locs.cpIndex?.[c]?"ok":"warn"; // CP vecino solo vale si el del pedido no existe en la plantilla
   return pOk===true&&ghLocScoreMax(textos,x.loc)>=2?"ok":"warn";
 }
@@ -10865,17 +10909,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     const sucursalOrders=ordersData.filter(o=>isSucursal(o));
 
     function getPersonData(o){
-      const partes=o.comprador.trim().split(' ');
-      const nombre=cleanField(partes[0]||"");
-      const apellido=cleanField(partes.slice(1).join(' ')||"");
-      const tel=(o.telefono||"").replace(/[^0-9]/g,'');
-      const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
-      // Quitar el 9 inicial de celulares argentinos (ej: 91156333118 → 1156333118)
-      const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
-      let telCod='',telNum='';
-      if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
-      else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
-      else if(clean.length>0){telNum=clean;}
+      // Nombre y apellido del DESTINATARIO como vienen separados en la tienda (Shopify los manda
+      // aparte); si no, la primera palabra es el nombre y el resto el apellido.
+      let nombre, apellido;
+      if(o.compNombre&&o.compApellido){ nombre=cleanField(o.compNombre); apellido=cleanField(o.compApellido); }
+      else { const partes=o.comprador.trim().split(' '); nombre=cleanField(partes[0]||""); apellido=cleanField(partes.slice(1).join(' ')||""); }
+      const {cod:telCod,num:telNum}=ghTelAR(o.telefono);
       return {nombre,apellido,telCod,telNum};
     }
 
