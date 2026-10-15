@@ -924,6 +924,32 @@ export default async function handler(req, res) {
     }
   }
 
+  // Catálogo VIGENTE para elegir productos (envío especial del depósito, 15/oct/2026): solo productos
+  // publicados / activos de la tienda y variantes CON SKU (sin SKU no hay nada que imprimir en la
+  // etiqueta). Antes se usaba el snapshot de Stock, que traía productos despublicados, copias y landings.
+  if (action === "catalogo_envio") {
+    try {
+      if (esDemo(userDataStock)) return res.status(200).json({ productos: [], demo: true });
+      const out = new Map();
+      const agregar = (sku, producto, variante) => { const k = String(sku || "").trim(); if (!k || out.has(k)) return; out.set(k, { sku: k, producto: String(producto || "").trim().slice(0, 120), variante: String(variante || "").trim().slice(0, 80) }); };
+      if (platform === "shopify") {
+        let sinceId = null;
+        for (let pag = 0; pag < 20; pag++) {
+          const r = await fetchTR(`${SH_URL(shop)}/products.json?limit=250&status=active&fields=id,title,variants${sinceId ? `&since_id=${sinceId}` : ""}`, { headers: SH_H(accessToken) });
+          if (!r.ok) throw new Error(`Shopify products HTTP ${r.status}`);
+          const { products: batch } = await r.json(); if (!batch?.length) break;
+          for (const p of batch) for (const v of p.variants || []) agregar(v.sku, p.title, [v.option1, v.option2, v.option3].filter(x => x && x !== "Default Title").join(" / "));
+          if (batch.length < 250) break; sinceId = batch[batch.length - 1].id;
+        }
+      } else if (storeId && accessToken) {
+        const prods = await withDeadline(tnProductsCached(storeId, accessToken), "el catálogo de Tienda Nube");
+        for (const p of prods) { if (p.published === false) continue; const nom = p.name?.es || Object.values(p.name || {})[0] || "";
+          for (const v of p.variants || []) agregar(v.sku, nom, (v.values || []).map(val => val.es || val.en || Object.values(val || {})[0] || "").filter(Boolean).join(" / ")); }
+      }
+      return res.status(200).json({ platform, productos: [...out.values()].sort((x, y) => x.sku.localeCompare(y.sku)) });
+    } catch (e) { console.error("[stock catalogo_envio]", e.message); return res.status(500).json({ error: e.message || "No se pudo leer el catálogo" }); }
+  }
+
   try{
     if(action==="products"){
       // Helper: fetch ML data en paralelo (si está conectado).

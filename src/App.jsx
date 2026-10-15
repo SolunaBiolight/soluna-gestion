@@ -21931,7 +21931,8 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   const [q,setQ]=useState(""); const [mes,setMes]=useState("");
   // Productos de la tienda conectada (solo dentro de Growith), para el desplegable del envío especial.
   const [prodsTienda,setProdsTienda]=useState([]);
-  useEffect(()=>{ if(!tiendaUid) return; let vivo=true; (async()=>{ for(const extra of ["&cache=only",""]){ try{ const r=await authFetch(`/api/stock?action=products&uid=${tiendaUid}&days=7${extra}`); const j=await r.json(); if(vivo&&Array.isArray(j?.products)&&j.products.length){ setProdsTienda(j.products); return; } }catch(_){ } } })(); return ()=>{ vivo=false; }; },[tiendaUid]);
+  // Solo lo vigente: productos publicados / activos y variantes con SKU (stock?action=catalogo_envio).
+  useEffect(()=>{ if(!tiendaUid) return; let vivo=true; (async()=>{ try{ const r=await authFetch(`/api/stock?action=catalogo_envio&uid=${tiendaUid}`); const j=await r.json(); if(vivo&&Array.isArray(j?.productos)) setProdsTienda(j.productos); }catch(_){ } })(); return ()=>{ vivo=false; }; },[tiendaUid]);
   const cargar=()=>api("c_tandas").then(d=>{ setSt(d); setErr(""); }).catch(e=>setErr(e.message));
   // Refresco liviano cada 60 s con la pestaña visible: el cliente ve avanzar su tanda sin recargar.
   useEffect(()=>{ cargar(); const iv=setInterval(()=>{ if(document.visibilityState==="visible") cargar(); },60000); return ()=>clearInterval(iv); },[]);
@@ -21946,7 +21947,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   // Opciones del envío especial: SOLO las variantes de la tienda (Tienda Nube / Shopify), nunca Mercado Libre.
   // Sin tienda conectada (portal por link): lo que ese cliente ya mandó por Andreani.
   const catalogo=(()=>{ const m=new Map();
-    for(const p of prodsTienda) for(const v of (p.variants||[])){ const val=String(v.sku||[p.nombre,v.nombre&&v.nombre!=="Default"?v.nombre:""].filter(Boolean).join(" ")).trim(); const vr=v.nombre&&v.nombre!=="Default"?String(v.nombre):""; if(val&&!m.has(val)) m.set(val,{l:v.sku?`${v.sku} — ${[p.nombre,vr].filter(Boolean).join(" ")}`:val,sku:v.sku?String(v.sku):"",vr,prod:String(p.nombre||"")}); }
+    for(const p of prodsTienda){ if(p.sku&&!m.has(p.sku)) m.set(p.sku,{l:`${p.sku} — ${[p.producto,p.variante].filter(Boolean).join(" ")}`,sku:p.sku,vr:p.variante||"",prod:p.producto||""}); }
     if(!m.size) for(const t of (st.tandas||[]).filter(t=>t.canal!=="ml")) for(const pd of t.pedidos||[]) for(const it of pd.items||[]){ const val=String(it).replace(/^\d+\s*x\s+/i,"").replace(/\s*\(x\s*\d+\)\s*$/i,"").trim(); if(val&&!m.has(val)) m.set(val,{l:val}); }
     return [...m.entries()].map(([v,o])=>({v,...o})).sort((a,b)=>a.l.localeCompare(b.l)).slice(0,400); })();
   // Dos pasos: pendiente → impresa. Todo lo que no está pendiente ni cancelado ya salió impreso.
