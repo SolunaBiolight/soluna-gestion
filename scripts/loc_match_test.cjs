@@ -6,7 +6,7 @@ const fs=require("fs"),path=require("path");
 const src=fs.readFileSync(path.join(__dirname,"..","src","App.jsx"),"utf8");
 const blk=src.slice(src.indexOf("// GH_LOC_MATCH_BEGIN"),src.indexOf("// GH_LOC_MATCH_END"));
 const nrm=src.slice(src.indexOf("function ghNrmSuc(s){"),src.indexOf("\n}\n",src.indexOf("function ghNrmSuc(s){"))+3);
-const M=new Function(nrm+blk+"\nreturn {ghLocCp,ghLocProv,ghMatchLocalidad,ghLocVerif,ghLocCandidatas,ghLocPartes,ghLocCpCerca};")();
+const M=new Function(nrm+blk+"\nreturn {ghLocCp,ghLocProv,ghMatchLocalidad,ghLocVerif,ghLocCandidatas,ghLocPartes,ghLocCpCerca,ghLocMemKey,ghLocOpciones,GH_LOC_A_CONFIRMAR};")();
 const list=fs.readFileSync(path.join(__dirname,"fixtures","tpl_localidades.txt"),"utf8").split("\n").filter(Boolean);
 const cpIndex={},provIndex={};
 for(const l of list){ const p=l.split(" / "); (cpIndex[p[2].trim()]=cpIndex[p[2].trim()]||[]).push(l); (provIndex[p[0].trim()]=provIndex[p[0].trim()]||[]).push(l); }
@@ -108,5 +108,11 @@ eq("#7254 con la calle: igual San Rafael",M.ghMatchLocalidad(locs,"5601","Mendoz
 eq("#7254 la verificación final lo da por bueno",M.ghLocVerif({cp:"5601",provincia:"Mendoza",localidad:"San Rafael"},"MENDOZA / SAN RAFAEL / 5600",locs),"ok");
 eq("una localidad del 5601 escrita tal cual sigue ganando",m("5601","Mendoza","Las Paredes"),"MENDOZA / LAS PAREDES / 5601");
 eq("en el área 1000-1999 no se cambia el CP (Lomas de Zamora con el 1834 de Temperley)",M.ghLocPartes(m("1834","Buenos Aires","Lomas de Zamora"))?.cp,"1834");
+// Confirmación a mano + memoria (15/oct/2026)
+{ const o={cp:"5601",provincia:"Mendoza",ciudad:"San Rafael",localidad:"San Rafael"}; const r=M.ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad],"Ruta 143 12330");
+  eq("#7254 se pide confirmar",M.GH_LOC_A_CONFIRMAR.has(r.motivo),true);
+  eq("#7254 clave de memoria",M.ghLocMemKey(o),"MENDOZA|5601|SAN RAFAEL");
+  const op=M.ghLocOpciones(locs,o,r.loc); eq("#7254 opciones: la sugerida primero y las del 5601 después",[op[0],op.includes("MENDOZA / CAPITAN MONTOYA / 5601"),op.includes("MENDOZA / SAN RAFAEL / 5602")],["MENDOZA / SAN RAFAEL / 5600",true,true]); }
+eq("una localidad exacta del CP NO se pide confirmar",M.GH_LOC_A_CONFIRMAR.has(M.ghMatchLocalidad(locs,"5000","Córdoba","Córdoba").motivo),false);
 console.log(`barrido: ${list.length} localidades · ${nulos} van a mano con sus propios datos (${(nulos/list.length*100).toFixed(1)} %)`);
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);

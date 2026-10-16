@@ -1289,6 +1289,38 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
 // pedido es lo principal (grande, en violeta), después cliente y localidad, productos en píldoras, tipo de envío (domicilio /
 // sucursal) con su punto de color y, a la derecha, total y costo de la etiqueta. El estado solo se muestra
 // en la búsqueda. Pura: todo llega por props (se puede ver sin sesión con el arnés /?env=1).
+// Confirmación de localidades dudosas antes de descargar el Excel a domicilio (15/oct/2026, zensleep).
+// Un renglón por pedido con lo que escribió el comprador y un desplegable con la sugerencia de
+// Growith ya elegida; "Confirmar" devuelve {numero: entrada | "EXCLUIR"} y se guarda en la memoria.
+function LocConfirmModal({T,items,onDone,onCancel}){
+  const [sel,setSel]=useState(()=>Object.fromEntries(items.map(x=>[x.o.numero,x.sug])));
+  const iS=InputStyle(T);
+  const linda=l=>{ const x=String(l||"").split(" / "); return x.length===3?`${x[1]} (${x[0]}) · CP ${x[2]}`:l; };
+  return (<Modal T={T} open onClose={onCancel} title={`Confirmá ${items.length===1?"la localidad":`${items.length} localidades`}`} width={720} zIndex={1800}>
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>En {items.length===1?"este pedido":"estos pedidos"} la ciudad que escribió el comprador no figura con su código postal en el listado de Andreani, así que Growith eligió una. Revisala y confirmá. <strong style={{color:T.text}}>Lo que elijas queda guardado</strong>: la próxima vez que llegue la misma ciudad con el mismo código postal sale sola.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"55vh",overflowY:"auto"}}>
+        {items.map(x=>{ const o=x.o; const v=sel[o.numero]; return (<div key={o.numero} style={{border:`1px solid ${v===x.sug?T.border:T.accentSolid+"66"}`,borderRadius:DS.r.xl,padding:"12px 14px",display:"flex",flexDirection:"column",gap:8,background:T.card}}>
+          <div style={{display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
+            <strong style={{fontSize:DS.font.lg,color:T.accent}}>#{o.numero}</strong>
+            <span style={{fontSize:DS.font.base,color:T.text,fontWeight:600}}>{o.comprador}</span>
+            <span style={{fontSize:DS.font.md,color:T.textMd,flex:1,minWidth:200}}>Escribió: {[`${o.direccion||""} ${o.dirNumero&&o.dirNumero!=="0"?o.dirNumero:""}`.trim(),o.ciudad||o.localidad,o.provincia,o.cp?`CP ${o.cp}`:""].filter(Boolean).join(", ")}</span>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <select value={v} onChange={e=>setSel(s=>({...s,[o.numero]:e.target.value}))} style={{...iS,marginBottom:0,flex:1,minWidth:240}}>
+              {x.opts.map(l=><option key={l} value={l}>{linda(l)}{l===x.sug?" — sugerida":""}</option>)}
+              <option value="EXCLUIR">No exportar este pedido ahora</option>
+            </select>
+          </div>
+        </div>); })}
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
+        <DepBtn T={T} variant="secondary" size="lg" onClick={onCancel}>Cancelar la exportación</DepBtn>
+        <DepBtn T={T} variant="primary" size="lg" ico="check" onClick={()=>onDone(sel)}>Confirmar y seguir</DepBtn>
+      </div>
+    </div>
+  </Modal>);
+}
 // Rastrear pedidos (14/oct/2026): pegás números de pedido y dice, uno por uno, en qué paso quedó
 // (etiqueta por API o Excel, depósito, aviso a la tienda y estado EN VIVO en Andreani) y qué pasó.
 // Todo sale de `update-shipping?action=rastrear` (solo lectura; diagnóstico en diagnosticoRastreo).
@@ -4768,6 +4800,21 @@ function ghLocCiudadVecina(locs,c,prov,textos){
     for(const l of (locs?.provIndex?.[prov]||[])){ const x=ghLocPartes(l); if(x&&x.loc===t&&x.cp!==c){ const d=Math.abs(Number(x.cp)-Number(c)); if(d<=3) hits.push({l,x,d}); } } }
   if(!hits.length||new Set(hits.map(h=>h.x.loc)).size!==1) return null;
   return hits.sort((a,b)=>a.d-b.d||Number(a.x.cp)-Number(b.x.cp))[0].l;
+}
+// Motivos de ghMatchLocalidad en los que Growith ELIGIÓ entre varias opciones sin que la ciudad del
+// comprador coincida con una localidad del CP: se le pide confirmación a mano antes de descargar el
+// Excel (15/oct/2026, zensleep) y la elección queda en la memoria (ghLocMemKey) para la próxima vez.
+const GH_LOC_A_CONFIRMAR=new Set(["cp_zona","localidad_cp_vecino","localidad_cp_cercano","cp_localidad_otra_provincia"]);
+// Clave de memoria: provincia + CP + ciudad tal como los escribió el comprador (normalizados).
+function ghLocMemKey(o){ const c=ghLocCp(o?.cp); if(!c) return ""; return `${ghLocProv(o?.provincia)}|${c}|${ghNrmSuc(o?.ciudad||o?.localidad||"")}`; }
+// Opciones para confirmar a mano: la sugerida, las demás del CP del pedido y la ciudad del comprador
+// en otros CP de la provincia (las más cercanas primero).
+function ghLocOpciones(locs,o,sugerida){
+  const out=[]; const add=l=>{ if(l&&!out.includes(l)) out.push(l); };
+  add(sugerida); ghLocCandidatas(locs,o.cp,o.provincia).forEach(add);
+  const prov=ghLocProvDe(locs,o.provincia), c=Number(ghLocCp(o.cp)), textos=ghLocTextos([o.localidad,o.ciudad]);
+  if(prov) (locs?.provIndex?.[prov]||[]).map(l=>({l,x:ghLocPartes(l)})).filter(k=>k.x&&textos.includes(k.x.loc)).sort((a,b)=>Math.abs(Number(a.x.cp)-c)-Math.abs(Number(b.x.cp)-c)).slice(0,6).forEach(k=>add(k.l));
+  return out.slice(0,40);
 }
 // → {loc, motivo} o null. `motivo` explica por qué se aceptó (para diagnóstico y tests).
 // `localidad`: un texto o la lista [localidad, ciudad] del pedido.
@@ -10806,8 +10853,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return andreaniLocsRef.current;
   }
   // Núcleo único ghMatchLocalidad (bloque GH_LOC_MATCH): nunca adivina.
-  function findAndreaniLocation(locs,cp,provincia,localidad,pista) {
-    return ghMatchLocalidad(locs,cp,provincia,localidad,pista)?.loc||null;
+  // Localidad automática de un pedido a domicilio: primero la memoria (lo que ya se confirmó a mano
+  // para esa provincia + CP + ciudad), después el matcher. → {loc, motivo} o null.
+  function ubicacionAuto(locs,o){
+    const mem=locMapRef.current[ghLocMemKey(o)]?.loc;
+    if(mem&&locs.list.includes(mem)) return {loc:mem,motivo:"memoria"};
+    return ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`);
   }
 
   // Selector manual de localidad. Sin texto: las localidades del CP del pedido.
@@ -10966,10 +11017,12 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const {nombre,apellido,telCod,telNum}=getPersonData(o);
         // Sin respaldo: si no hay localidad segura la celda va VACÍA (Andreani rechaza la fila) y se avisa.
         const _ovrLoc=locationOverridesRef.current[ovrKey(o)];
-        const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`)||"";
+        const _auto=ubicacionAuto(locs,o);
+        const _aMano=!!(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc))||_auto?.motivo==="memoria"; // confirmada por una persona: no se vuelve a acusar
+        const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||_auto?.loc||"";
         const dirNum=extractStreetNum(o.direccion, o.dirNumero);
         const direccion=extractStreetName(o.direccion, o.dirNumero);
-        if(!ubicacion||verifUbicacionVsPedido(o,ubicacion)==="warn")verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion||"(sin localidad: la fila sale vacía)",esperado:`${o.localidad||o.ciudad||""}${o.provincia?`, ${o.provincia}`:""}${o.cp?` (CP ${o.cp})`:""}`});
+        if(!ubicacion||(!_aMano&&verifUbicacionVsPedido(o,ubicacion)==="warn"))verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion||"(sin localidad: la fila sale vacía)",esperado:`${o.localidad||o.ciudad||""}${o.provincia?`, ${o.provincia}`:""}${o.cp?` (CP ${o.cp})`:""}`});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -11175,6 +11228,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // todos los pedidos futuros al mismo punto se resuelven solos, en ambos
   // flujos (tpl = string del desplegable del Excel; oficial = id de la API).
   const puntoMapRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_puntoMap"))||"{}");}catch(_){return {};}})());
+  const locMapRef=useRef({}); // memoria de localidades confirmadas a mano (users/{uid}/envios_cfg/loc_map)
+  const [locConfirm,setLocConfirm]=useState(null); // {items:[{o,sug,opts}], resolve}
   // Pedidos cuya sucursal Andreani NO está operativa (detectado al exportar):
   // en la próxima exportación no se auto-resuelven — pasan sí o sí por el
   // modal de elección (con cercanas) hasta que se les elija otra sucursal.
@@ -11198,6 +11253,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     let vivo=true;
     (async()=>{
       try{
+        authFetch(`/api/andreani?action=loc_map_get&uid=${encodeURIComponent(user.uid)}`).then(r=>r.json()).then(d=>{ if(vivo&&d?.ok) locMapRef.current=d.entries||{}; }).catch(()=>{});
         const r=await authFetch(`/api/andreani?action=punto_map_get&uid=${encodeURIComponent(user.uid)}`);
         const d=await r.json().catch(()=>null);
         if(!vivo||!r.ok||!d?.ok) return;
@@ -11708,7 +11764,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       const unresolvedDom=domicilioOrdersSinEsquina.filter(o=>{
         if(locationOverridesRef.current[ovrKey(o)]) return false;
-        return !findAndreaniLocation(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`);
+        return !ubicacionAuto(locs,o);
       });
       // Marcas "no operativa" viejas: si esa sucursal ya no figura dada de
       // baja (p. ej. fue un falso positivo), se desmarca y vuelve al flujo normal.
@@ -11747,6 +11803,22 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         setExportProgress({step:"",pct:0,current:0,total:0});
         await resolveLocationsSequentially(unresolvedDom,unresolvedSuc,locs,selOrders);
         return;
+      }
+
+      // Localidades que Growith ELIGIÓ sin que la ciudad del comprador coincida (ej. "San Rafael" con
+      // un CP que no la tiene): se confirman a mano ANTES de descargar, y lo elegido queda en la
+      // memoria para que la próxima vez salga solo (15/oct/2026, zensleep).
+      const dudosos=domicilioOrdersSinEsquina.filter(o=>!locationOverridesRef.current[ovrKey(o)]).map(o=>({o,r:ubicacionAuto(locs,o)})).filter(x=>x.r&&GH_LOC_A_CONFIRMAR.has(x.r.motivo));
+      if(dudosos.length){
+        setExporting(false);
+        const elec=await new Promise(resolve=>setLocConfirm({items:dudosos.map(x=>({o:x.o,sug:x.r.loc,opts:ghLocOpciones(locs,x.o,x.r.loc)})),resolve}));
+        setLocConfirm(null);
+        if(!elec){ setExportProgress({step:"",pct:0,current:0,total:0}); return; }
+        const mem={};
+        for(const x of dudosos){ const v=elec[x.o.numero]; if(!v) continue; locationOverridesRef.current[ovrKey(x.o)]=v; if(v!=="EXCLUIR"){ const k=ghLocMemKey(x.o); if(k){ mem[k]={loc:v}; locMapRef.current[k]={loc:v,ts:Date.now()}; } } }
+        persistOverrides();
+        if(Object.keys(mem).length) authFetch("/api/andreani?action=loc_map_set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,entries:mem})}).then(r=>{ if(!r.ok) toast("No se pudo guardar en la memoria la localidad elegida: la próxima vez te la vamos a volver a preguntar.","warning",7000); }).catch(()=>{});
+        setExporting(true);
       }
 
       let finalOrders=selOrders.filter(o=>
@@ -13145,6 +13217,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         </button>
       </AppTopbar>
       {(depArmando||bulkDl)&&!rastrearOpen&&<div style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",zIndex:1650,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:"10px 18px",boxShadow:DS.shadow.lg,display:"flex",alignItems:"center",gap:10,fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}><Spinner size={14} color={T.accent}/>{depArmando?`Preparando la tanda… ${depArmando.done}/${depArmando.total}`:`Armando el PDF… ${bulkDl.done}/${bulkDl.total}`}</div>}
+      {locConfirm&&<LocConfirmModal T={T} items={locConfirm.items} onDone={m=>locConfirm.resolve(m)} onCancel={()=>locConfirm.resolve(null)}/>}
       {rastrearOpen&&<RastrearPedidosModal T={T} uid={user?.uid} onClose={()=>setRastrearOpen(false)}
         puedeDeposito={!!depositoCliente}
         onDescargar={sel=>{ const w=ghDepVentana("application/pdf"); const l=ghDepOrdenar(sel,x=>ghSkuLinesDe(x)); descargarVarias(l.map(x=>({numero:x.numero,envio:String(x.tracking),skus:ghSkuLinesDe(x)})),w,{conSku:true}); }}

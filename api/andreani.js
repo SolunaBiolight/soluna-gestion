@@ -1746,6 +1746,23 @@ export default async function handler(req, res) {
     //  · global: andreani_config/punto_map_global {entries} — SOLO elecciones
     //    verificadas (misma calle y número que el punto), así una elección
     //    equivocada nunca se propaga a todas las cuentas. El admin la puede podar.
+    // Memoria de LOCALIDADES confirmadas a mano en el Excel a domicilio (15/oct/2026, zensleep):
+    // clave "PROVINCIA|CP|CIUDAD" (normalizada en el front con ghLocMemKey) → entrada de la plantilla.
+    // La próxima vez que aparece el mismo caso se usa sola, sin preguntar.
+    if (action === "loc_map_get" || action === "loc_map_set") {
+      const ref = db.collection("users").doc(uid).collection("envios_cfg").doc("loc_map");
+      if (action === "loc_map_get") { const d = await ref.get().catch(() => null); return res.json({ ok: true, entries: d?.exists ? (d.data().entries || {}) : {} }); }
+      if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+      const src = body.entries && typeof body.entries === "object" && !Array.isArray(body.entries) ? body.entries : {};
+      const upd = {};
+      for (const [k0, v] of Object.entries(src).slice(0, 200)) {
+        const k = String(k0 || "").trim().slice(0, 200); const loc = String(v?.loc || "").trim().slice(0, 200);
+        if (!k || !/^[^|]*\|\d{4}\|.*$/.test(k) || !/ \/ .+ \/ \d{4}$/.test(loc)) continue;
+        upd[k] = { loc, ts: Date.now(), por: String(user?.email || "").slice(0, 80) };
+      }
+      if (Object.keys(upd).length) await ref.set({ entries: upd }, { merge: true });
+      return res.json({ ok: true, guardadas: Object.keys(upd).length });
+    }
     if (action === "punto_map_get" || action === "punto_map_set" || action === "punto_map_del" || action === "punto_map_sync") {
       // La tienda (body/query uid o X-Growith-Tienda) ya pasó por requireUid
       // arriba: `uid` es el owner validado con la sección Envíos.
