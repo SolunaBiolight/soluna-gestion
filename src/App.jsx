@@ -10856,7 +10856,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // Localidad automática de un pedido a domicilio: primero la memoria (lo que ya se confirmó a mano
   // para esa provincia + CP + ciudad), después el matcher. → {loc, motivo} o null.
   function ubicacionAuto(locs,o){
-    const mem=locMapRef.current[ghLocMemKey(o)]?.loc;
+    const mem=o.canal==="shopify"?locMapRef.current[ghLocMemKey(o)]?.loc:null; // memoria solo para Shopify (Tienda Nube no la necesita)
     if(mem&&locs.list.includes(mem)) return {loc:mem,motivo:"memoria"};
     return ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`);
   }
@@ -11808,7 +11808,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Localidades que Growith ELIGIÓ sin que la ciudad del comprador coincida (ej. "San Rafael" con
       // un CP que no la tiene): se confirman a mano ANTES de descargar, y lo elegido queda en la
       // memoria para que la próxima vez salga solo (15/oct/2026, zensleep).
-      const dudosos=domicilioOrdersSinEsquina.filter(o=>!locationOverridesRef.current[ovrKey(o)]).map(o=>({o,r:ubicacionAuto(locs,o)})).filter(x=>x.r&&GH_LOC_A_CONFIRMAR.has(x.r.motivo));
+      // Solo pedidos de SHOPIFY (16/oct/2026, Lautaro: con Tienda Nube viene funcionando bien).
+      const dudosos=domicilioOrdersSinEsquina.filter(o=>o.canal==="shopify"&&!locationOverridesRef.current[ovrKey(o)]).map(o=>({o,r:ubicacionAuto(locs,o)})).filter(x=>x.r&&GH_LOC_A_CONFIRMAR.has(x.r.motivo));
       if(dudosos.length){
         setExporting(false);
         const elec=await new Promise(resolve=>setLocConfirm({items:dudosos.map(x=>({o:x.o,sug:x.r.loc,opts:ghLocOpciones(locs,x.o,x.r.loc)})),resolve}));
