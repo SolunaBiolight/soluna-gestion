@@ -15341,6 +15341,25 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
           </div>
         );
       })()}
+      {/* Costo promedio por etiqueta (últimos 30 días): para saber cuánto dura el saldo. */}
+      {data?.promedio?.n>0&&(()=>{ const pr=data.promedio; const dura=pr.prom>0?Math.floor(saldoActual/pr.prom):null; return (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginTop:-6,marginBottom:16}}>
+          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px"}}>
+            <div style={{fontSize:11,color:T.textSm,fontWeight:600}}>Tu envío promedio</div>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.4,marginTop:2,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(pr.prom)}</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{pr.n} etiqueta{pr.n!==1?"s":""} en los últimos 30 días</div>
+          </div>
+          {pr.dom.n>0&&pr.suc.n>0&&<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px"}}>
+            <div style={{fontSize:11,color:T.textSm,fontWeight:600}}>Por tipo</div>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginTop:4,lineHeight:1.6}}>Domicilio {fmtMoney(pr.dom.prom)}<span style={{color:T.textSm,fontWeight:500}}> · {pr.dom.n}</span><br/>Sucursal {fmtMoney(pr.suc.prom)}<span style={{color:T.textSm,fontWeight:500}}> · {pr.suc.n}</span></div>
+          </div>}
+          {dura!=null&&<div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px"}}>
+            <div style={{fontSize:11,color:T.textSm,fontWeight:600}}>Te alcanza para</div>
+            <div style={{fontSize:20,fontWeight:800,color:dura<5?T.yellow:T.text,letterSpacing:-0.4,marginTop:2}}>≈ {dura} etiqueta{dura!==1?"s":""}</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>al precio promedio · gastaste {fmtMoney(pr.total)} en 30 días</div>
+          </div>}
+        </div>
+      ); })()}
       {saldoErr&&(
         <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:T.yellow}}>
           No se pudieron traer los movimientos — el saldo mostrado puede estar desactualizado. Cerrá y volvé a abrir para reintentar.

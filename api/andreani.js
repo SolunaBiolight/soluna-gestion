@@ -795,6 +795,26 @@ async function mpContracargo(db, cargaId, pago) {
 // Backstop del webhook: reconcilia cargas MP pendientes contra la API de MP.
 // Si el webhook se perdió (firma, caída, config), el cron de cada 10 minutos
 // acredita igual. La llama api/check-payments.js.
+
+// Costo promedio de las etiquetas por API de los últimos 30 días (15/oct… 17/oct/2026, pedido de Lautaro):
+// débitos de etiqueta menos los que después se devolvieron (anuladas), separado domicilio / sucursal.
+// `movs` = documentos de users/{uid}/andreani_mov. Puro.
+export function promedioEtiquetas(movs) {
+  const devueltos = new Set();
+  for (const m of movs || []) if (m.tipo === "reverso") for (const k of [m.envioId, m.numeroDeEnvio]) if (k) devueltos.add(String(k));
+  const out = { n: 0, total: 0, dom: { n: 0, total: 0 }, suc: { n: 0, total: 0 }, dias: 30 };
+  for (const m of movs || []) {
+    if (m.tipo !== "debito" || !/^Etiqueta/i.test(String(m.nota || ""))) continue;
+    // Por número de envío (si el pedido se volvió a emitir, la etiqueta nueva sí cuenta); sin número, por pedido.
+    if (m.numeroDeEnvio ? devueltos.has(String(m.numeroDeEnvio)) : (m.envioId && devueltos.has(String(m.envioId)))) continue;
+    const v = Number(m.monto) || 0; if (v <= 0) continue;
+    const g = /sucursal/i.test(String(m.nota)) ? out.suc : out.dom;
+    out.n++; out.total += v; g.n++; g.total += v;
+  }
+  const prom = x => (x.n ? Math.round(x.total / x.n) : null);
+  return { n: out.n, prom: prom(out), total: Math.round(out.total), dom: { n: out.dom.n, prom: prom(out.dom) }, suc: { n: out.suc.n, prom: prom(out.suc) }, dias: 30 };
+}
+
 export async function mpReconciliarCargas(db, soloUid) {
   const token = process.env.MP_ACCESS_TOKEN || "";
   if (!token) return { skip: "mp_no_configurado" };
@@ -2571,13 +2591,16 @@ export default async function handler(req, res) {
 
     // ── saldo ─────────────────────────────────────────────────────────────
     if (action === "saldo") {
-      const [snap, movSnap] = await Promise.all([
+      const desde = new Date(Date.now() - 30 * 86400000);
+      const [snap, movSnap, mes] = await Promise.all([
         userRef.get(),
         movCol.orderBy("ts", "desc").limit(50).get(),
+        movCol.where("ts", ">=", desde).get().catch(() => null),
       ]);
       return res.json({
         saldo: Math.round(Number(snap.data()?.andreaniSaldo) || 0),
         movimientos: movSnap.docs.map(d => ({ _id: d.id, ...d.data() })),
+        promedio: mes ? promedioEtiquetas(mes.docs.map(d => d.data())) : null,
       });
     }
 
