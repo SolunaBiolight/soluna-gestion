@@ -201,7 +201,7 @@ async function validarParCertKey(certPem, keyPem, arcaProd) {
 
 // ─── Firma TRA con node-forge (reemplaza openssl subprocess) ──
 
-async function firmarTRA(certPem, keyPem, arcaProd) {
+async function firmarTRA(certPem, keyPem, arcaProd, service = "wsfe") {
   const forge = (await import("node-forge")).default;
 
   // Validación local primero — atajamos los errores típicos antes de gastar un round-trip a AFIP
@@ -219,7 +219,7 @@ async function firmarTRA(certPem, keyPem, arcaProd) {
     <generationTime>${fmt(gen)}</generationTime>
     <expirationTime>${fmt(exp)}</expirationTime>
   </header>
-  <service>wsfe</service>
+  <service>${service === "wsfe" ? "wsfe" : String(service).replace(/[^a-z0-9_]/gi, "")}</service>
 </loginTicketRequest>`;
 
   const p7 = forge.pkcs7.createSignedData();
@@ -3971,6 +3971,64 @@ export function monoResumen({ meses = {}, hoy, topes = null, categoria = "" }) {
     corresponde, correspondeRecat, mesExceso, maximo: Number(topes.K) || null };
 }
 
+
+// ─── Padrón de ARCA: constancia de inscripción (ws_sr_constancia_inscripcion, "A5") — 17/oct/2026 ──
+// Sirve para completar razón social, domicilio y condición frente al IVA de un CUIT antes de facturarle.
+// Requiere que el certificado del cliente tenga la relación con ese servicio en ARCA (Administrador de
+// Relaciones); si no la tiene, el error lo explica. El ticket de este servicio se guarda aparte del de wsfe.
+const PADRON_SERVICE = "ws_sr_constancia_inscripcion";
+const _taPadMem = new Map();
+async function obtenerTAServicio(db, uid, cfg, service) {
+  const cuitNum = String(cfg.cuit).replace(/\D/g, ""); const prod = !!cfg.arca_prod;
+  const memKey = `${uid}|${cuitNum}|${prod}|${service}`;
+  const m = _taPadMem.get(memKey); if (taVigente(m)) return m;
+  const ref = db.collection("users").doc(uid).collection("arca_ta").doc(`${cuitNum}_${prod ? "prod" : "homo"}_${service}`);
+  try { const sn = await ref.get(); const d = sn.exists ? sn.data() : null; if (taVigente(d)) { _taPadMem.set(memKey, d); return d; } } catch (_) {}
+  const { wsaa } = arcaUrls(prod);
+  const cms = await firmarTRA(cfg.cert_pem, cfg.key_pem, prod, service);
+  const { token, sign, exp } = await loginWSAA(cms, wsaa);
+  const ta = { token, sign, exp: exp || new Date(Date.now() + 11 * 3600000).toISOString(), obtenidoAt: new Date().toISOString() };
+  try { await ref.set(ta); } catch (_) {}
+  _taPadMem.set(memKey, ta); return ta;
+}
+async function consultarPadron(db, uid, cfg, cuitConsulta) {
+  const prod = !!cfg.arca_prod;
+  let ta;
+  try { ta = await obtenerTAServicio(db, uid, cfg, PADRON_SERVICE); }
+  catch (e) {
+    if (/autoriz|notAuthorized|no se encuentra|computador/i.test(String(e.message))) throw Object.assign(new Error("Tu certificado de ARCA todavía no tiene permiso para consultar el padrón. Entrá a ARCA → Administrador de Relaciones de Clave Fiscal → Nueva relación → buscá el servicio \"Consulta de constancia de inscripción\" (ws_sr_constancia_inscripcion) y asignalo al mismo certificado que usás para facturar. Después probá de nuevo."), { code: "padron_sin_permiso" });
+    throw e;
+  }
+  const url = prod ? "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5" : "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA5";
+  const soap = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a5="http://a5.soap.ws.server.puc.sr/"><soapenv:Header/><soapenv:Body><a5:getPersona_v2><token>${ta.token}</token><sign>${ta.sign}</sign><cuitRepresentada>${parseInt(String(cfg.cuit).replace(/\D/g, ""))}</cuitRepresentada><idPersona>${parseInt(cuitConsulta)}</idPersona></a5:getPersona_v2></soapenv:Body></soapenv:Envelope>`;
+  const r = await arcaFetch(url, { method: "POST", headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" }, body: soap });
+  const xml = await r.text();
+  const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true });
+  const j = parser.parse(xml);
+  const body = j?.Envelope?.Body || {};
+  if (body.Fault) throw new Error(String(body.Fault.faultstring || "ARCA no respondió la consulta").slice(0, 300));
+  const p = body.getPersona_v2Response?.personaReturn || {};
+  const arr = x => (Array.isArray(x) ? x : x ? [x] : []);
+  const errC = arr(p.errorConstancia?.error).map(String).join(" · ");
+  const dg = p.datosGenerales || {};
+  if (!dg || (!dg.razonSocial && !dg.apellido)) {
+    if (errC) return { encontrado: false, motivo: errC };
+    return { encontrado: false, motivo: "ARCA no tiene datos de ese CUIT." };
+  }
+  const nombre = String(dg.razonSocial || [dg.apellido, dg.nombre].filter(Boolean).join(" ")).trim();
+  const dom = dg.domicilioFiscal || {};
+  const domicilio = [dom.direccion, dom.localidad, dom.descripcionProvincia].filter(Boolean).join(", ");
+  const impRG = arr(p.datosRegimenGeneral?.impuesto).map(x => Number(x.idImpuesto));
+  const mono = p.datosMonotributo;
+  let condicion = "CF";
+  if (mono && (arr(mono.impuesto).length || mono.categoriaMonotributo)) condicion = "MONO";
+  else if (impRG.includes(30)) condicion = "RI";
+  else if (impRG.includes(32)) condicion = "EXENTO";
+  return { encontrado: true, cuit: String(cuitConsulta), nombre: nombre.slice(0, 120), domicilio: domicilio.slice(0, 200), cp: String(dom.codPostal || ""), condicion,
+    categoria: mono?.categoriaMonotributo?.descripcionCategoria ? String(mono.categoriaMonotributo.descripcionCategoria).slice(0, 60) : null,
+    estado: String(dg.estadoClave || "").slice(0, 20), aviso: errC || null };
+}
+
 // ─── Handler principal ─────────────────────────────────
 
 export const config = {
@@ -5408,6 +5466,21 @@ export default async function handler(req, res) {
       const confirmado = !!t?.confirmado;
       const r = monoResumen({ meses, hoy, topes: confirmado ? t.topes : null, categoria: cfg.mono_categoria || "" });
       return res.json({ ok: true, ...r, topesConfirmados: confirmado, topesVigentesDesde: confirmado ? t.vigenteDesde : null, topes: confirmado ? t.topes : null, incluyeExterno: externo > 0, esMonotributo: cfg.condicion_fiscal === "MONOTRIBUTO" });
+    }
+    // Consulta de un CUIT en el padrón de ARCA (constancia de inscripción). Caché de 30 días por cuenta.
+    if (action === "padron" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      const docC = String(req.query.doc || "").replace(/\D/g, "");
+      if (!cuitParam || docC.length !== 11) return res.status(400).json({ error: "Poné un CUIT de 11 dígitos." });
+      const cfg = await loadCuitConfig(db, uid, cuitParam);
+      if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "CUIT sin certificado configurado" });
+      const cRef = db.collection("users").doc(uid).collection("arca_padron").doc(docC);
+      try { const c = await cRef.get(); if (c.exists && Date.now() - (Number(c.data().at) || 0) < 30 * 86400000 && !req.query.fresh) return res.json({ ok: true, ...c.data(), cache: true }); } catch (_) {}
+      try {
+        const r = await consultarPadron(db, uid, cfg, docC);
+        if (r.encontrado) await cRef.set({ ...r, at: Date.now() }).catch(() => {});
+        return res.json({ ok: true, ...r });
+      } catch (e) { return res.status(e.code === "padron_sin_permiso" ? 403 : 502).json({ error: e.message, code: e.code || null }); }
     }
     if (action === "mono_categoria" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString() || "{}");

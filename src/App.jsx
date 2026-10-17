@@ -30624,6 +30624,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [manualNombre, setManualNombre] = useState("");
   const [manualDocTipo, setManualDocTipo] = useState("CUIT");
   const [manualDocNro, setManualDocNro] = useState("");
+  // Datos del padrón de ARCA para el CUIT del cliente de la factura manual: {nombre, domicilio, condicion, categoria, estado} | {error}
+  const [manualPadron, setManualPadron] = useState(null); const [manualPadronBusy, setManualPadronBusy] = useState(false);
   const [manualItems, setManualItems] = useState([{nombre:"",cantidad:1,precio:0}]);
   const [manualPercep, setManualPercep] = useState([]); // hasta 3 percepciones {nombre, alicuota, base} — solo RI
   const [emittingManual, setEmittingManual] = useState(false);
@@ -31867,6 +31869,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       estado_pago: "paid",
       fecha: manualFecha || hoyAR(),
       ciudad: "", provincia: "",
+      ...(manualPadron?.encontrado&&manualPadron.cuit===docNro ? { iva_receptor: manualPadron.condicion, direccion: manualPadron.domicilio||"" } : {}),
       metodo_pago: "Manual",
       items: itemsValid.map(it => ({
         nombre: it.nombre.trim(), nombre_original: it.nombre.trim(),
@@ -33016,7 +33019,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {manualDocTipo !== "CF" && (
                       <div style={{marginBottom:18}}>
                         <label style={labelS}>{manualDocTipo === "CUIT" ? "CUIT del cliente" : "DNI del cliente"}</label>
-                        <input value={manualDocNro} onChange={e=>setManualDocNro(e.target.value.replace(/\D/g,""))} placeholder={manualDocTipo === "CUIT" ? "30712345678" : "12345678"} style={iS}/>
+                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          <input value={manualDocNro} onChange={e=>{ setManualDocNro(e.target.value.replace(/\D/g,"")); setManualPadron(null); }} placeholder={manualDocTipo === "CUIT" ? "30712345678" : "12345678"} style={{...iS,flex:1,marginBottom:0}}/>
+                          {manualDocTipo==="CUIT"&&<button type="button" disabled={manualPadronBusy||manualDocNro.length!==11} onClick={async()=>{ setManualPadronBusy(true); try{ const d=await api("padron","GET",null,{cuit:cuitSel,doc:manualDocNro}); if(d.error) setManualPadron({error:d.error}); else { setManualPadron(d); if(d.encontrado&&d.nombre) setManualNombre(d.nombre); } }catch(e){ setManualPadron({error:e.message||"No se pudo consultar"}); } setManualPadronBusy(false); }} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",whiteSpace:"nowrap",opacity:manualDocNro.length!==11?0.5:1}}>{manualPadronBusy?"Consultando…":"Buscar en ARCA"}</button>}
+                        </div>
+                        {manualPadron&&(manualPadron.error?<div style={{fontSize:11,color:T.yellow,marginTop:6,lineHeight:1.5}}>{manualPadron.error}</div>
+                          :!manualPadron.encontrado?<div style={{fontSize:11,color:T.yellow,marginTop:6}}>{manualPadron.motivo||"ARCA no tiene datos de ese CUIT."}</div>
+                          :<div style={{fontSize:11.5,color:T.textMd,marginTop:6,lineHeight:1.6,background:T.green+"10",border:`1px solid ${T.green}44`,borderRadius:8,padding:"7px 10px"}}><strong style={{color:T.text}}>{manualPadron.nombre}</strong> · {({RI:"Responsable Inscripto",MONO:`Monotributista${manualPadron.categoria?" ("+manualPadron.categoria+")":""}`,EXENTO:"IVA exento",CF:"No inscripto en IVA"})[manualPadron.condicion]||manualPadron.condicion}{manualPadron.domicilio?<><br/>{manualPadron.domicilio}</>:null}{manualPadron.estado&&manualPadron.estado!=="ACTIVO"?<><br/><span style={{color:T.red,fontWeight:700}}>CUIT {manualPadron.estado.toLowerCase()}</span></>:null}<br/><span style={{color:T.textSm}}>{esMono?"Se factura C con su condición informada a ARCA.":manualPadron.condicion==="RI"?"Le corresponde Factura A.":"Le corresponde Factura B."}</span></div>)}
                       </div>
                     )}
                     {/* Fecha de la factura — misma ventana de 5 días corridos que el
