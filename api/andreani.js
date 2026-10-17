@@ -814,7 +814,12 @@ export async function mpReconciliarCargas(db, soloUid) {
     const c = d.data();
     if (c.metodo !== "mp") return false;
     const ts = c.ts?.toMillis?.() || 0;
-    if (c.estado === "pendiente") return !ts || ahora - ts < 7 * 86400000;
+    if (c.estado === "pendiente") {
+      // Checkout abierto hace más de 7 días y nunca pagado: se da por abandonado (sale de la lista del
+      // cliente). Antes quedaba "pendiente" para siempre.
+      if (ts && ahora - ts >= 7 * 86400000) { d.ref.update({ estado: "cancelada", motivo: "No se pagó en Mercado Pago (vencida a los 7 días)", vencidaTs: ahora }).catch(() => {}); return false; }
+      return true;
+    }
     if (c.estado === "cancelada") return !!ts && ahora - ts < 48 * 3600000;
     return false;
   });
@@ -3123,8 +3128,11 @@ export default async function handler(req, res) {
       // Cargas de saldo pendientes o en revisión (monto de MP distinto) de
       // todas las cuentas (where por un campo, operador "in").
       if (action === "admin_cargas") {
-        const snap = await db.collection("andreani_cargas").where("estado", "in", ["pendiente", "revision"]).limit(50).get();
-        const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        const snap = await db.collection("andreani_cargas").where("estado", "in", ["pendiente", "revision"]).limit(200).get();
+        // Una carga por Mercado Pago "pendiente" es un checkout que se abrió y todavía no se pagó: se
+        // acredita SOLA cuando MP la aprueba (webhook + reconciliación cada 10 min), así que no es algo
+        // para acreditar a mano (17/oct/2026). Solo llegan al panel las de MP en "revision".
+        const cargas = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => !(c.metodo === "mp" && c.estado === "pendiente"))
           .sort((a, b) => (a.ts?.toMillis?.() || 0) - (b.ts?.toMillis?.() || 0))
           .map(c => ({ id: c.id, uid: c.uid, email: c.email || "", ref: c.ref, monto: c.monto, ts: c.ts?.toMillis?.() || null, estado: c.estado, motivo: c.motivo || "", metodo: c.metodo || "transferencia", tieneComprobante: !!c.comprobante }));
         return res.json({ ok: true, cargas });
