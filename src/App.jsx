@@ -31072,7 +31072,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   // ── Piloto automático: carga al entrar a Config, guardado explícito ──
-  const AP_DEFAULT = {enabled:false, canales:[], soloPagadas:true, topeMonto:"", maxPorCorrida:40, frecuencia:"1h", hora:9, diasVentana:7};
+  const AP_DEFAULT = {enabled:false, canales:[], soloPagadas:true, topeMonto:"", maxPorCorrida:40, frecuencia:"1h", hora:9, diasVentana:7, pv:"", avisarMail:true};
   useEffect(()=>{
     if(tab!=="config" || !uid || !cuitSel) return;
     let vivo = true;
@@ -31086,6 +31086,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         ...c,
         canales: Array.isArray(c.canales)?c.canales:[],
         topeMonto: c.topeMonto!=null && c.topeMonto!=="" ? String(c.topeMonto) : "",
+        pv: c.pv ? String(c.pv) : "", avisarMail: c.avisarMail!==false,
       });
       setApUltimo(d.ultimoResultado || c.ultimoResultado || null);
     }).catch(()=>{ if(vivo) setApCfg({...AP_DEFAULT}); }).finally(()=>{ if(vivo) setApLoading(false); });
@@ -31115,6 +31116,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       frecuencia: apCfg.frecuencia==="diaria" ? "diaria" : "1h",
       hora: Math.min(23, Math.max(0, parseInt(apCfg.hora)||0)),
       diasVentana: parseInt(apCfg.diasVentana)||7,
+      pv: apCfg.pv ? parseInt(apCfg.pv) : null,
+      avisarMail: apCfg.avisarMail!==false,
     };
     if(cfg.enabled && cfg.canales.length===0) return toast("Elegí al menos un canal para que el piloto sepa qué facturar","warning");
     setApSaving(true);
@@ -33688,6 +33691,32 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     </div>
                   )}
+                  {apCfg && apCfg.enabled && (
+                    <div style={{marginTop:14,display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
+                      {(cuitActivo?.puntos_venta||[]).length>0&&<div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:12,color:T.textMd}}>Punto de venta</span>
+                        <select value={apCfg.pv||""} onChange={e=>setApCfg(p=>({...p, pv:e.target.value}))} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                          <option value="">{`El principal (${cuitActivo?.punto_venta||"—"})`}</option>
+                          {(cuitActivo?.puntos_venta||[]).filter(x=>x&&x.numero&&String(x.numero)!==String(cuitActivo?.punto_venta)).map(x=><option key={x.numero} value={x.numero}>{`${x.numero}${x.nombre?" · "+x.nombre:""}${x.exento?" · exento":""}${[2,3].includes(parseInt(x.concepto))?" · servicios":""}`}</option>)}
+                        </select>
+                      </div>}
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <DSToggle T={T} active={apCfg.avisarMail!==false} onToggle={()=>setApCfg(p=>({...p, avisarMail:p.avisarMail===false}))}/>
+                        <span style={{fontSize:12,color:T.text}}>Avisarme por mail si alguna factura no sale <span style={{color:T.textSm}}>(como mucho uno por día)</span></span>
+                      </div>
+                    </div>
+                  )}
+                  {/* Ventas que el piloto no pudo facturar: persisten hasta que se facturan */}
+                  {apCfg && Object.keys(apCfg.erroresPendientes||{}).length>0 && (()=>{ const lst=Object.entries(apCfg.erroresPendientes).sort((a,b)=>String(b[1].at).localeCompare(String(a[1].at))); return (
+                    <div style={{marginTop:14,border:`1px solid ${T.yellow}55`,borderRadius:10,overflow:"hidden"}}>
+                      <div style={{padding:"9px 12px",background:T.yellow+"12",fontSize:12,fontWeight:700,color:T.text}}>{lst.length} venta{lst.length!==1?"s":""} que el piloto no pudo facturar <span style={{fontWeight:500,color:T.textSm}}>· se reintentan en cada corrida; si el motivo es un dato del comprador, corregilo en la tienda o facturala a mano desde Facturar</span></div>
+                      {lst.slice(0,20).map(([id,e],i)=>(<div key={id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"8px 12px",borderTop:`1px solid ${T.borderL||T.border}`,fontSize:12,flexWrap:"wrap"}}>
+                        <strong style={{color:T.text,minWidth:110}}>{id}</strong>
+                        <span style={{flex:1,minWidth:200,color:T.textMd}}>{e.obs||"Sin detalle"}{e.nombre?<span style={{color:T.textSm}}> · {e.nombre}</span>:null}</span>
+                        <span style={{color:T.textSm,whiteSpace:"nowrap"}}>{e.veces>1?`${e.veces} intentos · `:""}{e.at?new Date(e.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"}):""}</span>
+                      </div>))}
+                    </div>
+                  ); })()}
                   {/* Última corrida */}
                   {apUltimo && (()=>{
                     const f = apUltimo.fecha || apUltimo.ts || apUltimo.at;

@@ -3390,7 +3390,7 @@ async function cronAutopilot(req, res) {
 
   let snap;
   try {
-    snap = await db.collection("arca_autopilot").where("enabled", "==", true).limit(50).get();
+    snap = await db.collection("arca_autopilot").where("enabled", "==", true).limit(300).get();
   } catch (e) {
     console.error("[arca autopilot] no se pudo leer la config:", e.message);
     return res.status(500).json({ error: e.message });
@@ -3398,7 +3398,21 @@ async function cronAutopilot(req, res) {
 
   let cuentas = 0, emitidasTot = 0;
   const resumen = [];
-  for (const d of snap.docs) {
+  // Las que hace más que no corren van primero: si el presupuesto de tiempo no alcanza, nadie queda
+  // siempre al final (antes se cortaba en 50 cuentas fijas).
+  const docsOrden = [...snap.docs].sort((a, b) => String(a.data().ultimaCorrida || "").localeCompare(String(b.data().ultimaCorrida || "")));
+  const hoyARs = argYmd(new Date());
+  // Aviso por mail al dueño: como mucho uno por día por CUIT, solo si hubo errores y lo tiene prendido.
+  const avisar = async (ap, ref, apUserData, errores, lineas) => {
+    try {
+      if (ap.avisarMail === false || ap.mailAvisoDia === hoyARs || !errores) return;
+      const to = String(apUserData?.email || "").trim(); if (!to.includes("@")) return;
+      const filas = lineas.slice(0, 15).map(x => `<li><b>${String(x.orden_id || "").replace(/[<>&]/g, "")}</b>: ${String(x.obs || x.error || "").replace(/[<>&]/g, "")}</li>`).join("");
+      await sendEmailResend({ to, subject: `Growith · El piloto automático no pudo emitir ${errores} factura${errores === 1 ? "" : "s"}`, html: `<p>Hola! En la corrida de hoy del piloto automático de facturación (CUIT ${ap.cuit}) ${errores === 1 ? "una venta no se pudo facturar" : `${errores} ventas no se pudieron facturar`}:</p><ul>${filas}</ul><p>Revisalas en Growith → Facturador → Configuración → Piloto automático. Las que fallan se vuelven a intentar en la próxima corrida.</p>` });
+      await ref.set({ mailAvisoDia: hoyARs }, { merge: true });
+    } catch (e) { console.warn("[arca autopilot] aviso por mail:", e.message); }
+  };
+  for (const d of docsOrden) {
     if (Date.now() > DEADLINE) { resumen.push({ truncado: true }); break; }
     const ap = d.data() || {};
     const apUid = String(ap.uid || "");
@@ -3443,7 +3457,7 @@ async function cronAutopilot(req, res) {
       if (Object.keys(lote).length) {
         const r = await ejecutarEmision(db, apUid, cfg, {
           cuitEmit: apCuit, ordenes: lote, product_map: null,
-          fechaImputacion: null, pvSel: null, exentoReq: false,
+          fechaImputacion: null, pvSel: parseInt(ap.pv) || null, exentoReq: false,
           deadline: Math.min(Date.now() + 90000, DEADLINE + 30000),
         });
         for (const x of r.resultados) {
@@ -3452,10 +3466,20 @@ async function cronAutopilot(req, res) {
         }
       }
       emitidasTot += emitidas;
+      // Ventas que siguen fallando (persisten entre corridas, con cuántas veces y el último motivo): la
+      // pantalla las lista para que el cliente las corrija. Salen solas cuando se facturan.
+      const prevErr = (ap.erroresPendientes && typeof ap.erroresPendientes === "object") ? ap.erroresPendientes : {};
+      const errPend = {};
+      const facturadasYa = new Set(Object.entries(ordenes || {}).filter(([, o]) => o._billed).map(([id]) => id));
+      for (const [id, e] of Object.entries(prevErr)) if (!facturadasYa.has(id) && Date.now() - Date.parse(e.at || 0) < 15 * 86400000) errPend[id] = e;
+      for (const x of detalle) { if (x.ok) delete errPend[x.orden_id]; else errPend[x.orden_id] = { obs: x.obs, at: nowIso, veces: (prevErr[x.orden_id]?.veces || 0) + 1, total: Number(lote[x.orden_id]?.total) || null, nombre: String(lote[x.orden_id]?.nombre || "").slice(0, 60) }; }
+      const errPendLim = Object.fromEntries(Object.entries(errPend).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0, 60));
       await d.ref.set({
         ultimaCorrida: nowIso,
         ultimoResultado: { at: nowIso, emitidas, errores, detalle: detalle.slice(0, 50) },
+        erroresPendientes: errPendLim,
       }, { merge: true });
+      if (errores) await avisar(ap, d.ref, apUser.data(), errores, detalle.filter(x => !x.ok));
       resumen.push({ uid: apUid, cuit: apCuit, pendientes: candidatas.length, emitidas, errores });
       console.log(`[arca autopilot] uid=${apUid} cuit=${apCuit} pendientes=${candidatas.length} emitidas=${emitidas} errores=${errores}`);
     } catch (e) {
@@ -3465,6 +3489,8 @@ async function cronAutopilot(req, res) {
           ultimaCorrida: nowIso,
           ultimoResultado: { at: nowIso, emitidas: 0, errores: 1, detalle: [{ error: String(e.message || "").slice(0, 140) }] },
         }, { merge: true });
+        const uS = await db.collection("users").doc(apUid).get().catch(() => null);
+        await avisar(ap, d.ref, uS?.data(), 1, [{ orden_id: "Piloto automático", error: e.message }]);
       } catch (_) {}
       resumen.push({ uid: apUid, cuit: apCuit, error: e.message });
     }
@@ -4228,6 +4254,13 @@ export default async function handler(req, res) {
       if (!frecuencia) return res.status(400).json({ error: 'frecuencia debe ser "1h" o "diaria"' });
       const hora = parseInt(c.hora);
       if (!(hora >= 0 && hora <= 23)) return res.status(400).json({ error: "hora debe estar entre 0 y 23" });
+      // Punto de venta del piloto (17/oct/2026): null = el principal; si no, uno de los configurados.
+      let pv = null;
+      if (c.pv !== null && c.pv !== undefined && c.pv !== "") {
+        pv = parseInt(c.pv);
+        const validos = [parseInt(cfgCuit.punto_venta), ...(Array.isArray(cfgCuit.puntos_venta) ? cfgCuit.puntos_venta.map(x => parseInt(x?.numero)) : [])].filter(Boolean);
+        if (!validos.includes(pv)) return res.status(400).json({ error: "Ese punto de venta no está configurado en este CUIT" });
+      }
       let topeMonto = null;
       if (c.topeMonto !== null && c.topeMonto !== undefined && c.topeMonto !== "") {
         topeMonto = Number(c.topeMonto);
@@ -4245,6 +4278,8 @@ export default async function handler(req, res) {
         frecuencia,
         hora,
         diasVentana,
+        pv,
+        avisarMail: c.avisarMail !== false,
         updatedAt: new Date().toISOString(),
       };
       // merge: preserva ultimaCorrida/ultimoResultado de corridas anteriores
