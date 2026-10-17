@@ -32325,6 +32325,37 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     );
                   })()}
 
+                  {/* Vendido contra facturado, mes por mes y por canal (17/oct/2026): muestra de un vistazo
+                      el agujero fiscal y deja seleccionar lo que falta de un mes con un toque. */}
+                  {!tnLoading && tnData && (()=>{
+                    const all=Object.entries(tnData?.ordenes||{});
+                    const mesDe=f=>{ const t=Date.parse(f||""); if(!isFinite(t)) return ""; return new Date(t-3*3600000).toISOString().slice(0,7); };
+                    const filas={};
+                    for(const [id,o] of all){ const k=mesDe(o.fecha); if(!k) continue; const r=filas[k]||(filas[k]={mes:k,n:0,vend:0,fact:0,nPend:0,pend:0,canal:{},ids:[]});
+                      r.n++; r.vend+=o.total||0; if(o._billed) r.fact+=o.total||0; else { r.nPend++; r.pend+=o.total||0; const c=o._platform||"otro"; r.canal[c]=(r.canal[c]||0)+1; if(ordenPasaFiltros(id,o)) r.ids.push(id); } }
+                    const lista=Object.values(filas).sort((a,b)=>b.mes.localeCompare(a.mes));
+                    if(!lista.length||!lista.some(r=>r.nPend)) return null;
+                    const nomMes=k=>{ const [y,m]=k.split("-"); const t=new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return t.charAt(0).toUpperCase()+t.slice(1); };
+                    const canalL={tiendanube:"Tienda Nube",shopify:"Shopify",mercadolibre:"Mercado Libre"};
+                    return (
+                      <div style={{border:`1px solid ${T.border}`,borderRadius:12,marginBottom:14,overflow:"hidden"}}>
+                        <div style={{padding:"9px 14px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text,display:"flex",gap:8,alignItems:"baseline",flexWrap:"wrap"}}>Sin facturar, mes por mes<span style={{fontSize:11,fontWeight:500,color:T.textSm}}>· del período elegido arriba; ampliá el período para ver más meses</span></div>
+                        {lista.map((r,i)=>{ const pct=r.vend?Math.round(r.fact/r.vend*100):100; return (
+                          <div key={r.mes} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",flexWrap:"wrap",fontSize:12}}>
+                            <span style={{minWidth:130,fontWeight:700,color:T.text}}>{nomMes(r.mes)}</span>
+                            <div style={{flex:"1 1 160px",minWidth:120}}>
+                              <div style={{height:6,borderRadius:3,background:T.border,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:pct>=95?T.green:pct>=70?T.yellow:T.red}}/></div>
+                              <div style={{fontSize:11,color:T.textSm,marginTop:3}}>{pct} % facturado · vendido $ {Math.round(r.vend).toLocaleString("es-AR")}</div>
+                            </div>
+                            <span style={{minWidth:150,color:r.nPend?T.text:T.textSm}}>{r.nPend?<><strong style={{color:T.red}}>$ {Math.round(r.pend).toLocaleString("es-AR")}</strong> sin facturar · {r.nPend} venta{r.nPend!==1?"s":""}</>:"todo facturado"}</span>
+                            {r.nPend>0&&<span style={{color:T.textSm,fontSize:11,minWidth:120}}>{Object.entries(r.canal).map(([c,n])=>`${canalL[c]||c} ${n}`).join(" · ")}</span>}
+                            {r.ids.length>0&&<button onClick={()=>{ setTnSelected(()=>Object.fromEntries(r.ids.map(id=>[id,true]))); toast(`${r.ids.length} venta${r.ids.length!==1?"s":""} de ${nomMes(r.mes).toLowerCase()} seleccionada${r.ids.length!==1?"s":""}: revisalas abajo y facturá`,"info"); }} style={{marginLeft:"auto",height:30,padding:"0 14px",borderRadius:99,border:`1px solid ${T.accentSolid}`,background:T.accentSolid+"14",color:T.accent,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Seleccionar {r.ids.length===r.nPend?"las":""} {r.ids.length}</button>}
+                          </div>
+                        ); })}
+                      </div>
+                    );
+                  })()}
+
                   {/* Fila 2: Canal (radio-pills) + Sin doc + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
                     {/* Pills de canal — "Todos" + selección exclusiva (un canal a la vez) */}
