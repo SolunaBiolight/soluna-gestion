@@ -31693,10 +31693,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   async function downloadCurrentBatchZip() {
-    if(!pdfs.length) return;
+    let lista = pdfs;
+    // Lotes de más de 15: el servidor no manda los PDF en la respuesta (pesan mucho) y se piden acá.
+    if(!lista.length){
+      const ids = (resultados||[]).filter(r=>r.ok&&r.comprobante_id).map(r=>r.comprobante_id);
+      if(!ids.length) return;
+      lista = [];
+      for(let i=0;i<ids.length;i+=100){
+        const d = await api("get_batch_pdfs","POST",{cuit:cuitSel, comprobante_ids:ids.slice(i,i+100)});
+        if(d.error){ toast("No se pudieron armar los PDF: "+d.error,"error"); return; }
+        lista.push(...(d.pdfs||[]));
+        if(ids.length>100) toast(`Armando PDFs… ${Math.min(i+100,ids.length)}/${ids.length}`,"info");
+      }
+      if(!lista.length) return;
+    }
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
-    for(const p of pdfs) {
+    for(const p of lista) {
       zip.file(p.nombre, p.bytes, {base64: true});
     }
     const blob = await zip.generateAsync({type:"blob"});
@@ -31793,8 +31806,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       // Chequeo de duplicados — si hay, mostrar aviso inline en el modal
       if(!skipDupCheck) {
-        const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds});
-        const duplicates = dupRes?.duplicates || [];
+        const duplicates = [];
+        for(let i=0;i<orderIds.length;i+=500){
+          const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds.slice(i,i+500)});
+          if(dupRes?.error) throw new Error("No se pudo revisar si hay ventas ya facturadas: "+dupRes.error);
+          duplicates.push(...(dupRes?.duplicates||[]));
+        }
         if(duplicates.length > 0) {
           setDuplicatesInModal(duplicates);
           setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
@@ -32088,7 +32105,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {[
                       {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá — descargá y guardá tu clave con el botón Descargar clave) y verificación.",color:T.accent},
                       {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Facturar' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el ✓ verde marca las que ya están emitidas.",color:T.blue},
-                      {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar el nombre de los productos como van a aparecer en el PDF, editar la dirección del cliente, sobreescribir el tipo de comprobante (A/B/C) o imputar al mes anterior si llegaste tarde. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes a ML' en Configuración).",color:T.yellow},
+                      {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar cómo aparece el nombre de los productos en el PDF, elegir el punto de venta y la fecha de la factura (hasta 5 días atrás en productos y 10 en servicios). Growith elige solo si va A, B o C según el comprador. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes a ML' en Configuración).",color:T.yellow},
                       {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Cada PDF sale con el número de CAE, su fecha de vencimiento y el QR oficial de ARCA — el cliente lo escanea con la cámara y ve en la web de ARCA que la factura está aprobada y es real. Descarga uno por uno o en zip; todo queda en Registros para descargar de nuevo cuando quieras.",color:T.green},
                       {step:"5",title:"Adjunto automático en Mercado Libre",desc:"Apenas se emite una factura de una venta de ML, Growith sube el PDF como documento fiscal de esa orden directo a Mercado Libre — el comprador ya lo ve en su detalle de compra y vos cumplís la obligación sin tocar nada. Si fallara la subida (token vencido o ML caído), podés reintentar desde 'Adjuntar pendientes a ML' en Configuración.",color:T.orange||T.yellow},
                       {step:"6",title:"¿Te equivocaste? Anulá con Nota de Crédito",desc:"Si emitiste una factura con un error (CUIT mal, monto distinto, producto cambiado), andá a 'Registros' y al lado de cada comprobante tenés el botón para emitir la Nota de Crédito que la cancela. La NC sale por el mismo monto, mismo cliente y referencia el CAE original — ARCA la deja firme y queda en Registros enlazada a la factura original. Después podés volver a Facturar y emitir la factura corregida.",color:T.red},
@@ -32355,7 +32372,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   ) : !tnData?.connected ? (
                     <div style={{padding:"20px 16px",background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:10,fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:8,display:"flex",alignItems:"flex-start",gap:10}}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.yellow||T.yellow} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                      No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube, Shopify o Mercado Libre (o usá subir archivo manual abajo).
+                      No tenés ninguna integración conectada todavía. Andá a la configuración de la app para conectar Tienda Nube, Shopify o Mercado Libre, o hacé una factura manual con el botón de arriba.
                     </div>
                   ) : Object.keys(tnData.ordenes||{}).length === 0 ? (
                     <div style={{padding:"30px 16px",textAlign:"center",background:T.bg,borderRadius:10}}>
@@ -32648,7 +32665,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         );
                       })()}
                       <div style={{display:"flex",gap:10,marginTop:4}}>
-                        {pdfs.length>0&&(
+                        {(pdfs.length>0||(resultados||[]).some(r=>r.ok&&r.comprobante_id))&&(
                           <button onClick={downloadCurrentBatchZip} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"10px 18px",background:T.green,border:"none",color:"#fff",borderRadius:DS.r.md,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flex:1,boxShadow:"0 4px 14px rgba(22,163,74,0.3)"}}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                             Descargar PDFs (.zip)
@@ -33417,7 +33434,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,overflow:"hidden",marginBottom:12}}>
                             {cRows.slice(0,RENDER_CAP).map((r,i)=>(
                               <div key={r.order_id+"_"+i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:i<Math.min(cRows.length,RENDER_CAP)-1?`1px solid ${T.borderL}`:"none",minWidth:0}}>
-                                <span title={r._platform} style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={r._platform==="mercadolibre"?"ml":"tn"} size={15}/></span>
+                                <span title={r._platform} style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={r._platform==="mercadolibre"?"ml":r._platform==="shopify"?"shopify":"tn"} size={15}/></span>
                                 <div style={{padding:"2px 7px",borderRadius:5,fontSize:10,fontWeight:700,border:`1px solid ${T.accent}44`,color:T.accent,background:T.accent+"11",flexShrink:0}}>F{r.letra}</div>
                                 <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:motivoColor(r._motivo)+"1a",color:motivoColor(r._motivo),fontWeight:700,border:`1px solid ${motivoColor(r._motivo)}44`,whiteSpace:"nowrap",flexShrink:0}}>{r._motivo_lbl}</span>
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>

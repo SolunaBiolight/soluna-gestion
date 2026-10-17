@@ -1093,6 +1093,31 @@ async function tomarMarcaEmision(db, uid, cuitEmit, orderId, orden, resultados) 
   return { marcaRef, marcaTomada };
 }
 
+// ─── ¿Qué documentos de un pack de ML se pueden borrar? (17/oct/2026) ──────────
+// Un pack (carrito) puede tener VARIAS ventas y cada una se factura aparte, pero los documentos
+// fiscales viven en el pack. Antes, al re-subir o al anular, se borraban TODOS los del pack y
+// desaparecía la factura de otra venta del mismo carrito. Ahora: con una sola venta en el pack,
+// todos; con varias, solo los archivos de las facturas de ESTA venta (F{letra}-{nro8}.pdf).
+async function mlFiltroDocsPropios(db, uid, orderIdFull, packId, token) {
+  const orderIdNum = String(orderIdFull).replace(/^ML-/, "");
+  let ventasEnPack = 1;
+  if (String(packId) !== orderIdNum) {
+    try {
+      const r = await fetch(`https://api.mercadolibre.com/packs/${packId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) { const j = await r.json().catch(() => ({})); if (Array.isArray(j.orders)) ventasEnPack = j.orders.length; else ventasEnPack = 2; }
+      else ventasEnPack = 2; // sin poder confirmarlo, se asume que hay otras ventas
+    } catch (_) { ventasEnPack = 2; }
+  }
+  if (ventasEnPack <= 1) return { todas: true, puede: () => true };
+  const nombres = new Set();
+  try {
+    const prev = await db.collection("users").doc(uid).collection("arca_comprobantes").where("orden_id", "==", String(orderIdFull)).get();
+    prev.docs.forEach(d => { const c = d.data(); if (c.nro && c.letra) nombres.add(`f${String(c.letra).toLowerCase()}-${String(c.nro).padStart(8, "0")}.pdf`); });
+  } catch (_) {}
+  const nombreDe = doc => String(doc.file_name || doc.filename || doc.name || doc.original_name || "").toLowerCase().trim();
+  return { todas: false, ventasEnPack, puede: doc => { const n = nombreDe(doc); return !!n && nombres.has(n); } };
+}
+
 // ─── Helper: desadjuntar TODOS los documentos fiscales adjuntos a una venta ML ──
 // ML expone varios endpoints según versión. Probamos en orden:
 //   1) /packs/{pack_id}/fiscal_documents → DELETE /packs/{pack_id}/fiscal_documents/{doc_id}
@@ -1119,6 +1144,8 @@ async function desadjuntarFacturaML(db, uid, orderIdFull) {
 
     const triedEndpoints = [];
     const auth = { Authorization: `Bearer ${ml.accessToken}` };
+    const filtro = await mlFiltroDocsPropios(db, uid, orderIdFull, packId, ml.accessToken);
+    let salteadas = 0;
 
     // Helper para listar docs en un endpoint y borrar cada uno
     const tryListAndDelete = async (listUrl, deleteUrlBuilder) => {
@@ -1133,6 +1160,7 @@ async function desadjuntarFacturaML(db, uid, orderIdFull) {
         for (const doc of docs) {
           const docId = doc.id || doc.fiscal_document_id || doc.document_id || doc.uuid;
           if (!docId) continue;
+          if (!filtro.puede(doc)) { salteadas++; continue; } // es la factura de otra venta del mismo carrito
           try {
             const delUrl = deleteUrlBuilder(docId);
             const dr = await fetch(delUrl, { method: "DELETE", headers: auth });
@@ -1162,6 +1190,7 @@ async function desadjuntarFacturaML(db, uid, orderIdFull) {
     // Reason más específico según lo que pasó
     const lastStatus = triedEndpoints.length ? triedEndpoints[triedEndpoints.length - 1].status : null;
     let reason = "no_docs_or_delete_unsupported";
+    if (salteadas && !filtro.todas) reason = `La venta está en un carrito de Mercado Libre con ${filtro.ventasEnPack} ventas: no se borró nada para no quitar la factura de las otras. Si la factura de esta venta sigue adjunta, quitala a mano desde Mercado Libre.`;
     if (lastStatus === 401 || lastStatus === 403) reason = `ML rechazó la operación (HTTP ${lastStatus}) — falta permiso en la app o token vencido`;
     else if (lastStatus === 404) reason = "ML no encontró documentos adjuntos en este pack (ya estaba limpio o nunca se subió)";
     else if (lastStatus === 405 || lastStatus === 501) reason = "ML no permite eliminar este documento vía API — borrar manualmente desde el panel de Mercado Libre";
@@ -2451,9 +2480,10 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
                   if (listR.ok) {
                     const listJ = await listR.json().catch(() => ({}));
                     const docs = Array.isArray(listJ) ? listJ : (listJ.results || listJ.fiscal_documents || []);
+                    const filtro = await mlFiltroDocsPropios(db, uid, orderId, packId, ml.accessToken);
                     for (const d of docs) {
                       const did = d.id || d.fiscal_document_id;
-                      if (did) {
+                      if (did && filtro.puede(d)) {
                         await fetch(`https://api.mercadolibre.com/packs/${packId}/fiscal_documents/${did}`, {
                           method: "DELETE",
                           headers: { Authorization: `Bearer ${ml.accessToken}` },
@@ -2482,7 +2512,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
           if (orderId.startsWith("ML-") && !pdfBytes && !ml_upload_error) ml_upload_error = "PDF no generado — adjuntalo después desde Registros";
 
           // Con percepciones el total responde el importe FINAL (neto+iva+trib)
-          resultados.push({ orden_id: orderId, ok: true, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: totalComp, ...(fiscal?.imp_trib ? { imp_trib: fiscal.imp_trib } : {}), ml_uploaded, ml_upload_error, ...(orden._fallback_ab ? { fallback_ab: orden._fallback_ab } : {}) });
+          resultados.push({ orden_id: orderId, ok: true, comprobante_id: compRef.id, punto_venta: pv, letra, tipo_cbte: tipoCbte, comprobante: cbteNro, cae: result.cae, cae_vto: result.cae_vto, total: totalComp, ...(fiscal?.imp_trib ? { imp_trib: fiscal.imp_trib } : {}), ml_uploaded, ml_upload_error, ...(orden._fallback_ab ? { fallback_ab: orden._fallback_ab } : {}) });
 
           // El comprobante ya se guardó ANTES del PDF/ML — acá solo se actualiza
           // el flag de adjunto ML, o se reintenta el guardado completo si falló.
@@ -5176,7 +5206,8 @@ export default async function handler(req, res) {
       const [compSnap, ncSnap, ivaSnap] = await Promise.all([
         db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam)
           .select("fecha_cbte", "emitido_at", "tipo_cbte", "neto", "iva", "total").get(),
-        db.collection("users").doc(uid).collection("arca_notas_credito").get(),
+        // .select(): cada NC guarda su PDF adentro; sin esto se bajaban todos los PDF para sumar el IVA.
+        db.collection("users").doc(uid).collection("arca_notas_credito").select("cuit", "tipo", "punto_venta", "comprobante", "total", "neto", "iva", "fecha", "fecha_cbte", "factura_origen").get(),
         db.collection("users").doc(uid).collection("arca_iva").where("cuit", "==", cuitParam).get(),
       ]);
       const meses = {};
@@ -5221,7 +5252,7 @@ export default async function handler(req, res) {
         // Deduplicar contra lo emitido en Growith (tipo + PV + número)
         const [cs, ns] = await Promise.all([
           db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam).select("tipo_cbte", "punto_venta", "nro").get(),
-          db.collection("users").doc(uid).collection("arca_notas_credito").get(),
+          db.collection("users").doc(uid).collection("arca_notas_credito").select("cuit", "tipo", "punto_venta", "comprobante", "total", "neto", "iva", "fecha", "fecha_cbte", "factura_origen").get(),
         ]);
         const seen = new Set();
         cs.forEach(d => { const c = d.data(); seen.add(`${Number(c.tipo_cbte)}_${Number(c.punto_venta)}_${Number(c.nro)}`); });
@@ -5470,10 +5501,31 @@ export default async function handler(req, res) {
       const stores0 = userSnap0.data()?.stores || [];
       const shStore = stores0.find(s => s.type === "shopify");
       const mlStore = stores0.find(s => s.type === "mercadolibre");
+      const tnStore = stores0.find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
       if (shStore) await ensureShopifyToken(db, uid, shStore);
       const connections = [];
       const canceladas = new Map(); // orderId -> motivo
       let truncated = false;
+
+      // Tienda Nube (17/oct/2026; antes no se revisaba): canceladas (status=cancelled) y
+      // reembolsadas por completo (payment_status=refunded).
+      if (tnStore) {
+        connections.push("tiendanube");
+        const pullTN = async (qs, motivo) => {
+          for (let page = 1; page <= 25; page++) {
+            const r = await fetch(`https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&${qs}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&fields=id,number,status,payment_status`, { headers: { "Authentication": `bearer ${tnStore.accessToken}`, "User-Agent": "Growith (contacto.growith@gmail.com)" } });
+            if (r.status === 404) break; // fin de la paginación en TN
+            if (!r.ok) break;
+            const data = await r.json().catch(() => []);
+            if (!Array.isArray(data) || !data.length) break;
+            for (const o of data) { const oid = "TN-" + String(o.number || o.id); if (!canceladas.has(oid)) canceladas.set(oid, motivo); }
+            if (data.length < 200) break;
+            if (page === 25) truncated = true;
+          }
+        };
+        try { await pullTN("status=cancelled", "cancelada"); } catch (_) {}
+        try { await pullTN("payment_status=refunded", "reembolso"); } catch (_) {}
+      }
 
       // Shopify: canceladas (status=cancelled) + reembolsos TOTALES (financial_status=refunded)
       if (shStore?.accessToken && shStore?.shop) {
@@ -5564,7 +5616,7 @@ export default async function handler(req, res) {
           fecha_cbte: comp.fecha_cbte || null,
           _motivo: motivo,
           _motivo_lbl: MOTIVO_LBL[motivo] || motivo,
-          _platform: orderId.startsWith("ML-") ? "mercadolibre" : "shopify",
+          _platform: orderId.startsWith("ML-") ? "mercadolibre" : orderId.startsWith("TN-") ? "tiendanube" : "shopify",
         });
       }
       rows.sort((a, b) => String(b.fecha_cbte || "").localeCompare(String(a.fecha_cbte || "")));
@@ -5887,7 +5939,7 @@ export default async function handler(req, res) {
       const ncExist = new Set();
       const anuladas = new Set();
       try {
-        const ncSnap = await db.collection("users").doc(uid).collection("arca_notas_credito").get();
+        const ncSnap = await db.collection("users").doc(uid).collection("arca_notas_credito").select("cuit", "tipo", "punto_venta", "comprobante", "total", "neto", "iva", "fecha", "fecha_cbte", "factura_origen").get();
         ncSnap.docs.forEach(d => {
           const c = d.data();
           const ncCuit = String(c.cuit || "").replace(/\D/g, "");
