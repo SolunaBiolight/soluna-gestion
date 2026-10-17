@@ -4665,19 +4665,36 @@ export default async function handler(req, res) {
 
         // Comprobante guardado: frena la doble anulación y aporta el flag
         // exento fiable (no se confía en el que mande el front).
-        let compNC = null;
+        let compNC = null, compNCRef = null;
         try {
           const cuitDig = String(cuitEmit).replace(/\D/g, "");
           const nro8 = String(factura.comprobante).padStart(8, "0");
           for (const docId of [`${cuitDig}_${pv}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
-            const s = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).get();
-            if (s.exists) { compNC = s.data(); break; }
+            const ref = db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId);
+            const s = await ref.get();
+            if (s.exists) { compNC = s.data(); compNCRef = ref; break; }
           }
         } catch (_) {}
         if (compNC?.anulada) {
           return res.status(409).json({ error: `La factura N° ${factura.comprobante} ya está anulada (NC ${compNC.nc_nro || "?"}) — no se emite otra NC.` });
         }
         if (compNC) factura.exento = !!compNC.exento;
+        // NC PARCIAL (17/oct/2026): devolución de una parte (un producto, un descuento posterior). No anula la
+        // factura ni la saca de Mercado Libre; se acumula en el comprobante y nunca supera su total. Si el
+        // monto completa lo que faltaba, funciona como la anulación de siempre.
+        const totalOriginal = Math.round((parseFloat(compNC?.total ?? factura.total) || 0) * 100) / 100;
+        const yaAcreditado = Math.round((Number(compNC?.nc_parciales_total) || 0) * 100) / 100;
+        let parcial = false; let motivoNC = "";
+        if (yaAcreditado > 0 && (body.monto === undefined || body.monto === null || body.monto === "")) body.monto = Math.round((totalOriginal - yaAcreditado) * 100) / 100; // anular lo que queda
+        if (body.monto !== undefined && body.monto !== null && body.monto !== "") {
+          const m = Math.round((parseFloat(body.monto) || 0) * 100) / 100;
+          const disponible = Math.round((totalOriginal - yaAcreditado) * 100) / 100;
+          if (!(m > 0)) return res.status(400).json({ error: "Poné un monto mayor a 0." });
+          if (m > disponible + 0.009) return res.status(400).json({ error: `El monto supera lo que queda por acreditar de esta factura ($${disponible.toLocaleString("es-AR", { minimumFractionDigits: 2 })}).` });
+          motivoNC = String(body.motivo || "").trim().slice(0, 120);
+          parcial = m < disponible - 0.009;
+          factura.total = m;
+        }
 
         // Si es Factura A y nos llegó sin CUIT del receptor, intentar recuperarlo
         // consultando ARCA (FECompConsultar). ARCA siempre tiene los datos originales.
@@ -4733,7 +4750,7 @@ export default async function handler(req, res) {
           domicilio: factura.domicilio || "",
           total: parseFloat(factura.total) || 0,
           exento: !!factura.exento,
-          items: factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }],
+          items: (parcial || motivoNC || yaAcreditado > 0) ? [{ nombre: motivoNC || (parcial ? `Devolución parcial Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}` : `Anulación del saldo de la Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`), cantidad: 1, precio: parseFloat(factura.total) || 0 }] : (factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }]),
           _is_nc: true,
           _cbte_asoc: factura.comprobante,
           _pv_asoc: factura.punto_venta || pv,
@@ -4761,10 +4778,15 @@ export default async function handler(req, res) {
           },
           fecha: new Date().toISOString(),
           pdf_b64: pdfB64.length < 900000 ? pdfB64 : null,
+          ...(parcial ? { parcial: true } : {}), ...(motivoNC ? { motivo: motivoNC } : {}),
         };
         try {
           await db.collection("users").doc(uid).collection("arca_notas_credito").add(ncRecord);
         } catch (e) { /* no crítico */ }
+        if (parcial) {
+          try { if (compNCRef) await compNCRef.set({ nc_parciales_total: FieldValue.increment(parseFloat(factura.total) || 0), nc_parciales: FieldValue.arrayUnion({ nro: ncNro, letra, monto: parseFloat(factura.total) || 0, motivo: motivoNC, at: new Date().toISOString() }) }, { merge: true }); } catch (_) {}
+          return res.json({ ok: true, parcial: true, nc: { tipo: tipoNC, letra, punto_venta: pv, comprobante: ncNro, cae: result.cae, cae_vto: result.cae_vto, total: result.total, pdf_b64: pdfB64, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf` } });
+        }
 
         // Si el factura original tiene un order_id, marcamos anulada (en
         // arca_facturadas y en el propio comprobante — NO se borra, queda en
@@ -5185,7 +5207,7 @@ export default async function handler(req, res) {
         .select("emitido_at", "total", "orden_id", "nro", "letra", "cae", "cae_vto",
           "tipo_cbte", "punto_venta", "doc_tipo", "doc_nro", "cliente", "fecha_cbte",
           "neto", "iva", "ml_uploaded", "recuperado_afip", "exento", "anulada", "nc_nro",
-          "nd", "imp_trib")
+          "nd", "imp_trib", "nc_parciales_total")
         .get();
 
       // _docId: id REAL del documento (formato viejo sin PV o nuevo con PV) —
@@ -5255,6 +5277,7 @@ export default async function handler(req, res) {
           cae_vto: c.cae_vto || null,
           ml_uploaded: !!c.ml_uploaded,
           recuperado_afip: !!c.recuperado_afip,
+          nc_parciales_total: Number(c.nc_parciales_total) || 0,
           exento: !!c.exento,
           anulada: !!c.anulada,
           nc_nro: c.nc_nro || null,

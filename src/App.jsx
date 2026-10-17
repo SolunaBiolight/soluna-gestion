@@ -7195,6 +7195,8 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                   {sig&&<DepMainBtn T={T} ico="check" onClick={()=>moverA(r,sig)}>{ghRecVerbo(r,sig)}</DepMainBtn>}
                   <DepBtn T={T} variant="danger" onClick={async()=>{ if(await appConfirm(`¿Rechazar el reclamo de ${nombre}? Queda guardado en el historial.`,{okLabel:"Rechazar"})) moverA(r,"Rechazado"); }}>Rechazar</DepBtn>
+                  {/* Devolución o cambio con plata de vuelta: la nota de crédito se hace en el Facturador (total o parcial). */}
+                  {(r.tipo==="Devolución"||r.tipo==="Contracargo")&&r.orderNum&&<DepBtn T={T} ico="file" onClick={()=>{ try{ sessionStorage.setItem("growith_arca_buscar",String(r.orderNum)); }catch(_){ } window.location.hash="#/arca/registros"; }} title="Abre la factura de este pedido en el Facturador para hacer la nota de crédito (total o parcial)">Nota de crédito</DepBtn>}
                 </div>
               ):(
                 <DepBtn T={T} ico="undo" onClick={()=>moverA(r,"Contactado")}>Volver a abrir</DepBtn>
@@ -30571,6 +30573,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [regPv, setRegPv] = useState("");               // "" | número de PV
   const [regOrigen, setRegOrigen] = useState("");       // "" | "tn" | "ml" | "manual" | "recuperado"
   const [regBusq, setRegBusq] = useState("");
+  // Llegada desde Reclamos ("Nota de crédito"): abre Registros buscando la factura de ese pedido.
+  const busqPendRef = useRef((()=>{ try{ const v=sessionStorage.getItem("growith_arca_buscar"); if(v) sessionStorage.removeItem("growith_arca_buscar"); return v||""; }catch(_){ return ""; } })());
+  useEffect(()=>{ if(busqPendRef.current){ setSidebarTab&&setSidebarTab("registros"); setTimeout(()=>toast(`Buscando la factura del pedido ${busqPendRef.current||""}: usá ⋯ → "Anular con NC" o "Nota de crédito parcial"`,"info",7000),400); } },[]);
   const [regTipo, setRegTipo] = useState("");           // "" | "A" | "B" | "C" | "ND" | "NC"
   const [regEstado, setRegEstado] = useState("");       // "" | "activas" | "anuladas"
   const [regBatch, setRegBatch] = useState(null);       // batch_id: ver solo los comprobantes de un lote
@@ -30792,6 +30797,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setExpandedBatch(null); setBatchPdfs({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[regDesde, regHasta]);
+  // La búsqueda que llegó desde Reclamos se aplica recién cuando hay CUIT (las limpiezas de arriba la borrarían).
+  useEffect(()=>{ if(cuitSel&&busqPendRef.current){ const v=busqPendRef.current; busqPendRef.current=""; setTimeout(()=>setRegBusq(v),0); } },[cuitSel]);
 
 
   useEffect(()=>{
@@ -31336,7 +31343,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       ? `\nCUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
       : "";
     const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\n` +
-      `Se emite una Nota de Crédito ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte 100% la factura en ARCA. ` +
+      `Se emite una Nota de Crédito ${resumen.letra} por $${((resumen.total||0)-(resumen.nc_parciales_total||0)).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte ${resumen.nc_parciales_total>0?"lo que quedaba de":"100%"} la factura en ARCA. ` +
       `El IVA débito fiscal se descuenta de tu facturado del mes al cerrar el período.${emisorInfo}\n\n` +
       `${resumen.orden_id?.startsWith?.("ML-") ? "Se DESADJUNTA la factura original de Mercado Libre — la venta queda como no facturada.\n\n" : ""}` +
       `Esta acción no se puede deshacer.`;
@@ -31634,16 +31641,33 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   // ── Nota de débito: cobra un adicional asociado a una factura ya emitida ──
-  function abrirNd(r, b) {
+  function abrirNd(r, b, modo="nd") {
     setNdMonto(""); setNdConcepto("");
-    setNdModal({ r, b });
+    setNdModal({ r, b, modo });
   }
   async function emitirNd() {
     if (!ndModal || !cuitSel || ndEmitting) return;
     const monto = parseFloat(String(ndMonto).replace(",", "."));
     if (!(monto > 0)) return toast("Poné un monto mayor a 0", "warning");
-    if (!ndConcepto.trim()) return toast("Poné el concepto del cargo", "warning");
+    if (!ndConcepto.trim()) return toast(ndModal.modo==="nc"?"Poné el motivo de la devolución":"Poné el concepto del cargo", "warning");
     const { r, b } = ndModal;
+    // Nota de crédito PARCIAL: devuelve una parte; la factura sigue vigente (no se anula ni sale de ML).
+    if (ndModal.modo === "nc") {
+      const disponible = Math.round(((r.total||0) - (r.nc_parciales_total||0))*100)/100;
+      if (monto > disponible + 0.009) return toast(`El monto supera lo que queda por acreditar ($${disponible.toLocaleString("es-AR",{minimumFractionDigits:2})})`, "warning");
+      setNdEmitting(true);
+      setNotaOp({ titulo:"Emitiendo Nota de Crédito parcial en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} — al terminar se descarga el PDF sola` });
+      try {
+        const factura = { tipo: r.tipo_cbte || (r.letra==="A"?1:r.letra==="C"?11:6), punto_venta: r.punto_venta || b?.punto_venta || 1, comprobante: r.comprobante, total: r.total, doc_tipo: r.doc_tipo || "", doc_nro: r.doc_nro || "", cliente: r.cliente || "", domicilio: r.domicilio || "", order_id: r.orden_id };
+        const d = await api("emit_nc", "POST", { cuit: cuitSel, factura, monto, motivo: ndConcepto.trim() });
+        if (d.error) { toast("Error ARCA: " + (d.detalle || d.error), "error"); return; }
+        if (d.nc?.pdf_b64) { const a = document.createElement("a"); a.href = "data:application/pdf;base64," + d.nc.pdf_b64; a.download = d.nc.nombre_pdf || "nota-de-credito.pdf"; a.click(); }
+        toast(d.parcial?`Nota de crédito ${d.nc?.letra||""} N° ${String(d.nc?.comprobante||"").padStart(8,"0")} por $${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} emitida ✓ — la factura sigue vigente`:"Nota de crédito emitida: con esta se acreditó el total y la factura quedó anulada","success",7000);
+        setNdModal(null); refreshDashboard();
+      } catch (e) { toast("No se pudo emitir la NC — revisá tu conexión y verificá en Registros si salió", "error"); }
+      finally { setNdEmitting(false); setNotaOp(null); }
+      return;
+    }
     setNdEmitting(true);
     setNotaOp({ titulo:"Emitiendo Nota de Débito en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} — al terminar se descarga el PDF sola` });
     try {
@@ -33265,6 +33289,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     it.push({ l:"Descargar PDF", fn:()=>descargarPdfDe(r) });
                     if (String(r.orden_id||"").startsWith("ML-")) it.push({ l:"Ver la venta en Mercado Libre", href:`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle` });
                     if (!r.anulada&&!r.nd) it.push({ l:"Emitir nota de débito", fn:()=>abrirNd(r,b), hint:"Cobra un adicional asociado a esta factura" });
+                    if (!r.anulada&&!r.nd) it.push({ l:"Nota de crédito parcial", fn:()=>abrirNd(r,b,"nc"), hint:"Devolución de una parte (un producto, un descuento): la factura sigue vigente" });
                     if (!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id) it.push({ l:"Re-emitir como Factura A", fn:()=>reemitirComoA(r,b), color:T.blue, hint:"NC de la B + Factura A al CUIT, en un paso" });
                     if (!r.anulada) it.push({ l:"Anular con nota de crédito", fn:()=>anularUnaFactura(r,b), color:T.red, disabled:!!r.recuperado_afip||!!r.nd,
                       hint: r.nd ? "Las ND se revierten con una NC manual" : r.recuperado_afip ? "Recuperada de AFIP sin items: anulala desde una factura manual" : "Emite una NC por el total" });
@@ -33839,8 +33864,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:16,width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto",padding:"24px 26px",display:"flex",flexDirection:"column",gap:14,fontFamily:"'Inter',system-ui,sans-serif"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:16,fontWeight:800,color:T.text}}>Emitir nota de débito</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cobra un adicional asociado a esta factura</div>
+                <div style={{fontSize:16,fontWeight:800,color:T.text}}>{ndModal.modo==="nc"?"Nota de crédito parcial":"Emitir nota de débito"}</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{ndModal.modo==="nc"?"Devuelve una parte de esta factura; la factura sigue vigente":"Cobra un adicional asociado a esta factura"}</div>
               </div>
               <ModalCloseBtn T={T} onClick={()=>setNdModal(null)} disabled={ndEmitting}/>
             </div>
@@ -33849,22 +33874,23 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div><span style={{color:T.textSm}}>Factura:</span> <strong style={{color:T.text}}>{ndModal.r.letra} N° {String(ndModal.r.comprobante||"").padStart(8,"0")}</strong> · PV {String(ndModal.r.punto_venta||ndModal.b?.punto_venta||1).padStart(4,"0")}</div>
               <div><span style={{color:T.textSm}}>Cliente:</span> <span style={{color:T.text}}>{ndModal.r.cliente||"Consumidor Final"}</span>{ndModal.r.doc_nro?<span style={{color:T.textMd}}> · {ndModal.r.doc_tipo||""} {ndModal.r.doc_nro}</span>:null}</div>
               <div><span style={{color:T.textSm}}>Total facturado:</span> <span style={{color:T.text,fontWeight:600}}>$ {(ndModal.r.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}</span></div>
+              {ndModal.modo==="nc"&&ndModal.r.nc_parciales_total>0&&<div><span style={{color:T.textSm}}>Ya acreditado con notas parciales:</span> <span style={{color:T.text,fontWeight:600}}>$ {ndModal.r.nc_parciales_total.toLocaleString("es-AR",{minimumFractionDigits:2})}</span></div>}
             </div>
             <div>
-              <label style={labelS}>Monto del cargo $</label>
+              <label style={labelS}>{ndModal.modo==="nc"?`Monto a devolver $ (hasta ${(Math.round(((ndModal.r.total||0)-(ndModal.r.nc_parciales_total||0))*100)/100).toLocaleString("es-AR")})`:"Monto del cargo $"}</label>
               <input type="number" step="0.01" min="0" value={ndMonto} onChange={e=>setNdMonto(e.target.value)} placeholder="0,00" disabled={ndEmitting} style={iS}/>
             </div>
             <div>
-              <label style={labelS}>Concepto</label>
-              <input value={ndConcepto} onChange={e=>setNdConcepto(e.target.value)} placeholder='Ej: "Diferencia de envío"' disabled={ndEmitting} style={iS}/>
+              <label style={labelS}>{ndModal.modo==="nc"?"Motivo":"Concepto"}</label>
+              <input value={ndConcepto} onChange={e=>setNdConcepto(e.target.value)} placeholder={ndModal.modo==="nc"?'Ej: "Devolución de 1 ROJ-NN"':'Ej: "Diferencia de envío"'} disabled={ndEmitting} style={iS}/>
             </div>
             <div style={{padding:"9px 12px",background:T.purple+"12",border:`1px solid ${T.purple}44`,borderRadius:8,fontSize:11,color:T.purple,lineHeight:1.5}}>
-              La ND se emite en ARCA con CAE y queda asociada a la factura.
+              {ndModal.modo==="nc"?"La NC se emite en ARCA con CAE, queda asociada a la factura y descuenta ese monto de tu facturado. Si con esta llegás al total, la factura queda anulada.":"La ND se emite en ARCA con CAE y queda asociada a la factura."}
             </div>
             <div style={{display:"flex",gap:10}}>
               <Btn T={T} variant="secondary" onClick={()=>setNdModal(null)} disabled={ndEmitting} style={{flex:1,justifyContent:"center"}}>Cancelar</Btn>
               <Btn T={T} variant="primary" onClick={emitirNd} disabled={ndEmitting||!(parseFloat(String(ndMonto).replace(",","."))>0)||!ndConcepto.trim()} style={{flex:1,justifyContent:"center"}}>
-                {ndEmitting?<><Spinner size={12} color={T.accent}/> Emitiendo…</>:"Emitir ND"}
+                {ndEmitting?<><Spinner size={12} color={T.accent}/> Emitiendo…</>:ndModal.modo==="nc"?"Emitir NC parcial":"Emitir ND"}
               </Btn>
             </div>
           </div>
