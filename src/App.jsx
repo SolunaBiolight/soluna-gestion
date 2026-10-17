@@ -20424,8 +20424,7 @@ const ADM_PRECIOS = {
 };
 const ADM_CRONS = [
   { key:"check-expiring",             label:"Avisos de vencimiento de plan",   cada:"Todos los días 10:00 UTC", maxH:26 },
-  { key:"check-payments",             label:"Cargas MP y pagos USDT",          cada:"Cada 10 minutos",          maxH:1 },
-  { key:"meta_cron_run_all",          label:"Reglas de Meta Ads",              cada:"Todos los días 11:00 UTC", maxH:26 },
+  { key:"check-payments",             label:"Acreditación de cargas de Mercado Pago", cada:"Cada 10 minutos",   maxH:1 },
   { key:"orders_warm_margenes",       label:"Precalentado del Dashboard",      cada:"Cada 5 minutos",           maxH:1 },
   { key:"stock_warm_all",             label:"Precalentado de Stock",           cada:"Cada 15 minutos",          maxH:1 },
   { key:"update-shipping_track_all",  label:"Seguimiento de envíos",           cada:"Cada 30 minutos",          maxH:2 },
@@ -20436,6 +20435,8 @@ const ADM_CRONS = [
   { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },
   { key:"deposito_cron_diario",       label:"Resumen diario del depósito",     cada:"Todos los días 11:00 UTC", maxH:26 },
   { key:"inventory_cron_sync_ventas", label:"Descuento de ventas del Stock",   cada:"Cada 5 minutos",           maxH:1 },
+  { key:"integrations_cron_refresh_tokens", label:"Renovación de tokens de Shopify", cada:"Todos los días",       maxH:26 },
+  { key:"tareas_cron_purgar_cuentas", label:"Purga de cuentas eliminadas",     cada:"Todos los días",           maxH:26 },
 ];
 const ADM_LOG_LABEL = {
   activar_plan:"Activó plan", dar_prueba:"Dio prueba", desactivar_plan:"Desactivó plan", extender_plan:"Extendió plan", ajustar_dias:"Ajustó vencimiento",
@@ -20444,8 +20445,12 @@ const ADM_LOG_LABEL = {
   config_envios:"Config. de logística", sucursales_baja:"Sucursales dadas de baja", punto_map_global:"Memoria de puntos",
 };
 const ADM_CAT = { en_camino:["En camino","blue"], en_sucursal:["En sucursal","orange"], entregado:["Entregado","green"], devolucion:["Devolución","red"], visita_fallida:["Visita fallida","red"], otro:["Sin ingreso","textSm"], desconocido:["Sin datos","textSm"], pendiente:["Pendiente","textSm"] };
-const ADM_TABS=[["resumen","Resumen"],["clientes","Clientes"],["ingresos","Ingresos"],["logistica","Logística"],["sistema","Sistema"]];
-const ADM_TAB_DESC={resumen:"Lo que requiere tu acción y el pulso de hoy.",clientes:"Todas las cuentas: plan, estado, origen, último login e integraciones.",ingresos:"Ingresos en dólares, evolución del MRR, nuevas suscripciones y referidos.",logistica:"El negocio de etiquetas prepagas: operación, rentabilidad y configuración.",sistema:"Crons, servicios, accesos por sección y registro de acciones."};
+// Estructura del panel (17/oct/2026): Para hacer · Clientes · Ingresos · Envíos · Configuración · Sistema.
+// Cada pestaña (y subpestaña) vive en el hash: #/admin/<tab>/<sub>, #/admin/cliente/<uid>/<pestaña>.
+const ADM_TABS=[["hacer","Para hacer"],["clientes","Clientes"],["ingresos","Ingresos"],["envios","Envíos"],["config","Configuración"],["sistema","Sistema"]];
+const ADM_SUBS={envios:[["operacion","Operación"],["billeteras","Billeteras"],["rentabilidad","Rentabilidad"]]};
+const ADM_FICHA_TABS=[["resumen","Resumen"],["plan","Plan y pagos"],["envios","Envíos"],["actividad","Actividad"]];
+const ADM_TAB_DESC={hacer:"Todo lo que necesita tu acción, con el botón para resolverlo ahí mismo.",clientes:"Todas las cuentas: plan, estado, origen, último login e integraciones.",ingresos:"Cobros, MRR, suscripciones y referidos.",envios:"El negocio de etiquetas prepagas: gestiones con Andreani, billeteras y rentabilidad.",config:"Precios de etiquetas, ejecutiva de Andreani, cuentas habilitadas, app de Shopify y accesos.",sistema:"Crons, servicios, registro de acciones y herramientas de mantenimiento."};
 function admPlanLabel(p){ return (p==="plus"||p==="full")?"Pro":p==="medio"?"Intermedio":p==="facturador"?"Facturador":"Free"; }
 function admPlanColor(T,p){ return (p==="plus"||p==="full")?T.blue:p==="medio"?T.purple:p==="facturador"?T.green:T.textSm; }
 function admMs(v){ if(!v) return null; if(typeof v==="number") return v; if(v._seconds) return v._seconds*1000; if(v.toDate) return v.toDate().getTime(); const t=Date.parse(v); return isNaN(t)?null:t; }
@@ -20787,50 +20792,13 @@ async function ghLeerTablaArchivo(file){
   const sep=(txt.split("\n")[0].match(/;/g)||[]).length>=(txt.split("\n")[0].match(/,/g)||[]).length?";":",";
   return txt.split(/\r?\n/).filter(l=>l.trim()).map(l=>{ const out=[]; let cur="",q=false; for(const ch of l){ if(ch==='"'){ q=!q; continue; } if(ch===sep&&!q){ out.push(cur.trim()); cur=""; continue; } cur+=ch; } out.push(cur.trim()); return out; });
 }
+// Seguimiento de un envío desde la ficha del cliente: la misma vista de trazas que usa Envíos (EnvioTrazas).
 function AdmTrazasModal({T, envio, onClose}) {
   const numero=envio?.andreani?.numeroDeEnvio||envio?.tracking||"";
-  const [st,setSt]=useState({loading:true,eventos:[],estado:null,error:""});
-  useEffect(()=>{ let vivo=true; setSt({loading:true,eventos:[],estado:null,error:""}); if(!numero){ setSt({loading:false,eventos:[],estado:null,error:"Este envío no tiene número de seguimiento."}); return; }
-    fetch(`/api/update-shipping?action=tracking&tracking=${encodeURIComponent(numero)}`).then(r=>r.json()).then(d=>{ if(!vivo) return; setSt({loading:false,eventos:Array.isArray(d?.eventos)?d.eventos:[],estado:d?.estado||null,error:d?.error&&!d?.estado?String(d.error):""}); }).catch(e=>{ if(vivo) setSt({loading:false,eventos:[],estado:null,error:e.message}); });
-    return ()=>{ vivo=false; }; },[numero]);
-  const fechaEv=ev=>{ const f=ev?.fecha||ev?.Fecha||ev?.fechaHora||ev?.fechaEvento||ev?.timestamp||ev?.date||null; const s=(f&&typeof f==="object")?[f.dia||"",f.hora||""].join("T"):f; const t=s?Date.parse(s):NaN; return isFinite(t)?t:null; };
-  const txtEv=ev=>ev?.estado||ev?.Estado||ev?.evento||ev?.descripcion||ev?.Descripcion||ev?.accion||ev?.motivo||"";
-  const descEv=ev=>{ const d=ev?.descripcion||ev?.Descripcion||ev?.detalle||ev?.sucursal||ev?.Sucursal||""; return d&&d!==txtEv(ev)?String(typeof d==="object"?(d.nombre||d.descripcion||""):d):""; };
-  const evs=[...st.eventos].map(ev=>({t:fechaEv(ev),estado:txtEv(ev),desc:descEv(ev)})).sort((a,b)=>(b.t||0)-(a.t||0));
-  return (
-    <Modal T={T} open={!!envio} onClose={onClose} title={`Seguimiento · ${numero||"sin número"}`} width={560} zIndex={1300}>
-      {envio&&(
-        <div>
-          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:12,color:T.textMd,marginBottom:12}}>
-            <span>Pedido <strong style={{color:T.text}}>#{envio.numero}</strong></span>
-            {envio.cliente&&<span>· {envio.cliente}</span>}
-            {(envio.localidad||envio.provincia)&&<span>· {[envio.localidad,envio.provincia].filter(Boolean).join(", ")}</span>}
-            <span>· {envio.esSucursal||envio.andreani?.tipo==="sucursal"?"a sucursal":"a domicilio"}</span>
-            {numero&&<a href={`https://www.andreani.com/envio/${numero}`} target="_blank" rel="noreferrer" style={{marginLeft:"auto",color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Andreani</a>}
-          </div>
-          {st.loading?<AdmSkeleton T={T} filas={4}/>
-          :st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>
-          :(<>
-            {st.estado&&<div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:10}}>Estado actual: {st.estado}</div>}
-            {evs.length===0?<AdmVacio T={T} titulo="Sin eventos todavía" sub="Andreani no devolvió movimientos para este envío."/>:(
-              <div style={{borderLeft:`2px solid ${T.border}`,marginLeft:6,paddingLeft:14,display:"flex",flexDirection:"column",gap:10,maxHeight:380,overflowY:"auto"}}>
-                {evs.map((ev,i)=>(
-                  <div key={i} style={{position:"relative"}}>
-                    <span style={{position:"absolute",left:-20,top:5,width:9,height:9,borderRadius:"50%",background:i===0?T.accent:T.border}}/>
-                    <div style={{fontSize:12.5,fontWeight:i===0?700:500,color:i===0?T.text:T.textMd}}>{ev.estado||"—"}</div>
-                    {ev.desc&&<div style={{fontSize:11,color:T.textSm}}>{ev.desc}</div>}
-                    <div style={{fontSize:10.5,color:T.textSm}}>{ev.t?new Date(ev.t).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):""}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>)}
-        </div>
-      )}
-    </Modal>
-  );
+  return (<Modal T={T} open={!!envio} onClose={onClose} title={envio?`Seguimiento · #${envio.numero||""}${numero?` · ${numero}`:""}`:""} width={620} zIndex={1400}>
+    {envio&&(numero?<EnvioTrazas T={T} numero={numero}/>:<div style={{fontSize:12,color:T.textSm}}>Este envío no tiene número de seguimiento.</div>)}
+  </Modal>);
 }
-// Movimientos de la billetera de una cuenta.
 function AdmMovsModal({T, cuenta, onClose}) {
   const [st,setSt]=useState({loading:true,movs:[],saldo:null});
   useEffect(()=>{ let vivo=true; if(!cuenta) return; setSt({loading:true,movs:[],saldo:null}); authFetch(`/api/andreani?action=admin_movimientos&uid=${encodeURIComponent(cuenta.uid)}`).then(r=>r.json()).then(d=>{ if(vivo) setSt({loading:false,movs:Array.isArray(d?.movimientos)?d.movimientos:[],saldo:d?.saldo??null}); }).catch(()=>{ if(vivo) setSt({loading:false,movs:[],saldo:null,error:"No se pudieron cargar los movimientos"}); }); return ()=>{ vivo=false; }; },[cuenta?.uid]);
@@ -20879,13 +20847,17 @@ function AdmAcreditarModal({T, cuenta, onClose, onDone}) {
 // ── Contenedor ───────────────────────────────────────────────────────────────
 // Rutas internas: #/admin/<tab> y #/admin/cliente/<uid> (recarga y "atrás" del
 // navegador funcionan; el link a una ficha se puede compartir).
-function admLeerHash(){ const h=String(window.location.hash||"").replace(/^#\/?/,""); const p=h.split("/"); if(p[0]!=="admin") return {tab:"resumen",cuenta:null}; if(p[1]==="cliente"&&p[2]) return {tab:"clientes",cuenta:decodeURIComponent(p[2])}; const t=ADM_TABS.find(x=>x[0]===p[1])?p[1]:"resumen"; return {tab:t,cuenta:null}; }
+function admLeerHash(){ const h=String(window.location.hash||"").replace(/^#\/?/,""); const p=h.split("/"); if(p[0]!=="admin") return {tab:"hacer",sub:"",cuenta:null};
+  if(p[1]==="cliente"&&p[2]) return {tab:"clientes",sub:ADM_FICHA_TABS.some(x=>x[0]===p[3])?p[3]:"resumen",cuenta:decodeURIComponent(p[2])};
+  const viejo={resumen:"hacer",logistica:"envios"}[p[1]]; const t0=viejo||p[1]; const t=ADM_TABS.find(x=>x[0]===t0)?t0:"hacer";
+  const subs=ADM_SUBS[t]||[]; const sub=subs.some(x=>x[0]===p[2])?p[2]:(subs[0]?.[0]||""); return {tab:t,sub,cuenta:null}; }
 function AppAdmin({T, user, onBack}) {
   const CACHE_KEY = `growith_admin_cache_${user.uid}`;
   const [ruta,setRuta]=useState(()=>admLeerHash());
-  const tab=ruta.tab, cuenta=ruta.cuenta;
-  const irA=(t,c)=>{ const h=c?`#/admin/cliente/${encodeURIComponent(c)}`:(t&&t!=="resumen"?`#/admin/${t}`:"#/admin"); if(window.location.hash!==h) window.location.hash=h; else setRuta({tab:t||"resumen",cuenta:c||null}); };
-  const setTab=t=>irA(t,null); const setCuenta=c=>irA(c?"clientes":tab,c);
+  const tab=ruta.tab, cuenta=ruta.cuenta, sub=ruta.sub;
+  // irA(tab, cuenta, sub): sub = subpestaña de la sección o pestaña de la ficha del cliente.
+  const irA=(t,c,sb)=>{ const h=c?`#/admin/cliente/${encodeURIComponent(c)}${sb&&sb!=="resumen"?`/${sb}`:""}`:`#/admin${t&&t!=="hacer"?`/${t}`:""}${t!=="hacer"&&sb?`/${sb}`:""}`; if(window.location.hash!==h) window.location.hash=h; else setRuta(admLeerHash()); };
+  const setTab=(t,sb)=>irA(t,null,sb); const setCuenta=(c,sb)=>irA(c?"clientes":tab,c,sb); const setSub=sb=>cuenta?irA("clientes",cuenta,sb):irA(tab,null,sb);
   useEffect(()=>{ const h=()=>setRuta(admLeerHash()); window.addEventListener("hashchange",h); return ()=>window.removeEventListener("hashchange",h); },[]);
   const [datos, setDatos] = useState(()=>ghSwrGet(CACHE_KEY, 24*3600000) || { pagos:[], usuarios:[], stats:{} });
   const [loading, setLoading] = useState(!datos.usuarios?.length);
@@ -20907,10 +20879,13 @@ function AppAdmin({T, user, onBack}) {
   }
   async function loadSectionsConfig() { try { const r=await fetch(`/api/tareas?action=getSectionsConfig&uid=${user.uid}`); const j=await r.json(); if(Array.isArray(j.adminOnlySections)) setSectionsConfig(j.adminOnlySections.filter(s=>s!=="rendimiento")); } catch(_){} }
   async function saveSectionsConfig(next) { await adminApi({action:"setSectionsConfig", adminOnlySections:next}); setSectionsConfig(next); toast("Accesos actualizados","success"); }
-  async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}}); } catch(_){} }
+  // 17/oct/2026: antes no se cargaban los datos de la ejecutiva ni los días de anulación, y como el
+  // guardado manda todo, habilitar una cuenta o tocar "Envíos con saldo" los BORRABA (y la anulación volvía a 14).
+  async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:c.ejecutivaWa||"", ejecutivaNombre:c.ejecutivaNombre||"", ejecutivaEmail:c.ejecutivaEmail||"", emailGestiones:c.emailGestiones||"", anulacionDias:c.anulacionDias??14, _ok:true}); } catch(_){} }
   async function saveEnvCfg(next) {
     const body = next || envCfg; if(!body) return false;
-    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), ejecutivaEmail:String(body.ejecutivaEmail||"").trim(), emailGestiones:String(body.emailGestiones||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
+    if(!body._ok){ toast("La configuración todavía no cargó: esperá un segundo y probá de nuevo.","warning"); return false; }
+    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/\D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), ejecutivaEmail:String(body.ejecutivaEmail||"").trim(), emailGestiones:String(body.emailGestiones||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
     catch(e){ toast("No se pudo guardar: "+e.message,"error"); return false; }
     setEnvCfg({...body}); return true;
   }
@@ -20923,7 +20898,27 @@ function AppAdmin({T, user, onBack}) {
     toast(acreditar?`${fmtMoney(c.monto)} acreditados a ${c.email||c.uid}`:"Carga rechazada","success");
     loadEnvCargas();
   }
-  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); loadStatsMes(); },[]);
+  // Para la bandeja "Para hacer": dinero en el limbo, gestiones abiertas con Andreani y estado de los crons.
+  const [limbo,setLimbo]=useState({loading:true,data:null,error:""});
+  async function loadLimbo(){ setLimbo(l=>({...l,loading:true,error:""})); try{ setLimbo({loading:false,data:await admAndreani("admin_limbo"),error:""}); }catch(e){ setLimbo({loading:false,data:null,error:e.message}); } }
+  const [casosAb,setCasosAb]=useState([]);
+  async function loadCasosAb(){ try{ const d=await admAndreani("admin_casos"); setCasosAb((d.casos||[]).filter(c=>["abierto","respondido"].includes(c.estado)||c.nuevoAndreani)); }catch(_){} }
+  const [sys,setSys]=useState({loading:true});
+  async function loadSys(){ setSys(x=>({...x,loading:true})); try{ setSys({loading:false,...(await admApi({action:"adminGetSystem"},user.uid))}); }catch(e){ setSys({loading:false,error:e.message}); } }
+  async function resolverDudoso(d,resultado){
+    let numeroDeEnvio=d.numeroDeEnvio||"";
+    if(resultado==="existe"&&!numeroDeEnvio){ numeroDeEnvio=await appPrompt(`Número de envío que Andreani creó para el pedido #${d.pedido||d.envioId}:`,""); if(!numeroDeEnvio) return; }
+    if(resultado==="no_existe"&&!(await appConfirm(`¿Confirmás que Andreani NO creó la etiqueta del pedido #${d.pedido||d.envioId}? Se devuelve ${fmtMoney(d.precio||0)} al saldo de la cuenta.`,{okLabel:"Devolver saldo"}))) return;
+    await admAndreani("admin_dudoso_resolver",{uid:d.uid,envioId:d.envioId,resultado,numeroDeEnvio:String(numeroDeEnvio||"").trim()||undefined});
+    toast(resultado==="existe"?"Emisión confirmada":"Saldo devuelto","success"); loadLimbo();
+  }
+  async function debitarAnulada(d){
+    if(!(await appConfirm(`La etiqueta del pedido #${d.pedido||d.envioId} se anuló con reintegro pero Andreani registró ingreso: ¿debitar ${fmtMoney(d.precio||0)} de nuevo?`,{danger:true,okLabel:"Debitar"}))) return;
+    await admAndreani("admin_anulada_debitar",{uid:d.uid,envioId:d.envioId}); toast("Debitado","success"); loadLimbo();
+  }
+  const cronEstado=c=>{ const ahoraS=sys.ahora||Date.now(); const d=sys.crons?.[c.key]; if(!d||!d.at) return {id:"sin",label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {id:"error",label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahoraS-d.at>c.maxH*3600000) return {id:"atrasado",label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {id:"ok",label:"OK",color:T.green,desc:""}; };
+  const cronsMal=sys.loading||sys.error?[]:ADM_CRONS.filter(c=>["error","atrasado"].includes(cronEstado(c).id));
+  useEffect(()=>{ loadData(!!datos.usuarios?.length); loadSectionsConfig(); loadEnvCargas(); loadEnvCfg(); loadStatsMes(); loadLimbo(); loadCasosAb(); loadSys(); },[]);
 
   const { pagos=[], usuarios=[], stats={} } = datos;
   const founder = !!datos.founder || user.uid==="WJH3ArqDPQcNLha9lOinvkVi9uJ2";
@@ -20936,7 +20931,8 @@ function AppAdmin({T, user, onBack}) {
   const activaPaga = u=>(u.plan||"free")!=="free"&&!u.isTrial&&(!u.planExpiry||u.planExpiry>ahora);
   const pastDue = usuarios.filter(u=>u.stripeStatus==="past_due");
   const etiquetasMes = useMemo(()=>{ const m={}; (statsMes?.cuentas||[]).forEach(c=>{ m[c.uid]=c; }); return m; },[statsMes]);
-  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length;
+  const limboN=["dudosos","reversosPendientes","cargasRevision","anuladasConIngreso"].reduce((n,k)=>n+((limbo.data||{})[k]||[]).length,0);
+  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length + limboN + casosAb.length + cronsMal.length;
   const primerPagoUid = useMemo(()=>{ const m={}; [...pagosReales].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(p=>{ if(!m[p.uid]) m[p.uid]=p._id; }); return m; },[pagosReales]);
   const esNueva = p => p.billingReason==="subscription_create" || (p.method!=="stripe" && primerPagoUid[p.uid]===p._id);
 
@@ -20991,7 +20987,7 @@ function AppAdmin({T, user, onBack}) {
   }
   async function verComprobante(p) { const d=await adminApi({action:"pagoComprobante",pagoId:p._id}); if(!d?.comprobanteB64) throw new Error("Sin comprobante"); const bl=await fetch(d.comprobanteB64).then(x=>x.blob()); window.open(URL.createObjectURL(bl),"_blank"); }
 
-  const ctx = { T, user, founder, usuarios, pagos, pagosReales, usuariosPorUid, ultPagoPorUid, envCfg, etiquetasMes, statsMes, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, setCuenta, setTab, activaPaga, esUsd, esNueva, envCargas, resolverCarga, pagosPendientes, pastDue, loadData, actualizarUsuario };
+  const ctx = { T, user, founder, sub, setSub, limbo, loadLimbo, resolverDudoso, debitarAnulada, casosAb, loadCasosAb, sys, loadSys, cronEstado, cronsMal, saveEnvCfg, setEnvCfg, sectionsConfig, saveSectionsConfig, usuarios, pagos, pagosReales, usuariosPorUid, ultPagoPorUid, envCfg, etiquetasMes, statsMes, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, setCuenta, setTab, activaPaga, esUsd, esNueva, envCargas, resolverCarga, pagosPendientes, pastDue, loadData, actualizarUsuario };
   // Buscador global: email, nombre, tienda o uid → abre la ficha.
   const bq=busca.trim().toLowerCase();
   const sugeridos=bq.length>=2?usuarios.filter(u=>(u.email||"").toLowerCase().includes(bq)||(u.nombre||"").toLowerCase().includes(bq)||u._id===busca.trim()||(u.stores||[]).some(s=>(s.name||"").toLowerCase().includes(bq))).slice(0,7):[];
@@ -21015,126 +21011,104 @@ function AppAdmin({T, user, onBack}) {
           )}
         </div>
         {porAtender>0&&<DSBadge T={T} color={T.red} size="sm">{porAtender} por atender</DSBadge>}
-        <Btn T={T} variant="secondary" size="sm" onClick={()=>{loadData(true);loadEnvCargas();loadStatsMes();}} disabled={refrescando}>{refrescando?"Actualizando":"Actualizar"}</Btn>
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>{loadData(true);loadEnvCargas();loadStatsMes();loadLimbo();loadCasosAb();loadSys();}} disabled={refrescando}>{refrescando?"Actualizando":"Actualizar"}</Btn>
       </AppTopbar>
       <div style={{padding:"20px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
         {err&&<div style={{fontSize:12,color:T.red,background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{err}</div>}
         {cuenta&&!loading&&!uFicha&&<Card T={T} padding="lg"><AdmVacio T={T} titulo="No encontré esa cuenta" sub="Puede que el link sea viejo o que la cuenta ya no exista."/><div style={{textAlign:"center"}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setTab("clientes")}>Volver a Clientes</Btn></div></Card>}
-        {uFicha?<AdmFicha ctx={ctx} u={uFicha} onClose={()=>setTab("clientes")}/>:(<>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-            <AdmSeg T={T} value={tab} onChange={setTab} opciones={ADM_TABS.map(([v,l])=>[v,l,v==="resumen"?porAtender:0])}/>
-            <span style={{fontSize:11,color:T.textSm}}>{ADM_TAB_DESC[tab]}</span>
+        {uFicha?<AdmFicha ctx={ctx} u={uFicha} pestana={sub||"resumen"} onClose={()=>setTab("clientes")}/>:(<>
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+            <DepSeg T={T} size="md" value={tab} onChange={t=>setTab(t)} items={ADM_TABS.map(([v,l])=>[v,v==="hacer"&&porAtender?<span key={v} style={{display:"inline-flex",alignItems:"center",gap:6}}>{l}<span style={{fontSize:10,fontWeight:800,background:T.red,color:"#fff",borderRadius:99,padding:"1px 7px"}}>{porAtender}</span></span>:l])}/>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              {ADM_SUBS[tab]&&<DepSeg T={T} value={sub} onChange={setSub} items={ADM_SUBS[tab].map(([v,l])=>[v,v==="billeteras"&&(envCargas.length+limboN)?`${l} · ${envCargas.length+limboN}`:v==="operacion"&&casosAb.length?`${l} · ${casosAb.length}`:l])}/>}
+              <span style={{fontSize:DS.font.md,color:T.textSm}}>{ADM_TAB_DESC[tab]}</span>
+            </div>
           </div>
           {loading?(
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12}}>{Array.from({length:5}).map((_,i)=><Card key={i} T={T} padding="md"><Skeleton T={T} width="50%" height={10}/><Skeleton T={T} width="70%" height={22} style={{marginTop:10}}/><Skeleton T={T} width="60%" height={10} style={{marginTop:8}}/></Card>)}</div>
-          ):tab==="resumen"?<AdmResumen ctx={ctx} stats={stats}/>
+          ):tab==="hacer"?<AdmHacer ctx={ctx} stats={stats}/>
           :tab==="clientes"?<AdmClientes ctx={ctx}/>
           :tab==="ingresos"?<AdmIngresos ctx={ctx} stats={stats}/>
-          :tab==="logistica"?<AdmLogistica ctx={ctx} envCfg={envCfg} setEnvCfg={setEnvCfg} saveEnvCfg={saveEnvCfg}/>
-          :<AdmSistema ctx={ctx} sectionsConfig={sectionsConfig} saveSectionsConfig={saveSectionsConfig}/>}
+          :tab==="envios"?<AdmEnvios ctx={ctx}/>
+          :tab==="config"?<AdmConfig ctx={ctx}/>
+          :<AdmSistema ctx={ctx}/>}
         </>)}
       </div>
     </div>
   );
 }
 
-// ── Resumen ──────────────────────────────────────────────────────────────────
-function AdmResumen({ctx, stats}) {
-  const {T, usuarios, pagos, pagosReales, envCargas, resolverCarga, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, pastDue, esNueva, esUsd, activaPaga, setCuenta} = ctx;
-  const ahora=Date.now(); const mesKey=admMesKey(ahora); const mesLabel=admMesLabel(mesKey);
+// ── Para hacer (17/oct/2026): UNA bandeja con todo lo que necesita una decisión, cada cosa con su botón ──
+function AdmHacer({ctx, stats}) {
+  const {T, usuarios, pagos, pagosReales, envCargas, resolverCarga, confirmarPago, rechazarPago, verComprobante, confirmMeses, setConfirmMeses, pastDue, esUsd, setCuenta, setTab, statsMes, limbo, resolverDudoso, debitarAnulada, casosAb, cronsMal, cronEstado} = ctx;
+  const ahora=Date.now(); const mesKey=admMesKey(ahora); const mesLabel=admMesLabel(mesKey).split(" ")[0].toLowerCase();
   const pagosPendientes=pagos.filter(p=>p.estado==="pendiente");
   const vencenProximos=usuarios.filter(u=>{ const d=admDias(u.planExpiry); return (u.plan||"free")!=="free"&&d!==null&&d>=0&&d<=7; });
   const pruebasPorVencer=usuarios.filter(u=>u.isTrial&&(u.plan||"free")!=="free"&&(()=>{const d=admDias(u.planExpiry);return d!==null&&d>=0&&d<=3;})());
-  const churn=usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial&&(admDias(u.planExpiry)??0)< -3);
+  const churn=usuarios.filter(u=>(u.plan||"free")!=="free"&&!u.isTrial&&(admDias(u.planExpiry)??0)< -3&&(admDias(u.planExpiry)??0)>=-30);
   const ingresosMes=pagosReales.filter(p=>p.createdAt&&admMesKey(p.createdAt)===mesKey);
   const ingUsd=ingresosMes.filter(esUsd).reduce((s,p)=>s+p.amount,0);
-  const nuevasMes=ingresosMes.filter(esNueva).length;
-  const altasMes=usuarios.filter(u=>u.createdAt&&admMesKey(u.createdAt)===mesKey).length;
-  const cuentaBtn=u=><button onClick={()=>setCuenta(u._id)} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{u.email||u.nombre||u._id}</button>;
+  const quien=uid=>usuarios.find(x=>x._id===uid);
+  const ver=uid=><DepBtn T={T} size="sm" onClick={()=>setCuenta(uid)}>Ver cliente</DepBtn>;
   const items=[];
-  envCargas.forEach(c=>items.push({k:"carga_"+c.id,sev:"red",tipo:"Carga de saldo",titulo:c.email||c.uid,desc:`${fmtMoney(c.monto)} · ref ${c.ref||c.codigo||"—"} · ${c.ts?admRel(c.ts):""}${c.estado==="revision"?" · monto de MP distinto, revisar":""}`,acciones:<><AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></>}));
-  pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:<><Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cliente</Btn>{u.stripeCustomerId&&<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600,textDecoration:"none",padding:"5px 8px"}}>Abrir en Stripe</a>}</>}));
-  pagosPendientes.forEach(p=>{ const u=usuarios.find(x=>x._id===p.uid);
-    items.push({k:"pago_"+p._id,sev:"red",tipo:"Pago manual",titulo:u?.email||p.email||p.uid,desc:`${admPlanLabel(p.plan)}${p.periodo==="anual"?" anual":""} · ${p.amount>0?"$"+p.amount+" "+(p.currency||""):""} ${admPagoMetodo(p)}${p.transferRef?" · ref "+p.transferRef:""}${p.txHash?" · tx "+String(p.txHash).slice(0,10)+"…":""} · ${admFecha(p.createdAt,true)}`,
+  envCargas.forEach(c=>items.push({k:"carga_"+c.id,sev:"red",tipo:"Carga de saldo",titulo:c.email||c.uid,desc:`${fmtMoney(c.monto)} · ref ${c.ref||c.codigo||"—"} · ${c.ts?admRel(c.ts):""}${c.estado==="revision"?" · monto de MP distinto, revisar":""}`,acciones:<><DepBtn T={T} size="sm" onClick={()=>setTab("envios","billeteras")}>Ver comprobante</DepBtn><AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></>}));
+  pagosPendientes.forEach(p=>{ const u=quien(p.uid);
+    items.push({k:"pago_"+p._id,sev:"red",tipo:"Pago por transferencia",titulo:u?.email||p.email||p.uid,desc:`${admPlanLabel(p.plan)}${p.periodo==="anual"?" anual":""} · ${p.amount>0?"$"+p.amount+" "+(p.currency||""):""}${p.transferRef?" · ref "+p.transferRef:""} · ${admFecha(p.createdAt,true)}`,
       acciones:<>{p.tieneComprobante&&<AdmBtn T={T} variant="secondary" size="sm" onClick={()=>verComprobante(p)}>Comprobante</AdmBtn>}<AdmSelect T={T} value={confirmMeses[p._id]||String(p.meses||1)} onChange={e=>setConfirmMeses(prev=>({...prev,[p._id]:e.target.value}))}>{["1","2","3","6","12"].map(m=><option key={m} value={m}>{m} m</option>)}</AdmSelect><AdmBtn T={T} variant="primary" size="sm" onClick={()=>confirmarPago(p)}>Confirmar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>rechazarPago(p._id)}>Rechazar</AdmBtn></>});
   });
-  pruebasPorVencer.forEach(u=>items.push({k:"pr_"+u._id,sev:"yellow",tipo:"Prueba por vencer",titulo:u.email,desc:`${admPlanLabel(u.plan)} de prueba vence ${admDias(u.planExpiry)===0?"hoy":"en "+admDias(u.planExpiry)+" días"} y no pagó. Buen momento para escribirle.`,acciones:<Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cliente</Btn>}));
-  churn.forEach(u=>items.push({k:"ch_"+u._id,sev:"yellow",tipo:"Vencida sin renovar",titulo:u.email,desc:`${admPlanLabel(u.plan)} venció hace ${Math.abs(admDias(u.planExpiry))} días${u.stripeStatus==="canceled"?" · canceló en Stripe":""}. Riesgo de pérdida.`,acciones:<Btn T={T} variant="secondary" size="sm" onClick={()=>setCuenta(u._id)}>Ver cliente</Btn>}));
+  const L=limbo.data||{};
+  (L.dudosos||[]).forEach(x=>items.push({k:"dud_"+x.uid+x.envioId,sev:"red",tipo:"Emisión dudosa",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`Pedido #${x.pedido||x.envioId} · ${fmtMoney(x.precio||0)} retenidos: Andreani no respondió claro si creó la etiqueta.`,acciones:<><AdmBtn T={T} variant="secondary" size="sm" onClick={()=>resolverDudoso(x,"existe")}>Existe</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverDudoso(x,"no_existe")}>No existe · devolver</AdmBtn></>}));
+  (L.anuladasConIngreso||[]).forEach(x=>items.push({k:"anu_"+x.uid+x.envioId,sev:"red",tipo:"Anulada con ingreso",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`Pedido #${x.pedido||x.envioId}: se devolvieron ${fmtMoney(x.precio||0)} pero Andreani registró el paquete.`,acciones:<AdmBtn T={T} variant="danger" size="sm" onClick={()=>debitarAnulada(x)}>Debitar</AdmBtn>}));
+  (L.reversosPendientes||[]).forEach((x,i)=>items.push({k:"rev_"+i+(x.uid||""),sev:"red",tipo:"Reverso pendiente",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`${fmtMoney(x.precio??x.monto??0)} que no se pudieron devolver solos: acreditalos a mano.`,acciones:x.uid?ver(x.uid):null}));
+  (L.cargasRevision||[]).forEach((x,i)=>items.push({k:"crv_"+i+(x.id||""),sev:"red",tipo:"Carga en revisión",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`${fmtMoney(x.monto??0)} · ${x.nota||"pago aprobado sobre una carga cancelada"}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","billeteras")}>Ver billeteras</DepBtn>}));
+  pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:ver(u._id)}));
+  casosAb.forEach(c=>items.push({k:"caso_"+c.id,sev:c.nuevoAndreani?"yellow":"red",tipo:c.nuevoAndreani?"Andreani respondió":"Gestión con Andreani",titulo:c.tienda||c.email||c.uid,desc:`${c.motivoLabel||c.motivo} · pedido #${c.numero}${c.ts?" · "+admRel(c.ts):""}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","operacion")}>Ver gestión</DepBtn>}));
+  cronsMal.forEach(c=>{ const e=cronEstado(c); items.push({k:"cron_"+c.key,sev:e.id==="error"?"red":"yellow",tipo:e.id==="error"?"Cron con error":"Cron atrasado",titulo:c.label,desc:e.desc,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("sistema")}>Ver sistema</DepBtn>}); });
+  pruebasPorVencer.forEach(u=>items.push({k:"pr_"+u._id,sev:"yellow",tipo:"Prueba por vencer",titulo:u.email,desc:`${admPlanLabel(u.plan)} de prueba vence ${admDias(u.planExpiry)===0?"hoy":"en "+admDias(u.planExpiry)+" días"} y no pagó. Buen momento para escribirle.`,acciones:ver(u._id)}));
+  churn.forEach(u=>items.push({k:"ch_"+u._id,sev:"yellow",tipo:"Vencida sin renovar",titulo:u.email,desc:`${admPlanLabel(u.plan)} venció hace ${Math.abs(admDias(u.planExpiry))} días${u.stripeStatus==="canceled"?" · canceló en Stripe":""}.`,acciones:ver(u._id)}));
   items.sort((a,b)=>(a.sev==="red"?0:1)-(b.sev==="red"?0:1));
-  const recent=[...pagos].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10);
-  const act=usuarios.filter(activaPaga); const total=act.length||1;
+  const urg=items.filter(x=>x.sev==="red").length;
   return (
     <>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
-        <AdmKpi T={T} label="MRR" val={admUsd(stats.mrr||0)} sub={`${stats.mrrStripe?admUsd(stats.mrrStripe)+" por Stripe":"Sin cobros por Stripe"}${stats.mrrManual?" · "+admUsd(stats.mrrManual)+" manual":""}`} color={T.green} n={stats.mrr}/>
-        <AdmKpi T={T} label="Clientes pagos" val={String(stats.pagas||0)} sub={`${stats.pruebas||0} en prueba · ${stats.totalUsuarios||0} cuentas en total`} color={T.blue} n={stats.pagas}/>
-        <AdmKpi T={T} label="Pagos fallidos" val={String(pastDue.length)} sub={pastDue.length?"Stripe no pudo cobrar la renovación":"Ninguna tarjeta rechazada"} color={T.red} n={pastDue.length}/>
-        <AdmKpi T={T} label="Vencen en 7 días" val={String(vencenProximos.length)} sub={vencenProximos.length?`${vencenProximos.filter(u=>(u.stripeStatus==="active"||u.stripeStatus==="trialing")&&!u.cancelAtPeriodEnd).length} se renuevan solas por Stripe`:"Sin vencimientos próximos"} color={T.yellow} n={vencenProximos.length}/>
-        <AdmKpi T={T} label={`Ingresos de ${mesLabel.split(" ")[0].toLowerCase()}`} val={admUsd(ingUsd)} sub={`${ingresosMes.length} pago${ingresosMes.length===1?"":"s"} · ${nuevasMes} nueva${nuevasMes===1?"":"s"} · ${altasMes} alta${altasMes===1?"":"s"}`} color={T.accent} n={ingUsd}/>
-      </div>
-      <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
-        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-          <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Requiere tu atención" sub={items.length?`${items.length} pendiente${items.length===1?"":"s"}, lo urgente primero.`:"Nada pendiente."} right={items.length>0&&<DSBadge T={T} color={T.red} size="sm">{items.length}</DSBadge>}/>
-            {items.length===0?<AdmVacio T={T} titulo="Todo al día" sub="Las cargas de saldo, los pagos fallidos y las pruebas por vencer aparecen acá."/>:(
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {items.map(it=>(
-                  <div key={it.k} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:T.surface,border:`1px solid ${T.borderL}`,borderLeft:`3px solid ${it.sev==="red"?T.red:T.yellow}`,borderRadius:8,flexWrap:"wrap"}}>
-                    <div style={{flex:1,minWidth:200}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}><DSBadge T={T} color={it.sev==="red"?T.red:T.yellow} size="sm">{it.tipo}</DSBadge><span style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.titulo}</span></div>
-                      <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{it.desc}</div>
-                    </div>
-                    <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>{it.acciones}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-          <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Actividad reciente" sub="Últimos movimientos de suscripciones."/>
-            {recent.length===0?<AdmVacio T={T} titulo="Sin movimientos todavía"/>:(
-              <div>
-                {recent.map((p,i)=>{ const u=usuarios.find(x=>x._id===p.uid); const est=admPagoEstado(p); return (
-                  <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<recent.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap",fontSize:12}}>
-                    <span style={{width:6,height:6,borderRadius:"50%",background:p.isTrial?T.yellow:p.estado==="confirmado"?T.green:p.estado==="rechazado"?T.red:T.textSm,flexShrink:0}}/>
-                    <span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span style={{color:T.text}}>{p.email||p.uid}</span>}</span>
-                    <DSBadge T={T} color={admPlanColor(T,p.plan)} size="sm">{admPlanLabel(p.plan)}</DSBadge>
-                    <span style={{color:T.textMd}}>{p.isTrial?"prueba":`${esUsd(p)?admUsd(p.amount):"$"+p.amount+" "+p.currency} · ${admPagoMetodo(p)}${admPagoTipo(p)?" · "+admPagoTipo(p):""}`}</span>
-                    <span style={{color:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red,fontWeight:600}}>{est}</span>
-                    <span style={{color:T.textSm,whiteSpace:"nowrap"}}>{admFecha(p.createdAt)}</span>
-                  </div>
-                );})}
-              </div>
-            )}
-          </Card>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-          <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Vencen esta semana" sub={vencenProximos.length?"Por Stripe se renuevan solas; las manuales hay que cobrarlas.":"Sin vencimientos en los próximos 7 días."}/>
-            {vencenProximos.length>0&&<div style={{display:"flex",flexDirection:"column"}}>
-              {vencenProximos.sort((a,b)=>(a.planExpiry||0)-(b.planExpiry||0)).slice(0,12).map(u=>{ const d=admDias(u.planExpiry); const auto=(u.stripeStatus==="active"||u.stripeStatus==="trialing")&&!u.cancelAtPeriodEnd; return (
-                <div key={u._id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                  <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{cuentaBtn(u)}</span>
-                  <DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge>
-                  <span style={{color:d<=2?T.red:T.yellow,whiteSpace:"nowrap",fontWeight:600}}>{d===0?"hoy":`${d} d`}</span>
-                  <span style={{fontSize:10,color:auto?T.green:T.textSm,whiteSpace:"nowrap"}}>{auto?"Stripe":u.isTrial?"prueba":"manual"}</span>
-                </div>
-              );})}
-            </div>}
-          </Card>
-          <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Suscripciones" sub="Cómo se reparten los clientes activos."/>
+      <DepStrip T={T} items={[
+        {l:"MRR",v:admUsd(stats.mrr||0),c:T.green,s:`${stats.mrrStripe?admUsd(stats.mrrStripe)+" por Stripe":"sin cobros por Stripe"}${stats.mrrManual?" · "+admUsd(stats.mrrManual)+" manual":""}`},
+        {l:"Clientes pagos",v:String(stats.pagas||0),c:T.blue,s:`${stats.pruebas||0} en prueba · ${stats.totalUsuarios||0} cuentas`,onClick:()=>setTab("clientes"),accion:"Ver clientes"},
+        {l:`Cobrado en ${mesLabel}`,v:admUsd(ingUsd),c:T.accentSolid,s:`${ingresosMes.length} pago${ingresosMes.length===1?"":"s"}`,onClick:()=>setTab("ingresos"),accion:"Ver ingresos"},
+        {l:`Etiquetas de ${mesLabel}`,v:String(statsMes?.etiquetas||0),c:T.yellow,s:statsMes?`margen ${fmtMoney(statsMes.margen||0)} · cobrado ${fmtMoney(statsMes.facturado||0)}`:"cargando…",onClick:()=>setTab("envios","rentabilidad"),accion:"Ver rentabilidad"},
+      ]}/>
+      <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.7fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
+        <div style={{minWidth:0}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap",margin:"6px 0 12px"}}>
+            <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.3}}>Para hacer</span>
+            <span style={{fontSize:DS.font.md,color:T.textSm}}>{items.length?`${items.length} pendiente${items.length===1?"":"s"}${urg?` · ${urg} urgente${urg===1?"":"s"}`:""}`:"nada pendiente"}{limbo.loading?" · revisando billeteras…":""}</span>
+          </div>
+          {items.length===0?<Card T={T} padding="lg"><AdmVacio T={T} titulo="Todo al día" sub="Acá aparecen cargas de saldo, pagos por transferencia, dinero retenido, pagos fallidos, gestiones con Andreani, crons con problemas y pruebas por vencer."/></Card>:(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {["plus","medio","facturador"].map(p=>{ const n=act.filter(u=>(u.plan==="full"?"plus":u.plan)===p).length; return (
-                <div key={p}>
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:T.text,fontWeight:600}}>{ADM_PRECIOS[p].nombre}</span><span style={{color:T.textMd}}>{n} · {admUsd(n*ADM_PRECIOS[p].mensual)}/mes lista</span></div>
-                  <div style={{height:6,borderRadius:3,background:T.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(n/total*100)}%`,background:admPlanColor(T,p),borderRadius:3}}/></div>
+              {items.map(it=>(
+                <div key={it.k} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:220}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:DS.font.sm,fontWeight:700,color:it.sev==="red"?T.red:T.yellow}}><span style={{width:8,height:8,borderRadius:99,background:it.sev==="red"?T.red:T.yellow}}/>{it.tipo}</span><span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{it.titulo}</span></div>
+                    <div style={{fontSize:DS.font.md,color:T.textMd,lineHeight:1.5,marginTop:3}}>{it.desc}</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>{it.acciones}</div>
                 </div>
-              );})}
-              <div style={{fontSize:11,color:T.textSm,marginTop:4,lineHeight:1.5}}>{stats.cancelan?`${stats.cancelan} cancela${stats.cancelan===1?"":"n"} al terminar el período. `:""}{stats.pruebas?`${stats.pruebas} en prueba otorgada.`:""}</div>
+              ))}
             </div>
-          </Card>
+          )}
         </div>
+        <Card T={T} padding="lg">
+          <AdmTitulo T={T} t="Vencen esta semana" sub={vencenProximos.length?"Por Stripe se renuevan solas; las manuales hay que cobrarlas.":"Sin vencimientos en los próximos 7 días."}/>
+          {vencenProximos.length>0&&<div style={{display:"flex",flexDirection:"column"}}>
+            {vencenProximos.sort((a,b)=>(a.planExpiry||0)-(b.planExpiry||0)).slice(0,15).map(u=>{ const d=admDias(u.planExpiry); const auto=(u.stripeStatus==="active"||u.stripeStatus==="trialing")&&!u.cancelAtPeriodEnd; return (
+              <div key={u._id} onClick={()=>setCuenta(u._id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"7px 0",borderBottom:`1px solid ${T.borderL}`,cursor:"pointer"}}>
+                <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text,fontWeight:600}}>{u.email||u.nombre}</span>
+                <DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge>
+                <span style={{color:d<=2?T.red:T.yellow,whiteSpace:"nowrap",fontWeight:600}}>{d===0?"hoy":`${d} d`}</span>
+                <span style={{fontSize:10,color:auto?T.green:T.textSm,whiteSpace:"nowrap"}}>{auto?"Stripe":u.isTrial?"prueba":"manual"}</span>
+              </div>
+            );})}
+          </div>}
+        </Card>
       </div>
     </>
   );
@@ -21229,7 +21203,6 @@ function AdmFichaEnvios({ctx, u}) {
   const [q,setQ]=useState(""); const [filtro,setFiltro]=useState("todos"); const [fuente,setFuente]=useState("todas"); const [limite,setLimite]=useState(40);
   const [trazas,setTrazas]=useState(null);
   // Markup por cliente (pisa el global de la plataforma): users/{uid}.andreaniMarkup
-  const [shScopes,setShScopes]=useState(null);
   const [mk,setMk]=useState({pct:u.andreaniMarkup?.markupPct??"",fijo:u.andreaniMarkup?.markupFijo??""});
   useEffect(()=>{ setMk({pct:u.andreaniMarkup?.markupPct??"",fijo:u.andreaniMarkup?.markupFijo??""}); },[u._id]);
   async function guardarMarkup(borrar){
@@ -21261,15 +21234,6 @@ function AdmFichaEnvios({ctx, u}) {
         <AdmBtn T={T} variant="primary" size="sm" onClick={()=>guardarMarkup(false)}>Guardar</AdmBtn>
         {(mk.pct!==""||mk.fijo!=="")&&<AdmBtn T={T} variant="secondary" size="sm" onClick={()=>guardarMarkup(true)}>Usar el global</AdmBtn>}
         <span style={{fontSize:11,color:T.textSm}}>Vacío = usa el markup global de la plataforma. Aplica a cotizaciones, emisión y checkout.</span>
-      </div>
-      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-        <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const r=await authFetch(`/api/integrations?platform=shopify&action=admin_scopes&target=${encodeURIComponent(u._id)}`); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); setShScopes(d); }}>Ver permisos de Shopify</AdmBtn>
-        {shScopes&&(shScopes.conectado===false?<span style={{fontSize:12,color:T.textSm}}>Esta cuenta no tiene Shopify conectado.</span>:(
-          <span style={{fontSize:12,color:shScopes.fulfillOk?T.green:T.red,fontWeight:600}}>
-            {shScopes.shop} · {shScopes.central?"app de Growith":"app propia del cliente"} · {shScopes.fulfillOk?"tiene el permiso de marcar envíos":shScopes.otorgados?"SIN permiso de marcar envíos":"no se pudo leer (token inválido)"}
-            <span style={{fontWeight:400,color:T.textSm}}> · conectada {admFecha(admIso(shScopes.scopesAt||shScopes.reconnectedAt||shScopes.connectedAt))}{shScopes.faltan?.length?` · faltan: ${shScopes.faltan.join(", ")}`:""}{shScopes.refreshError?` · error de token: ${shScopes.refreshError}`:""}</span>
-          </span>
-        ))}
       </div>
       <AdmTitulo T={T} t="Envíos · últimos 90 días" sub={st.data?`${envios.length} envío${envios.length===1?"":"s"} registrado${envios.length===1?"":"s"}${st.data.truncado?" (lista parcial: hay más de 4000)":""}.`:""} right={<><Btn T={T} variant="secondary" size="sm" onClick={exportar} disabled={!lista.length}>CSV</Btn><Btn T={T} variant="secondary" size="sm" onClick={load}>Actualizar</Btn></>}/>
       {st.loading?<AdmSkeleton T={T} filas={6}/>
@@ -21311,8 +21275,16 @@ function AdmFichaEnvios({ctx, u}) {
   );
 }
 
-function AdmFicha({ctx, u, onClose}) {
-  const {T, founder, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, confirmarPago, rechazarPago, user, actualizarUsuario} = ctx;
+// Permisos de Shopify de la cuenta (diagnóstico del caso "no puede marcar envíos").
+function AdmShopifyPermisos({T,u}){
+  const [d,setD]=useState(null);
+  return (<span style={{display:"inline-flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+    {d?(d.conectado===false?<span style={{color:T.textSm}}>sin Shopify</span>:<span style={{color:d.fulfillOk?T.green:T.red,fontWeight:600}}>{d.central?"app de Growith":"app propia"} · {d.fulfillOk?"puede marcar envíos":d.otorgados?"SIN permiso de marcar envíos":"token inválido"}{d.faltan?.length?<span style={{color:T.textSm,fontWeight:400}}> · faltan {d.faltan.join(", ")}</span>:null}</span>):null}
+    <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const r=await authFetch(`/api/integrations?platform=shopify&action=admin_scopes&target=${encodeURIComponent(u._id)}`); const x=await r.json().catch(()=>({})); if(!r.ok||x.error) throw new Error(x.error||`HTTP ${r.status}`); setD(x); }}>{d?"Revisar de nuevo":"Revisar permisos"}</AdmBtn>
+  </span>);
+}
+function AdmFicha({ctx, u, onClose, pestana="resumen"}) {
+  const {T, founder, pagos, usuariosPorUid, ultPagoPorUid, envCfg, adminApi, gestionarPlan, ajustarDias, desactivarPlan, saveNote, toggleAdmin, toggleEnviosSaldo, verComoCliente, confirmarPago, rechazarPago, user, actualizarUsuario, setCuenta} = ctx;
   const [plan,setPlan]=useState(u.plan==="facturador"||u.plan==="medio"?u.plan:"plus");
   const [cant,setCant]=useState("1"); const [unidad,setUnidad]=useState("meses"); const [dias,setDias]=useState(""); const [nota,setNota]=useState(null);
   const [act,setAct]=useState({loading:true,secciones:[]});
@@ -21330,16 +21302,21 @@ function AdmFicha({ctx, u, onClose}) {
   const cardT=(t,children,right)=><Card T={T} padding="lg"><AdmTitulo T={T} t={t} right={right}/>{children}</Card>;
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-        <Btn T={T} variant="secondary" size="sm" onClick={onClose}>Volver a Clientes</Btn>
-        <div style={{width:36,height:36,borderRadius:"50%",background:admPlanColor(T,u.plan)+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color:admPlanColor(T,u.plan),flexShrink:0}}>{(u.email||u.nombre||"?")[0].toUpperCase()}</div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+        <DepBtn T={T} size="sm" onClick={onClose}>← Clientes</DepBtn>
+        <div style={{width:40,height:40,borderRadius:"50%",background:admPlanColor(T,u.plan)+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:admPlanColor(T,u.plan),flexShrink:0}}>{(u.email||u.nombre||"?")[0].toUpperCase()}</div>
         <div style={{flex:1,minWidth:200}}>
-          <div style={{fontSize:16,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}{u.nombre&&u.nombre!==u.email?<span style={{fontSize:12,fontWeight:500,color:T.textSm}}> · {u.nombre}</span>:null}</div>
+          <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email||u.nombre}{u.nombre&&u.nombre!==u.email?<span style={{fontSize:12,fontWeight:500,color:T.textSm}}> · {u.nombre}</span>:null}</div>
           <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}><DSBadge T={T} color={admPlanColor(T,u.plan)} size="sm">{admPlanLabel(u.plan)}</DSBadge><DSBadge T={T} color={est.color} size="sm">{est.label}</DSBadge>{u.isAdmin&&<DSBadge T={T} color={T.purple} size="sm">Admin</DSBadge>}{hab&&<DSBadge T={T} color={T.blue} size="sm">Envíos con saldo</DSBadge>}</div>
         </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <AdmBtn T={T} variant="primary" size="sm" onClick={()=>verComoCliente(u)}>Ver como cliente</AdmBtn>
+          <DepBtn T={T} size="sm" onClick={()=>setAcred({uid:u._id,email:u.email})}>Acreditar saldo</DepBtn>
+          {u.stripeCustomerId&&<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{display:"inline-flex",alignItems:"center",height:32,padding:"0 14px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:DS.font.md,fontWeight:600,textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"}}>Abrir en Stripe ↗</a>}
+        </div>
       </div>
-      <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1.35fr)",gap:16,alignItems:"start"}}>
-        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+      <div style={{marginBottom:16}}><DepSeg T={T} size="md" value={pestana} onChange={t=>setCuenta(u._id,t)} items={ADM_FICHA_TABS.map(([v,l])=>[v,v==="plan"&&userPagos.some(p=>p.estado==="pendiente")?`${l} · pendiente`:l])}/></div>
+      {pestana==="resumen"&&<div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.3fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
           <Card T={T} padding="lg"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
             <div>
               <AdmLbl T={T}>Suscripción</AdmLbl>
@@ -21347,7 +21324,6 @@ function AdmFicha({ctx, u, onClose}) {
                 {F("Vence",<span style={{color:d<0?T.red:d<=7?T.yellow:T.text,fontWeight:600}}>{u.planExpiry?`${admFecha(u.planExpiry)} (${d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`en ${d} d`})`:"sin fecha"}</span>)}
                 {F("Origen",org.label)}
                 {u.stripeStatus&&F("Stripe",<span>{admStripeLabel(u.stripeStatus)}{u.cancelAtPeriodEnd?" · cancela al vencer":""}</span>)}
-                {u.stripeCustomerId&&F("Cliente Stripe",<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{color:T.accent,fontWeight:600,textDecoration:"none"}}>Abrir en Stripe</a>)}
                 {u.planActivadoAt&&F("Activado",`${admFecha(u.planActivadoAt)}${u.planActivadoBy==="stripe"?" por Stripe":u.planActivadoBy?" por admin":""}`)}
                 {F("Pagos reales",<span>{reales.length}{reales.length?` · ${admUsd(reales.filter(p=>p.currency==="USD"||p.currency==="USDT").reduce((s,p)=>s+p.amount,0))} en total`:""}</span>)}
               </>)}
@@ -21359,10 +21335,35 @@ function AdmFicha({ctx, u, onClose}) {
               {u.providers?.length>0&&F("Acceso",u.providers.map(p=>p==="password"?"email y contraseña":p==="google.com"?"Google":p).join(", "))}
               {F("Integraciones",<span style={{display:"inline-flex",gap:5,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{(u.stores||[]).length===0&&!u.cuits&&!u.metaAccounts?<span style={{color:T.textSm}}>ninguna</span>:<>{(u.stores||[]).map((s,i)=><span key={i} title={`${s.type}${s.name?" · "+s.name:""}`} style={{display:"inline-flex"}}><BrandIcon name={s.type} size={15}/></span>)}{u.cuits>0&&<span title={`ARCA · ${u.cuits} CUIT`} style={{display:"inline-flex"}}><BrandIcon name="arca" size={15}/></span>}{u.metaAccounts>0&&<span title="Meta Ads" style={{display:"inline-flex"}}><BrandIcon name="meta" size={15}/></span>}</>}</span>)}
               {F("Onboarding",u.onbDone?"completado":u._sinDoc?"nunca entró a la app":"sin completar")}
+              {(u.stores||[]).some(s=>s.type==="shopify")&&F("Shopify",<AdmShopifyPermisos T={T} u={u}/>)}
               {F("UID",<button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}} title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"1px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>{u._id.slice(0,10)}… copiar</button>)}
             </div>
           </div></Card>
 
+          <Card T={T} padding="lg"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
+            <div>
+              <AdmLbl T={T}>Nota interna</AdmLbl>
+              {nota!==null?(
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <textarea value={nota} onChange={e=>setNota(e.target.value)} style={{...InputStyle(T),fontSize:12,minHeight:56,resize:"vertical",marginBottom:0}} placeholder="Ej: pagó tarde, le regalamos 7 días"/>
+                  <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setNota(null)}>Cancelar</Btn><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{await saveNote(u._id,nota);setNota(null);}}>Guardar</AdmBtn></div>
+                </div>
+              ):(
+                <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                  <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic",lineHeight:1.5}}>{u.adminNote||"Sin nota"}{u.adminNote&&u.adminNoteAt&&<span style={{color:T.textSm,fontSize:10}}> · {admFecha(u.adminNoteAt)}</span>}</div>
+                  <Btn T={T} variant="secondary" size="sm" onClick={()=>setNota(u.adminNote||"")}>Editar</Btn>
+                </div>
+              )}
+            </div>
+            <div>
+              <AdmLbl T={T}>Accesos</AdmLbl>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Envíos con saldo<div style={{fontSize:11,color:T.textSm}}>Etiquetas prepagas de Andreani.</div></div><DSToggle T={T} active={hab} onToggle={()=>toggleEnviosSaldo(u).catch(e=>toast(e.message,"error"))}/></div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Administrador<div style={{fontSize:11,color:T.textSm}}>{founder?"Acceso total al panel.":"Solo el dueño puede cambiarlo."}</div></div>{founder?<DSToggle T={T} active={!!u.isAdmin} onToggle={()=>toggleAdmin(u).catch(e=>toast(e.message,"error"))}/>:<span style={{fontSize:11,color:u.isAdmin?T.purple:T.textSm,fontWeight:600}}>{u.isAdmin?"Sí":"No"}</span>}</div>
+            </div>
+          </div></Card>
+
+        </div>}
+      {pestana==="plan"&&<div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1.2fr)",gap:16,alignItems:"start"}}>
           {cardT("Gestionar suscripción",(
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <div>
@@ -21394,28 +21395,6 @@ function AdmFicha({ctx, u, onClose}) {
             </div>
           ))}
 
-          <Card T={T} padding="lg"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
-            <div>
-              <AdmLbl T={T}>Nota interna</AdmLbl>
-              {nota!==null?(
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  <textarea value={nota} onChange={e=>setNota(e.target.value)} style={{...InputStyle(T),fontSize:12,minHeight:56,resize:"vertical",marginBottom:0}} placeholder="Ej: pagó tarde, le regalamos 7 días"/>
-                  <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}><Btn T={T} variant="secondary" size="sm" onClick={()=>setNota(null)}>Cancelar</Btn><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{await saveNote(u._id,nota);setNota(null);}}>Guardar</AdmBtn></div>
-                </div>
-              ):(
-                <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                  <div style={{fontSize:12,color:u.adminNote?T.text:T.textSm,flex:1,fontStyle:u.adminNote?"normal":"italic",lineHeight:1.5}}>{u.adminNote||"Sin nota"}{u.adminNote&&u.adminNoteAt&&<span style={{color:T.textSm,fontSize:10}}> · {admFecha(u.adminNoteAt)}</span>}</div>
-                  <Btn T={T} variant="secondary" size="sm" onClick={()=>setNota(u.adminNote||"")}>Editar</Btn>
-                </div>
-              )}
-            </div>
-            <div>
-              <AdmLbl T={T}>Accesos</AdmLbl>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Envíos con saldo<div style={{fontSize:11,color:T.textSm}}>Etiquetas prepagas de Andreani.</div></div><DSToggle T={T} active={hab} onToggle={()=>toggleEnviosSaldo(u).catch(e=>toast(e.message,"error"))}/></div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Administrador<div style={{fontSize:11,color:T.textSm}}>{founder?"Acceso total al panel.":"Solo el dueño puede cambiarlo."}</div></div>{founder?<DSToggle T={T} active={!!u.isAdmin} onToggle={()=>toggleAdmin(u).catch(e=>toast(e.message,"error"))}/>:<span style={{fontSize:11,color:u.isAdmin?T.purple:T.textSm,fontWeight:600}}>{u.isAdmin?"Sí":"No"}</span>}</div>
-            </div>
-          </div></Card>
-
           {cardT(`Historial de pagos (${userPagos.length})`,(
             userPagos.length===0?<AdmVacio T={T} titulo="Sin pagos ni pruebas"/>:userPagos.map(p=>(
               <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11.5,padding:"8px 12px",background:T.surface,borderRadius:8,marginBottom:6}}>
@@ -21431,20 +21410,13 @@ function AdmFicha({ctx, u, onClose}) {
               </div>
             ))
           ))}
-        </div>
-
-        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-          {cardT("Acciones",(
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <AdmBtn T={T} variant="primary" size="sm" onClick={()=>verComoCliente(u)}>Ver como cliente</AdmBtn>
-              <Btn T={T} variant="secondary" size="sm" onClick={()=>setAcred({uid:u._id,email:u.email})}>Acreditar saldo</Btn>
-              <Btn T={T} variant="secondary" size="sm" onClick={()=>setMovs({uid:u._id,email:u.email})}>Movimientos de saldo</Btn>
-              <AdmBtn T={T} variant="secondary" size="sm" onClick={()=>gestionarPlan(u._id,plan,cant,unidad,true)}>Dar prueba</AdmBtn>
-              {u.stripeCustomerId&&<a href={`https://dashboard.stripe.com/customers/${u.stripeCustomerId}`} target="_blank" rel="noreferrer" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",textDecoration:"none",display:"inline-flex",alignItems:"center"}}>Abrir en Stripe</a>}
-              {saldo!=null&&<span style={{fontSize:12,color:T.textMd,alignSelf:"center"}}>Saldo {fmtMoney(saldo)}</span>}
-            </div>
-          ))}
+      </div>}
+      {pestana==="envios"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}><DepBtn T={T} size="sm" onClick={()=>setMovs({uid:u._id,email:u.email})}>Movimientos de saldo</DepBtn>{saldo!=null&&<span style={{fontSize:12,color:T.textMd}}>Saldo {fmtMoney(saldo)}</span>}<span style={{fontSize:DS.font.md,color:T.textSm}}>{hab?"Tiene etiquetas prepagas habilitadas.":"No tiene etiquetas prepagas habilitadas (se habilita en Resumen → Accesos)."}</span></div>
           <AdmFichaEnvios ctx={ctx} u={u}/>
+      </div>}
+      {pestana==="actividad"&&<div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
           {cardT("Actividad en los últimos 30 días",(
             act.loading?<AdmSkeleton T={T} filas={3}/>:act.error?<div style={{fontSize:12,color:T.red}}>{act.error}</div>:(()=>{ const usa=act.secciones.filter(s=>s.n>0); const noUsa=act.secciones.filter(s=>!s.n); return (
               <div>
@@ -21457,6 +21429,8 @@ function AdmFicha({ctx, u, onClose}) {
               </div>
             ); })()
           ))}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
           {cardT("Relaciones",(
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:16}}>
               <div>
@@ -21487,7 +21461,7 @@ function AdmFicha({ctx, u, onClose}) {
             )
           ),<Btn T={T} variant="secondary" size="sm" onClick={()=>{setLog({loading:true,items:[]});loadLog();}}>Actualizar</Btn>)}
         </div>
-      </div>
+      </div>}
       <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={s=>{ setSaldo(s); actualizarUsuario(u._id,{andreaniSaldo:s}); loadLog(); }}/>
       <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
     </div>
@@ -21509,11 +21483,9 @@ function AdmIngresos({ctx, stats}) {
   const maxMrr=Math.max(1,...meses.map(k=>porMes[k].mrr));
   const pagas=usuarios.filter(activaPaga); const arpu=pagas.length?(stats.mrr||0)/pagas.length:0; const conv=usuarios.length?Math.round(pagas.length/usuarios.length*1000)/10:0;
   const cancelados=usuarios.filter(u=>u.stripeStatus==="canceled").length;
-  const legacy=pagosReales.filter(p=>p.method!=="stripe");
   const refCredito=usuarios.reduce((s,u)=>s+(u.refCreditUsd||0),0), refGanado=usuarios.reduce((s,u)=>s+(u.refGanadoUsd||0),0);
   const referidas=usuarios.filter(u=>u.refBy);
   const topRef=Object.entries(referidas.reduce((m,u)=>{m[u.refBy]=(m[u.refBy]||0)+1;return m;},{})).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const [verLegacy,setVerLegacy]=useState(false);
   const cuentaBtn=u=><button onClick={()=>setCuenta(u._id)} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{u.email||u.nombre||u._id}</button>;
   const cols="130px 110px 70px 80px 90px 70px";
   return (
@@ -21553,12 +21525,17 @@ function AdmIngresos({ctx, stats}) {
             </div></div>
           </Card>
           <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Pagos manuales y USDT (histórico)" sub={`${legacy.length} pago${legacy.length===1?"":"s"} anteriores a Stripe.`} right={<Btn T={T} variant="secondary" size="sm" onClick={()=>setVerLegacy(v=>!v)}>{verLegacy?"Ocultar":"Ver"}</Btn>}/>
-            {verLegacy&&(legacy.length===0?<AdmVacio T={T} titulo="Sin pagos manuales"/>:legacy.slice(0,100).map((p,i)=>{ const u=usuariosPorUid[p.uid]; return (
-              <div key={p._id} style={{display:"flex",gap:10,alignItems:"center",fontSize:12,padding:"7px 0",borderBottom:i<Math.min(legacy.length,100)-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
-                <span style={{color:T.textSm,width:72}}>{admFecha(p.createdAt)}</span><span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span>{p.email||p.uid}</span>}</span><DSBadge T={T} color={admPlanColor(T,p.plan)} size="sm">{admPlanLabel(p.plan)}</DSBadge><span style={{fontWeight:700,color:T.text}}>{esUsd(p)?admUsd(p.amount):`$${p.amount} ${p.currency}`}</span><span style={{color:T.textSm}}>{admPagoMetodo(p)}{p.mesesConfirmados?` · ${p.mesesConfirmados} m`:""}</span>{p.txHash&&<a href={`https://tronscan.org/#/transaction/${encodeURIComponent(p.txHash)}`} target="_blank" rel="noreferrer" style={{fontSize:10,color:T.accent,textDecoration:"none"}}>tx</a>}
+            <AdmTitulo T={T} t="Últimos pagos" sub="Altas, renovaciones, pruebas y pagos por transferencia, del más nuevo al más viejo."/>
+            {(()=>{ const recent=[...ctx.pagos].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,12); return recent.length===0?<AdmVacio T={T} titulo="Sin movimientos todavía"/>:recent.map((p,i)=>{ const u=usuariosPorUid[p.uid]; return (
+              <div key={p._id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<recent.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap",fontSize:12}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:p.isTrial?T.yellow:p.estado==="confirmado"?T.green:p.estado==="rechazado"?T.red:T.textSm,flexShrink:0}}/>
+                <span style={{flex:1,minWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):<span style={{color:T.text}}>{p.email||p.uid}</span>}</span>
+                <DSBadge T={T} color={admPlanColor(T,p.plan)} size="sm">{admPlanLabel(p.plan)}</DSBadge>
+                <span style={{color:T.textMd}}>{p.isTrial?"prueba":`${esUsd(p)?admUsd(p.amount):"$"+p.amount+" "+p.currency} · ${admPagoMetodo(p)}${admPagoTipo(p)?" · "+admPagoTipo(p):""}`}</span>
+                <span style={{color:p.estado==="confirmado"?T.green:p.estado==="pendiente"?T.yellow:T.red,fontWeight:600}}>{admPagoEstado(p)}</span>
+                <span style={{color:T.textSm,whiteSpace:"nowrap"}}>{admFecha(p.createdAt)}</span>
               </div>
-            );}))}
+            ); }); })()}
           </Card>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
@@ -21570,8 +21547,16 @@ function AdmIngresos({ctx, stats}) {
             {topRef.length>0&&<div><AdmLbl T={T}>Quienes más refieren</AdmLbl>{topRef.map(([uid,n])=>{ const u=usuariosPorUid[uid]; return <div key={uid} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12,padding:"4px 0"}}><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u?cuentaBtn(u):uid}</span><span style={{color:T.textMd,whiteSpace:"nowrap"}}>{n} · {admUsd(u?.refGanadoUsd||0)}</span></div>; })}</div>}
           </Card>
           <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Precios vigentes" sub="Mismo cuadro que Stripe y la sección Suscripción."/>
-            {Object.entries(ADM_PRECIOS).map(([id,p])=><div key={id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:`1px solid ${T.borderL}`}}><span style={{color:T.text,fontWeight:600}}>{p.nombre}</span><span style={{color:T.textMd}}>{admUsd(p.mensual)}/mes · {admUsd(p.anual)}/mes anual</span></div>)}
+            <AdmTitulo T={T} t="Suscripciones" sub="Cómo se reparten los clientes activos y lo que suman a precio de lista."/>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {["plus","medio","facturador"].map(pl=>{ const n=pagas.filter(u=>(u.plan==="full"?"plus":u.plan)===pl).length; return (
+                <div key={pl}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{color:T.text,fontWeight:600}}>{ADM_PRECIOS[pl].nombre} <span style={{color:T.textSm,fontWeight:400}}>· {admUsd(ADM_PRECIOS[pl].mensual)}/mes</span></span><span style={{color:T.textMd}}>{n} · {admUsd(n*ADM_PRECIOS[pl].mensual)}/mes</span></div>
+                  <div style={{height:6,borderRadius:3,background:T.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(n/(pagas.length||1)*100)}%`,background:admPlanColor(T,pl),borderRadius:3}}/></div>
+                </div>
+              );})}
+              <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>{stats.cancelan?`${stats.cancelan} cancela${stats.cancelan===1?"":"n"} al terminar el período. `:""}{stats.pruebas?`${stats.pruebas} en prueba otorgada.`:""}</div>
+            </div>
           </Card>
         </div>
       </div>
@@ -23680,11 +23665,11 @@ function AdmPortalLink({T}){
   );
 }
 // Cola de gestiones ante Andreani (reclamos / cambios / anulaciones) de toda la plataforma.
-function AdmCasos({T, usuariosPorUid, setCuenta}){
+function AdmCasos({T, usuariosPorUid, setCuenta, onCambio}){
   const [st,setSt]=useState({loading:true,casos:[],ejecutivaWa:"",ejecutivaNombre:"",ejecutivaEmail:"",portalLink:"",error:""});
   const [todos,setTodos]=useState(false); const [edit,setEdit]=useState(null); // {id, estado, nota, reintegrar}
   const [fotos,setFotos]=useState(null);
-  async function load(t){ setSt(x=>({...x,loading:true,error:""})); try{ const d=await admAndreani(`admin_casos${(t??todos)?"&todos=1":""}`); setSt({loading:false,casos:d.casos||[],ejecutivaWa:d.ejecutivaWa||"",ejecutivaNombre:d.ejecutivaNombre||"",ejecutivaEmail:d.ejecutivaEmail||"",portalLink:d.portalLink||"",error:""}); }catch(e){ setSt(x=>({...x,loading:false,error:e.message})); } }
+  async function load(t){ setSt(x=>({...x,loading:true,error:""})); onCambio&&onCambio(); try{ const d=await admAndreani(`admin_casos${(t??todos)?"&todos=1":""}`); setSt({loading:false,casos:d.casos||[],ejecutivaWa:d.ejecutivaWa||"",ejecutivaNombre:d.ejecutivaNombre||"",ejecutivaEmail:d.ejecutivaEmail||"",portalLink:d.portalLink||"",error:""}); }catch(e){ setSt(x=>({...x,loading:false,error:e.message})); } }
   useEffect(()=>{ load(false); },[]);
   const textoWa=c=>[
     `Hola${st.ejecutivaNombre?" "+st.ejecutivaNombre:""}! Te paso una gestión de ${c.tienda||c.email||"un cliente"} (cliente de Growith):`,
@@ -23805,7 +23790,7 @@ function AdmConciliacion({T, usuariosPorUid}){
   const r=res?.resumen;
   return (
     <Card T={T} padding="lg" style={{marginTop:16}}>
-      <AdmTitulo T={T} t="Conciliar la factura de Andreani" sub="Subí el detalle de facturación (CSV o Excel con una fila por envío) y se cruza por número de envío con lo cobrado a cada cliente." right={<AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani("admin_idx_backfill",{}); toast(`Índice reconstruido: ${d.escritos} etiquetas de ${d.cuentas} cuentas`,"success",5000); }}>Reconstruir índice</AdmBtn>}/>
+      <AdmTitulo T={T} t="Conciliar la factura de Andreani" sub="Subí el detalle de facturación (CSV o Excel con una fila por envío) y se cruza por número de envío con lo cobrado a cada cliente."/>
       <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
         <label style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",cursor:"pointer",display:"inline-flex",alignItems:"center"}}>{tabla?tabla.nombre:"Elegir archivo (.csv / .xlsx)"}<input type="file" accept=".csv,.xlsx,.xlsm,text/csv" style={{display:"none"}} onChange={e=>{ const f=e.target.files?.[0]; if(f) cargar(f); e.target.value=""; }}/></label>
         {tabla&&<>
@@ -23843,48 +23828,31 @@ function AdmConciliacion({T, usuariosPorUid}){
     </Card>
   );
 }
-function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
-  const {T, usuarios, usuariosPorUid, setCuenta, envCargas, resolverCarga, statsMes} = ctx;
-  const [vista,setVista]=useState("operacion");
-  const [saldos,setSaldos]=useState(null); const [busca,setBusca]=useState(""); const [buscaRes,setBuscaRes]=useState(null);
+// ── Envíos (17/oct/2026): Operación · Billeteras · Rentabilidad. La configuración pasó a la pestaña
+// Configuración y las herramientas técnicas a Sistema → Mantenimiento.
+function AdmEnvios({ctx}) {
+  const {T, usuariosPorUid, setCuenta, envCargas, resolverCarga, statsMes, sub, limbo, loadLimbo, resolverDudoso, debitarAnulada} = ctx;
+  const vista=sub||"operacion";
+  const [saldos,setSaldos]=useState(null);
   const [acred,setAcred]=useState(null); const [movs,setMovs]=useState(null); const [compVer,setCompVer]=useState(null);
-  const [nuevo,setNuevo]=useState(""); const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]}); const [bajaNueva,setBajaNueva]=useState("");
-  const [pmap,setPmap]=useState({loading:true,entries:[]});
-  const [audit,setAudit]=useState(null); // {loading,entries,resumen,error}
-  async function auditarPuntos(){ setAudit({loading:true}); try{ const d=await admAndreani("admin_punto_map_audit"); setAudit({loading:false,entries:d.entries||[],resumen:d.resumen||{},diag:d.diag||null}); }catch(e){ setAudit({loading:false,entries:[],error:e.message}); } }
-  async function quitarAudit(rows){ const quitar=rows.filter(r=>!r.global).map(r=>({uid:r.uid,key:r.key})); const quitarGlobal=rows.filter(r=>r.global).map(r=>r.key); await admAndreani("admin_punto_map_audit",{quitar,quitarGlobal}); toast(`Quitadas ${rows.length} memoria(s)`,"success"); await auditarPuntos(); loadPuntoMap(); }
   const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
   const [mes,setMes]=useState(meses[0].v); const [stats,setStats]=useState({loading:!statsMes,data:statsMes||null,error:""});
   async function loadSaldos(){ try{ const s=await admAndreani("admin_saldos"); if(Array.isArray(s?.cuentas)) setSaldos(s.cuentas); }catch(_){} }
   async function loadStats(m){ setMes(m); setStats({loading:true,data:null,error:""}); try{ setStats({loading:false,data:await admAndreani(`admin_stats&mes=${encodeURIComponent(m)}`),error:""}); }catch(e){ setStats({loading:false,data:null,error:e.message}); } }
-  async function loadBajas(){ try{ const d=await admAndreani("admin_tpl_baja",{}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }catch(e){ setBajas({loading:false,nombres:[],seed:[],error:e.message}); } }
-  async function editarBajas(agregar,quitar){ const d=await admAndreani("admin_tpl_baja",{agregar,quitar}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }
-  async function loadPuntoMap(quitar){ try{ const d=quitar?await admAndreani("admin_punto_map",{quitar}):await admAndreani("admin_punto_map"); setPmap({loading:false,entries:d.entries||[]}); if(quitar) toast("Quitado de la memoria global","success"); }catch(e){ setPmap({loading:false,entries:[],error:e.message}); } }
-  // Dinero en el limbo: emisiones dudosas, reversos pendientes, cargas en
-  // revisión y etiquetas anuladas con ingreso — antes se resolvían a mano en Firestore.
-  const [limbo,setLimbo]=useState({loading:true,data:null,error:""});
-  async function loadLimbo(){ setLimbo(l=>({...l,loading:true,error:""})); try{ setLimbo({loading:false,data:await admAndreani("admin_limbo"),error:""}); }catch(e){ setLimbo({loading:false,data:null,error:e.message}); } }
-  async function resolverDudoso(d,resultado){
-    let numeroDeEnvio=d.numeroDeEnvio||"";
-    if(resultado==="existe"&&!numeroDeEnvio){ numeroDeEnvio=await appPrompt(`Número de envío que Andreani creó para el pedido #${d.pedido||d.envioId}:`,""); if(!numeroDeEnvio) return; }
-    if(resultado==="no_existe"&&!(await appConfirm(`¿Confirmás que Andreani NO creó la etiqueta del pedido #${d.pedido||d.envioId}? Se devuelve ${fmtMoney(d.precio||0)} al saldo de la cuenta.`,{okLabel:"Devolver saldo"}))) return;
-    await admAndreani("admin_dudoso_resolver",{uid:d.uid,envioId:d.envioId,resultado,numeroDeEnvio:String(numeroDeEnvio||"").trim()||undefined});
-    toast(resultado==="existe"?"Emisión confirmada":"Saldo devuelto","success"); loadLimbo(); loadSaldos();
-  }
-  async function debitarAnulada(d){
-    if(!(await appConfirm(`La etiqueta del pedido #${d.pedido||d.envioId} se anuló con reintegro pero Andreani registró ingreso: ¿debitar ${fmtMoney(d.precio||0)} de nuevo?`,{danger:true,okLabel:"Debitar"}))) return;
-    await admAndreani("admin_anulada_debitar",{uid:d.uid,envioId:d.envioId}); toast("Debitado","success"); loadLimbo(); loadSaldos();
-  }
-  useEffect(()=>{ loadSaldos(); if(!statsMes) loadStats(meses[0].v); loadBajas(); loadPuntoMap(); loadLimbo(); },[]);
-  async function buscar(){ const email=busca.trim(); if(!email){ setBuscaRes(null); return; } const d=await admAndreani(`admin_saldos&email=${encodeURIComponent(email)}`); if(d?.sinResultados||!Array.isArray(d?.cuentas)||!d.cuentas.length) setBuscaRes({sinResultados:true,email}); else setBuscaRes({cuentas:d.cuentas}); }
-  const q=nuevo.trim().toLowerCase(); const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null; const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
-  const listaSaldos=buscaRes?.cuentas||saldos||[];
-  const upd=patch=>setEnvCfg(c=>({...(c||{habilitados:[]}),...patch}));
+  // Cada subpestaña carga SOLO lo suyo (antes Logística pedía cinco cosas al abrir, se viera o no).
+  useEffect(()=>{ if(vista==="billeteras"&&saldos===null) loadSaldos(); if(vista==="rentabilidad"&&!stats.data&&!stats.loading) loadStats(meses[0].v); },[vista]);
+  useEffect(()=>{ if(vista==="rentabilidad"&&!statsMes&&!stats.data) loadStats(meses[0].v); },[]);
+  const listaSaldos=saldos||[];
   const clienteBtn=(uid,label)=><button onClick={()=>usuariosPorUid[uid]&&setCuenta(uid)} style={{background:"transparent",border:"none",padding:0,cursor:usuariosPorUid[uid]?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{label}</button>;
   return (
     <>
-      <div style={{marginBottom:14}}><AdmSeg T={T} value={vista} onChange={setVista} opciones={[["operacion","Operación",envCargas.length],["rentabilidad","Rentabilidad"],["config","Configuración"]]}/></div>
       {vista==="operacion"&&(
+        <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
+          <AdmCasos T={T} usuariosPorUid={usuariosPorUid} setCuenta={setCuenta} onCambio={ctx.loadCasosAb}/>
+          <AdmProblemasPlataforma T={T} usuariosPorUid={usuariosPorUid} setCuenta={setCuenta}/>
+        </div>
+      )}
+      {vista==="billeteras"&&(
         <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
           {(()=>{
             const d=limbo.data||{}; const listas=[["dudosos","Emisiones dudosas",d.dudosos||[]],["reversosPendientes","Reversos pendientes",d.reversosPendientes||[]],["cargasRevision","Cargas en revisión",d.cargasRevision||[]],["anuladasConIngreso","Anuladas con ingreso",d.anuladasConIngreso||[]]];
@@ -23915,10 +23883,18 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
             );
           })()}
           <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Saldos por cuenta" sub="Acreditar a mano o ver los movimientos de cada billetera." right={<Btn T={T} variant="secondary" size="sm" onClick={loadSaldos}>Actualizar</Btn>}/>
-            <div style={{display:"flex",gap:8,marginBottom:12}}><AdmInput T={T} value={busca} onChange={e=>setBusca(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")buscar().catch(err=>toast(err.message,"error"));}} placeholder="Buscar cuenta por email" style={{flex:1}}/><AdmBtn T={T} variant="secondary" size="sm" onClick={buscar}>Buscar</AdmBtn></div>
-            {buscaRes&&<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,fontSize:12}}>{buscaRes.sinResultados?<span style={{color:T.yellow}}>No existe ninguna cuenta con el email "{buscaRes.email}".</span>:<span style={{color:T.textMd}}>Mostrando la cuenta encontrada.</span>}<button onClick={()=>{setBuscaRes(null);setBusca("");}} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Ver todas</button></div>}
-            {saldos===null&&!buscaRes?<AdmSkeleton T={T}/>:listaSaldos.length===0?<AdmVacio T={T} titulo="Sin cuentas con saldo"/>:(
+            <AdmTitulo T={T} t="Cargas de saldo por acreditar" sub="Transferencias que esperan tu confirmación. Las de Mercado Pago se acreditan solas."/>
+            {envCargas.length===0?<AdmVacio T={T} titulo="Nada pendiente"/>:envCargas.map(c=>(
+              <div key={c.id} style={{padding:"9px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||c.uid}</span><span style={{fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span></div>
+                <div style={{fontSize:11,color:T.textSm,margin:"2px 0 6px"}}>ref {c.ref||"—"}{c.ts?` · ${admRel(c.ts)}`:""}{c.estado==="revision"?" · monto de MP distinto, revisar":""}</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{c.tieneComprobante&&<AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani(`admin_carga_comprobante&id=${encodeURIComponent(c.id)}`); setCompVer({...c,comprobante:d.comprobante}); }}>Ver comprobante</AdmBtn>}<AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></div>
+              </div>
+            ))}
+          </Card>
+          <Card T={T} padding="lg">
+            <AdmTitulo T={T} t="Saldos por cuenta" sub="Billeteras de envíos. Para una cuenta puntual usá el buscador de arriba: su ficha tiene el saldo y los movimientos." right={<Btn T={T} variant="secondary" size="sm" onClick={loadSaldos}>Actualizar</Btn>}/>
+            {saldos===null?<AdmSkeleton T={T}/>:listaSaldos.length===0?<AdmVacio T={T} titulo="Sin cuentas con saldo"/>:(
               <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden"}}>
                 {listaSaldos.map((c,i)=>(
                   <div key={c.uid} style={{display:"flex",gap:10,padding:"9px 12px",fontSize:12,borderBottom:i<listaSaldos.length-1?`1px solid ${T.borderL}`:"none",alignItems:"center",flexWrap:"wrap"}}>
@@ -23931,25 +23907,9 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
               </div>
             )}
           </Card>
-          <Card T={T} padding="lg">
-            <AdmTitulo T={T} t="Cargas de saldo por acreditar" sub="Transferencias que esperan tu confirmación. Las de Mercado Pago se acreditan solas."/>
-            {envCargas.length===0?<AdmVacio T={T} titulo="Nada pendiente"/>:envCargas.map(c=>(
-              <div key={c.id} style={{padding:"9px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email||c.uid}</span><span style={{fontWeight:800,color:T.text}}>{fmtMoney(c.monto)}</span></div>
-                <div style={{fontSize:11,color:T.textSm,margin:"2px 0 6px"}}>ref {c.ref||"—"}{c.ts?` · ${admRel(c.ts)}`:""}{c.estado==="revision"?" · monto de MP distinto, revisar":""}</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{c.tieneComprobante&&<AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani(`admin_carga_comprobante&id=${encodeURIComponent(c.id)}`); setCompVer({...c,comprobante:d.comprobante}); }}>Ver comprobante</AdmBtn>}<AdmBtn T={T} variant="primary" size="sm" onClick={()=>resolverCarga(c,true)}>Acreditar</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverCarga(c,false)}>Rechazar</AdmBtn></div>
-              </div>
-            ))}
-          </Card>
         </div>
       )}
-      {vista==="operacion"&&(
-        <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.4fr) minmax(300px,1fr)",gap:16,alignItems:"start",marginTop:16}}>
-          <AdmCasos T={T} usuariosPorUid={usuariosPorUid} setCuenta={setCuenta}/>
-          <AdmProblemasPlataforma T={T} usuariosPorUid={usuariosPorUid} setCuenta={setCuenta}/>
-        </div>
-      )}
-      {vista==="rentabilidad"&&(
+      {vista==="rentabilidad"&&(<>
         <Card T={T} padding="lg">
           <AdmTitulo T={T} t="Uso por cliente y rentabilidad" sub="Cobrado = lo que pagaron con su saldo. Costo real = lo que factura Andreani a fin de mes. Los tres primeros son el ranking del mes." right={<AdmSelect T={T} value={mes} onChange={e=>loadStats(e.target.value)}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</AdmSelect>}/>
           {stats.loading?<AdmSkeleton T={T} filas={5}/>:stats.error?<div style={{fontSize:12,color:T.red}}>{stats.error}</div>:!stats.data||(!(stats.data.etiquetas>0)&&!(stats.data.cargadoTotal>0)&&!(stats.data.cuentas||[]).length)?<AdmVacio T={T} titulo="Sin actividad en ese mes"/>:(()=>{ const d=stats.data; const cols="minmax(160px,1.4fr) 60px 100px 100px 90px 100px 100px"; return (<>
@@ -23967,13 +23927,30 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
             </div></div>}
           </>); })()}
         </Card>
-      )}
-      {vista==="rentabilidad"&&<AdmConciliacion T={T} usuariosPorUid={usuariosPorUid}/>}
-      {vista==="config"&&(
-        <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
-          <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <AdmConciliacion T={T} usuariosPorUid={usuariosPorUid}/>
+      </>)}
+      <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={()=>loadSaldos()}/>
+      <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
+      <Modal T={T} open={!!compVer} onClose={()=>setCompVer(null)} title={`Comprobante · ${compVer?.ref||""} · ${compVer?fmtMoney(compVer.monto):""}`} width={720} zIndex={1400}>
+        {compVer&&(!compVer.comprobante?<div style={{fontSize:12,color:T.textSm}}>La carga no tiene comprobante.</div>:/^data:application\/pdf/.test(compVer.comprobante)?<iframe title="comprobante" src={compVer.comprobante} style={{width:"100%",height:520,border:`1px solid ${T.border}`,borderRadius:10,background:"#fff"}}/>:<img src={compVer.comprobante} alt="" style={{width:"100%",borderRadius:10,border:`1px solid ${T.border}`}}/>)}
+      </Modal>
+    </>
+  );
+}
+
+// ── Configuración (17/oct/2026): todo lo que se configura, una tarjeta por tema ──
+function AdmConfig({ctx}) {
+  const {T, usuarios, usuariosPorUid, setCuenta, envCfg, setEnvCfg, saveEnvCfg, sectionsConfig, saveSectionsConfig, user} = ctx;
+  const [nuevo,setNuevo]=useState(""); const saldos=null;
+  const q=nuevo.trim().toLowerCase(); const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null; const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
+  const upd=patch=>setEnvCfg(c=>({...(c||{habilitados:[]}),...patch}));
+  const clienteBtn=(uid,label)=><button onClick={()=>usuariosPorUid[uid]&&setCuenta(uid)} style={{background:"transparent",border:"none",padding:0,cursor:usuariosPorUid[uid]?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{label}</button>;
+  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub&&!it.soloDeposito);
+  return (
+    <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
             <Card T={T} padding="lg">
-              <AdmTitulo T={T} t="Precio de las etiquetas" sub="Costo real = tarifa de lista menos tu descuento, más seguro. Precio al cliente = costo real más markup."/>
+              <AdmTitulo T={T} t="Precio de las etiquetas" sub="Costo real = tarifa de lista menos tu descuento, más seguro. Precio al cliente = costo real más markup. Cada cliente puede tener su markup propio en su ficha."/>
               {!envCfg?<AdmSkeleton T={T}/>:(<>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <Field T={T} label="Descuento Andreani (%)"><AdmInput T={T} type="number" value={envCfg.descuentoPct??""} onChange={e=>upd({descuentoPct:e.target.value})} placeholder="0"/></Field>
@@ -23982,21 +23959,34 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                   <Field T={T} label="Markup fijo ($)"><AdmInput T={T} type="number" value={envCfg.markupFijo??""} onChange={e=>upd({markupFijo:e.target.value})} placeholder="0"/></Field>
                 </div>
                 <Field T={T} label="Sucursal de origen (código Andreani)"><AdmInput T={T} value={envCfg.sucursalOrigen??""} onChange={e=>upd({sucursalOrigen:e.target.value})} placeholder="Vacío = origen default"/></Field>
-                <AdmLbl T={T}>Ejecutiva de cuenta de Andreani</AdmLbl>
+                <Field T={T} label="Anulación automática (días sin ingreso)"><AdmInput T={T} type="number" min="3" max="90" value={envCfg.anulacionDias??14} onChange={e=>upd({anulacionDias:e.target.value})}/></Field>
+                <div style={{display:"flex",justifyContent:"flex-end"}}><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ if(await saveEnvCfg()) toast("Configuración guardada","success"); }}>Guardar</AdmBtn></div>
+              </>)}
+            </Card>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Ejecutiva de Andreani" sub="Recibe por mail cada gestión que abren los clientes y la responde desde su portal. El WhatsApp es solo para urgencias."/>
+              {!envCfg?<AdmSkeleton T={T}/>:(<>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <Field T={T} label="Mail de operaciones (recibe las gestiones)"><AdmInput T={T} value={envCfg.emailGestiones??""} onChange={e=>upd({emailGestiones:e.target.value})} placeholder="contacto.growith@gmail.com"/></Field>
                   <Field T={T} label="Nombre"><AdmInput T={T} value={envCfg.ejecutivaNombre??""} onChange={e=>upd({ejecutivaNombre:e.target.value})} placeholder="Ej: Carla"/></Field>
                   <Field T={T} label="Mail de la ejecutiva (recibe cada gestión)"><AdmInput T={T} type="email" value={envCfg.ejecutivaEmail??""} onChange={e=>upd({ejecutivaEmail:e.target.value})} placeholder="ejecutiva@andreani.com"/></Field>
                   <Field T={T} label="WhatsApp (urgencias, con 549)"><AdmInput T={T} value={envCfg.ejecutivaWa??""} onChange={e=>upd({ejecutivaWa:e.target.value.replace(/\D/g,"")})} placeholder="5491155555555"/></Field>
-                  <Field T={T} label="Anulación automática (días sin ingreso)"><AdmInput T={T} type="number" min="3" max="90" value={envCfg.anulacionDias??14} onChange={e=>upd({anulacionDias:e.target.value})}/></Field>
                 </div>
                 <AdmPortalLink T={T}/>
-                <AdmLbl T={T}>Datos para recibir cargas por transferencia</AdmLbl>
-                <Field T={T} label="Alias"><AdmInput T={T} value={envCfg.datosPago?.alias??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),alias:e.target.value}})} placeholder="mi.alias.mp"/></Field>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field T={T} label="CBU / CVU"><AdmInput T={T} value={envCfg.datosPago?.cbu??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),cbu:e.target.value}})} placeholder="22 dígitos"/></Field><Field T={T} label="Titular"><AdmInput T={T} value={envCfg.datosPago?.titular??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),titular:e.target.value}})} placeholder="Nombre"/></Field></div>
-                <div style={{display:"flex",justifyContent:"flex-end"}}><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ if(await saveEnvCfg()) toast("Configuración guardada","success"); }}>Guardar configuración</AdmBtn></div>
+                <div style={{display:"flex",justifyContent:"flex-end"}}><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ if(await saveEnvCfg()) toast("Configuración guardada","success"); }}>Guardar</AdmBtn></div>
               </>)}
             </Card>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Datos para cargas por transferencia" sub="Lo que ven los clientes cuando cargan saldo de envíos por transferencia."/>
+              {!envCfg?<AdmSkeleton T={T}/>:(<>
+
+                <Field T={T} label="Alias"><AdmInput T={T} value={envCfg.datosPago?.alias??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),alias:e.target.value}})} placeholder="mi.alias.mp"/></Field>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}><Field T={T} label="CBU / CVU"><AdmInput T={T} value={envCfg.datosPago?.cbu??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),cbu:e.target.value}})} placeholder="22 dígitos"/></Field><Field T={T} label="Titular"><AdmInput T={T} value={envCfg.datosPago?.titular??""} onChange={e=>upd({datosPago:{...(envCfg.datosPago||{}),titular:e.target.value}})} placeholder="Nombre"/></Field></div>
+                <div style={{display:"flex",justifyContent:"flex-end"}}><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ if(await saveEnvCfg()) toast("Configuración guardada","success"); }}>Guardar</AdmBtn></div>
+              </>)}
+            </Card>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
             <Card T={T} padding="lg">
               <AdmTitulo T={T} t="Cuentas habilitadas" sub="Solo estas cuentas ven las etiquetas prepagas en Envíos."/>
               <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
@@ -24012,21 +24002,50 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
               {match&&<div style={{fontSize:11,color:T.green,marginTop:6}}>{match.nombre||match.email} · {admPlanLabel(match.plan)}</div>}
               {sugeridos.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>{sugeridos.map(u=><button key={u._id} onClick={()=>setNuevo(u.email||u._id)} style={{textAlign:"left",background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{u.email} <span style={{color:T.textSm}}>· {admPlanLabel(u.plan)}</span></button>)}</div>}
             </Card>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
             <Card T={T} padding="lg">
-              <AdmTitulo T={T} t="Memoria global de puntos de retiro" sub="Puntos HOP resueltos y verificados por cualquier cuenta (misma calle y número). Sirven para todos; si uno está mal, quitalo." right={<Btn T={T} variant="secondary" size="sm" onClick={()=>loadPuntoMap()}>Actualizar</Btn>}/>
-              {pmap.loading?<AdmSkeleton T={T}/>:pmap.error?<div style={{fontSize:12,color:T.red}}>{pmap.error}</div>:pmap.entries.length===0?<AdmVacio T={T} titulo="Todavía no hay puntos verificados" sub="Se agregan solos cuando una cuenta elige a mano un punto y coincide en calle y número."/>:(
+              <AdmTitulo T={T} t="App de Shopify" sub="Credenciales de la app pública de Growith. Con esto los clientes conectan Shopify poniendo solo su dominio."/>
+              <AdmShopifyApps T={T}/>
+            </Card>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Accesos por sección" sub="Todos = la ven todos los clientes. Admin = desaparece del menú de los clientes al instante (para desarrollar sin que la vean)."/>
+              {secciones.map((s,i)=>{ const on=sectionsConfig.includes(s.id); return (
+                <div key={s.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<secciones.length-1?`1px solid ${T.borderL}`:"none"}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={on?T.accent:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={s.icon}/></svg>
+                  <span style={{flex:1,fontSize:12.5,fontWeight:600,color:T.text}}>{s.label}</span>
+                  <DepSeg T={T} value={on?"admin":"todos"} onChange={v=>{ if((v==="admin")===on) return; saveSectionsConfig(v==="admin"?[...sectionsConfig,s.id]:sectionsConfig.filter(x=>x!==s.id)).catch(e=>toast(e.message,"error")); }} items={[["todos","Todos"],["admin","Solo admin"]]}/>
+                </div>
+              );})}
+            </Card>
+            <AdmDepositoAcceso T={T} user={user}/>
+      </div>
+    </div>
+  );
+}
+
+// ── Mantenimiento (Sistema): herramientas técnicas que no son del día a día ──
+function AdmMantenimiento({T}) {
+  const [bajas,setBajas]=useState({loading:true,nombres:[],seed:[]}); const [bajaNueva,setBajaNueva]=useState("");
+  const [pmap,setPmap]=useState({loading:true,entries:[]}); const [verGlobal,setVerGlobal]=useState(false);
+  const [audit,setAudit]=useState(null);
+  async function auditarPuntos(){ setAudit({loading:true}); try{ const d=await admAndreani("admin_punto_map_audit"); setAudit({loading:false,entries:d.entries||[],resumen:d.resumen||{},diag:d.diag||null}); }catch(e){ setAudit({loading:false,entries:[],error:e.message}); } }
+  async function quitarAudit(rows){ const quitar=rows.filter(r=>!r.global).map(r=>({uid:r.uid,key:r.key})); const quitarGlobal=rows.filter(r=>r.global).map(r=>r.key); await admAndreani("admin_punto_map_audit",{quitar,quitarGlobal}); toast(`Quitadas ${rows.length} memoria(s)`,"success"); await auditarPuntos(); loadPuntoMap(); }
+  async function loadBajas(){ try{ const d=await admAndreani("admin_tpl_baja",{}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }catch(e){ setBajas({loading:false,nombres:[],seed:[],error:e.message}); } }
+  async function editarBajas(agregar,quitar){ const d=await admAndreani("admin_tpl_baja",{agregar,quitar}); setBajas({loading:false,nombres:d.nombres||[],seed:d.seed||[]}); }
+  async function loadPuntoMap(quitar){ try{ const d=quitar?await admAndreani("admin_punto_map",{quitar}):await admAndreani("admin_punto_map"); setPmap({loading:false,entries:d.entries||[]}); if(quitar) toast("Quitado de la memoria global","success"); }catch(e){ setPmap({loading:false,entries:[],error:e.message}); } }
+  useEffect(()=>{ loadBajas(); loadPuntoMap(); },[]);
+  return (
+    <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+            <Card T={T} padding="lg">
+              <AdmTitulo T={T} t="Memoria de puntos de retiro" sub="Revisa las elecciones manuales guardadas por TODAS las cuentas (y la global) con el detector de contradicciones del matcheo: si una sucursal guardada no es el punto del cliente, se reusa en silencio en cada pedido nuevo." right={<><DepBtn T={T} size="sm" onClick={()=>setVerGlobal(v=>!v)}>{verGlobal?"Ocultar la global":`Memoria global (${pmap.entries.length})`}</DepBtn><AdmBtn T={T} variant="secondary" size="sm" onClick={auditarPuntos}>{audit?.loading?"Revisando…":"Auditar todas"}</AdmBtn></>}/>
+              {verGlobal&&(<div style={{marginBottom:14,paddingBottom:10,borderBottom:`1px solid ${T.borderL}`}}>{pmap.loading?<AdmSkeleton T={T}/>:pmap.error?<div style={{fontSize:12,color:T.red}}>{pmap.error}</div>:pmap.entries.length===0?<AdmVacio T={T} titulo="Todavía no hay puntos verificados" sub="Se agregan solos cuando una cuenta elige a mano un punto y coincide en calle y número."/>:(
                 <div style={{maxHeight:360,overflowY:"auto"}}>{pmap.entries.map((e,i)=>(
                   <div key={e.key} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<pmap.entries.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
                     <div style={{flex:1,minWidth:0}}><div style={{color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.punto?[e.punto.nombre,e.punto.dir,e.punto.loc].filter(Boolean).join(" · "):e.key.split("|").filter(Boolean).join(" · ")}</div><div style={{color:T.textSm,fontSize:11}}>va a {e.oficial?.descripcion||e.tpl}{e.oficial?.direccion?` (${[e.oficial.direccion.calle,e.oficial.direccion.numero,e.oficial.direccion.localidad].filter(Boolean).join(" ")})`:""}{e.byEmail?` · por ${e.byEmail}`:""}{e.ts?` · ${admRel(e.ts)}`:""}</div></div>
                     <AdmBtn T={T} variant="ghost" size="sm" style={{color:T.red}} onClick={async()=>{ if(!await appConfirm("¿Quitar este punto de la memoria global?",{danger:true,okLabel:"Quitar"})) return; await loadPuntoMap(e.key); }}>Quitar</AdmBtn>
                   </div>
                 ))}</div>
-              )}
-            </Card>
-            <Card T={T} padding="lg">
-              <AdmTitulo T={T} t="Auditoría de memorias de puntos" sub="Revisa las elecciones manuales guardadas por TODAS las cuentas (y la global) con el detector de contradicciones del matcheo: si una sucursal guardada no es el punto del cliente, se reusa en silencio en cada pedido nuevo." right={<AdmBtn T={T} variant="secondary" size="sm" onClick={auditarPuntos}>{audit?.loading?"Revisando…":"Auditar todas"}</AdmBtn>}/>
+              )}</div>)}
               {!audit?<div style={{fontSize:12,color:T.textSm}}>Tocá "Auditar todas" para revisar.</div>:audit.loading?<AdmSkeleton T={T}/>:audit.error?<div style={{fontSize:12,color:T.red}}>{audit.error}</div>:(<>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10,fontSize:11}}>
                   <DSBadge T={T} color={T.red} size="sm">{audit.resumen.graves||0} contradicen</DSBadge>
@@ -24056,6 +24075,8 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
                 })}</div>)}
               </>)}
             </Card>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
             <Card T={T} padding="lg">
               <AdmTitulo T={T} t="Sucursales dadas de baja" sub="Sucursales de Andreani que ya no operan. Al exportar, los pedidos a estas van al selector."/>
               {bajas.loading?<AdmSkeleton T={T} filas={2}/>:bajas.error?<div style={{fontSize:12,color:T.red}}>{bajas.error}</div>:(<>
@@ -24068,23 +24089,16 @@ function AdmLogistica({ctx, envCfg, setEnvCfg, saveEnvCfg}) {
               </>)}
             </Card>
             <Card T={T} padding="lg">
-              <AdmTitulo T={T} t="Diagnóstico API Andreani" sub="Consultá la API oficial con la cuenta de la plataforma para ver qué devuelve (sucursales por canal/tipo, tarifas)."/>
-              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
-                <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani("admin_cache_purge",{}); const n=Object.values(d.borrados||{}).reduce((s,v)=>s+(Number(v)||0),0); toast(`Cachés borradas: ${n}${d.restantes?" (quedan más: volvé a correrlo)":""}`,"success",6000); }}>Purgar cachés viejas</AdmBtn>
-                <span style={{fontSize:11,color:T.textSm}}>Borra listados y tarifas de versiones anteriores en andreani_config (suc_, suc_all, suc_geo, geo_ck_, rates_suc1…11, cotizaciones de más de 7 días).</span>
+              <AdmTitulo T={T} t="Herramientas" sub="Solo para casos puntuales: no hace falta usarlas en el día a día."/>
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani("admin_cache_purge",{}); const n=Object.values(d.borrados||{}).reduce((s,v)=>s+(Number(v)||0),0); toast(`Cachés borradas: ${n}${d.restantes?" (quedan más: volvé a correrlo)":""}`,"success",6000); }}>Purgar cachés viejas</AdmBtn><span style={{fontSize:11,color:T.textSm,flex:1,minWidth:200}}>Borra listados y tarifas de versiones anteriores guardados en andreani_config.</span></div>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const d=await admAndreani("admin_idx_backfill",{}); toast(`Índice reconstruido: ${d.escritos} etiquetas de ${d.cuentas} cuentas`,"success",5000); }}>Reconstruir índice de envíos</AdmBtn><span style={{fontSize:11,color:T.textSm,flex:1,minWidth:200}}>Rehace el índice que usa la conciliación de la factura de Andreani.</span></div>
               </div>
-              <AdmProbe T={T}/>
-              <div style={{marginTop:14}}><AdmTnProbe T={T}/></div>
+              <details><summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:10}}>Diagnóstico de la API de Andreani</summary><AdmProbe T={T}/></details>
+              <details style={{marginTop:10}}><summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:10}}>Diagnóstico de la API de Tienda Nube / Shopify</summary><AdmTnProbe T={T}/></details>
             </Card>
-          </div>
-        </div>
-      )}
-      <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={()=>loadSaldos()}/>
-      <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
-      <Modal T={T} open={!!compVer} onClose={()=>setCompVer(null)} title={`Comprobante · ${compVer?.ref||""} · ${compVer?fmtMoney(compVer.monto):""}`} width={720} zIndex={1400}>
-        {compVer&&(!compVer.comprobante?<div style={{fontSize:12,color:T.textSm}}>La carga no tiene comprobante.</div>:/^data:application\/pdf/.test(compVer.comprobante)?<iframe title="comprobante" src={compVer.comprobante} style={{width:"100%",height:520,border:`1px solid ${T.border}`,borderRadius:10,background:"#fff"}}/>:<img src={compVer.comprobante} alt="" style={{width:"100%",borderRadius:10,border:`1px solid ${T.border}`}}/>)}
-      </Modal>
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -24189,24 +24203,19 @@ function AdmDepositoAcceso({T,user}){
     {fila("PC del depósito","Solo cola y movimientos, sin plata. Pide el nombre de quien opera.",d.pcToken,"pc")}
   </Card>);
 }
-function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
-  const {T, adminApi, usuariosPorUid, user, setCuenta} = ctx;
-  const [sys,setSys]=useState({loading:true}); const [log,setLog]=useState({loading:true,items:[]}); const [logTipo,setLogTipo]=useState("todos"); const [logQ,setLogQ]=useState("");
-  async function loadSys(){ setSys({loading:true}); try{ setSys({loading:false,...(await adminApi({action:"adminGetSystem"}))}); }catch(e){ setSys({loading:false,error:e.message}); } }
+function AdmSistema({ctx}) {
+  const {T, adminApi, usuariosPorUid, user, setCuenta, sys, loadSys, cronEstado} = ctx;
+  const [log,setLog]=useState({loading:true,items:[]}); const [logTipo,setLogTipo]=useState("todos"); const [logQ,setLogQ]=useState(""); const [mant,setMant]=useState(false);
   async function loadLog(){ try{ const d=await adminApi({action:"adminGetLog",limit:300}); setLog({loading:false,items:d.items||[]}); }catch(e){ setLog({loading:false,items:[],error:e.message}); } }
-  useEffect(()=>{ loadSys(); loadLog(); },[]);
-  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub&&!it.soloDeposito);
-  const ahora=sys.ahora||Date.now();
-  const estadoCron=c=>{ const d=sys.crons?.[c.key]; if(!d||!d.at) return {label:"Sin registro",color:T.textSm,desc:"Se registra en la próxima corrida"}; if(!d.ok) return {label:"Error",color:T.red,desc:d.resumen||`HTTP ${d.status}`}; if(ahora-d.at>c.maxH*3600000) return {label:"Atrasado",color:T.yellow,desc:`Última corrida ${admRel(d.at)}`}; return {label:"OK",color:T.green,desc:""}; };
+  useEffect(()=>{ loadLog(); },[]);
   const tipos=[...new Set(log.items.map(i=>i.action))].sort(); const lq=logQ.trim().toLowerCase();
   const logLista=log.items.filter(i=>logTipo==="todos"||i.action===logTipo).filter(i=>!lq||(i.targetEmail||"").toLowerCase().includes(lq)||(i.detalle||"").toLowerCase().includes(lq)||(usuariosPorUid[i.adminUid]?.email||"").toLowerCase().includes(lq));
-  return (
+  return (<>
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(300px,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
-        <AdmDepositoAcceso T={T} user={user}/>
         <Card T={T} padding="lg">
-          <AdmTitulo T={T} t="Crons" sub="Tareas automáticas de Vercel. Cada corrida deja su registro; si una no corre, acá se ve." right={<Btn T={T} variant="secondary" size="sm" onClick={loadSys}>Actualizar</Btn>}/>
-          {sys.loading?<AdmSkeleton T={T} filas={6}/>:sys.error?<div style={{fontSize:12,color:T.red}}>{sys.error}</div>:ADM_CRONS.map((c,i)=>{ const d=sys.crons?.[c.key]; const e=estadoCron(c); return (
+          <AdmTitulo T={T} t="Crons" sub="Tareas automáticas de Vercel. Cada corrida deja su registro; si una no corre, acá se ve." right={<DepBtn T={T} size="sm" onClick={loadSys}>Actualizar</DepBtn>}/>
+          {sys.loading?<AdmSkeleton T={T} filas={6}/>:sys.error?<div style={{fontSize:12,color:T.red}}>{sys.error}</div>:ADM_CRONS.map((c,i)=>{ const d=sys.crons?.[c.key]; const e=cronEstado(c); return (
             <div key={c.key} style={{display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:i<ADM_CRONS.length-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
               <span style={{width:7,height:7,borderRadius:"50%",background:e.color,flexShrink:0}}/>
               <div style={{flex:1,minWidth:180}}><div style={{fontSize:12.5,fontWeight:600,color:T.text}}>{c.label}</div><div style={{fontSize:10.5,color:T.textSm}}>{c.cada}{d?.ms?` · ${(d.ms/1000).toFixed(1)} s`:""}{d?.resumen&&e.label!=="Error"?<span title={d.resumen}> · {d.resumen.slice(0,90)}{d.resumen.length>90?"…":""}</span>:null}</div>{e.desc&&<div style={{fontSize:10.5,color:e.color}}>{e.desc}</div>}</div>
@@ -24229,28 +24238,19 @@ function AdmSistema({ctx, sectionsConfig, saveSectionsConfig}) {
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
         <Card T={T} padding="lg">
-          <AdmTitulo T={T} t="App de Shopify" sub="Credenciales de la app pública de Growith. Con esto los clientes conectan Shopify poniendo solo su dominio."/>
-          <AdmShopifyApps T={T}/>
-        </Card>
-        <Card T={T} padding="lg">
           <AdmTitulo T={T} t="Servicios" sub="Qué integración tiene sus credenciales cargadas. Nunca se muestran valores."/>
-          {sys.loading?<AdmSkeleton T={T} filas={6}/>:(sys.servicios||[]).map((s,i)=><div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:i<(sys.servicios||[]).length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}><span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/><span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span><span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span></div>)}
-        </Card>
-        <Card T={T} padding="lg">
-          <AdmTitulo T={T} t="Accesos por sección" sub="Todos = la ven todos los clientes. Admin = desaparece del menú de los clientes al instante (para desarrollar sin que la vean)."/>
-          {secciones.map((s,i)=>{ const on=sectionsConfig.includes(s.id); return (
-            <div key={s.id} style={{display:"flex",gap:10,alignItems:"center",padding:"8px 0",borderBottom:i<secciones.length-1?`1px solid ${T.borderL}`:"none"}}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={on?T.accent:T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d={s.icon}/></svg>
-              <span style={{flex:1,fontSize:12.5,fontWeight:600,color:T.text}}>{s.label}</span>
-              <div style={{display:"inline-flex",background:T.surface,borderRadius:8,padding:2}}>
-                {[[false,"Todos",T.green],[true,"Admin",T.accent]].map(([v,l,col])=>{ const sel=on===v; return <button key={l} onClick={()=>{ if(sel) return; saveSectionsConfig(v?[...sectionsConfig,s.id]:sectionsConfig.filter(x=>x!==s.id)).catch(e=>toast(e.message,"error")); }} style={{padding:"4px 11px",fontSize:11,fontWeight:sel?700:500,border:"none",borderRadius:6,background:sel?T.card:"transparent",color:sel?col:T.textSm,cursor:sel?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif",boxShadow:sel?"0 1px 3px rgba(0,0,0,0.12)":"none",whiteSpace:"nowrap"}}>{l}</button>; })}
-              </div>
-            </div>
-          );})}
+          {sys.loading?<AdmSkeleton T={T} filas={6}/>:(sys.servicios||[]).filter(x=>!/usdt|tron/i.test(`${x.id} ${x.label}`)).map((s,i)=><div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:true?`1px solid ${T.borderL}`:"none",fontSize:12}}><span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/><span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span><span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span></div>)}
         </Card>
       </div>
     </div>
-  );
+    <div style={{marginTop:22}}>
+      <button onClick={()=>setMant(v=>!v)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"14px 18px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+        <span style={{flex:1}}><span style={{display:"block",fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Mantenimiento</span><span style={{display:"block",fontSize:DS.font.md,color:T.textSm,marginTop:2}}>Memoria de puntos de retiro, sucursales dadas de baja, cachés, índice de envíos y diagnósticos de las APIs.</span></span>
+        <span style={{fontSize:DS.font.md,fontWeight:600,color:T.accent}}>{mant?"Ocultar":"Abrir"}</span>
+      </button>
+      {mant&&<div style={{marginTop:16}}><AdmMantenimiento T={T}/></div>}
+    </div>
+  </>);
 }
 
 // Banner flotante: sesión de administrador operando la cuenta de un cliente.
