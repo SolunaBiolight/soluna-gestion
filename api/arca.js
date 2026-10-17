@@ -8,6 +8,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldPath, FieldValue } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
+import { createHmac, randomBytes as rndBytes } from "crypto";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron, requireAdmin } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
@@ -146,6 +147,7 @@ function initAdmin() {
 
 // ─── URLs ARCA ─────────────────────────────────────────
 
+function require_eq(a, b) { let r = 0; for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i); return r === 0; }
 function arcaUrls(prod = true) {
   if (prod) return {
     wsaa: "https://wsaa.afip.gov.ar/ws/services/LoginCms",
@@ -1529,9 +1531,60 @@ async function sendEmailResend({ to, subject, html, attachments, reply_to }) {
   }
 }
 
+
+// ─── Link público de una factura (17/oct/2026) ─────────────────────────────────────────────────
+// /api/arca?action=factura_publica&u=<uid>&c=<id del comprobante>&t=<firma>: devuelve el PDF sin sesión.
+// La firma es HMAC con un secreto propio (system/arca_publico.secret, se crea solo) — sin la firma
+// correcta no se puede ver ninguna factura ajena.
+const APP_BASE_ARCA = "https://www.growithapp.com";
+let _secretoPub = null;
+async function secretoPublico(db) {
+  if (_secretoPub) return _secretoPub;
+  const ref = db.collection("system").doc("arca_publico");
+  const sn = await ref.get();
+  if (sn.exists && sn.data().secret) return (_secretoPub = sn.data().secret);
+  const nuevo = rndBytes(32).toString("hex");
+  await ref.set({ secret: nuevo, creadoAt: Date.now() }, { merge: true });
+  return (_secretoPub = nuevo);
+}
+async function firmaFactura(db, uid, compId) { return createHmac("sha256", await secretoPublico(db)).update(`${uid}|${compId}`).digest("hex").slice(0, 32); }
+async function linkFactura(db, uid, compId) { return `${APP_BASE_ARCA}/api/arca?action=factura_publica&u=${encodeURIComponent(uid)}&c=${encodeURIComponent(compId)}&t=${await firmaFactura(db, uid, compId)}`; }
+
+// Rearma el PDF de un comprobante guardado (re-impresión, reenvío por mail). Devuelve los bytes.
+async function pdfDeComprobante(c, cfg) {
+  const factData = {
+    comprobante: c.nro,
+    cae: c.cae,
+    cae_vto: c.cae_vto,
+    fecha: c.fecha_str,
+    // fecha_cbte = fecha REAL del comprobante en AFIP (para el QR)
+    fecha_iso: c.fecha_cbte || c.emitido_at?.slice(0, 10),
+    cliente: c.cliente || "Consumidor Final",
+    doc_tipo: c.doc_tipo,
+    doc_nro: c.doc_nro || "",
+    letra: c.letra,
+    tipo_cbte: c.tipo_cbte,
+    domicilio: c.domicilio || "",
+    total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
+    // Percepciones / multi-alícuota / nota de débito: la re-impresión
+    // replica el comprobante original tal como salió.
+    imp_trib: c.imp_trib || 0,
+    percepciones: Array.isArray(c.percepciones) ? c.percepciones : null,
+    alic_bloques: Array.isArray(c.alic_bloques) ? c.alic_bloques : null,
+    _is_nd: !!c.nd,
+    _cbte_asoc: c.nd ? (c.factura_origen?.comprobante || null) : undefined,
+    _pv_asoc: c.nd ? (c.factura_origen?.punto_venta || c.punto_venta) : undefined,
+    // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
+    items: (Array.isArray(c.items) && c.items.length > 0)
+      ? c.items
+      : [{ nombre: "(Detalle no disponible en re-impresión)", cantidad: 1, precio: c.total, descuento_item: 0 }],
+  };
+  return await generarPDF(factData, cfg);
+}
+
 // Envía la factura recién emitida al comprador. pdfB64 opcional: si el PDF
 // falló, va el mail sin adjunto con la aclaración. Devuelve true/false.
-async function enviarFacturaEmail({ cfg, orden, orderId, letra, pv, nro, cae, total, pdfB64 }) {
+async function enviarFacturaEmail({ cfg, orden, orderId, letra, pv, nro, cae, total, pdfB64, link }) {
   const esc = s => String(s || "").replace(/[<>&]/g, "");
   const nroFmt = `${String(pv).padStart(4, "0")}-${String(nro).padStart(8, "0")}`;
   const subject = `Tu factura ${letra} ${nroFmt} · ${cfg.razon_social || "compra"}`;
@@ -1558,6 +1611,7 @@ async function enviarFacturaEmail({ cfg, orden, orderId, letra, pv, nro, cae, to
           <div style="font-size:12px;color:#888;margin-top:4px;">CAE: ${esc(cae)}</div>
         </td></tr></table>
         ${sinAdjunto}
+        ${link ? `<p style="margin:0 0 16px;"><a href="${esc(link)}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:10px 18px;border-radius:999px;">Ver la factura</a></p>` : ""}
       </td></tr>
       <tr><td style="padding:0 32px 24px;">
         <p style="font-size:12px;color:#999;margin:0;border-top:1px solid #eee;padding-top:14px;">Emitida con Growith</p>
@@ -2369,6 +2423,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
           const ivaComp = fiscal ? fiscal.iva
             : (isMonotributo || exento) ? 0 : Math.round((orden.total - netoComp) * 100) / 100;
           const compData = {
+            email: String(orden.email || "").trim().slice(0, 120),
               cuit_emisor: cuitEmit,
               tipo_cbte: tipoCbte,
               letra,
@@ -2537,6 +2592,7 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
               mailOk = await enviarFacturaEmail({
                 cfg, orden, orderId, letra, pv, nro: cbteNro,
                 cae: result.cae, total: totalComp, pdfB64: pdfB64Mail,
+                link: await linkFactura(db, uid, compRef.id).catch(() => null),
               });
             } catch (e) {
               console.error(`[arca-mail] ${orderId} no se pudo enviar:`, e.message);
@@ -4093,6 +4149,25 @@ export default async function handler(req, res) {
 
   const { action, uid, cuit } = req.query;
 
+  // PDF de una factura por su link público firmado (sin sesión: lo abre el equipo desde la tienda).
+  if (action === "factura_publica") {
+    try {
+      const db0 = initAdmin(); const u0 = String(req.query.u || ""), c0 = String(req.query.c || ""), t0 = String(req.query.t || "");
+      if (!u0 || !c0 || !/^[a-f0-9]{32}$/.test(t0)) return res.status(400).send("Link inválido");
+      const ok = await firmaFactura(db0, u0, c0);
+      if (ok.length !== t0.length || !require_eq(ok, t0)) return res.status(403).send("Link inválido");
+      const sn = await db0.collection("users").doc(u0).collection("arca_comprobantes").doc(c0).get();
+      if (!sn.exists) return res.status(404).send("Factura no encontrada");
+      const c = sn.data(); const cfg0 = await loadCuitConfig(db0, u0, c0.split("_")[0]);
+      if (!cfg0) return res.status(404).send("Factura no encontrada");
+      const bytes = Buffer.from(await pdfDeComprobante(c, cfg0));
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="Factura-${c.letra}-${String(c.punto_venta).padStart(4, "0")}-${String(c.nro).padStart(8, "0")}.pdf"`);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      return res.status(200).send(bytes);
+    } catch (e) { console.error("[factura_publica]", e.message); return res.status(500).send("No se pudo generar la factura"); }
+  }
+
   // Topes del Monotributo (solo administradores de la plataforma): ver / guardar / confirmar.
   if (action === "mono_topes_admin") {
     const adm = await requireAdmin(req); if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
@@ -5265,7 +5340,7 @@ export default async function handler(req, res) {
         .select("emitido_at", "total", "orden_id", "nro", "letra", "cae", "cae_vto",
           "tipo_cbte", "punto_venta", "doc_tipo", "doc_nro", "cliente", "fecha_cbte",
           "neto", "iva", "ml_uploaded", "recuperado_afip", "exento", "anulada", "nc_nro",
-          "nd", "imp_trib", "nc_parciales_total")
+          "nd", "imp_trib", "nc_parciales_total", "email", "mail_enviado")
         .get();
 
       // _docId: id REAL del documento (formato viejo sin PV o nuevo con PV) —
@@ -5336,6 +5411,7 @@ export default async function handler(req, res) {
           ml_uploaded: !!c.ml_uploaded,
           recuperado_afip: !!c.recuperado_afip,
           nc_parciales_total: Number(c.nc_parciales_total) || 0,
+          email: c.email || "", mail_enviado: c.mail_enviado === true, doc_id: c._docId,
           exento: !!c.exento,
           anulada: !!c.anulada,
           nc_nro: c.nc_nro || null,
@@ -5466,6 +5542,70 @@ export default async function handler(req, res) {
       const confirmado = !!t?.confirmado;
       const r = monoResumen({ meses, hoy, topes: confirmado ? t.topes : null, categoria: cfg.mono_categoria || "" });
       return res.json({ ok: true, ...r, topesConfirmados: confirmado, topesVigentesDesde: confirmado ? t.vigenteDesde : null, topes: confirmado ? t.topes : null, incluyeExterno: externo > 0, esMonotributo: cfg.condicion_fiscal === "MONOTRIBUTO" });
+    }
+    // Link público de una factura, y dejarlo en la nota interna del pedido de la tienda (Tienda Nube: owner_note;
+    // Shopify: note). Se AGREGA una línea al final, nunca se pisa lo que había (ahí vive la marca DEPO:).
+    if (action === "factura_link" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+      const compId = String(body.comprobante_id || "");
+      if (!cuitParam || !compId.startsWith(cuitParam + "_")) return res.status(400).json({ error: "Faltan datos del comprobante" });
+      const ref = db.collection("users").doc(uid).collection("arca_comprobantes").doc(compId);
+      const sn = await ref.get(); if (!sn.exists) return res.status(404).json({ error: "No encontré esa factura" });
+      const c = sn.data(); const link = await linkFactura(db, uid, compId);
+      if (!body.enPedido) return res.json({ ok: true, link });
+      const oid = String(c.orden_id || "");
+      const linea = `Factura ${c.letra} ${String(c.punto_venta).padStart(4, "0")}-${String(c.nro).padStart(8, "0")}: ${link}`;
+      const u = (await db.collection("users").doc(uid).get()).data() || {};
+      const stores = u.stores || [];
+      try {
+        if (oid.startsWith("TN-")) {
+          const tn = stores.find(x => x.type === "tiendanube" && x.accessToken && x.storeId); if (!tn) return res.status(400).json({ error: "No hay Tienda Nube conectada" });
+          const H = { "Authentication": `bearer ${tn.accessToken}`, "User-Agent": "Growith (contacto.growith@gmail.com)", "Content-Type": "application/json" };
+          const num = oid.slice(3);
+          const r = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders?q=${encodeURIComponent(num)}&per_page=20&fields=id,number,owner_note`, { headers: H });
+          const lst = r.ok ? await r.json().catch(() => []) : [];
+          const o = (Array.isArray(lst) ? lst : []).find(x => String(x.number) === num);
+          if (!o) return res.status(404).json({ error: "No encontré ese pedido en Tienda Nube" });
+          const prev = String(o.owner_note || "");
+          if (prev.includes(link)) return res.json({ ok: true, link, yaEstaba: true });
+          const w = await fetch(`https://api.tiendanube.com/v1/${tn.storeId}/orders/${o.id}`, { method: "PUT", headers: H, body: JSON.stringify({ owner_note: (prev ? prev + "\n" : "") + linea }) });
+          if (!w.ok) return res.status(502).json({ error: `Tienda Nube no dejó escribir la nota (HTTP ${w.status})` });
+        } else if (oid.startsWith("SH-")) {
+          const sh = stores.find(x => x.type === "shopify"); if (!sh) return res.status(400).json({ error: "No hay Shopify conectado" });
+          await ensureShopifyToken(db, uid, sh);
+          const H = { "X-Shopify-Access-Token": sh.accessToken, "Content-Type": "application/json" };
+          const nombre = oid.slice(3).startsWith("#") ? oid.slice(3) : "#" + oid.slice(3);
+          const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?name=${encodeURIComponent(nombre)}&status=any&fields=id,name,note`, { headers: H });
+          const o = r.ok ? ((await r.json().catch(() => ({}))).orders || [])[0] : null;
+          if (!o) return res.status(404).json({ error: "No encontré ese pedido en Shopify" });
+          const prev = String(o.note || "");
+          if (prev.includes(link)) return res.json({ ok: true, link, yaEstaba: true });
+          const w = await fetch(`https://${sh.shop}/admin/api/2024-10/orders/${o.id}.json`, { method: "PUT", headers: H, body: JSON.stringify({ order: { id: o.id, note: (prev ? prev + "\n" : "") + linea } }) });
+          if (!w.ok) return res.status(502).json({ error: `Shopify no dejó escribir la nota (HTTP ${w.status})` });
+        } else return res.status(400).json({ error: "Solo para pedidos de Tienda Nube o Shopify (Mercado Libre ya recibe la factura sola)" });
+      } catch (e) { return res.status(502).json({ error: e.message }); }
+      await ref.set({ link_en_pedido_at: new Date().toISOString() }, { merge: true }).catch(() => {});
+      return res.json({ ok: true, link, enPedido: true });
+    }
+    // Reenviar una factura por mail (17/oct/2026): a la dirección guardada o a la que se escriba.
+    if (action === "reenviar_mail" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+      const compId = String(body.comprobante_id || "");
+      if (!cuitParam || !compId || !compId.startsWith(cuitParam + "_")) return res.status(400).json({ error: "Faltan datos del comprobante" });
+      const cfg = await loadCuitConfig(db, uid, cuitParam);
+      if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
+      const ref = db.collection("users").doc(uid).collection("arca_comprobantes").doc(compId);
+      const sn = await ref.get(); if (!sn.exists) return res.status(404).json({ error: "No encontré esa factura" });
+      const c = sn.data();
+      const to = String(body.email || c.email || "").trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: "Poné un mail válido" });
+      let pdfB64 = null; try { pdfB64 = Buffer.from(await pdfDeComprobante(c, cfg)).toString("base64"); } catch (e) { console.error("[reenviar_mail] pdf:", e.message); }
+      const ok = await enviarFacturaEmail({ cfg, orden: { email: to, nombre: c.cliente || "" }, orderId: c.orden_id || "", letra: c.letra, pv: c.punto_venta, nro: c.nro, cae: c.cae, total: c.total, pdfB64, link: await linkFactura(db, uid, compId).catch(() => null) });
+      if (!ok) return res.status(502).json({ error: "No se pudo mandar el mail. Probá de nuevo en unos minutos." });
+      await ref.set({ mail_enviado: true, mail_reenviado_at: new Date().toISOString(), ...(body.email ? { email: to } : {}) }, { merge: true }).catch(() => {});
+      return res.json({ ok: true, to });
     }
     // Consulta de un CUIT en el padrón de ARCA (constancia de inscripción). Caché de 30 días por cuenta.
     if (action === "padron" && req.method === "GET") {
@@ -5641,34 +5781,7 @@ export default async function handler(req, res) {
       const pdfs = [];
       for (let i = 0; i < comps.length; i += 5) {
         const tanda = await Promise.all(comps.slice(i, i + 5).map(async (c) => {
-          const factData = {
-            comprobante: c.nro,
-            cae: c.cae,
-            cae_vto: c.cae_vto,
-            fecha: c.fecha_str,
-            // fecha_cbte = fecha REAL del comprobante en AFIP (para el QR)
-            fecha_iso: c.fecha_cbte || c.emitido_at?.slice(0, 10),
-            cliente: c.cliente || "Consumidor Final",
-            doc_tipo: c.doc_tipo,
-            doc_nro: c.doc_nro || "",
-            letra: c.letra,
-            tipo_cbte: c.tipo_cbte,
-            domicilio: c.domicilio || "",
-            total: c.total, neto: c.neto, iva: c.iva, punto_venta: c.punto_venta, exento: !!c.exento,
-            // Percepciones / multi-alícuota / nota de débito: la re-impresión
-            // replica el comprobante original tal como salió.
-            imp_trib: c.imp_trib || 0,
-            percepciones: Array.isArray(c.percepciones) ? c.percepciones : null,
-            alic_bloques: Array.isArray(c.alic_bloques) ? c.alic_bloques : null,
-            _is_nd: !!c.nd,
-            _cbte_asoc: c.nd ? (c.factura_origen?.comprobante || null) : undefined,
-            _pv_asoc: c.nd ? (c.factura_origen?.punto_venta || c.punto_venta) : undefined,
-            // Items reales si fueron persistidos al emitir, sino fallback (facturas viejas)
-            items: (Array.isArray(c.items) && c.items.length > 0)
-              ? c.items
-              : [{ nombre: "(Detalle no disponible en re-impresión)", cantidad: 1, precio: c.total, descuento_item: 0 }],
-          };
-          const pdfBytes = await generarPDF(factData, cfg);
+          const pdfBytes = await pdfDeComprobante(c, cfg);
           const nombreCliente = (c.cliente || "Consumidor_Final").replace(/[^a-zA-Z0-9 \-_]/g, "").trim();
           return {
             nombre: `F${c.letra} - ${nombreCliente} - ${String(c.nro).padStart(8, "0")}.pdf`,
