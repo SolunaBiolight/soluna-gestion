@@ -9,7 +9,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldPath, FieldValue } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { getValidMLToken } from "./integrations.js";
-import { guardUid, guardCron } from "./_auth.js";
+import { guardUid, guardCron, requireAdmin } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
 import { esDemo, leerDemo, MEDIOS_DEMO } from "./_demo.js";
 import { caeDemo, caeVtoDemo } from "./_demo_ops.js";
@@ -3910,6 +3910,41 @@ async function accionArcaDemo(req, res, db, uid, action, cuit) {
   return false;
 }
 
+
+// ─── Monotributo: facturación de 12 meses contra el tope de la categoría (17/oct/2026) ──────────
+// Los topes cambian dos veces por año (febrero y agosto). Viven en Firestore system/monotributo y los
+// carga / confirma un administrador; hasta que estén `confirmado`, el cliente ve su facturación
+// pero NO la comparación (no mostrar topes viejos como si fueran los vigentes).
+export const MONO_CATS = ["A","B","C","D","E","F","G","H","I","J","K"];
+export const MONO_SEMILLA = { vigenteDesde: "2025-08-01", confirmado: false, fuente: "Valores de referencia cargados por Growith: confirmalos contra la tabla vigente de ARCA antes de mostrarlos.",
+  topes: { A: 8992597.87, B: 13175201.52, C: 18473166.15, D: 22934610.05, E: 26977793.60, F: 33809379.57, G: 40431835.35, H: 61344853.64, I: 68664410.05, J: 78632948.76, K: 94805682.90 } };
+const monoMas = (ym, n) => { const [y, m] = ym.split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+// meses = {"YYYY-MM": total facturado neto de NC}; hoy = "YYYY-MM-DD"; topes = {A: n…}; categoria = "C" | "".
+export function monoResumen({ meses = {}, hoy, topes = null, categoria = "" }) {
+  const ym = hoy.slice(0, 7); const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+  const ventana = Array.from({ length: 12 }, (_, i) => monoMas(ym, i - 11));
+  const serie = ventana.map(k => ({ mes: k, total: r2(meses[k] || 0) }));
+  const total12 = r2(serie.reduce((a, x) => a + x.total, 0));
+  const completos = [monoMas(ym, -1), monoMas(ym, -2), monoMas(ym, -3)];
+  const ritmo = r2(completos.reduce((a, k) => a + (Number(meses[k]) || 0), 0) / 3);
+  // Próxima recategorización: enero (base = 12 meses a diciembre) o julio (base = a junio).
+  const [y, m] = ym.split("-").map(Number);
+  const recat = m <= 6 ? { mes: `${y}-07`, base: `${y}-06`, label: `julio de ${y}` } : { mes: `${y + 1}-01`, base: `${y}-12`, label: `enero de ${y + 1}` };
+  // Proyección mes a mes: los meses que faltan se completan con el ritmo de los últimos 3 completos.
+  const valor = k => (k < ym ? Number(meses[k]) || 0 : k === ym ? Math.max(Number(meses[k]) || 0, ritmo) : ritmo);
+  const rolling = fin => r2(Array.from({ length: 12 }, (_, i) => valor(monoMas(fin, i - 11))).reduce((a, b) => a + b, 0));
+  const alRecat = rolling(recat.base);
+  const out = { total12, ritmo, serie, recat: { ...recat, totalProyectado: alRecat }, categoria: categoria || null };
+  if (!topes) return out;
+  const tope = categoria && topes[categoria] ? Number(topes[categoria]) : null;
+  const corresponde = MONO_CATS.find(c => Number(topes[c]) >= total12) || "excede";
+  const correspondeRecat = MONO_CATS.find(c => Number(topes[c]) >= alRecat) || "excede";
+  let mesExceso = null;
+  if (tope) for (let i = 0; i <= 12; i++) { const fin = monoMas(ym, i); if (rolling(fin) > tope) { mesExceso = fin; break; } }
+  return { ...out, tope, pct: tope ? Math.round(total12 / tope * 1000) / 10 : null, restante: tope ? r2(tope - total12) : null,
+    corresponde, correspondeRecat, mesExceso, maximo: Number(topes.K) || null };
+}
+
 // ─── Handler principal ─────────────────────────────────
 
 export const config = {
@@ -3973,6 +4008,24 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const { action, uid, cuit } = req.query;
+
+  // Topes del Monotributo (solo administradores de la plataforma): ver / guardar / confirmar.
+  if (action === "mono_topes_admin") {
+    const adm = await requireAdmin(req); if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
+    const db0 = initAdmin(); const ref = db0.collection("system").doc("monotributo");
+    if (req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const topes = {};
+      for (const c of MONO_CATS) { const v = Number(body.topes?.[c]); if (!isFinite(v) || v <= 0) return res.status(400).json({ error: `Falta el tope de la categoría ${c}.` }); topes[c] = Math.round(v * 100) / 100; }
+      for (let i = 1; i < MONO_CATS.length; i++) if (topes[MONO_CATS[i]] <= topes[MONO_CATS[i - 1]]) return res.status(400).json({ error: `El tope de ${MONO_CATS[i]} tiene que ser mayor que el de ${MONO_CATS[i - 1]}.` });
+      const vigenteDesde = /^\d{4}-\d{2}-\d{2}$/.test(String(body.vigenteDesde || "")) ? body.vigenteDesde : null;
+      if (!vigenteDesde) return res.status(400).json({ error: "Poné desde cuándo rigen." });
+      await ref.set({ topes, vigenteDesde, confirmado: true, fuente: String(body.fuente || "").slice(0, 200), actualizadoAt: Date.now(), actualizadoPor: adm.user.uid });
+      return res.json({ ok: true });
+    }
+    const d = await ref.get();
+    return res.json({ ok: true, ...(d.exists ? d.data() : MONO_SEMILLA), semilla: !d.exists });
+  }
 
   // ── PILOTO AUTOMÁTICO (cron) ───────────────────────────────────────────
   // Se resuelve ANTES de guardUid: el cron no viene con token de usuario ni
@@ -5271,6 +5324,41 @@ export default async function handler(req, res) {
         out[mes] = { n: resumen.n, nNc: resumen.nNc, iva: resumen.iva, total: resumen.total };
       }
       return res.json({ ok: true, meses: out, omitidos });
+    }
+    // Monotributo: facturación de los últimos 12 meses (lo emitido en Growith − NC + lo importado de
+    // "Mis Comprobantes" emitido por fuera) contra el tope de la categoría. Solo lectura.
+    if (action === "mono_resumen" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitParam) return res.status(400).json({ error: "Falta cuit" });
+      const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+      const desdeMes = new Date(Date.UTC(Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7)) - 1 - 14, 1)).toISOString().slice(0, 7);
+      const [cfg, compSnap, ncSnap, ivaSnap, topesSnap] = await Promise.all([
+        loadCuitConfig(db, uid, cuitParam),
+        db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam).select("fecha_cbte", "emitido_at", "total").get(),
+        db.collection("users").doc(uid).collection("arca_notas_credito").select("cuit", "fecha", "fecha_cbte", "total").get(),
+        db.collection("users").doc(uid).collection("arca_iva").where("cuit", "==", cuitParam).get(),
+        db.collection("system").doc("monotributo").get(),
+      ]);
+      if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
+      const meses = {}; const suma = (k, v) => { if (!k || k < desdeMes) return; meses[k] = (meses[k] || 0) + v; };
+      const mesDe = x => { const k = String(x || "").slice(0, 7); return /^\d{4}-\d{2}$/.test(k) ? k : null; };
+      compSnap.forEach(d => { const c = d.data(); suma(mesDe(c.fecha_cbte || c.emitido_at), Number(c.total) || 0); });
+      ncSnap.forEach(d => { const c = d.data(); if (String(c.cuit || "").replace(/\D/g, "") !== cuitParam) return; suma(mesDe(c.fecha_cbte || c.fecha), -(Number(c.total) || 0)); });
+      let externo = 0;
+      ivaSnap.forEach(d => { const x = d.data(); if (x.mes && x.ventasExt?.total) { suma(x.mes, Number(x.ventasExt.total) || 0); if (x.mes >= desdeMes) externo += Number(x.ventasExt.total) || 0; } });
+      const t = topesSnap.exists ? topesSnap.data() : null;
+      const confirmado = !!t?.confirmado;
+      const r = monoResumen({ meses, hoy, topes: confirmado ? t.topes : null, categoria: cfg.mono_categoria || "" });
+      return res.json({ ok: true, ...r, topesConfirmados: confirmado, topesVigentesDesde: confirmado ? t.vigenteDesde : null, topes: confirmado ? t.topes : null, incluyeExterno: externo > 0, esMonotributo: cfg.condicion_fiscal === "MONOTRIBUTO" });
+    }
+    if (action === "mono_categoria" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const cuitParam = String(body.cuit || "").replace(/\D/g, "");
+      const cat = String(body.categoria || "").toUpperCase();
+      if (!cuitParam || (cat && !MONO_CATS.includes(cat))) return res.status(400).json({ error: "Categoría inválida" });
+      if (!(await loadCuitConfig(db, uid, cuitParam))) return res.status(404).json({ error: "CUIT no encontrado" });
+      await saveCuitConfig(db, uid, cuitParam, { mono_categoria: cat || null });
+      return res.json({ ok: true });
     }
     if (action === "iva_set" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString() || "{}");

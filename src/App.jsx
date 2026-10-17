@@ -23957,6 +23957,27 @@ function AdmEnvios({ctx}) {
   );
 }
 
+// Topes del Monotributo (Admin → Configuración): se cargan y se confirman a mano dos veces por año.
+// Hasta que estén confirmados, los clientes no ven la comparación contra el tope.
+function AdmMonoTopes({T}){
+  const [d,setD]=useState(null); const [f,setF]=useState(null);
+  const cargar=async()=>{ const r=await authFetch("/api/arca?action=mono_topes_admin"); const j=await r.json().catch(()=>({})); if(!r.ok||j.error) throw new Error(j.error||`HTTP ${r.status}`); setD(j); setF({vigenteDesde:j.vigenteDesde||"",fuente:j.semilla?"":(j.fuente||""),topes:{...(j.topes||{})}}); };
+  useEffect(()=>{ cargar().catch(e=>toast(e.message,"error")); },[]);
+  if(!d||!f) return <Card T={T} padding="lg"><AdmTitulo T={T} t="Topes del Monotributo"/><AdmSkeleton T={T} filas={3}/></Card>;
+  return (<Card T={T} padding="lg">
+    <AdmTitulo T={T} t="Topes del Monotributo" sub="Facturación anual máxima de cada categoría. ARCA los actualiza en febrero y agosto: cuando cambien, cargalos acá y confirmá. Los clientes monotributistas los ven en Facturador → Registros."/>
+    {!d.confirmado&&<div style={{fontSize:12,color:T.yellow,background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:10}}>{d.semilla?"Todavía no se confirmaron: los valores de abajo son de referencia y pueden estar viejos. Revisalos contra la tabla de ARCA y tocá Confirmar.":"Sin confirmar."}</div>}
+    {d.confirmado&&<div style={{fontSize:12,color:T.green,marginBottom:10}}>Confirmados · vigentes desde el {String(d.vigenteDesde||"").split("-").reverse().join("/")}{d.actualizadoAt?` · cargados ${admRel(d.actualizadoAt)}`:""}</div>}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8,marginBottom:10}}>
+      {GH_MONO_CATS.map(c=><Field key={c} T={T} label={`Categoría ${c}`}><AdmInput T={T} type="number" value={f.topes[c]??""} onChange={e=>setF(x=>({...x,topes:{...x.topes,[c]:e.target.value}}))}/></Field>)}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:10}}>
+      <Field T={T} label="Vigentes desde"><AdmInput T={T} type="date" value={f.vigenteDesde} onChange={e=>setF(x=>({...x,vigenteDesde:e.target.value}))}/></Field>
+      <Field T={T} label="Fuente (opcional)"><AdmInput T={T} value={f.fuente} onChange={e=>setF(x=>({...x,fuente:e.target.value}))} placeholder="Ej: tabla de ARCA de agosto"/></Field>
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end"}}><AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ const r=await authFetch("/api/arca?action=mono_topes_admin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(f)}); const j=await r.json().catch(()=>({})); if(!r.ok||j.error) throw new Error(j.error||`HTTP ${r.status}`); toast("Topes confirmados","success"); await cargar(); }}>{d.confirmado?"Guardar":"Confirmar"}</AdmBtn></div>
+  </Card>);
+}
 // ── Configuración (17/oct/2026): todo lo que se configura, una tarjeta por tema ──
 function AdmConfig({ctx}) {
   const {T, usuarios, usuariosPorUid, setCuenta, envCfg, setEnvCfg, saveEnvCfg, sectionsConfig, saveSectionsConfig, user} = ctx;
@@ -24035,6 +24056,7 @@ function AdmConfig({ctx}) {
                 </div>
               );})}
             </Card>
+            <AdmMonoTopes T={T}/>
             <AdmDepositoAcceso T={T} user={user}/>
       </div>
     </div>
@@ -30149,6 +30171,61 @@ function ghIvaCalc(meses, hastaMes){
   }
   return out;
 }
+// Control del Monotributo (17/oct/2026): facturación de 12 meses contra el tope de la categoría,
+// ritmo, proyección a la próxima recategorización y aviso si se va a pasar. Datos: arca?action=mono_resumen.
+const GH_MONO_CATS=["A","B","C","D","E","F","G","H","I","J","K"];
+function ArcaMonotributoCard({T,api,cuit}){
+  const [d,setD]=useState(null); const [err,setErr]=useState(""); const [guardando,setGuardando]=useState(false);
+  const cargar=()=>api("mono_resumen","GET",null,{cuit}).then(x=>{ if(x.error) setErr(x.error); else { setD(x); setErr(""); } }).catch(e=>setErr(e.message||"error de conexión"));
+  useEffect(()=>{ if(cuit){ setD(null); cargar(); } },[cuit]);
+  async function elegir(cat){ setGuardando(true); try{ const x=await api("mono_categoria","POST",{cuit,categoria:cat}); if(x.error) throw new Error(x.error); await cargar(); }catch(e){ toast(e.message,"error"); } setGuardando(false); }
+  if(err) return null;
+  if(!d) return <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"16px 18px"}}><Skeleton T={T} width="40%" height={12}/><Skeleton T={T} width="70%" height={22} style={{marginTop:10}}/></div>;
+  const mesL=k=>{ const [y,m]=k.split("-"); const t=new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return t; };
+  const mesC=k=>{ const [y,m]=k.split("-"); return new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"short"}).replace(".",""); };
+  const conTope=d.topesConfirmados&&d.tope;
+  const pct=conTope?d.pct:null; const col=pct==null?T.accentSolid:pct>=100?T.red:pct>=80?T.yellow:T.green;
+  const mx=Math.max(1,...d.serie.map(x=>x.total));
+  const idx=c=>GH_MONO_CATS.indexOf(c);
+  return (
+    <div style={{background:T.card,border:`1px solid ${pct>=100?T.red+"66":pct>=80?T.yellow+"66":T.border}`,borderRadius:DS.r["2xl"],padding:"16px 18px"}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 260px",minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,fontWeight:600,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:col}}/>Tu Monotributo · últimos 12 meses</div>
+          <div style={{fontSize:28,fontWeight:800,color:T.text,letterSpacing:-0.8,marginTop:4,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(d.total12)}{conTope&&<span style={{fontSize:DS.font.lg,fontWeight:600,color:T.textSm}}> de {fmtMoney(d.tope)}</span>}</div>
+          <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:2}}>Facturado de {mesL(d.serie[0].mes)} a hoy{d.incluyeExterno?", incluye lo importado de Mis Comprobantes":""} · ritmo de {fmtMoney(d.ritmo)} por mes</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:DS.font.md,color:T.textMd}}>Tu categoría</span>
+          <select value={d.categoria||""} disabled={guardando} onChange={e=>elegir(e.target.value)} style={{...InputStyle(T),marginBottom:0,width:"auto",height:34,padding:"0 12px",borderRadius:DS.r.full,fontWeight:700}}>
+            <option value="">Elegila</option>{GH_MONO_CATS.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      </div>
+      {conTope&&(<div style={{marginTop:12}}>
+        <div style={{height:10,borderRadius:99,background:T.surface,overflow:"hidden"}}><div style={{width:`${Math.min(100,pct)}%`,height:"100%",background:col,borderRadius:99}}/></div>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",fontSize:DS.font.md,color:T.textMd,marginTop:6}}>
+          <span><strong style={{color:col}}>{pct} %</strong> del tope de la {d.categoria}</span>
+          <span>{d.restante>=0?<>Te quedan <strong style={{color:T.text}}>{fmtMoney(d.restante)}</strong></>:<>Te pasaste por <strong style={{color:T.red}}>{fmtMoney(-d.restante)}</strong></>}</span>
+        </div>
+      </div>)}
+      <div style={{display:"flex",alignItems:"flex-end",gap:4,height:64,marginTop:14}}>
+        {d.serie.map(x=>(<div key={x.mes} title={`${mesL(x.mes)}: ${fmtMoney(x.total)}`} style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"center",gap:3,height:"100%"}}>
+          <div style={{flex:1,width:"100%",display:"flex",alignItems:"flex-end"}}><div style={{width:"100%",height:`${Math.max(3,x.total/mx*100)}%`,borderRadius:3,background:x===d.serie[d.serie.length-1]?T.accentSolid:T.accentSolid+"66"}}/></div>
+          <span style={{fontSize:9,color:T.textSm}}>{mesC(x.mes)}</span>
+        </div>))}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:12,fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>
+        {conTope&&d.mesExceso&&<div style={{color:pct>=100?T.red:T.yellow,fontWeight:600}}>{pct>=100?"Ya superaste el tope de tu categoría: en la próxima recategorización vas a tener que subir.":`A este ritmo superás el tope de la ${d.categoria} en ${mesL(d.mesExceso)}.`}</div>}
+        <div>Próxima recategorización: <strong style={{color:T.text}}>{d.recat.label}</strong> (se toman los 12 meses hasta {mesL(d.recat.base)}). A este ritmo vas a llegar con <strong style={{color:T.text}}>{fmtMoney(d.recat.totalProyectado)}</strong>{conTope?<>{d.correspondeRecat==="excede"?<span style={{color:T.red,fontWeight:700}}>: más que el tope de la K, el máximo del Monotributo.</span>:<>: te correspondería la <strong style={{color:idx(d.correspondeRecat)>idx(d.categoria)?T.yellow:T.green}}>{d.correspondeRecat}</strong>{idx(d.correspondeRecat)>idx(d.categoria)?" (subís)":idx(d.correspondeRecat)<idx(d.categoria)?" (podrías bajar)":" (te mantenés)"}.</>}</>:"."}</div>
+        {d.topesConfirmados&&!d.categoria&&<div style={{color:T.yellow}}>Elegí tu categoría para ver cuánto te falta para el tope.</div>}
+        {!d.topesConfirmados&&<div style={{color:T.textSm}}>Los topes de cada categoría se actualizan dos veces por año; en cuanto estén cargados vas a ver cuánto te falta para el tuyo.</div>}
+        <div style={{fontSize:DS.font.sm,color:T.textSm}}>Cuenta lo facturado en Growith menos las notas de crédito{d.incluyeExterno?" y lo importado de Mis Comprobantes":"; si facturás también por fuera, importá tus comprobantes emitidos en la pestaña IVA"}. Es una guía: la recategorización oficial se hace en ARCA.{d.topesVigentesDesde?` Topes vigentes desde el ${d.topesVigentesDesde.split("-").reverse().join("/")}.`:""}</div>
+      </div>
+    </div>
+  );
+}
+
 function ArcaIvaTab({T, cuit, api}){
   const hoy=hoyAR();
   const [mes,setMes]=useState(hoy.slice(0,7));
@@ -32134,6 +32211,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {/* Selector de período + KPIs del período — header del tab Registros */}
             {tab==="registros"&&(
               <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:16}}>
+                {esMono&&cuitSel&&<ArcaMonotributoCard T={T} api={api} cuit={cuitSel}/>}
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
                   <div style={{fontSize:13,fontWeight:700,color:T.text}}>Período:</div>
                   <DateRangePicker T={T} since={regDesde} until={regHasta} onChange={(s,u)=>{ setRegDesde(s); setRegHasta(u||s); }}
