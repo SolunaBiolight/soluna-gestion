@@ -9,6 +9,7 @@ import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldPath, FieldValue } from "firebase-admin/firestore";
 import { XMLParser } from "fast-xml-parser";
 import { createHmac, randomBytes as rndBytes } from "crypto";
+import { libroIva } from "./_libro_iva.js";
 import { getValidMLToken } from "./integrations.js";
 import { guardUid, guardCron, requireAdmin } from "./_auth.js";
 import { ensureShopifyToken } from "./integrations/_shared.js";
@@ -5630,6 +5631,50 @@ export default async function handler(req, res) {
       if (!(await loadCuitConfig(db, uid, cuitParam))) return res.status(404).json({ error: "CUIT no encontrado" });
       await saveCuitConfig(db, uid, cuitParam, { mono_categoria: cat || null });
       return res.json({ ok: true });
+    }
+    // Libro IVA Digital de un mes (solo Responsable Inscripto): ventas emitidas en Growith (facturas, ND y
+    // NC) + ventas importadas de "Mis Comprobantes" emitidas por fuera + compras importadas. Devuelve los
+    // 4 archivos de texto listos para "Importar" en el Libro IVA Digital de ARCA.
+    if (action === "libro_iva" && req.method === "GET") {
+      const cuitParam = String(req.query.cuit || "").replace(/\D/g, "");
+      const mes = String(req.query.mes || "");
+      if (!cuitParam || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: "Faltan cuit o mes" });
+      const cfg = await loadCuitConfig(db, uid, cuitParam);
+      if (!cfg) return res.status(404).json({ error: "CUIT no encontrado" });
+      if (cfg.condicion_fiscal === "MONOTRIBUTO") return res.status(400).json({ error: "El Libro IVA Digital es solo para Responsables Inscriptos" });
+      const docCod = (t, n) => { const d = String(n || "").replace(/\D/g, ""); const k = String(t || "").toUpperCase();
+        if (!d || /^0+$/.test(d)) return { docTipo: 99, docNro: "" };
+        if (k === "CUIT" || k === "80") return { docTipo: 80, docNro: d }; if (k === "CUIL" || k === "86") return { docTipo: 86, docNro: d };
+        if (k === "DNI" || k === "96") return { docTipo: 96, docNro: d }; return { docTipo: d.length === 11 ? 80 : 96, docNro: d }; };
+      const enMes = f => String(f || "").slice(0, 7) === mes;
+      const [compSnap, ncSnap, ivaSnap] = await Promise.all([
+        db.collection("users").doc(uid).collection("arca_comprobantes").where("cuit_emisor", "==", cuitParam)
+          .select("fecha_cbte", "emitido_at", "tipo_cbte", "punto_venta", "nro", "doc_tipo", "doc_nro", "cliente", "total", "neto", "iva", "exento", "imp_trib", "alic_bloques").get(),
+        db.collection("users").doc(uid).collection("arca_notas_credito").select("cuit", "tipo", "punto_venta", "comprobante", "total", "neto", "iva", "fecha", "fecha_cbte", "doc_tipo", "doc_nro", "cliente").get(),
+        db.collection("users").doc(uid).collection("arca_iva").doc(`${cuitParam}_${mes}`).get(),
+      ]);
+      const ventas = [], avisos = [];
+      compSnap.forEach(d => { const c = d.data(); const f = String(c.fecha_cbte || c.emitido_at || "").slice(0, 10); if (!enMes(f)) return;
+        const ex = !!c.exento;
+        ventas.push({ fecha: f, tipo: Number(c.tipo_cbte), pv: c.punto_venta, nro: c.nro, ...docCod(c.doc_tipo, c.doc_nro), nombre: c.cliente,
+          total: Number(c.total) || 0, neto: ex ? 0 : Number(c.neto) || 0, iva: ex ? 0 : Number(c.iva) || 0, exento: ex ? Number(c.total) || 0 : 0,
+          otros: Number(c.imp_trib) || 0, alic: Array.isArray(c.alic_bloques) ? c.alic_bloques : null }); });
+      ncSnap.forEach(d => { const c = d.data(); if (String(c.cuit || "").replace(/\D/g, "") !== cuitParam) return;
+        const f = String(c.fecha_cbte || c.fecha || "").slice(0, 10); if (!enMes(f)) return;
+        const tot = Number(c.total) || 0; const tipo = Number(c.tipo);
+        const iva = c.iva != null ? Number(c.iva) || 0 : ([3, 8].includes(tipo) ? Math.round((tot - tot / 1.21) * 100) / 100 : 0);
+        const neto = c.neto != null ? Number(c.neto) || 0 : tot - iva;
+        ventas.push({ fecha: f, tipo, pv: c.punto_venta, nro: c.comprobante, ...docCod(c.doc_tipo, c.doc_nro), nombre: c.cliente, total: tot, neto, iva }); });
+      const iv = ivaSnap.exists ? ivaSnap.data() : {};
+      const deImport = r => ({ fecha: r.f, tipo: Number(r.t), pv: r.pv, nro: r.nro, ...docCod("", r.doc), nombre: r.nom, total: Number(r.tot) || 0, neto: Number(r.neto) || 0, iva: Number(r.iva) || 0,
+        noGravado: Math.max(0, Math.round(((Number(r.tot) || 0) - (Number(r.neto) || 0) - (Number(r.iva) || 0)) * 100) / 100) });
+      for (const r of (iv.ventasExt?.rows || [])) if (Number(r.t)) ventas.push(deImport(r));
+      const compras = (iv.compras?.rows || []).filter(r => Number(r.t)).map(deImport);
+      if (!iv.compras) avisos.push("No importaste las compras de este mes: el archivo de compras sale vacío. Importalas desde \"Mis Comprobantes\" (Recibidos) en esta misma pestaña.");
+      if ((iv.compras?.rows || []).length >= 2500 || (iv.ventasExt?.rows || []).length >= 2500) avisos.push("El import de este mes llegó al tope de 2.500 comprobantes: puede faltar alguno.");
+      if (compras.some(c => c.noGravado > 0)) avisos.push("Algunas compras tienen importes que no son neto ni IVA (percepciones, impuestos internos): quedaron como \"no gravado\". Revisalas en ARCA antes de presentar.");
+      const out = libroIva({ ventas, compras });
+      return res.json({ ok: true, mes, cuit: cuitParam, ...out, avisos });
     }
     if (action === "iva_set" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString() || "{}");

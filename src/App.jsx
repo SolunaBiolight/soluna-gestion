@@ -30228,7 +30228,7 @@ function ArcaMonotributoCard({T,api,cuit}){
   );
 }
 
-function ArcaIvaTab({T, cuit, api}){
+function ArcaIvaTab({T, cuit, api, mono}){
   const hoy=hoyAR();
   const [mes,setMes]=useState(hoy.slice(0,7));
   const [data,setData]=useState(null);
@@ -30241,7 +30241,26 @@ function ArcaIvaTab({T, cuit, api}){
   const [simV,setSimV]=useState(""); const [simC,setSimC]=useState("");
   const [ajNombre,setAjNombre]=useState(""); const [ajMonto,setAjMonto]=useState("");
   const [saEdit,setSaEdit]=useState(false); const [saVal,setSaVal]=useState("");
+  const [libro,setLibro]=useState(null); const [libroBusy,setLibroBusy]=useState(false);
   const fileRef=useRef(null); const fileVentasRef=useRef(null);
+  // Libro IVA Digital: los 4 archivos de texto del mes en un .zip, para "Importar" en ARCA.
+  async function bajarLibro(){
+    setLibroBusy(true);
+    try{
+      const d=await api("libro_iva","GET",null,{cuit,mes}); if(d?.error) throw new Error(d.error);
+      if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+      const zip=new window.JSZip(); const per=mes.replace("-","");
+      zip.file(`LIBRO_IVA_DIGITAL_VENTAS_CBTE_${per}.txt`,d.ventasCbte||"");
+      zip.file(`LIBRO_IVA_DIGITAL_VENTAS_ALICUOTAS_${per}.txt`,d.ventasAlic||"");
+      zip.file(`LIBRO_IVA_DIGITAL_COMPRAS_CBTE_${per}.txt`,d.comprasCbte||"");
+      zip.file(`LIBRO_IVA_DIGITAL_COMPRAS_ALICUOTAS_${per}.txt`,d.comprasAlic||"");
+      const blob=await zip.generateAsync({type:"blob"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`Libro_IVA_${String(cuit).replace(/\D/g,"")}_${per}.zip`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+      setLibro({mes,n:d.n,avisos:d.avisos||[]});
+      toast(`Libro IVA de ${mesLabel} descargado ✓`,"success");
+    }catch(e){ toast(e.message||"No se pudo armar el Libro IVA","error"); }
+    finally{ setLibroBusy(false); }
+  }
   const load=async()=>{
     setLoading(true); setErr("");
     try{ const d=await api("iva_get","GET",null,{cuit}); if(d?.error) throw new Error(d.error); setData(d.meses||{}); }
@@ -30453,6 +30472,22 @@ function ArcaIvaTab({T, cuit, api}){
           )}
         </Card>
       )}
+      {!mono&&<Card T={T} padding="lg">
+        <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:240}}>
+            <div style={{fontSize:14,fontWeight:700,color:T.text}}>Libro IVA Digital · {mesLabel}</div>
+            <div style={{fontSize:12,color:T.textSm,marginTop:4,lineHeight:1.6}}>Te armamos los archivos de ventas y compras del mes en el formato de ARCA. En ARCA entrá a "Libro IVA Digital", elegí el período y en Ventas y en Compras usá "Importar" con cada archivo (comprobantes y alícuotas).</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Ventas: lo facturado en Growith (facturas, notas de crédito y de débito) + lo que importaste como emitido por fuera. Compras: lo que importaste de "Mis Comprobantes".</div>
+          </div>
+          <Btn T={T} variant="primary" size="md" onClick={bajarLibro} disabled={libroBusy}>{libroBusy?"Armando…":"Descargar archivos"}</Btn>
+        </div>
+        {libro&&libro.mes===mes&&(
+          <div style={{marginTop:12,fontSize:12,color:T.textMd,lineHeight:1.6}}>
+            <div>✓ {libro.n?.ventas||0} comprobante{libro.n?.ventas===1?"":"s"} de venta y {libro.n?.compras||0} de compra.</div>
+            {libro.avisos.map((t,i)=><div key={i} style={{color:T.yellow,marginTop:4}}>• {t}</div>)}
+          </div>
+        )}
+      </Card>}
       <div style={{fontSize:10,color:T.textSm}}>Proyección orientativa: no reemplaza la declaración jurada F.2002 ni al contador. Percepciones, retenciones y saldos de libre disponibilidad se cargan como ajustes.</div>
     </div>
   );
@@ -33610,7 +33645,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
             {/* ══ IVA — proyección mensual ══ */}
             {tab==="iva"&&cuitSel&&(
-              <ArcaIvaTab T={T} cuit={cuitSel} api={api}/>
+              <ArcaIvaTab T={T} cuit={cuitSel} api={api} mono={cuits.find(c=>c.cuit===cuitSel)?.condicion_fiscal==="MONOTRIBUTO"}/>
             )}
 
             {/* ══ CONFIGURACIÓN — CUITs + Mantenimiento ══ */}
