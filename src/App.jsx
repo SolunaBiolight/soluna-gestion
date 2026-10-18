@@ -7196,7 +7196,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
                   {sig&&<DepMainBtn T={T} ico="check" onClick={()=>moverA(r,sig)}>{ghRecVerbo(r,sig)}</DepMainBtn>}
                   <DepBtn T={T} variant="danger" onClick={async()=>{ if(await appConfirm(`¿Rechazar el reclamo de ${nombre}? Queda guardado en el historial.`,{okLabel:"Rechazar"})) moverA(r,"Rechazado"); }}>Rechazar</DepBtn>
                   {/* Devolución o cambio con plata de vuelta: la nota de crédito se hace en el Facturador (total o parcial). */}
-                  {(r.tipo==="Devolución"||r.tipo==="Contracargo")&&r.orderNum&&<DepBtn T={T} ico="file" onClick={()=>{ try{ sessionStorage.setItem("growith_arca_buscar",String(r.orderNum)); }catch(_){ } window.location.hash="#/arca/registros"; }} title="Abre la factura de este pedido en el Facturador para hacer la nota de crédito (total o parcial)">Nota de crédito</DepBtn>}
+                  {(r.tipo==="Devolución"||r.tipo==="Contracargo")&&r.orderNum&&<DepBtn T={T} ico="file" onClick={()=>{ try{ sessionStorage.setItem("growith_arca_buscar",JSON.stringify({q:String(r.orderNum),ts:Date.now()})); }catch(_){ } window.location.hash="#/arca/registros"; }} title="Abre la factura de este pedido en el Facturador para hacer la nota de crédito (total o parcial)">Nota de crédito</DepBtn>}
                 </div>
               ):(
                 <DepBtn T={T} ico="undo" onClick={()=>moverA(r,"Contactado")}>Volver a abrir</DepBtn>
@@ -15344,7 +15344,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
         );
       })()}
       {/* Costo promedio por etiqueta (últimos 30 días): para saber cuánto dura el saldo. */}
-      {data?.promedio?.n>0&&(()=>{ const pr=data.promedio; const dura=pr.prom>0?Math.floor(saldoActual/pr.prom):null; return (
+      {data?.promedio?.n>0&&(()=>{ const pr=data.promedio; const dura=pr.prom>0?Math.max(0,Math.floor((Number(saldoActual)||0)/pr.prom)):null; return (
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginTop:-6,marginBottom:16}}>
           <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"12px 14px"}}>
             <div style={{fontSize:11,color:T.textSm,fontWeight:600}}>Tu envío promedio</div>
@@ -20456,6 +20456,7 @@ const ADM_CRONS = [
   { key:"pagos-cal_cron_avisos",      label:"Avisos del Calendario de Pagos",  cada:"Todos los días 12:00 UTC", maxH:26 },
   { key:"deposito_cron_diario",       label:"Resumen diario del depósito",     cada:"Todos los días 11:00 UTC", maxH:26 },
   { key:"inventory_cron_sync_ventas", label:"Descuento de ventas del Stock",   cada:"Cada 5 minutos",           maxH:1 },
+  { key:"meta_cron_run_all",          label:"Meta Ads (renovación de tokens)",  cada:"Todos los días 11:00 UTC", maxH:26 },
   { key:"integrations_cron_refresh_tokens", label:"Renovación de tokens de Shopify", cada:"Todos los días",       maxH:26 },
   { key:"tareas_cron_purgar_cuentas", label:"Purga de cuentas eliminadas",     cada:"Todos los días",           maxH:26 },
 ];
@@ -20902,7 +20903,7 @@ function AppAdmin({T, user, onBack}) {
   async function saveSectionsConfig(next) { await adminApi({action:"setSectionsConfig", adminOnlySections:next}); setSectionsConfig(next); toast("Accesos actualizados","success"); }
   // 17/oct/2026: antes no se cargaban los datos de la ejecutiva ni los días de anulación, y como el
   // guardado manda todo, habilitar una cuenta o tocar "Envíos con saldo" los BORRABA (y la anulación volvía a 14).
-  async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:c.ejecutivaWa||"", ejecutivaNombre:c.ejecutivaNombre||"", ejecutivaEmail:c.ejecutivaEmail||"", emailGestiones:c.emailGestiones||"", anulacionDias:c.anulacionDias??14, _ok:true}); } catch(_){} }
+  async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); if(c?._lecturaFallo){ toast("No se pudo leer la configuración de Envíos: recargá la página antes de cambiar algo","error"); return; } setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:c.ejecutivaWa||"", ejecutivaNombre:c.ejecutivaNombre||"", ejecutivaEmail:c.ejecutivaEmail||"", emailGestiones:c.emailGestiones||"", anulacionDias:c.anulacionDias??14, _ok:true}); } catch(_){} }
   async function saveEnvCfg(next) {
     const body = next || envCfg; if(!body) return false;
     if(!body._ok){ toast("La configuración todavía no cargó: esperá un segundo y probá de nuevo.","warning"); return false; }
@@ -20952,7 +20953,8 @@ function AppAdmin({T, user, onBack}) {
   const activaPaga = u=>(u.plan||"free")!=="free"&&!u.isTrial&&(!u.planExpiry||u.planExpiry>ahora);
   const pastDue = usuarios.filter(u=>u.stripeStatus==="past_due");
   const etiquetasMes = useMemo(()=>{ const m={}; (statsMes?.cuentas||[]).forEach(c=>{ m[c.uid]=c; }); return m; },[statsMes]);
-  const limboN=["dudosos","reversosPendientes","cargasRevision","anuladasConIngreso"].reduce((n,k)=>n+((limbo.data||{})[k]||[]).length,0);
+  const limboN=["dudosos","reversosPendientes","anuladasConIngreso"].reduce((n,k)=>n+((limbo.data||{})[k]||[]).length,0)
+    + ((limbo.data||{}).cargasRevision||[]).filter(x=>!envCargas.some(c=>c.id===x.id)).length; // las que ya cuenta envCargas no se suman dos veces
   const porAtender = envCargas.length + pagosPendientes.length + pastDue.length + limboN + casosAb.length + cronsMal.length;
   const primerPagoUid = useMemo(()=>{ const m={}; [...pagosReales].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(p=>{ if(!m[p.uid]) m[p.uid]=p._id; }); return m; },[pagosReales]);
   const esNueva = p => p.billingReason==="subscription_create" || (p.method!=="stripe" && primerPagoUid[p.uid]===p._id);
@@ -21081,7 +21083,9 @@ function AdmHacer({ctx, stats}) {
   (L.dudosos||[]).forEach(x=>items.push({k:"dud_"+x.uid+x.envioId,sev:"red",tipo:"Emisión dudosa",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`Pedido #${x.pedido||x.envioId} · ${fmtMoney(x.precio||0)} retenidos: Andreani no respondió claro si creó la etiqueta.`,acciones:<><AdmBtn T={T} variant="secondary" size="sm" onClick={()=>resolverDudoso(x,"existe")}>Existe</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverDudoso(x,"no_existe")}>No existe · devolver</AdmBtn></>}));
   (L.anuladasConIngreso||[]).forEach(x=>items.push({k:"anu_"+x.uid+x.envioId,sev:"red",tipo:"Anulada con ingreso",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`Pedido #${x.pedido||x.envioId}: se devolvieron ${fmtMoney(x.precio||0)} pero Andreani registró el paquete.`,acciones:<AdmBtn T={T} variant="danger" size="sm" onClick={()=>debitarAnulada(x)}>Debitar</AdmBtn>}));
   (L.reversosPendientes||[]).forEach((x,i)=>items.push({k:"rev_"+i+(x.uid||""),sev:"red",tipo:"Reverso pendiente",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`${fmtMoney(x.precio??x.monto??0)} que no se pudieron devolver solos: acreditalos a mano.`,acciones:x.uid?ver(x.uid):null}));
-  (L.cargasRevision||[]).forEach((x,i)=>items.push({k:"crv_"+i+(x.id||""),sev:"red",tipo:"Carga en revisión",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`${fmtMoney(x.monto??0)} · ${x.nota||"pago aprobado sobre una carga cancelada"}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","billeteras")}>Ver billeteras</DepBtn>}));
+  // Las cargas en revisión ya vienen en envCargas (con su botón de acreditar): acá solo las que no estén ahí.
+  const cargasYa=new Set(envCargas.map(c=>c.id));
+  (L.cargasRevision||[]).filter(x=>!cargasYa.has(x.id)).forEach((x,i)=>items.push({k:"crv_"+i+(x.id||""),sev:"red",tipo:"Carga en revisión",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`${fmtMoney(x.monto??0)} · ${x.motivo||x.nota||"pago aprobado sobre una carga cancelada"}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","billeteras")}>Ver billeteras</DepBtn>}));
   pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:ver(u._id)}));
   casosAb.forEach(c=>items.push({k:"caso_"+c.id,sev:c.nuevoAndreani?"yellow":"red",tipo:c.nuevoAndreani?"Andreani respondió":"Gestión con Andreani",titulo:c.tienda||c.email||c.uid,desc:`${c.motivoLabel||c.motivo} · pedido #${c.numero}${c.ts?" · "+admRel(c.ts):""}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","operacion")}>Ver gestión</DepBtn>}));
   cronsMal.forEach(c=>{ const e=cronEstado(c); items.push({k:"cron_"+c.key,sev:e.id==="error"?"red":"yellow",tipo:e.id==="error"?"Cron con error":"Cron atrasado",titulo:c.label,desc:e.desc,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("sistema")}>Ver sistema</DepBtn>}); });
@@ -23857,12 +23861,13 @@ function AdmEnvios({ctx}) {
   const [saldos,setSaldos]=useState(null);
   const [acred,setAcred]=useState(null); const [movs,setMovs]=useState(null); const [compVer,setCompVer]=useState(null);
   const meses=useMemo(()=>{ const out=[]; const now=new Date(); for(let i=0;i<6;i++){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); out.push({v:admMesKey(d.getTime()),label:admMesLabel(admMesKey(d.getTime()))}); } return out; },[]);
-  const [mes,setMes]=useState(meses[0].v); const [stats,setStats]=useState({loading:!statsMes,data:statsMes||null,error:""});
+  const [mes,setMes]=useState(meses[0].v); const [stats,setStats]=useState({loading:false,data:statsMes||null,error:""});
   async function loadSaldos(){ try{ const s=await admAndreani("admin_saldos"); if(Array.isArray(s?.cuentas)) setSaldos(s.cuentas); }catch(_){} }
   async function loadStats(m){ setMes(m); setStats({loading:true,data:null,error:""}); try{ setStats({loading:false,data:await admAndreani(`admin_stats&mes=${encodeURIComponent(m)}`),error:""}); }catch(e){ setStats({loading:false,data:null,error:e.message}); } }
   // Cada subpestaña carga SOLO lo suyo (antes Logística pedía cinco cosas al abrir, se viera o no).
   useEffect(()=>{ if(vista==="billeteras"&&saldos===null) loadSaldos(); if(vista==="rentabilidad"&&!stats.data&&!stats.loading) loadStats(meses[0].v); },[vista]);
-  useEffect(()=>{ if(vista==="rentabilidad"&&!statsMes&&!stats.data) loadStats(meses[0].v); },[]);
+  // Las estadísticas del mes que pidió el panel al abrir llegan después: si todavía no hay nada, se toman.
+  useEffect(()=>{ if(statsMes&&!stats.data&&!stats.loading&&mes===meses[0].v) setStats({loading:false,data:statsMes,error:""}); },[statsMes]);
   const listaSaldos=saldos||[];
   const clienteBtn=(uid,label)=><button onClick={()=>usuariosPorUid[uid]&&setCuenta(uid)} style={{background:"transparent",border:"none",padding:0,cursor:usuariosPorUid[uid]?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{label}</button>;
   return (
@@ -23884,10 +23889,10 @@ function AdmEnvios({ctx}) {
                 <span style={{color:T.textMd}}>{x.pedido?`#${x.pedido}`:x.envioId||x.id||x.ref||""}</span>
                 <span style={{fontWeight:700,marginLeft:"auto"}}>{fmtMoney(x.precio??x.monto??0)}</span>
                 {x.numeroDeEnvio&&<span style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontSize:11,color:T.textSm}}>{x.numeroDeEnvio}</span>}
-                {k==="dudosos"&&<><AdmBtn T={T} variant="secondary" size="sm" onClick={()=>resolverDudoso(x,"existe")}>Existe</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={()=>resolverDudoso(x,"no_existe")}>No existe · devolver</AdmBtn></>}
-                {k==="anuladasConIngreso"&&<AdmBtn T={T} variant="danger" size="sm" onClick={()=>debitarAnulada(x)}>Debitar</AdmBtn>}
+                {k==="dudosos"&&<><AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ await resolverDudoso(x,"existe"); if(saldos!==null) loadSaldos(); }}>Existe</AdmBtn><AdmBtn T={T} variant="danger" size="sm" onClick={async()=>{ await resolverDudoso(x,"no_existe"); if(saldos!==null) loadSaldos(); }}>No existe · devolver</AdmBtn></>}
+                {k==="anuladasConIngreso"&&<AdmBtn T={T} variant="danger" size="sm" onClick={async()=>{ await debitarAnulada(x); if(saldos!==null) loadSaldos(); }}>Debitar</AdmBtn>}
                 {k==="reversosPendientes"&&<span style={{fontSize:11,color:T.textSm}}>reverso no aplicado: acreditar a mano desde Saldos</span>}
-                {k==="cargasRevision"&&<span style={{fontSize:11,color:T.textSm}}>{x.nota||"pago aprobado sobre una carga cancelada"}</span>}
+                {k==="cargasRevision"&&<span style={{fontSize:11,color:T.textSm}}>{x.motivo||x.nota||"pago aprobado sobre una carga cancelada"}</span>}
               </div>
             );
             return (
@@ -30609,7 +30614,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [regOrigen, setRegOrigen] = useState("");       // "" | "tn" | "ml" | "manual" | "recuperado"
   const [regBusq, setRegBusq] = useState("");
   // Llegada desde Reclamos ("Nota de crédito"): abre Registros buscando la factura de ese pedido.
-  const busqPendRef = useRef((()=>{ try{ const v=sessionStorage.getItem("growith_arca_buscar"); if(v) sessionStorage.removeItem("growith_arca_buscar"); return v||""; }catch(_){ return ""; } })());
+  const busqPendRef = useRef(null);
+  if (busqPendRef.current===null) busqPendRef.current=(()=>{ try{ const v=sessionStorage.getItem("growith_arca_buscar"); if(!v) return ""; sessionStorage.removeItem("growith_arca_buscar"); let o; try{ o=JSON.parse(v); }catch(_){ o=null; } if(o&&typeof o==="object") return Date.now()-(Number(o.ts)||0)<120000?String(o.q||""):""; return String(v); }catch(_){ return ""; } })();
   useEffect(()=>{ if(busqPendRef.current){ setSidebarTab&&setSidebarTab("registros"); setTimeout(()=>toast(`Buscando la factura del pedido ${busqPendRef.current||""}: usá ⋯ → "Anular con NC" o "Nota de crédito parcial"`,"info",7000),400); } },[]);
   const [regTipo, setRegTipo] = useState("");           // "" | "A" | "B" | "C" | "ND" | "NC"
   const [regEstado, setRegEstado] = useState("");       // "" | "activas" | "anuladas"
@@ -31951,7 +31957,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         const duplicates = [];
         for(let i=0;i<orderIds.length;i+=500){
           const dupRes = await api("check_duplicates","POST",{cuit:cuitSel, order_ids:orderIds.slice(i,i+500)});
-          if(dupRes?.error) throw new Error("No se pudo revisar si hay ventas ya facturadas: "+dupRes.error);
+          if(dupRes?.error) console.warn("[arca] check_duplicates:",dupRes.error); // como antes: no frena (el servidor igual evita facturar dos veces)
           duplicates.push(...(dupRes?.duplicates||[]));
         }
         if(duplicates.length > 0) {
@@ -33337,7 +33343,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     if (!r.anulada&&!r.nd) it.push({ l:"Emitir nota de débito", fn:()=>abrirNd(r,b), hint:"Cobra un adicional asociado a esta factura" });
                     if (!r.anulada&&!r.nd) it.push({ l:"Nota de crédito parcial", fn:()=>abrirNd(r,b,"nc"), hint:"Devolución de una parte (un producto, un descuento): la factura sigue vigente" });
                     if (r.doc_id&&!r.nd) it.push({ l:r.mail_enviado?"Reenviar por mail":"Enviar por mail", fn:async()=>{ const to=await appPrompt(`Mail al que mandamos la factura ${r.letra} ${String(r.comprobante||"").padStart(8,"0")}:`, r.email||""); if(!to) return; const d=await api("reenviar_mail","POST",{cuit:cuitSel, comprobante_id:r.doc_id, email:to.trim()}); if(d.error) toast(d.error,"error"); else toast(`Factura enviada a ${d.to} ✓`,"success"); }, hint:r.email?`Se manda con el PDF a ${r.email} (o al que escribas)`:"Se manda con el PDF al mail que escribas" });
-                    if (!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id) it.push({ l:"Re-emitir como Factura A", fn:()=>reemitirComoA(r,b), color:T.blue, hint:"NC de la B + Factura A al CUIT, en un paso" });
+                    if (!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id&&!(Number(r.nc_parciales_total)>0)) it.push({ l:"Re-emitir como Factura A", fn:()=>reemitirComoA(r,b), color:T.blue, hint:"NC de la B + Factura A al CUIT, en un paso" });
                     if (!r.anulada) it.push({ l:"Anular con nota de crédito", fn:()=>anularUnaFactura(r,b), color:T.red, disabled:!!r.recuperado_afip||!!r.nd,
                       hint: r.nd ? "Las ND se revierten con una NC manual" : r.recuperado_afip ? "Recuperada de AFIP sin items: anulala desde una factura manual" : "Emite una NC por el total" });
                     return it;

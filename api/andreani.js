@@ -277,7 +277,7 @@ export async function getGlobalConfig(db) {
       ejecutivaToken: String(d.ejecutivaToken || "").trim(),
     };
   } catch (_) {
-    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14, emailGestiones: "contacto.growith@gmail.com", ejecutivaEmail: "", ejecutivaToken: "" };
+    return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14, emailGestiones: "contacto.growith@gmail.com", ejecutivaEmail: "", ejecutivaToken: "", _lecturaFallo: true };
   }
 }
 
@@ -830,6 +830,7 @@ export async function mpReconciliarCargas(db, soloUid) {
     : [...(await col.where("estado", "==", "pendiente").limit(50).get()).docs,
        ...(await col.where("estado", "==", "cancelada").limit(50).get().catch(() => ({ docs: [] }))).docs];
   const ahora = Date.now();
+  const vencer = new Set(); // pendientes de más de 7 días: se dan por vencidas SOLO si MP confirma que no hay pago
   const pendientesMp = docs.filter(d => {
     const c = d.data();
     if (c.metodo !== "mp") return false;
@@ -837,7 +838,7 @@ export async function mpReconciliarCargas(db, soloUid) {
     if (c.estado === "pendiente") {
       // Checkout abierto hace más de 7 días y nunca pagado: se da por abandonado (sale de la lista del
       // cliente). Antes quedaba "pendiente" para siempre.
-      if (ts && ahora - ts >= 7 * 86400000) { d.ref.update({ estado: "cancelada", motivo: "No se pagó en Mercado Pago (vencida a los 7 días)", vencidaTs: ahora }).catch(() => {}); return false; }
+      if (ts && ahora - ts >= 7 * 86400000) vencer.add(d.id);
       return true;
     }
     if (c.estado === "cancelada") return !!ts && ahora - ts < 48 * 3600000;
@@ -849,7 +850,10 @@ export async function mpReconciliarCargas(db, soloUid) {
       let aprobado;
       try { aprobado = await mpBuscarPagoAprobado(token, d.id); }
       catch (e) { console.warn(`[mp_reconciliar] ${e.message} para ${d.id}`); continue; }
-      if (!aprobado) continue;
+      if (!aprobado) {
+        if (vencer.has(d.id)) await d.ref.update({ estado: "cancelada", motivo: "No se pagó en Mercado Pago (vencida a los 7 días)", vencidaTs: ahora }).catch(() => {});
+        continue;
+      }
       const r = await mpAcreditarCarga(db, d.id, aprobado);
       if (r.acreditada) { res.acreditadas++; console.log(`[mp_reconciliar] ✓ carga ${d.id} acreditada (pago ${aprobado.id})`); }
       else if (r.revision) res.revision++;

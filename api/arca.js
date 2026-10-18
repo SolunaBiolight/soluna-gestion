@@ -3519,6 +3519,7 @@ async function cronAutopilot(req, res) {
         });
         for (const x of r.resultados) {
           if (x.ok) { emitidas++; detalle.push({ orden_id: x.orden_id, ok: true, letra: x.letra, comprobante: x.comprobante }); }
+          else if (x.ya_facturada) detalle.push({ orden_id: x.orden_id, ok: true, ya_facturada: true }); // ya tenía factura: no es un error
           else { errores++; detalle.push({ orden_id: x.orden_id, ok: false, obs: String(x.obs || "").slice(0, 140) }); }
         }
       }
@@ -3535,7 +3536,7 @@ async function cronAutopilot(req, res) {
         ultimaCorrida: nowIso,
         ultimoResultado: { at: nowIso, emitidas, errores, detalle: detalle.slice(0, 50) },
         erroresPendientes: errPendLim,
-      }, { merge: true });
+      }, { mergeFields: ["ultimaCorrida", "ultimoResultado", "erroresPendientes"] });
       if (errores) await avisar(ap, d.ref, apUser.data(), errores, detalle.filter(x => !x.ok));
       resumen.push({ uid: apUid, cuit: apCuit, pendientes: candidatas.length, emitidas, errores });
       console.log(`[arca autopilot] uid=${apUid} cuit=${apCuit} pendientes=${candidatas.length} emitidas=${emitidas} errores=${errores}`);
@@ -3845,13 +3846,32 @@ async function accionArcaDemo(req, res, db, uid, action, cuit) {
   }
 
   if (action === "emit_nc" && M === "POST") {
-    const { cuit: cuitEmit, factura } = await leerBody();
+    const { cuit: cuitEmit, factura, monto } = await leerBody();
     if (!cuitEmit || !factura) return responder({ error: "Faltan cuit o factura" }, 400);
+    // La NC parcial no se simula en la demo (la de abajo anularía la factura entera).
+    if (monto != null && Number(monto) > 0 && Number(monto) < (Number(factura.total) || 0)) return responder({ error: "En la tienda demo la nota de crédito parcial no está disponible: probala en una cuenta real." }, 400);
     const cfg = await cfgDe(cuitEmit);
     if (!cfg) return responder({ error: "Ese CUIT no está configurado en esta cuenta" }, 400);
     const r = await ncDemo(db, uid, cfg, cuitEmit, factura);
     if (!r.ok) return responder({ error: `La factura N° ${factura.comprobante} ya está anulada (NC ${r.ncPrevia}) — no se emite otra NC.` }, 409);
     return responder({ ok: true, nc: { ...r.nc, ml_detached: factura.order_id && String(factura.order_id).startsWith("ML-") ? true : null } });
+  }
+
+  // Acciones nuevas del 17/oct/2026: en la demo nunca se manda un mail, nunca se consulta ARCA ni se
+  // escribe en una tienda.
+  if (action === "reenviar_mail" && M === "POST") {
+    const b = await leerBody();
+    return responder({ ok: true, demo: true, to: String(b.email || "comprador@ejemplo.com") });
+  }
+  if (action === "padron" && M === "GET") {
+    return responder({ error: "En la tienda demo no se consulta el padrón de ARCA: completá los datos a mano." }, 400);
+  }
+  if (action === "factura_link" && M === "POST") {
+    const b = await leerBody();
+    if (b.enPedido) return responder({ error: "En la tienda demo no se escribe en el pedido de la tienda." }, 400);
+    const cuitD = String(b.cuit || "").replace(/\D/g, ""), compD = String(b.comprobante_id || "");
+    if (!cuitD || !compD.startsWith(cuitD + "_")) return responder({ error: "Faltan datos del comprobante" }, 400);
+    return responder({ ok: true, link: await linkFactura(db, uid, compD) });
   }
 
   if (action === "emit_nc_batch" && M === "POST") {
@@ -4614,6 +4634,12 @@ export default async function handler(req, res) {
             } catch (_) {}
             if (compNC?.anulada) {
               results.push({ ok: false, factura_comprobante: factura.comprobante, error: `ya anulada (NC ${compNC.nc_nro || "?"})` });
+              continue;
+            }
+            // Con notas de crédito parciales, la anulación tiene que acreditar SOLO lo que queda: eso lo
+            // hace la anulación individual (emit_nc), no el lote, que manda el total de la factura.
+            if (Number(compNC?.nc_parciales_total) > 0) {
+              results.push({ ok: false, factura_comprobante: factura.comprobante, error: "tiene una nota de crédito parcial: anulala desde Registros → Anular con nota de crédito (acredita solo lo que queda)" });
               continue;
             }
             if (compNC) factura.exento = !!compNC.exento;
@@ -6316,14 +6342,14 @@ export default async function handler(req, res) {
       const ncExist = new Set();
       const anuladas = new Set();
       try {
-        const ncSnap = await db.collection("users").doc(uid).collection("arca_notas_credito").select("cuit", "tipo", "punto_venta", "comprobante", "total", "neto", "iva", "fecha", "fecha_cbte", "factura_origen").get();
+        const ncSnap = await db.collection("users").doc(uid).collection("arca_notas_credito").select("cuit", "tipo", "punto_venta", "comprobante", "total", "neto", "iva", "fecha", "fecha_cbte", "factura_origen", "parcial").get();
         ncSnap.docs.forEach(d => {
           const c = d.data();
           const ncCuit = String(c.cuit || "").replace(/\D/g, "");
           if (ncCuit && ncCuit !== cuitParam) return;
           if (c.comprobante) ncExist.add(`${parseInt(c.tipo)}|${parseInt(c.punto_venta) || "*"}|${parseInt(c.comprobante)}`);
           const fo = c.factura_origen;
-          if (fo?.comprobante) anuladas.add(`${parseInt(fo.tipo)}|${parseInt(fo.punto_venta) || "*"}|${parseInt(fo.comprobante)}`);
+          if (fo?.comprobante && !c.parcial) anuladas.add(`${parseInt(fo.tipo)}|${parseInt(fo.punto_venta) || "*"}|${parseInt(fo.comprobante)}`);
         });
       } catch (_) {}
       const tiene = (set, tipo, pv, nro) => set.has(`${tipo}|${pv}|${nro}`) || set.has(`${tipo}|*|${nro}`);
