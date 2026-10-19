@@ -113,7 +113,7 @@ ANDREANI_CONTRATO_HOP         ← OPCIONAL (24/sep/2026): contrato de canal HOP.
 Tokens centralizados definidos en `const DS`:
 ```js
 DS.sp    // spacing: xs(4) sm(8) md(12) lg(16) xl(20) 2xl(24) 3xl(32) 4xl(48)
-DS.r     // border-radius: sm(6) md(8) lg(10) xl(14) 2xl(16) full(9999)
+DS.r     // border-radius: sm(8) md(10) lg(12) xl(16) 2xl(20) full(9999)  ← un escalón más redondeado desde el 19/oct/2026
 DS.font  // font-size: xs(10) sm(11) md(12) base(13) lg(14) xl(16) 2xl(20) 3xl(26) 4xl(34)
 DS.w     // font-weight: regular(400) medium(500) semibold(600) bold(700) black(800)
 DS.shadow // sm md lg xl
@@ -131,6 +131,15 @@ Componentes base reusables (usar siempre en código nuevo):
 - `<DSEmpty T={T} icon="" title="" subtitle="" action={<Btn/>}>` — estado vacío
 - `<DSToggle T={T} active={bool} onToggle={fn}>` — switch toggle
 - `<ModalCloseBtn T={T} onClick={fn} disabled={bool}>` — botón ✕ estándar de modales
+
+### Rediseño 19/oct/2026 — "que no parezca hecha con IA"
+Pedido de Lautaro: pulir sin rediseñar las pantallas, con el lenguaje de Envíos y del Depósito. Reglas vigentes:
+- **Botones = píldora** (`DS.r.full`). `Btn` = mismo lenguaje que `DepBtn`: primario violeta SÓLIDO (`T.accentSolid`, texto blanco), secundario neutro (`T.surface` + borde `T.border`, texto `T.text`), ghost transparente, danger/success teñidos; alturas 32 / 38 / 44. `BtnPrimary/BtnSecondary/BtnDanger/BtnPurple(T)` devuelven lo mismo (`_btnBase`). **Sin resplandores** (`boxShadow` de color) ni brillos: era lo que delataba la plantilla.
+- **Sin "saltito"**: los botones, tarjetas (`Card hoverable`, `.gh-clickable`), pestañas y chips ya no suben al pasar el mouse ni rebotan; solo un leve brillo y un apretón de 0,98.
+- **Botones y campos sueltos** con `borderRadius` 6-8 inline: el CSS global los pasa a píldora (botones de una línea) o a 12 px (botones alineados a la izquierda = filas/tarjetas, inputs, selects, textareas) con selectores `[style*="border-radius: 8px"]`. La landing usa 10 px y no se toca.
+- **Pestañas (`AppTabs`)**: segmento en píldora, la activa en gris elevado con texto blanco (no violeta). **Barra lateral**: el ítem activo es gris elevado con texto `T.text` (antes tinte y texto violeta).
+- **Números (`KPI`)**: como `DepStrip` opción 2 — etiqueta en minúscula con un punto del color del dato, número en `T.text`. **`DSBadge`** en píldora. **`ModalCloseBtn`**: botón redondo con ícono SVG (no el caracter ✕). **`StatusIcon`**: círculo plano, sin degradé ni rebote. **`InputStyle`**: radio 12, borde de 1 px.
+- Código nuevo: usar `Btn`/`DepBtn`, no inventar botones con `borderRadius:8` ni sombras de color. Galería de prueba sin sesión: `scratchpad/vite.mock.ds.config.js` (`/?ds=1` oscuro, `/?ds=2` claro, con la barra lateral).
 
 ### Sistema de botones — dos formas equivalentes
 Ambas producen el mismo resultado visual. Usá la que más te convenga en cada contexto:

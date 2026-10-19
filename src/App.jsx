@@ -284,7 +284,8 @@ const DS = {
   // Spacing scale
   sp: { xs:4, sm:8, md:12, lg:16, xl:20, "2xl":24, "3xl":32, "4xl":48 },
   // Border radius scale
-  r: { sm:6, md:8, lg:10, xl:14, "2xl":16, full:9999 },
+  // Rediseño 19/oct/2026: un escalón más redondeado en toda la app (botones = full / píldora).
+  r: { sm:8, md:10, lg:12, xl:16, "2xl":20, full:9999 },
   // Typography scale
   font: { xs:10, sm:11, md:12, base:13, lg:14, xl:16, "2xl":20, "3xl":26, "4xl":34 },
   // Font weights
@@ -310,15 +311,12 @@ function Card({T, children, hoverable, onClick, style={}, padding="lg", classNam
       onMouseLeave={()=>setHover(false)}
       style={{
         background: T.card,
-        border: `1px solid ${hover&&hoverable ? T.accentSolid+"66" : T.border}`,
-        borderRadius: DS.r.xl,
+        border: `1px solid ${hover&&hoverable ? (T.isDark?"#3f3f46":"#d4d4d8") : T.border}`,
+        borderRadius: DS.r["2xl"],
         padding: padMap[padding]||padMap.lg,
-        transition: `all 0.2s ${DS.ease}`,
+        transition: `border-color 0.15s ${DS.ease}, background 0.15s ${DS.ease}`,
         cursor: onClick?"pointer":"default",
-        boxShadow: hover&&hoverable
-          ? `0 8px 32px rgba(0,0,0,0.18), 0 0 0 1px ${T.accentSolid}18`
-          : "0 1px 2px rgba(0,0,0,0.06), 0 3px 10px rgba(0,0,0,0.04)",
-        transform: hover&&hoverable ? "translateY(-2px)" : "translateY(0)",
+        boxShadow: T.isDark ? "none" : "0 1px 2px rgba(0,0,0,0.04)",
         ...style,
       }}>
       {children}
@@ -334,21 +332,18 @@ function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loadi
   const c = color||T.accentSolid;
   return (
     <Card T={T} hoverable={!!onClick} onClick={onClick} padding={compact?"md":"lg"}
-      style={{
-        borderColor: accent ? c+"66" : T.border,
-        boxShadow: accent ? `0 4px 24px ${c}20, 0 1px 3px rgba(0,0,0,0.07)` : "0 1px 3px rgba(0,0,0,0.07)",
-      }}>
+      style={accent?{borderColor:c+"55"}:{}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:DS.sp.md}}>
         {icon&&<div style={{fontSize:compact?16:18,flexShrink:0,opacity:loading?0.3:0.9}}>{icon}</div>}
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:DS.font.xs,textTransform:"uppercase",color:T.textSm,fontWeight:DS.w.semibold,letterSpacing:0.5,marginBottom:5}}>{label}</div>
+          <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.md,color:T.textMd,fontWeight:DS.w.medium,marginBottom:8}}><span style={{width:7,height:7,borderRadius:"50%",background:c,flexShrink:0}}/>{label}</div>
           {loading
             ? <Skeleton T={T} height={compact?18:24} width="65%" style={{marginBottom:6}}/>
-            : <div key={String(value)} className="gh-kpi-value" style={{fontSize:compact?DS.font["2xl"]:DS.font["3xl"],fontWeight:DS.w.black,color:c,letterSpacing:-0.6,lineHeight:1}}>{value}</div>
+            : <div key={String(value)} className="gh-kpi-value" style={{fontSize:compact?DS.font["2xl"]:DS.font["3xl"],fontWeight:DS.w.bold,color:T.text,letterSpacing:-0.8,lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{value}</div>
           }
           {loading
             ? <Skeleton T={T} height={11} width="45%" style={{marginTop:6}}/>
-            : sub&&<div style={{fontSize:DS.font.xs,color:T.textSm,marginTop:4}}>{sub}</div>
+            : sub&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>{sub}</div>
           }
         </div>
       </div>
@@ -359,17 +354,19 @@ function KPI({T, label, value, sub, color, icon, accent, onClick, compact, loadi
 // Sistema de botones unificado — visualmente idéntico a BtnPrimary/BtnSecondary/BtnDanger
 function Btn({T, variant="primary", size="md", icon, children, onClick, disabled, style={}, ...rest}) {
   const [hov, setHov] = React.useState(false);
+  // Rediseño 19/oct/2026: píldora; primario = violeta sólido; secundario = neutro con borde fino;
+  // sin resplandores ni brillos (eran lo que hacía que la app "pareciera hecha con IA").
   const variants = {
-    primary:   {bg:"rgba(124,58,237,0.13)", color:"#a78bfa", border:"rgba(124,58,237,0.55)", shadow:"0 0 0 1px #7c3aed15, 0 4px 20px #7c3aed20", shadowHov:"0 0 0 1px #7c3aed28, 0 6px 28px #7c3aed40"},
-    secondary: {bg:"transparent", color:T.textMd, border:T.border, shadow:"none", shadowHov:`0 2px 12px rgba(0,0,0,0.12)`},
-    ghost:     {bg:"transparent", color:T.textMd, border:"transparent", shadow:"none", shadowHov:"none"},
-    danger:    {bg:T.redBg, color:T.red, border:T.red+"55", shadow:`0 0 0 1px ${T.red}15, 0 4px 16px ${T.red}22`, shadowHov:`0 0 0 1px ${T.red}28, 0 6px 24px ${T.red}40`},
-    success:   {bg:"rgba(22,163,74,0.13)", color:T.green, border:"rgba(22,163,74,0.55)", shadow:"0 0 0 1px "+T.green+"15"+", 0 4px 20px "+T.green+"20"+"", shadowHov:"0 0 0 1px "+T.green+"28"+", 0 6px 28px "+T.green+"40"+""},
+    primary:   {bg:T.accentSolid, bgHov:"#6d28d9", color:"#fff", border:T.accentSolid},
+    secondary: {bg:T.surface, bgHov:T.isDark?"#1c2129":"#f4f4f5", color:T.text, border:T.border, borderHov:T.isDark?"#3f3f46":"#d4d4d8"},
+    ghost:     {bg:"transparent", bgHov:T.surface, color:T.textMd, colorHov:T.text, border:"transparent"},
+    danger:    {bg:T.red+"14", bgHov:T.red+"24", color:T.red, border:T.red+"55"},
+    success:   {bg:T.green+"14", bgHov:T.green+"24", color:T.green, border:T.green+"55"},
   };
   const sizes = {
-    sm: {padding:"5px 10px", fontSize:DS.font.sm, gap:5},
-    md: {padding:"8px 14px", fontSize:DS.font.base, gap:6},
-    lg: {padding:"10px 20px", fontSize:DS.font.lg, gap:8},
+    sm: {height:32, padding:"0 14px", fontSize:DS.font.md, gap:6},
+    md: {height:38, padding:"0 18px", fontSize:DS.font.base, gap:7},
+    lg: {height:44, padding:"0 24px", fontSize:DS.font.lg, gap:8},
   };
   const v = variants[variant]||variants.primary;
   const s = sizes[size]||sizes.md;
@@ -379,18 +376,18 @@ function Btn({T, variant="primary", size="md", icon, children, onClick, disabled
       onMouseLeave={()=>setHov(false)}
       {...rest}
       style={{
-        background: disabled?T.surface:v.bg,
-        color: disabled?T.textSm:v.color,
-        border: `1px solid ${v.border==="transparent"?"transparent":v.border}`,
-        borderRadius: DS.r.md,
+        background: disabled?T.surface:(hov&&v.bgHov)||v.bg,
+        color: disabled?T.textSm:(hov&&v.colorHov)||v.color,
+        border: `1px solid ${disabled?T.border:(hov&&v.borderHov)||v.border}`,
+        borderRadius: DS.r.full,
         cursor: disabled?"not-allowed":"pointer",
         fontWeight: DS.w.semibold,
         fontFamily: "'Inter',system-ui,sans-serif",
-        letterSpacing:"0.01em",
         display:"inline-flex",alignItems:"center",justifyContent:"center",
-        transition: `all 0.18s ${DS.ease}`,
+        boxSizing:"border-box", whiteSpace:"nowrap",
+        transition: `background 0.15s ${DS.ease}, border-color 0.15s ${DS.ease}, color 0.15s ${DS.ease}`,
         opacity: disabled?0.5:1,
-        boxShadow: disabled?"none": hov?(v.shadowHov||v.shadow):v.shadow,
+        boxShadow: "none",
         ...s,
         ...style,
       }}>
@@ -1053,13 +1050,14 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
           if(item.id==="tiktokads"&&tiktokTab==="publicar") setTiktokTab&&setTiktokTab("analisis");
           if(active&&item.subs?.length>0){setClosedSubs(p=>{const n=new Set(p);n.has(item.id)?n.delete(item.id):n.add(item.id);return n;});}else{setPage(item.id);setClosedSubs(p=>{const n=new Set(p);n.delete(item.id);return n;});}}} title={collapsed?item.label:undefined} aria-disabled={!!item.soon}
         style={{display:"flex",alignItems:"center",gap:9,padding:collapsed?"10px 0":hijo?"6px 10px 6px 12px":"8px 10px",
-          background:active?T.accentSolid+"20":"transparent",border:"none",
+          // Rediseño 19/oct/2026: activo en gris elevado + texto blanco (antes, tinte y texto violeta).
+          background:active?(T.isDark?"rgba(255,255,255,0.07)":"rgba(0,0,0,0.05)"):"transparent",border:"none",
           borderRadius:DS.r.md,cursor:item.soon?"default":"pointer",textAlign:"left",opacity:item.soon?0.5:1,
-          color:active?T.accent:T.textMd,fontWeight:active?DS.w.semibold:DS.w.medium,
+          color:active?T.text:T.textMd,fontWeight:active?DS.w.semibold:DS.w.medium,
           fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif",
           transition:`all 0.12s ${DS.ease}`,justifyContent:collapsed?"center":"flex-start",
           position:"relative",width:"100%",letterSpacing:active?0:-0.1}}
-        onMouseEnter={e=>{if(!active&&!item.soon)e.currentTarget.style.background=T.card;}}
+        onMouseEnter={e=>{if(!active&&!item.soon)e.currentTarget.style.background=T.isDark?"rgba(255,255,255,0.04)":"rgba(0,0,0,0.03)";}}
         onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
         {(item.id==="ml"||item.id==="pubml")
           ? <svg width="20" height="20" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" style={{flexShrink:0,opacity:active?1:0.65}}><ellipse cx="24" cy="24" rx="19.5" ry="12.978"/><path d="M9.7044,15.5305A20.8345,20.8345,0,0,0,16.09,17.3957a22.8207,22.8207,0,0,0,4.546-.7731"/><path d="M38.8824,15.6143a8.6157,8.6157,0,0,1-5.1653,1.4849c-3.3351,0-6.2255-2.1987-9.2148-2.1987-2.6681,0-7.189,4.3727-7.189,5.1633s1.3094,1.26,2.3717.7411c.6215-.3036,3.31-2.9151,5.4843-2.9151s9.2186,7.1361,9.8571,7.8066c.9882,1.0376-.9264,3.2733-2.1493,2.05s-3.4092-3.1621-3.4092-3.1621"/><path d="M43.4,22.6826a23.9981,23.9981,0,0,0-8.5467,2.6926"/><path d="M32.5807,27.4555c.9881,1.0376-.9265,3.2733-2.1493,2.05S27.85,26.9933,27.85,26.9933"/><path d="M30.1349,29.2147c.9882,1.0376-.9264,3.2733-2.1493,2.05S25.96,29.3032,25.96,29.3032"/><path d="M24.2015,31.3156A2.309,2.309,0,0,0,27.85,31.13"/><path d="M24.2015,31.3156c.5306-.6964.49-3.1817-2.2437-2.6876.6423-1.2188.0658-3.1457-2.3881-2.0093A1.69,1.69,0,0,0,16.424,25.96a1.4545,1.4545,0,0,0-2.8-.28c-.5435,1.1035.2964,3.0963,2.0916,1.9763-.1812,1.9435.84,2.5364,2.6845,1.7788.0989,1.91,1.367,1.7457,2.2728,1.3011A1.9376,1.9376,0,0,0,24.2015,31.3156Z"/><path d="M4.6706,22.2785a18.3081,18.3081,0,0,1,9.0635,3.2144"/></svg>
@@ -1175,7 +1173,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
                         style={{display:"flex",alignItems:"center",gap:8,padding:"5px 8px",
                           background:"none",border:"none",
                           borderRadius:DS.r.sm,cursor:"pointer",textAlign:"left",width:"100%",
-                          color:subActive?T.accent:T.textSm,
+                          color:subActive?T.text:T.textSm,
                           fontWeight:subActive?DS.w.semibold:DS.w.regular,
                           fontSize:DS.font.sm,fontFamily:"'Inter',system-ui,sans-serif",
                           transition:`color 0.12s ${DS.ease}`,letterSpacing:subActive?0:-0.1}}
@@ -3978,11 +3976,11 @@ function DSBadge({T, color, children, size="md"}) {
   return (
     <span style={{
       fontSize: size==="sm"?DS.font.xs:DS.font.sm,
-      padding: size==="sm"?"2px 7px":"3px 9px",
-      borderRadius: DS.r.sm,
-      background: c+"20",
+      padding: size==="sm"?"2px 8px":"3px 10px",
+      borderRadius: DS.r.full,
+      background: c+"1a",
       color: c,
-      fontWeight: DS.w.bold,
+      fontWeight: DS.w.semibold,
       border: `1px solid ${c}33`,
       display: "inline-flex", alignItems:"center", gap:4,
       lineHeight: 1.4,
@@ -5462,14 +5460,27 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     ══════════════════════════════════════ */
 
     /* Botones — press + hover */
+    /* Rediseño 19/oct/2026: sin "saltito" al pasar el mouse ni rebote al tocar (se veía de plantilla);
+       solo un leve cambio de brillo y un apretón chico. */
     button, a[role="button"] {
-      transition: filter 0.14s ease, transform 0.14s cubic-bezier(0.34,1.4,0.64,1),
+      transition: filter 0.14s ease, transform 0.1s ease,
                   background 0.14s ease, border-color 0.14s ease,
-                  box-shadow 0.16s ease, opacity 0.14s ease !important;
+                  box-shadow 0.16s ease, opacity 0.14s ease, color 0.14s ease !important;
     }
-    button:not(:disabled):hover  { filter: brightness(1.08); transform: translateY(-1px); }
-    button:not(:disabled):active { transform: scale(0.95) translateY(0px) !important; filter: brightness(0.94) !important; transition-duration: 0.06s !important; }
-    button:disabled { cursor: not-allowed !important; opacity: 0.38 !important; }
+    button:not(:disabled):hover  { filter: brightness(1.06); }
+    button:not(:disabled):active { transform: scale(0.98) !important; transition-duration: 0.06s !important; }
+    button:disabled { cursor: not-allowed !important; opacity: 0.45 !important; }
+
+    /* Botones y campos sueltos con esquinas chicas (inline 6-8 px): píldora para los botones de una
+       línea; los botones alineados a la izquierda (filas, tarjetas) y los campos quedan en 12 px. */
+    button[style*="border-radius: 6px"]:not([style*="text-align: left"]),
+    button[style*="border-radius: 7px"]:not([style*="text-align: left"]),
+    button[style*="border-radius: 8px"]:not([style*="text-align: left"]) { border-radius: 9999px !important; }
+    button[style*="text-align: left"][style*="border-radius: 6px"],
+    button[style*="text-align: left"][style*="border-radius: 8px"] { border-radius: 12px !important; }
+    input[style*="border-radius: 6px"], input[style*="border-radius: 7px"], input[style*="border-radius: 8px"],
+    select[style*="border-radius: 6px"], select[style*="border-radius: 7px"], select[style*="border-radius: 8px"],
+    textarea[style*="border-radius: 6px"], textarea[style*="border-radius: 7px"], textarea[style*="border-radius: 8px"] { border-radius: 12px !important; }
 
     /* Links */
     a { transition: opacity 0.14s ease, color 0.14s ease !important; }
@@ -5491,8 +5502,8 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
                   box-shadow 0.18s ease !important;
       cursor: pointer;
     }
-    .gh-clickable:hover  { transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(0,0,0,0.12) !important; }
-    .gh-clickable:active { transform: scale(0.98) translateY(0) !important; transition-duration: 0.07s !important; }
+    .gh-clickable:hover  { filter: brightness(1.04); }
+    .gh-clickable:active { transform: scale(0.99) !important; transition-duration: 0.07s !important; }
 
     /* Filas de tabla — hover sutil en TODAS las tablas de datos.
        Sin !important: si la fila trae background inline (zebra, selección), gana el inline. */
@@ -5507,15 +5518,14 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
       transition: transform 0.2s cubic-bezier(0.22,1,0.36,1),
                   box-shadow 0.18s ease, border-color 0.14s ease !important;
     }
-    .gh-kanban-card:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 24px rgba(0,0,0,0.18) !important; }
+    .gh-kanban-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.14) !important; }
 
     /* Tabs */
     .gh-tab {
       transition: background 0.14s ease, color 0.14s ease,
                   border-color 0.14s ease, transform 0.14s ease !important;
     }
-    .gh-tab:hover  { transform: translateY(-1px) !important; }
-    .gh-tab:active { transform: scale(0.96) !important; }
+    .gh-tab:active { transform: scale(0.98) !important; }
 
     /* Chips / filtros */
     .gh-chip {
@@ -5523,8 +5533,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
                   color 0.14s ease, transform 0.16s cubic-bezier(0.22,1,0.36,1),
                   box-shadow 0.14s ease !important;
     }
-    .gh-chip:hover  { transform: translateY(-1px) !important; }
-    .gh-chip:active { transform: scale(0.95) !important; }
+    .gh-chip:active { transform: scale(0.97) !important; }
 
     /* Toggle switch */
     .gh-toggle        { transition: background 0.2s ease !important; cursor: pointer; }
@@ -5548,7 +5557,6 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
       outline: 2px solid rgba(139,92,246,0.55);
       outline-offset: 2px;
-      border-radius: 4px;
     }
 
     /* Hover helpers */
@@ -5866,17 +5874,17 @@ function AppTabs({T, tabs, active, onChange, size="normal"}) {
   const isLarge = size==="large";
   return (
     <div className="no-scrollbar gh-apptabs" style={{background:T.surface,borderBottom:"1px solid "+T.border,padding:isLarge?"12px 24px":"10px 24px",position:"sticky",top:65,zIndex:20}}>
-      <div style={{display:"inline-flex",background:T.bg,borderRadius:isLarge?12:10,padding:3,border:"1px solid "+T.border,gap:isLarge?3:2}}>
+      <div style={{display:"inline-flex",background:T.bg,borderRadius:9999,padding:4,border:"1px solid "+T.border,gap:2}}>
         {tabs.map(t=>{
           const isActive=active===t.id;
           return (
             <button key={t.id} onClick={()=>onChange(t.id)}
               onMouseEnter={e=>{if(!isActive)e.currentTarget.style.color=T.text;}}
               onMouseLeave={e=>{if(!isActive)e.currentTarget.style.color=T.textMd;}}
-              style={{padding:isLarge?"10px 24px":"8px 18px",fontSize:isLarge?14:13,fontWeight:isActive?700:500,borderRadius:isLarge?10:8,border:"none",background:isActive?T.accent+"16":"transparent",color:isActive?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"all 0.15s ease",boxShadow:isActive?`inset 0 0 0 1px ${T.accent}3a`:"none",whiteSpace:"nowrap"}}>
+              style={{padding:isLarge?"9px 22px":"7px 16px",fontSize:isLarge?14:13,fontWeight:isActive?600:500,borderRadius:9999,border:"none",background:isActive?(T.isDark?"#232a35":T.card):"transparent",color:isActive?T.text:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:7,transition:"background 0.15s ease, color 0.15s ease",boxShadow:isActive?(T.isDark?"0 1px 2px rgba(0,0,0,0.4)":"0 1px 3px rgba(0,0,0,0.08)"):"none",whiteSpace:"nowrap"}}>
               {t.icon&&<svg width={isLarge?15:13} height={isLarge?15:13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:isActive?1:0.75}}><path d={t.icon}/></svg>}
               {t.label}
-              {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:10,padding:"1px 7px"}}>{t.badge}</span>}
+              {t.badge!=null&&t.badge>0&&<span style={{fontSize:10,fontWeight:700,background:t.badgeColor||T.red,color:"#fff",borderRadius:9999,padding:"1px 7px",fontVariantNumeric:"tabular-nums"}}>{t.badge}</span>}
             </button>
           );
         })}
@@ -6028,8 +6036,8 @@ function StatCard({T, label, value, color, sub}) {
 
 function InputStyle(T) {
   return {
-    width:"100%", padding:"10px 14px", borderRadius:8,
-    border:`0.5px solid ${T.inputBorder}`, fontSize:13,
+    width:"100%", padding:"10px 14px", borderRadius:12,
+    border:`1px solid ${T.inputBorder}`, fontSize:13,
     fontFamily:"'Inter',system-ui,sans-serif",
     outline:"none", boxSizing:"border-box",
     background:T.input, color:T.text,
@@ -6048,22 +6056,24 @@ function StatusIcon({type="success", size=64}) {
   const c = cfg[type]||cfg.success;
   const r = Math.round(size*0.27);
   return (
-    <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size,height:size,borderRadius:r,background:c.bg,boxShadow:`0 0 0 ${Math.round(size*0.1)}px ${c.ring}, 0 12px 32px ${c.glow}55`,flexShrink:0,animation:"growith-bounceIn 0.5s cubic-bezier(0.34,1.56,0.64,1) both"}}>
+    <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:size,height:size,borderRadius:"50%",background:c.glow,boxShadow:`0 0 0 ${Math.round(size*0.12)}px ${c.ring}`,flexShrink:0,animation:"growith-scaleIn 0.22s ease both"}}>
       <svg width={size*0.5} height={size*0.5} viewBox="0 0 24 24" fill="none">{c.path}</svg>
     </div>
   );
 }
 
-function BtnPrimary(T) { return {border:"1.5px solid rgba(124,58,237,0.55)",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:"rgba(124,58,237,0.13)",color:"#a78bfa",letterSpacing:"0.01em",boxShadow:"0 0 0 1px #7c3aed15, 0 4px 20px #7c3aed20"}; }
-function BtnSecondary(T) { return {border:`1px solid ${T.border}`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:"transparent",color:T.textMd}; }
-function BtnDanger(T) { return {border:`1.5px solid ${T.red}55`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.redBg,color:T.red,boxShadow:`0 0 0 1px ${T.red}15, 0 4px 16px ${T.red}22`}; }
-function BtnPurple(T) { return {border:`1.5px solid ${T.purple}55`,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.18s cubic-bezier(0.4,0,0.2,1)",display:"inline-flex",alignItems:"center",gap:6,background:T.purpleBg,color:T.purple,boxShadow:`0 0 0 1px ${T.purple}15, 0 4px 16px ${T.purple}22`}; }
+// Rediseño 19/oct/2026: mismos colores y forma que <Btn> (píldora, sin resplandor).
+const _btnBase = {borderRadius:9999,padding:"9px 18px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,boxSizing:"border-box",whiteSpace:"nowrap"};
+function BtnPrimary(T) { return {..._btnBase,border:`1px solid ${T.accentSolid}`,background:T.accentSolid,color:"#fff"}; }
+function BtnSecondary(T) { return {..._btnBase,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontWeight:500}; }
+function BtnDanger(T) { return {..._btnBase,border:`1px solid ${T.red}55`,background:T.red+"14",color:T.red,fontWeight:500}; }
+function BtnPurple(T) { return {..._btnBase,border:`1px solid ${T.purple}55`,background:T.purple+"14",color:T.purple,fontWeight:500}; }
 // Botón ✕ estándar para cerrar modales y drawers
 function ModalCloseBtn({T, onClick, disabled}) {
   return (
-    <button onClick={onClick} disabled={disabled} aria-label="Cerrar" title="Cerrar" style={{background:"transparent",border:"none",color:T.textMd,cursor:disabled?"not-allowed":"pointer",fontSize:18,padding:"4px 6px",lineHeight:1,borderRadius:6,flexShrink:0,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"color 0.15s"}}
-      onMouseEnter={e=>e.currentTarget.style.color=T.text}
-      onMouseLeave={e=>e.currentTarget.style.color=T.textMd}>✕</button>
+    <button onClick={onClick} disabled={disabled} aria-label="Cerrar" title="Cerrar" style={{background:"transparent",border:"none",color:T.textMd,cursor:disabled?"not-allowed":"pointer",width:32,height:32,padding:0,borderRadius:9999,flexShrink:0,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center"}}
+      onMouseEnter={e=>{ e.currentTarget.style.color=T.text; e.currentTarget.style.background=T.surface; }}
+      onMouseLeave={e=>{ e.currentTarget.style.color=T.textMd; e.currentTarget.style.background="transparent"; }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
   );
 }
 function OrderSearchField({T, orders, onSelect, uid}) {
@@ -22566,7 +22576,7 @@ function DepNota({T,titulo,color,ico="note",children,style}){ const c=color||T.y
 function DepBtn({T,variant="secondary",size="md",ico,icon,children,onClick,disabled,style={},...rest}){
   const [h,setH]=useState(false); const on=h&&!disabled;
   const col=variant==="danger"?T.red:variant==="success"?T.green:T.accentSolid;
-  const V=variant==="primary"?{bg:col,fg:"#fff",bd:col,sh:on?`0 6px 20px ${col}59`:`0 2px 10px ${col}38`}
+  const V=variant==="primary"?{bg:col,fg:"#fff",bd:col,sh:"none"}
     :variant==="danger"||variant==="success"?{bg:col+(on?"2b":"1a"),fg:col,bd:col+(on?"99":"66"),sh:"none"}
     :{bg:on?T.borderL:T.surface,fg:T.text,bd:on?T.textSm:T.border,sh:"none"};
   const S=size==="sm"?{height:32,padding:"0 14px",fontSize:DS.font.md,gap:6}:size==="lg"?{height:46,padding:"0 26px",fontSize:DS.font.lg,gap:8}:{height:40,padding:"0 18px",fontSize:DS.font.base,gap:7};
@@ -22580,7 +22590,7 @@ function DepCanalBtn({T,marca,color,canal,onClick}){ const [h,setH]=useState(fal
     <span style={{display:"flex",flexDirection:"column",lineHeight:1.25}}><span style={{fontSize:DS.font.sm,fontWeight:DS.w.medium,color:T.textSm}}>Enviar etiquetas de</span><span style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,whiteSpace:"nowrap"}}>{canal}</span></span>
   </button>; }
 // Acción principal de una tanda: el botón sólido (con color propio para "Entregada").
-function DepMainBtn({T,color,ico,children,onClick,disabled}){ const c=color||T.accentSolid; const [h,setH]=useState(false); return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,height:40,boxSizing:"border-box",padding:"0 20px",border:`1px solid ${c}`,borderRadius:DS.r.full,background:c,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:h&&!disabled?`0 6px 20px ${c}59`:`0 2px 10px ${c}38`,transition:`all .15s ${DS.ease}`,whiteSpace:"nowrap",flexShrink:0}}>{ico&&<DepIco d={ico} size={15} color="#fff" sw={2.4}/>}{children}</button>; }
+function DepMainBtn({T,color,ico,children,onClick,disabled}){ const c=color||T.accentSolid; const [h,setH]=useState(false); return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,height:40,boxSizing:"border-box",padding:"0 20px",border:`1px solid ${c}`,borderRadius:DS.r.full,background:c,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"'Inter',system-ui,sans-serif",boxShadow:"none",filter:h&&!disabled?"brightness(1.08)":"none",transition:`all .15s ${DS.ease}`,whiteSpace:"nowrap",flexShrink:0}}>{ico&&<DepIco d={ico} size={15} color="#fff" sw={2.4}/>}{children}</button>; }
 // Menú de acciones secundarias ("Más"). Se dibuja en un portal a body para que
 // la tarjeta (overflow hidden) no lo recorte. items: [{ico,label,onClick,danger,sep}]
 function DepMenu({T,items,label="Más",size="md",disabled}){
