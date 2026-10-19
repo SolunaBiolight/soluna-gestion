@@ -3033,11 +3033,13 @@ export default async function handler(req, res) {
         id: o.id,
         number: o.order_number || (o.name || "").replace("#", "") || o.id,
         status: o.cancelled_at ? "cancelled" : "open",
-        payment_status: o.financial_status === "paid" ? "paid" : (o.financial_status === "pending" ? "pending" : o.financial_status || ""),
+        payment_status: (o.financial_status === "paid" || o.financial_status === "authorized") ? "paid" : (o.financial_status === "pending" ? "pending" : o.financial_status || ""),
+        payment_authorized: o.financial_status === "authorized" || undefined,
         shipping_status: shStatus,
         contact_name: o.customer ? `${o.customer.first_name || ""} ${o.customer.last_name || ""}`.trim() : (sh.name || ""),
         contact_email: o.email || o.contact_email || o.customer?.email || "",
-        contact_phone: o.phone || sh.phone || o.customer?.phone || "",
+        // Teléfono del DESTINATARIO primero (19/oct/2026): en un regalo el del comprador no sirve para la entrega.
+        contact_phone: sh.phone || o.phone || o.customer?.phone || o.billing_address?.phone || "",
         contact_identification: contactDoc,
         created_at: o.created_at,
         paid_at: o.processed_at,
@@ -3087,27 +3089,36 @@ export default async function handler(req, res) {
         gateway_name: o.payment_gateway_names?.[0] || "",
         storefront: "shopify",
         fulfillments: fulfillments.map(f => ({ status: (f.status || "").toLowerCase() === "success" ? "PACKED" : "PENDING", shipping: { option: { name: f.tracking_company || "" } } })),
-        products: (o.line_items || []).map(li => ({
-          name: li.title || li.name || "",
-          product_name: li.title || li.name || "",
-          quantity: li.quantity || 1,
-          price: li.price || "0",
-          unit_price: li.price || "0",
-          sku: li.sku || "",
-        })),
+        // Productos a ENVIAR (19/oct/2026): fuera lo que no se envía (requires_shipping false: tarjetas de
+        // regalo, protección de envío, propinas), lo sacado del pedido o reembolsado (current_quantity) y, en un
+        // pedido ya despachado en parte, lo que ya salió (fulfillable_quantity). El nombre lleva la variante
+        // ("Anteojos Rojo - Negro") para que sin SKU no se confunda. Si nada queda, se usan las cantidades
+        // originales para no dejar la etiqueta vacía.
+        products: (() => {
+          const parcial = String(o.fulfillment_status || "").toLowerCase() === "partial";
+          const cantDe = li => { const cur = li.current_quantity != null ? Number(li.current_quantity) : Number(li.quantity) || 0; return parcial && li.fulfillable_quantity != null ? Math.min(cur, Number(li.fulfillable_quantity) || 0) : cur; };
+          const mapLi = (li, q) => ({ name: li.name || li.title || "", product_name: li.title || li.name || "", variant: li.variant_title || "", quantity: q, price: li.price || "0", unit_price: li.price || "0", sku: li.sku || "" });
+          const env = (o.line_items || []).filter(li => li.requires_shipping !== false);
+          const lst = env.map(li => mapLi(li, cantDe(li))).filter(p => p.quantity > 0);
+          return lst.length ? lst : env.map(li => mapLi(li, Number(li.quantity) || 1));
+        })(),
         _platform: "shopify",
       };
     };
 
     // Helper Shopify: traer orders con paginación
+    const SH_ENVIABLE = new Set(["paid", "partially_refunded", "authorized"]);
     const shopifyFetchOrders = async (extraQuery) => {
       const out = [];
       let url = `${SH_BASE}/orders.json?limit=250&status=any&${extraQuery}`;
       let safety = 0;
       while (url && safety < 10) {
         safety++;
-        const r = await fetch(url, { headers: SH_HEADERS });
-        if (!r.ok) break;
+        let r = await fetch(url, { headers: SH_HEADERS });
+        // Shopify limitó las llamadas: se espera lo que pide y se reintenta (hasta 3 veces). Cualquier otro
+        // error se informa: antes se cortaba en silencio y la lista salía incompleta (19/oct/2026).
+        for (let k = 0; r.status === 429 && k < 3; k++) { await new Promise(res => setTimeout(res, Math.min(4000, (Number(r.headers.get("retry-after")) || 2) * 1000))); r = await fetch(url, { headers: SH_HEADERS }); }
+        if (!r.ok) { const e = new Error(`Shopify respondió ${r.status} al traer los pedidos${out.length ? ` (se habían traído ${out.length})` : ""}. Probá sincronizar de nuevo en un minuto.`); e.status = r.status; throw e; }
         const d = await r.json();
         out.push(...(d.orders || []));
         const link = r.headers.get("Link") || "";
@@ -3172,7 +3183,10 @@ export default async function handler(req, res) {
     // POR EMPAQUETAR: pagados, pendientes de fulfillment
     if (tab === 'empaquetar') {
       if (platform === 'shopify') {
-        const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=unfulfilled,partial");
+        // Pagados, con reembolso PARCIAL (p. ej. se devolvió el envío) y autorizados sin capturar: también se
+        // despachan (19/oct/2026; antes solo "paid" y esos pedidos no aparecían). `unfulfilled` de Shopify ya
+        // incluye los parciales.
+        const orders = (await shopifyFetchOrders("financial_status=any&fulfillment_status=unfulfilled")).filter(o => SH_ENVIABLE.has(String(o.financial_status || "").toLowerCase()));
         // Retiro en el local / sin envío y pedidos de PRUEBA de Shopify no son etiquetas para hacer.
         const filtered = orders.filter(o => !o.cancelled_at && !o.test).map(shopifyToTNFormat).filter(o => !o.no_envio);
         if (_countOnly) return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
@@ -3198,7 +3212,7 @@ export default async function handler(req, res) {
     if (tab === 'enviar') {
       if (platform === 'shopify') {
         // Shopify no tiene "PACKED" — tomamos partial como ready-to-ship aproximado.
-        const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=partial");
+        const orders = (await shopifyFetchOrders("financial_status=any&fulfillment_status=partial")).filter(o => SH_ENVIABLE.has(String(o.financial_status || "").toLowerCase()));
         // Retiro en el local / sin envío y pedidos de PRUEBA de Shopify no son etiquetas para hacer.
         const filtered = orders.filter(o => !o.cancelled_at && !o.test).map(shopifyToTNFormat).filter(o => !o.no_envio);
         if (_countOnly) return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
@@ -3485,7 +3499,7 @@ export default async function handler(req, res) {
     if (q) {
       const qTrim = q.trim();
       if (platform === 'shopify') {
-        const orders = await shopifyFetchOrders("financial_status=paid");
+        const orders = (await shopifyFetchOrders("financial_status=any")).filter(o => SH_ENVIABLE.has(String(o.financial_status || "").toLowerCase()));
         const sq = qTrim.toLowerCase();
         const filtered = orders.filter(o => !o.cancelled_at && (
           String(o.order_number||o.name||"").toLowerCase().includes(sq) ||
@@ -3501,7 +3515,7 @@ export default async function handler(req, res) {
 
     // Fallback: últimos pedidos pagados
     if (platform === 'shopify') {
-      const orders = await shopifyFetchOrders("financial_status=paid");
+      const orders = (await shopifyFetchOrders("financial_status=any")).filter(o => SH_ENVIABLE.has(String(o.financial_status || "").toLowerCase()));
       const mapped = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
       return res.status(200).json(mapped);
     }
