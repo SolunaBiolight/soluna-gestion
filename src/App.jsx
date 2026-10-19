@@ -20044,6 +20044,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   // Pago con tarjeta (19/oct/2026): el error queda visible en pantalla (no solo en un cartel que se cierra) y,
   // si el navegador no abre Stripe (navegadores de WhatsApp / Instagram), aparece el link para abrirlo a mano.
   const [pagoErr,setPagoErr]=useState(""); const [pagoUrl,setPagoUrl]=useState("");
+  const pagoAvisoRef=useRef(null);
+  useEffect(()=>{ if((pagoErr||pagoUrl)&&pagoAvisoRef.current){ try{ pagoAvisoRef.current.scrollIntoView({behavior:"smooth",block:"center"}); }catch(_){} } },[pagoErr,pagoUrl]);
   const [faqOpen,setFaqOpen]=useState(0);
   const [verMatriz,setVerMatriz]=useState(true);
   const [uDoc,setUDoc]=useState(null);
@@ -20129,7 +20131,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
       if(!r.ok||d.error) throw new Error(d.error||(r.status===401?"Tu sesión venció: recargá la página e iniciá sesión de nuevo.":`El servidor respondió ${r.status}`));
       if(d.url){
         try{ if(d.arrancaAlVencer) sessionStorage.setItem("growith_stripe_diferido","1"); else sessionStorage.removeItem("growith_stripe_diferido"); }catch(e){}
-        setPagoUrl(d.url);
+        setPagoUrl(d.url); // el link queda en pantalla desde ya, por si el navegador no lo abre
         window.location.href=d.url;
         // Si a los 4 s seguimos acá, el navegador no abrió la página de pago: queda el botón para abrirla.
         setTimeout(()=>setLoadingPlan(null),4000);
@@ -20295,22 +20297,22 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
           </div>
         </div>
 
-        {(pagoErr||pagoUrl)&&(
+        {(pagoErr||pagoUrl)&&(<div ref={pagoAvisoRef}>
           <Card T={T} padding="lg" style={{marginBottom:18,border:`1px solid ${(pagoErr?T.red:T.accentSolid)}55`}}>
             {pagoErr?(<>
               <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.red}}>No pudimos abrir el pago</div>
               <div style={{fontSize:DS.font.base,color:T.text,marginTop:6,lineHeight:1.5}}>{pagoErr}</div>
               <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:6,lineHeight:1.5}}>Ya nos llegó el aviso. Si no se resuelve, escribinos{SUPPORT_EMAIL?<> a <strong style={{color:T.text}}>{SUPPORT_EMAIL}</strong></>:""} y te damos acceso mientras lo vemos.</div>
             </>):(<>
-              <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>¿No se abrió la página de pago?</div>
-              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:6,lineHeight:1.5}}>Algunos navegadores (por ejemplo el de WhatsApp o Instagram) no la abren solos. Tocá el botón o copiá el link y abrilo en Chrome o Safari.</div>
+              <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Te estamos llevando al pago…</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:6,lineHeight:1.5}}>Si en unos segundos no se abre la página de pago (pasa en algunos navegadores, como el de WhatsApp o Instagram), tocá "Abrir el pago" o copiá el link y abrilo en Chrome o Safari.</div>
               <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
                 <Btn T={T} variant="primary" onClick={()=>{ try{ window.open(pagoUrl,"_blank","noopener"); }catch(_){ window.location.href=pagoUrl; } }}>Abrir el pago</Btn>
                 <Btn T={T} variant="secondary" onClick={async()=>{ try{ await navigator.clipboard.writeText(pagoUrl); appAlert("Link copiado: pegalo en Chrome o Safari para pagar."); }catch(_){ appPrompt("Copiá el link y abrilo en otro navegador:",pagoUrl); } }}>Copiar link</Btn>
               </div>
             </>)}
           </Card>
-        )}
+        </div>)}
 
         {/* ── Planes ── */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"stretch",paddingTop:14}}>
@@ -21384,6 +21386,7 @@ function AdmFicha({ctx, u, onClose, pestana="resumen"}) {
                 {F("Vence",<span style={{color:d<0?T.red:d<=7?T.yellow:T.text,fontWeight:600}}>{u.planExpiry?`${admFecha(u.planExpiry)} (${d<0?`hace ${Math.abs(d)} d`:d===0?"hoy":`en ${d} d`})`:"sin fecha"}</span>)}
                 {F("Origen",org.label)}
                 {u.stripeStatus&&F("Stripe",<span>{admStripeLabel(u.stripeStatus)}{u.cancelAtPeriodEnd?" · cancela al vencer":""}</span>)}
+                {u.stripeCheckoutUltimo?.at&&F("Último intento de pago",<span title={u.stripeCheckoutUltimo.ua||""} style={{color:u.stripeCheckoutUltimo.ok?T.text:T.red}}>{admRel(u.stripeCheckoutUltimo.at)} · {u.stripeCheckoutUltimo.ok?`se le abrió el link de pago (${admPlanLabel(u.stripeCheckoutUltimo.plan)})${/FBAN|FBAV|Instagram|WhatsApp|; wv\)/.test(u.stripeCheckoutUltimo.ua||"")?" · desde un navegador de app (WhatsApp/Instagram)":""}`:`falló: ${u.stripeCheckoutUltimo.msg||"error"}`}</span>)}
                 {u.planActivadoAt&&F("Activado",`${admFecha(u.planActivadoAt)}${u.planActivadoBy==="stripe"?" por Stripe":u.planActivadoBy?" por admin":""}`)}
                 {F("Pagos reales",<span>{reales.length}{reales.length?` · ${admUsd(reales.filter(p=>p.currency==="USD"||p.currency==="USDT").reduce((s,p)=>s+p.amount,0))} en total`:""}</span>)}
               </>)}

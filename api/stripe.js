@@ -111,7 +111,8 @@ async function registrarFallaPago(db, uid, plan, msg, code) {
     const ref = db.collection("users").doc(uid);
     const snap = await ref.get(); if (!snap.exists) return;
     const u = snap.data() || {};
-    await ref.set({ stripeCheckoutError: { msg: String(msg || "").slice(0, 300), code: code || null, plan: plan || null, at: new Date() } }, { merge: true });
+    await ref.set({ stripeCheckoutError: { msg: String(msg || "").slice(0, 300), code: code || null, plan: plan || null, at: new Date() },
+      stripeCheckoutUltimo: { ok: false, plan: plan || null, msg: String(msg || "").slice(0, 300), at: new Date() } }, { merge: true });
     const tope = db.collection("system").doc("mail_tope").collection("temas").doc("stripe_checkout");
     const ok = await db.runTransaction(async tx => { const s = await tx.get(tope); if (Date.now() - (Number(s.data()?.lastAt) || 0) < 3600000) return false; tx.set(tope, { lastAt: Date.now() }, { merge: true }); return true; });
     if (!ok) return;
@@ -444,7 +445,9 @@ export default async function handler(req, res) {
         customer_update: { address: "auto", name: "auto" },
       });
       if (!session?.url) throw new Error("Stripe no devolvió el link de pago");
-      if (u.stripeCheckoutError) await userRef.set({ stripeCheckoutError: FieldValue.delete() }, { merge: true }).catch(() => {});
+      // Cada link de pago que se arma queda anotado: si el cliente dice "no pasa nada", el Admin ve que
+      // el servidor SÍ le dio el link (o sea que lo que falló fue el navegador al abrirlo).
+      await userRef.set({ stripeCheckoutUltimo: { ok: true, plan, periodo, at: new Date(), ua: String(req.headers["user-agent"] || "").slice(0, 200) }, ...(u.stripeCheckoutError ? { stripeCheckoutError: FieldValue.delete() } : {}) }, { merge: true }).catch(() => {});
       return res.json({ url: session.url, arrancaAlVencer, vence: arrancaAlVencer ? venceManual.toISOString() : null });
     }
 
