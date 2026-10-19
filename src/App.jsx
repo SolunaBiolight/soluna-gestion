@@ -15148,31 +15148,38 @@ async function ghEstamparSkuPdf(b64, lines, info){
     try{ escribir(page,pi); }finally{ if(!alguna&&info) info.fallas.push(pi); alguna=antes||alguna; }
     function escribir(page,pi){
     const z=zonas[pi]; if(!z) return;
+    // Margen izquierdo mínimo (19/oct/2026, pedido de Lautaro): las impresoras térmicas a veces corren
+    // la etiqueta unos milímetros y se comían el principio de los SKU. Nada se escribe a menos de ~6 mm
+    // del borde izquierdo de la página; lo que estaba más a la izquierda se corre y se angosta.
+    const MIN_X=(page.getMediaBox?.().x||0)+17;
+    const corrX=(x,w)=>{ const d=Math.max(0,MIN_X-x); return {x:x+d,w:w-d}; };
     if(z.franja){
       // Franja del pie (etiqueta del portal): texto corrido a todo el ancho, con la
       // letra más grande que entre; si ni con la más chica entra, se corta con "…".
-      const ancho=z.x1-z.x0, alto=z.yTop-z.yBottom; const txt=lines.join("  ·  ");
+      const cx=corrX(z.x0,z.x1-z.x0); const zx0=cx.x;
+      const ancho=cx.w, alto=z.yTop-z.yBottom; const txt=lines.join("  ·  ");
       const partir=size=>{ const out=[]; let cur=""; for(const w of txt.split(/\s+/)){ const t=cur?cur+" "+w:w; if(!cur||font.widthOfTextAtSize(t,size)<=ancho) cur=t; else { out.push(cur); cur=w; } } if(cur) out.push(cur); return out; };
       let size=8, filas=[], maxF=1;
       for(const sz of [8,7,6,5.2]){ size=sz; filas=partir(sz); maxF=Math.max(1,Math.floor((alto+sz*0.12)/(sz*1.12))); if(filas.length<=maxF) break; }
       if(filas.length>maxF){ filas=filas.slice(0,maxF); let u=filas[maxF-1]+" …"; while(u.length>2&&font.widthOfTextAtSize(u,size)>ancho) u=u.slice(0,-3)+"…"; filas[maxF-1]=u; if(info) info.cortado=true; }
-      filas.forEach((t,i)=>{ let u=t; while(u.length>1&&font.widthOfTextAtSize(u,size)>ancho) u=u.slice(0,-2)+"…"; page.drawText(u,{x:z.x0,y:z.yTop-size-i*size*1.12,size,font,color:rgb(0,0,0)}); alguna=true; });
+      filas.forEach((t,i)=>{ let u=t; while(u.length>1&&font.widthOfTextAtSize(u,size)>ancho) u=u.slice(0,-2)+"…"; page.drawText(u,{x:zx0,y:z.yTop-size-i*size*1.12,size,font,color:rgb(0,0,0)}); alguna=true; });
       return;
     }
     if(z.libre){
       // Diseño HOP: hueco libre a la izquierda del QR. Hasta 4 renglones; si hay más productos, dos columnas.
-      const alto=z.yTop-z.yBottom, ancho=z.x1-z.x0; if(alto<10||ancho<60) return;
+      const cx=corrX(z.x0,z.x1-z.x0); const zx0=cx.x;
+      const alto=z.yTop-z.yBottom, ancho=cx.w; if(alto<10||ancho<60) return;
       const grande=lines.length<=3; const size=grande?9:7.5, paso=grande?11:9.2;
       const n=Math.max(1,Math.min(4,Math.floor((alto-size)/paso)+1));
       const nCols=lines.length>n?2:1; const colW=ancho/nCols; const slots=n*nCols;
       let items=lines.slice(); if(items.length>slots) items=[...items.slice(0,slots-1),items.slice(slots-1).join(" · ")];
       const ajustar=(t,maxW)=>{ let out=t; while(out.length>1&&font.widthOfTextAtSize(out,size)>maxW) out=out.slice(0,-2)+"…"; return out; };
-      items.forEach((t,i)=>{ const col=Math.floor(i/n); page.drawText(ajustar(String(t),colW-6),{x:z.x0+col*colW,y:z.yTop-size-(i%n)*paso,size,font,color:rgb(0,0,0)}); alguna=true; });
+      items.forEach((t,i)=>{ const col=Math.floor(i/n); page.drawText(ajustar(String(t),colW-6),{x:zx0+col*colW,y:z.yTop-size-(i%n)*paso,size,font,color:rgb(0,0,0)}); alguna=true; });
       return;
     }
     if(!z.centros||z.centros.length<2) return;
     const colW=z.centros[1]-z.centros[0];
-    const cols=z.centros.slice(0,3).map(c=>({x:c-colW/2+5,maxW:colW-10}));
+    const cols=z.centros.slice(0,3).map(c=>{ const k=corrX(c-colW/2+5,colW-10); return {x:k.x,maxW:k.w}; });
     const size=6.5, paso=8;
     // Zona útil: debajo de la línea que cierra la cabecera (≈3 pt bajo su
     // baseline) y arriba de la que cierra la tabla (≈7 pt sobre "IMPORTANTE").
