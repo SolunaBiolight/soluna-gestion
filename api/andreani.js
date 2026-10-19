@@ -275,7 +275,7 @@ export async function getGlobalConfig(db) {
       // gestión nueva y resuelve todo desde ahí. El token lo genera ejecutivaTokenAsegurar.
       ejecutivaEmail: String(d.ejecutivaEmail || "").trim().slice(0, 160),
       ejecutivaToken: String(d.ejecutivaToken || "").trim(),
-      fiscal: (d.fiscal && typeof d.fiscal === "object") ? { iibbPct: Number(d.fiscal.iibbPct) || 0, cuit: String(d.fiscal.cuit || ""), costoConIva: d.fiscal.costoConIva !== false } : null,
+      fiscal: (d.fiscal && typeof d.fiscal === "object") ? { iibbPct: Number(d.fiscal.iibbPct) || 0, cuit: String(d.fiscal.cuit || ""), costoConIva: d.fiscal.costoConIva !== false, desde: String(d.fiscal.desde || "") } : null,
     };
   } catch (_) {
     return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14, emailGestiones: "contacto.growith@gmail.com", ejecutivaEmail: "", ejecutivaToken: "", _lecturaFallo: true };
@@ -1169,6 +1169,9 @@ async function sendEmail({ to, subject, html }) {
 }
 
 // Mes actual en hora Argentina, formato YYYY-MM (para stats mensuales).
+// Cargas que cuentan como "pendientes de facturar" (Admin → Envíos → Facturación): desde la fecha que el
+// admin elige en la config fiscal (fiscal.desde, AAAA-MM-DD, hora AR); sin fecha, todas.
+function factDesdeMs(fiscal) { const d = String(fiscal?.desde || ""); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? Date.parse(d + "T00:00:00-03:00") : 0; }
 // "YYYY-MM" (hora argentina) de un timestamp en ms.
 function mesDeMs(ms) {
   if (!ms) return "";
@@ -3701,6 +3704,8 @@ export default async function handler(req, res) {
         const serieMeses = [];
         for (let i = 5; i >= 0; i--) { const dd = new Date(Date.UTC(y, m - 1 - i, 1)); serieMeses.push(dd.toISOString().slice(0, 7)); }
         const cargadoMes = {};
+        let pendN = 0, pendMonto = 0;
+        const FACT_DESDE_MS = factDesdeMs((await getGlobalConfig(db)).fiscal);
         try {
           const cs = await db.collection("andreani_cargas").where("estado", "==", "acreditada").limit(3000).get();
           cs.docs.forEach(c => {
@@ -3708,6 +3713,7 @@ export default async function handler(req, res) {
             const t = cd.resueltaTs?.toMillis?.() || cd.ts?.toMillis?.() || 0;
             const mk = mesDeMs(t);
             if (serieMeses.includes(mk)) cargadoMes[mk] = (cargadoMes[mk] || 0) + Math.round(Number(cd.monto) || 0);
+            if (!cd.factura?.comprobante && t >= FACT_DESDE_MS) { pendN++; pendMonto += Math.round(Number(cd.monto) || 0); }
             if (t < desdeMs || t >= hastaMs) return;
             if (cd.factura?.comprobante) { cargasFact++; montoFact += Math.round(Number(cd.monto) || 0); }
             const monto = Math.round(Number(cd.monto) || 0);
@@ -3754,6 +3760,7 @@ export default async function handler(req, res) {
           serie,
           fiscal: cfgS.fiscal || null,
           facturacion: { cargas: cargasN, facturadas: cargasFact, montoFacturado: montoFact, sinFacturar: cargadoTotal - montoFact },
+          pendientesFacturar: { n: pendN, monto: pendMonto },
           etiquetas: Number(d.etiquetas) || 0,
           cargadoTotal, cargasN,
           saldoTotal: cuentas.reduce((a, c) => a + (c.saldo || 0), 0),
@@ -3766,18 +3773,21 @@ export default async function handler(req, res) {
       if (action === "admin_fiscal_set" && req.method === "POST") {
         const iibb = Number(body.iibbPct);
         if (!(iibb >= 0 && iibb <= 20)) return res.status(400).json({ error: "El % de Ingresos Brutos tiene que estar entre 0 y 20" });
-        const fiscal = { iibbPct: Math.round(iibb * 100) / 100, cuit: String(body.cuit || "").replace(/\D/g, "").slice(0, 11), costoConIva: body.costoConIva !== false, at: Date.now(), por: adm.user.uid };
+        const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(body.desde || "")) ? String(body.desde) : "";
+        const fiscal = { iibbPct: Math.round(iibb * 100) / 100, cuit: String(body.cuit || "").replace(/\D/g, "").slice(0, 11), costoConIva: body.costoConIva !== false, desde, at: Date.now(), por: adm.user.uid };
         await db.collection("andreani_config").doc("global").set({ fiscal }, { merge: true });
         return res.json({ ok: true, fiscal });
       }
       // Cargas de saldo acreditadas en un mes, con su factura (si ya se hizo).
       if (action === "admin_cargas_mes") {
-        const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? String(body.mes) : mesAR();
-        const [yy, mm] = mes.split("-").map(Number);
-        const desde = new Date(Date.UTC(yy, mm - 1, 1, 3)).getTime(), hasta = new Date(Date.UTC(yy, mm, 1, 3)).getTime();
+        const pend = String(body.mes || "") === "pendientes";
+        const FACT_DESDE_MS = factDesdeMs((await getGlobalConfig(db)).fiscal);
+        const mes = pend ? "pendientes" : /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? String(body.mes) : mesAR();
+        const [yy, mm] = pend ? [0, 0] : mes.split("-").map(Number);
+        const desde = pend ? FACT_DESDE_MS : new Date(Date.UTC(yy, mm - 1, 1, 3)).getTime(), hasta = pend ? Infinity : new Date(Date.UTC(yy, mm, 1, 3)).getTime();
         const cs = await db.collection("andreani_cargas").where("estado", "==", "acreditada").limit(3000).get();
         const cargas = [];
-        cs.docs.forEach(c => { const cd = c.data(); const t = cd.resueltaTs?.toMillis?.() || cd.ts?.toMillis?.() || 0; if (t < desde || t >= hasta) return;
+        cs.docs.forEach(c => { const cd = c.data(); const t = cd.resueltaTs?.toMillis?.() || cd.ts?.toMillis?.() || 0; if (t < desde || t >= hasta) return; if (pend && cd.factura?.comprobante) return;
           cargas.push({ id: c.id, uid: cd.uid, email: cd.email || "", monto: Math.round(Number(cd.monto) || 0), metodo: cd.metodo || "transferencia", ref: cd.ref || cd.codigo || "", ts: t,
             factura: cd.factura ? { letra: cd.factura.letra || "", pv: cd.factura.pv || null, comprobante: cd.factura.comprobante || null, cae: cd.factura.cae || "", cuit: cd.factura.cuit || "", receptor: cd.factura.receptor || "Consumidor Final", at: cd.factura.at || null, comprobante_id: cd.factura.comprobante_id || "" } : null }); });
         const faltan = [...new Set(cargas.filter(c => !c.email && c.uid).map(c => c.uid))].slice(0, 100);

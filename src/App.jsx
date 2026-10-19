@@ -21088,7 +21088,7 @@ function AppAdmin({T, user, onBack}) {
           <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
             <DepSeg T={T} size="md" value={tab} onChange={t=>setTab(t)} items={ADM_TABS.map(([v,l])=>[v,v==="hacer"&&porAtender?<span key={v} style={{display:"inline-flex",alignItems:"center",gap:6}}>{l}<span style={{fontSize:10,fontWeight:800,background:T.red,color:"#fff",borderRadius:99,padding:"1px 7px"}}>{porAtender}</span></span>:l])}/>
             <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-              {ADM_SUBS[tab]&&<DepSeg T={T} value={sub} onChange={setSub} items={ADM_SUBS[tab].map(([v,l])=>[v,v==="billeteras"&&(envCargas.length+limboN)?`${l} · ${envCargas.length+limboN}`:v==="operacion"&&casosAb.length?`${l} · ${casosAb.length}`:l])}/>}
+              {ADM_SUBS[tab]&&<DepSeg T={T} value={sub} onChange={setSub} items={ADM_SUBS[tab].map(([v,l])=>[v,v==="billeteras"&&(envCargas.length+limboN)?`${l} · ${envCargas.length+limboN}`:v==="operacion"&&casosAb.length?`${l} · ${casosAb.length}`:v==="facturacion"&&statsMes?.pendientesFacturar?.n?`${l} · ${statsMes.pendientesFacturar.n}`:l])}/>}
               <span style={{fontSize:DS.font.md,color:T.textSm}}>{ADM_TAB_DESC[tab]}</span>
             </div>
           </div>
@@ -21131,6 +21131,8 @@ function AdmHacer({ctx, stats}) {
   // Las cargas en revisión ya vienen en envCargas (con su botón de acreditar): acá solo las que no estén ahí.
   const cargasYa=new Set(envCargas.map(c=>c.id));
   (L.cargasRevision||[]).filter(x=>!cargasYa.has(x.id)).forEach((x,i)=>items.push({k:"crv_"+i+(x.id||""),sev:"red",tipo:"Carga en revisión",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`${fmtMoney(x.monto??0)} · ${x.motivo||x.nota||"pago aprobado sobre una carga cancelada"}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","billeteras")}>Ver billeteras</DepBtn>}));
+  // Cargas de saldo de envíos sin facturar (negocio del admin): un solo ítem con el botón a Facturación.
+  if(statsMes?.pendientesFacturar?.n>0) items.push({k:"factenv",sev:"yellow",tipo:"Envíos sin facturar",titulo:`${statsMes.pendientesFacturar.n} carga${statsMes.pendientesFacturar.n===1?"":"s"} de saldo`,desc:`${fmtMoney(statsMes.pendientesFacturar.monto)} cobrados por el checkout y transferencias, todavía sin factura.`,acciones:<DepBtn T={T} variant="primary" size="sm" onClick={()=>setTab("envios","facturacion")}>Facturar lo pendiente</DepBtn>});
   // No pudo iniciar el pago con tarjeta en los últimos 7 días (y sigue sin Stripe activo).
   usuarios.filter(u=>u.stripeCheckoutError?.at&&ahora-u.stripeCheckoutError.at<7*86400000&&u.stripeStatus!=="active"&&u.stripeStatus!=="trialing").forEach(u=>items.push({k:"sce_"+u._id,sev:"red",tipo:"No pudo pagar el plan",titulo:u.email,desc:`${u.stripeCheckoutError.msg||"Error al abrir el pago"} · ${admRel(u.stripeCheckoutError.at)}`,acciones:ver(u._id)}));
   pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:ver(u._id)}));
@@ -24001,6 +24003,10 @@ function AdmEnvios({ctx}) {
             </div></div>}
           </>); })()}
         </Card>
+        {stats.data?.pendientesFacturar?.n>0&&<div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",border:`1px solid ${T.yellow}55`,background:T.yellow+"10",borderRadius:16,padding:"12px 16px"}}>
+          <div style={{flex:1,minWidth:200,fontSize:13,color:T.text}}><strong>{stats.data.pendientesFacturar.n} carga{stats.data.pendientesFacturar.n===1?"":"s"} sin facturar</strong> · {fmtMoney(stats.data.pendientesFacturar.monto)}</div>
+          <Btn T={T} variant="primary" size="sm" onClick={()=>ctx.setSub&&ctx.setSub("facturacion")}>Facturar lo pendiente</Btn>
+        </div>}
         {stats.data&&!stats.loading&&<AdmEnviosFiscal T={T} d={stats.data} onGuardado={()=>loadStats(mes)}/>}
         <AdmConciliacion T={T} usuariosPorUid={usuariosPorUid}/>
       </>)}
@@ -24096,18 +24102,22 @@ function AdmEnviosFiscal({T, d, onGuardado}){
 }
 function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
   const cuits=useAdmMisCuits();
-  const [mes,setMes]=useState(meses[0].v); const [data,setData]=useState(null); const [err,setErr]=useState("");
+  const [mes,setMes]=useState("pendientes"); const [data,setData]=useState(null); const [err,setErr]=useState("");
+  const [fiscal,setFiscal]=useState(null); const [desde,setDesde]=useState("");
   const [sel,setSel]=useState({}); const [datos,setDatos]=useState({}); const [cuit,setCuit]=useState(""); const [busy,setBusy]=useState(false); const [res,setRes]=useState(null);
   const cargar=async(m=mes)=>{ setData(null); setErr(""); setSel({}); try{ const d=await admAndreani(`admin_cargas_mes&mes=${encodeURIComponent(m)}`); setData(d.cargas||[]); }catch(e){ setErr(e.message); } };
   useEffect(()=>{ cargar(mes); },[mes]);
-  useEffect(()=>{ (async()=>{ try{ const g=await admAndreani("admin_config"); if(g?.fiscal?.cuit) setCuit(g.fiscal.cuit); }catch(_){} })(); },[]);
-  useEffect(()=>{ if(!cuit&&cuits&&cuits.length) setCuit(String(cuits[0].cuit||"").replace(/\D/g,"")); },[cuits]);
+  useEffect(()=>{ (async()=>{ try{ const g=await admAndreani("admin_config"); setFiscal(g?.fiscal||{}); setDesde(g?.fiscal?.desde||""); if(g?.fiscal?.cuit) setCuit(g.fiscal.cuit); }catch(_){ setFiscal({}); } })(); },[]);
+  // CUIT por defecto: el guardado en la config fiscal; si no, el de Soluna (RI); si no, el primero.
+  useEffect(()=>{ if(!cuit&&cuits&&cuits.length){ const sol=cuits.find(c=>String(c.cuit||"").replace(/\D/g,"")==="20428272391"); setCuit(String((sol||cuits[0]).cuit||"").replace(/\D/g,"")); } },[cuits]);
+  const guardarDesde=async(v)=>{ setDesde(v); await admAndreani("admin_fiscal_set",{iibbPct:fiscal?.iibbPct||0,cuit:fiscal?.cuit||cuit,costoConIva:fiscal?.costoConIva!==false,desde:v}); setFiscal(f=>({...(f||{}),desde:v})); cargar(mes); };
   const lista=data||[]; const sin=lista.filter(c=>!c.factura); const con=lista.filter(c=>c.factura);
   const elegidas=sin.filter(c=>sel[c.id]);
   const tot=a=>a.reduce((s,c)=>s+(c.monto||0),0);
   const pedirDatos=async(c)=>{ const doc=await appPrompt(`CUIT o DNI del cliente para la carga de ${fmtMoney(c.monto)} (${c.email||c.uid}). Dejalo vacío para Consumidor Final:`, datos[c.id]?.doc_nro||""); if(doc===null||doc===undefined) return; const dn=String(doc).replace(/\D/g,""); if(!dn){ setDatos(p=>{ const n={...p}; delete n[c.id]; return n; }); return; } if(!(dn.length===11||(dn.length>=7&&dn.length<=8))) return toast("Un CUIT tiene 11 dígitos y un DNI 7 u 8","error"); const nom=await appPrompt("Nombre o razón social que va en la factura:", datos[c.id]?.nombre||""); if(!nom) return; setDatos(p=>({...p,[c.id]:{doc_tipo:dn.length===11?"CUIT":"DNI",doc_nro:dn,nombre:String(nom).trim()}})); setSel(p=>({...p,[c.id]:true})); };
-  const facturar=async()=>{
+  const facturar=async(todas)=>{
     if(!cuit) return toast("Elegí el CUIT con el que facturás","error");
+    const elegidas=todas?sin:sin.filter(c=>sel[c.id]);
     if(!elegidas.length) return;
     const cf=elegidas.filter(c=>!datos[c.id]).length;
     if(!(await appConfirm(`Se emiten ${elegidas.length} factura${elegidas.length===1?"":"s"} en ARCA por ${fmtMoney(tot(elegidas))}${cf?` (${cf} a Consumidor Final)`:""}, con el CUIT ${cuit}. No se puede deshacer (solo con nota de crédito). ¿Seguimos?`))) return;
@@ -24123,13 +24133,21 @@ function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
     finally{ setBusy(false); setRes(out); cargar(mes); }
   };
   return (<Card T={T} padding="lg">
-    <AdmTitulo T={T} t="Facturar las cargas de saldo" sub="Una factura por carga, por el total que cargó el cliente, como servicio. Por defecto a Consumidor Final; si un cliente te pidió factura, cargale sus datos. Quedan en tu Facturador → Registros." right={<AdmSelect T={T} value={mes} onChange={e=>setMes(e.target.value)}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</AdmSelect>}/>
-    <DepStrip T={T} items={[{c:T.blue,l:"Cargas del mes",v:String(lista.length),s:fmtMoney(tot(lista))},{c:T.green,l:"Facturadas",v:String(con.length),s:fmtMoney(tot(con))},{c:sin.length?T.yellow:T.green,l:"Sin facturar",v:String(sin.length),s:fmtMoney(tot(sin))}]}/>
+    <AdmTitulo T={T} t="Facturar las cargas de saldo" sub="Una factura por carga, por el total que cargó el cliente, como servicio. Por defecto a Consumidor Final; si un cliente te pidió factura, cargale sus datos. Se emiten desde acá con tu CUIT; quedan también en tu Facturador → Registros (para el IVA y el Libro IVA)." right={<AdmSelect T={T} value={mes} onChange={e=>setMes(e.target.value)}><option value="pendientes">Todo lo pendiente</option>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</AdmSelect>}/>
+    {sin.length>0&&<div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",border:`1px solid ${T.accentSolid}44`,background:T.accentSolid+"10",borderRadius:16,padding:"14px 16px",marginBottom:14}}>
+      <div style={{flex:1,minWidth:220}}>
+        <div style={{fontSize:15,fontWeight:700,color:T.text}}>{sin.length} carga{sin.length===1?"":"s"} sin facturar · {fmtMoney(tot(sin))}</div>
+        <div style={{fontSize:12,color:T.textMd,marginTop:3}}>{mes==="pendientes"?"De todos los meses":"De este mes"}{desde?` · desde el ${desde.split("-").reverse().join("/")}`:""}. Las que tienen datos del cliente salen a su nombre; el resto a Consumidor Final.</div>
+      </div>
+      <Btn T={T} variant="primary" size="lg" disabled={busy||!cuit} onClick={()=>facturar(true)}>{busy?"Facturando…":"Facturar lo pendiente"}</Btn>
+    </div>}
+    <DepStrip T={T} items={[{c:T.blue,l:mes==="pendientes"?"Cargas pendientes":"Cargas del mes",v:String(lista.length),s:fmtMoney(tot(lista))},{c:T.green,l:"Facturadas",v:String(con.length),s:fmtMoney(tot(con))},{c:sin.length?T.yellow:T.green,l:"Sin facturar",v:String(sin.length),s:fmtMoney(tot(sin))}]}/>
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",margin:"14px 0"}}>
       <select value={cuit} onChange={e=>setCuit(e.target.value)} style={{...InputStyle(T),width:"auto",minWidth:260}}>{cuits===null?<option>Cargando CUITs…</option>:!cuits.length?<option value="">No tenés CUITs en el Facturador</option>:cuits.map(c=>{ const v=String(c.cuit||"").replace(/\D/g,""); return <option key={v} value={v}>{c.razon_social||c.nombre_fantasia||v} · {c.condicion_fiscal==="MONOTRIBUTO"?"Monotributo (C)":"Resp. inscripto (A/B)"}</option>; })}</select>
       {sin.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={()=>setSel(elegidas.length===sin.length?{}:Object.fromEntries(sin.map(c=>[c.id,true])))}>{elegidas.length===sin.length?"Destildar todo":`Seleccionar las ${sin.length} sin facturar`}</Btn>}
       <div style={{flex:1}}/>
-      <Btn T={T} variant="primary" disabled={busy||!elegidas.length||!cuit} onClick={facturar}>{busy?"Facturando…":elegidas.length?`Facturar ${elegidas.length} · ${fmtMoney(tot(elegidas))}`:"Facturar"}</Btn>
+      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}>Facturar cargas desde<input type="date" value={desde} onChange={e=>guardarDesde(e.target.value).catch(er=>toast(er.message,"error"))} style={{...InputStyle(T),width:150,padding:"7px 10px"}}/></label>
+      <Btn T={T} variant="secondary" disabled={busy||!elegidas.length||!cuit} onClick={()=>facturar(false)}>{elegidas.length?`Facturar solo las ${elegidas.length} tildadas`:"Tildá para facturar algunas"}</Btn>
     </div>
     {res&&<div style={{border:`1px solid ${res.some(x=>!x.ok)?T.yellow+"66":T.green+"55"}`,borderRadius:14,padding:"10px 14px",marginBottom:12,fontSize:12,color:T.textMd,lineHeight:1.6}}>
       <div style={{fontWeight:700,color:T.text}}>{res.filter(x=>x.ok&&!x.ya).length} facturada{res.filter(x=>x.ok&&!x.ya).length===1?"":"s"}{res.some(x=>!x.ok)?` · ${res.filter(x=>!x.ok).length} con problema`:""}</div>
@@ -24139,7 +24157,7 @@ function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
       <div style={{border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
         {lista.map((c,i)=>{ const dd=datos[c.id]; return (<div key={c.id} style={{display:"grid",gridTemplateColumns:"28px minmax(0,1.6fr) 110px 120px minmax(0,1.4fr)",gap:10,alignItems:"center",padding:"10px 14px",borderBottom:i<lista.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
           <span>{!c.factura&&<input type="checkbox" checked={!!sel[c.id]} onChange={e=>setSel(p=>({...p,[c.id]:e.target.checked}))}/>}</span>
-          <span style={{minWidth:0}}><button onClick={()=>usuariosPorUid[c.uid]&&setCuenta(c.uid)} style={{background:"transparent",border:"none",padding:0,color:T.text,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{c.email||String(c.uid||"").slice(0,10)}</button><span style={{display:"block",fontSize:11,color:T.textSm}}>{new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})} · {c.metodo==="mp"?"Mercado Pago":"Transferencia"}{c.ref?` · ${c.ref}`:""}</span></span>
+          <span style={{minWidth:0}}><button onClick={()=>usuariosPorUid[c.uid]&&setCuenta(c.uid)} style={{background:"transparent",border:"none",padding:0,color:T.text,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{c.email||String(c.uid||"").slice(0,10)}</button><span style={{display:"block",fontSize:11,color:T.textSm}}>{new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",...(mes==="pendientes"?{year:"2-digit"}:{})})} · {c.metodo==="mp"?"Mercado Pago":"Transferencia"}{c.ref?` · ${c.ref}`:""}</span></span>
           <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(c.monto)}</span>
           <span>{c.factura?<DSBadge T={T} color={T.green} size="sm">Factura {c.factura.letra} {String(c.factura.pv||"").padStart(4,"0")}-{String(c.factura.comprobante||"").padStart(8,"0")}</DSBadge>:<DSBadge T={T} color={T.yellow} size="sm">Sin facturar</DSBadge>}</span>
           <span style={{minWidth:0,color:T.textMd,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>{c.factura?<span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.factura.receptor}</span>:<><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dd?`${dd.nombre} · ${dd.doc_tipo} ${dd.doc_nro}`:"Consumidor Final"}</span><Btn T={T} variant="ghost" size="sm" onClick={()=>pedirDatos(c)}>{dd?"Cambiar":"Con sus datos"}</Btn></>}</span>
