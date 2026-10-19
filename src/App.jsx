@@ -20625,6 +20625,7 @@ const ADM_CRONS = [
   { key:"check-expiring",             label:"Avisos de vencimiento de plan",   cada:"Todos los días 10:00 UTC", maxH:26 },
   { key:"check-payments",             label:"Acreditación de cargas de Mercado Pago", cada:"Cada 10 minutos",   maxH:1 },
   { key:"orders_warm_margenes",       label:"Precalentado del Dashboard",      cada:"Cada 5 minutos",           maxH:1 },
+  { key:"orders_recompra_backfill",   label:"Historial de clientes (recompra)", cada:"Cada 10 minutos",          maxH:1 },
   { key:"stock_warm_all",             label:"Precalentado de Stock",           cada:"Cada 15 minutos",          maxH:1 },
   { key:"update-shipping_track_all",  label:"Seguimiento de envíos",           cada:"Cada 30 minutos",          maxH:2 },
   { key:"andreani_hop_index_cron",    label:"Índice de puntos HOP Andreani",  cada:"Cada hora (por tandas)",   maxH:2 },
@@ -45317,6 +45318,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {label:"True ROAS",   val:fmtX(tot.trueRoas),  c:tot.trueRoas,   p:prevTot.trueRoas,   hint:`meta ≥ ${metas.trueRoas}x`, spk:dailyRows.map(r=>r["True ROAS"]||0), bad:(tot.trueRoas||0)<metas.trueRoas},
               {label:"CPA real",    val:fmtM(tot.cpa),       c:tot.cpa,        p:prevTot.cpa,        hint:"Ad Spend / Órdenes",     spk:dailyRows.map(r=>r.CPA||0), inv:true},
               {label:"CPA Break Even", val:fmtM(tot.cpaBreakEven), c:tot.cpaBreakEven, p:prevTot.cpaBreakEven, hint:"CPA máx. antes de perder"},
+              // Recompra (19/oct/2026): % de la facturación que viene de clientes que ya habían comprado antes.
+              (()=>{ const rc=rendData?.recompra; const enCarga=rc&&!rc.historialCompleto;
+                return {label:"Recompra", val:rc?fmtPct((rc.pct||0)/100):"—", c:rc?(rc.pct||0)/100:null, p:rc?.prev?(rc.prev.pct||0)/100:null,
+                  hint:rc?`${fmtInt(rc.clientesVolvieron||0)} cliente${rc.clientesVolvieron===1?"":"s"} que volvieron · ${fmtPct((rc.pctOrdenes||0)/100)} de las órdenes${enCarga?` · historial cargado desde ${rc.historialDesde?admMesLabel(rc.historialDesde):"este mes"} (se completa solo)`:""}`:"Se calcula en la próxima actualización"}; })(),
               {label:"AOV",         val:fmtM(tot.aov),       c:tot.aov,        p:prevTot.aov,        hint:"Ticket promedio", spk:dailyRows.map(r=>(r["Ordenes > $0"]||0)>0?(r.Revenue||0)/r["Ordenes > $0"]:0)},
               {label:"Margen",      val:fmtPct(tot.profitMargin), c:tot.profitMargin, p:prevTot.profitMargin, hint:`meta > ${metas.margen}%`, bad:(tot.profitMargin||0)<=metas.margen/100, spk:dailyRows.map(r=>(r.Revenue||0)>0?(r.Profit||0)/r.Revenue*100:0), zero:true},
               {label:"Break Even",  val:fmtX(tot.breakEvenRoas), c:tot.breakEvenRoas, p:prevTot.breakEvenRoas, hint:"ROAS de equilibrio", inv:true},

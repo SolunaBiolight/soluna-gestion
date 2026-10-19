@@ -1,5 +1,6 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { createHash } from "crypto";
 import { getValidMLToken } from "./integrations.js";
 import { gadsCreds } from "./google-ads.js";
 import { ttGastoPeriodo } from "./tiktok-ads.js";
@@ -299,6 +300,49 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
 }
 
 
+// ── Recompra (19/oct/2026, pedido de Lautaro): qué % de la facturación viene de clientes que ya habían
+// comprado antes. Índice users/{uid}/clientes_idx/s0..sf {m: {hash: "AAAA-MM-DD|idOrden"}} = primera compra
+// conocida de cada cliente (hash del id, nunca el email). Se llena con cada cálculo del Dashboard y con el
+// cron recompra_backfill (12 meses hacia atrás). Tienda y Mercado Libre son clientes distintos (no se
+// pueden cruzar: ML no da el email). Puro salvo el hash.
+export const RECOMPRA_SHARDS = "0123456789abcdef".split("").map(c => "s" + c);
+export function recompraHash(k) { return createHash("sha1").update(String(k)).digest("hex").slice(0, 16); }
+export function recompraVentas(raw) {
+  const out = [];
+  for (const o of (raw?.orders_detail || [])) {
+    const c = String(o.cust || "").trim().toLowerCase(); const rev = parseFloat(o.revenue) || 0;
+    if (!c || !(rev > 0)) continue;
+    out.push({ h: recompraHash(`${o.platform || "tienda"}:${c}`), fecha: String(o.fecha || "").slice(0, 10), id: String(o.id || ""), rev });
+  }
+  for (const o of (raw?.ml_data?.ml_orders_detail || [])) {
+    if (o.refunded) continue;
+    const c = String(o.cust || "").trim(); const rev = parseFloat(o.revenue) || 0;
+    if (!c || !(rev > 0)) continue;
+    out.push({ h: recompraHash(`ml:${c}`), fecha: String(o.fecha || "").slice(0, 10), id: String(o.id || ""), rev });
+  }
+  return out.filter(v => /^\d{4}-\d{2}-\d{2}$/.test(v.fecha));
+}
+// Primeras compras que el índice todavía no tiene (o que son más viejas que lo guardado). Devuelve {hash: val}.
+export function recompraNuevas(ventas, idx) {
+  const out = {};
+  for (const v of ventas) { const val = `${v.fecha}|${v.id}`; const prev = out[v.h] || idx[v.h]; if (!prev || val < prev) out[v.h] = val; }
+  for (const k of Object.keys(out)) if (idx[k] && idx[k] <= out[k]) delete out[k];
+  return out;
+}
+// Una venta es RECOMPRA si el cliente tiene una compra anterior (otra orden en una fecha previa, o el mismo día
+// pero una orden distinta y más vieja según el índice).
+export function recompraDe(ventas, idx) {
+  let rev = 0, revR = 0, n = 0, nR = 0; const clientes = new Set(), volvieron = new Set();
+  for (const v of ventas) {
+    rev += v.rev; n++; clientes.add(v.h);
+    const pri = idx[v.h]; if (!pri) continue;
+    const [f, id] = pri.split("|");
+    if (f < v.fecha || (f === v.fecha && id !== v.id && `${f}|${id}` < `${v.fecha}|${v.id}`)) { revR += v.rev; nR++; volvieron.add(v.h); }
+  }
+  return { facturacion: Math.round(rev), recompra: Math.round(revR), pct: rev > 0 ? Math.round(revR / rev * 1000) / 10 : 0,
+    ordenes: n, ordenesRecompra: nR, pctOrdenes: n > 0 ? Math.round(nR / n * 1000) / 10 : 0, clientes: clientes.size, clientesVolvieron: volvieron.size };
+}
+
 // ── Dirección y documento de Shopify (15/oct/2026, auditoría del Excel de zensleep) ──────────
 // Shopify mete calle, número y a veces piso/depto en address1: "Av. Siempreviva 742 piso 3",
 // "Belgrano 1234, 3B", "Ruta 143 12330". Antes se tomaba el ÚLTIMO número ("3") como altura.
@@ -526,6 +570,46 @@ export default async function handler(req, res) {
     if (_dbg) return res.status(200).json({ ...resp, _debug: _dbg }); // sin cachear
     try { await cacheRef.set({ ts: Date.now(), resp }); } catch (_) {}
     return res.status(200).json(resp);
+  }
+
+  // ── Recompra: carga del historial de clientes (cron cada 10 min, 19/oct/2026) ──────────────────
+  // Por cuenta, UN mes por pasada, de atrás para adelante desde el mes actual hasta 12 meses: pide el
+  // snapshot de ventas de ese mes a /api/stock (mismo origen que el Dashboard) y suma al índice las
+  // primeras compras. users/{uid}.clientesIdxDesde = mes más viejo cargado; clientesIdxCompleto al llegar.
+  if (action === 'recompra_backfill') {
+    if (!guardCron(req, res)) return;
+    try {
+      const db = initAdmin(); const t0 = Date.now(); const out = { cuentas: 0, meses: 0, errores: 0, completas: 0 };
+      const hoyAr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const mesMenos = (ym, n) => { const [y, m] = ym.split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 - n, 1)); return d.toISOString().slice(0, 7); };
+      const limite = mesMenos(hoyAr.slice(0, 7), 12);
+      const us = await db.collection("users").select("stores", "clientesIdxDesde", "clientesIdxCompleto", "demo", "deleted").limit(800).get();
+      const pend = us.docs.filter(d => { const x = d.data(); if (x.clientesIdxCompleto || x.deleted || esDemo(x)) return false; return (x.stores || []).some(st => ["tiendanube", "shopify", "mercadolibre"].includes(st.type)); })
+        .sort((a, b) => String(b.data().clientesIdxDesde || "9999").localeCompare(String(a.data().clientesIdxDesde || "9999"))); // las que menos llevan, primero
+      for (const d of pend) {
+        if (Date.now() - t0 > 20000) break; // un mes en vivo puede tardar 15-50 s: no se encadenan muchos
+        const x = d.data(); const desde = x.clientesIdxDesde || hoyAr.slice(0, 7); const mes = mesMenos(desde, 1);
+        out.cuentas++;
+        if (mes < limite) { await d.ref.set({ clientesIdxCompleto: true }, { merge: true }); out.completas++; continue; }
+        try {
+          const [y, m] = mes.split("-").map(Number); const ult = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+          const u = new URL(`https://${req.headers.host}/api/stock`); u.searchParams.set("uid", d.id); u.searchParams.set("action", "products"); u.searchParams.set("date_from", `${mes}-01`); u.searchParams.set("date_to", ult);
+          const r = await fetch(u.toString(), { headers: { host: req.headers.host, Authorization: `Bearer ${process.env.CRON_SECRET || ""}` }, signal: AbortSignal.timeout(60000) });
+          if (!r.ok) throw new Error(`stock HTTP ${r.status}`);
+          const raw = await r.json(); if (raw?.error) throw new Error(String(raw.error));
+          const ventas = recompraVentas(raw);
+          if (ventas.length) {
+            const col = d.ref.collection("clientes_idx");
+            const snaps = await db.getAll(...RECOMPRA_SHARDS.map(sh => col.doc(sh)));
+            const idx = {}; snaps.forEach(sn => { if (sn.exists) Object.assign(idx, sn.data().m || {}); });
+            const nuevas = recompraNuevas(ventas, idx);
+            if (Object.keys(nuevas).length) { const porShard = {}; for (const [h, v] of Object.entries(nuevas)) { const sh = "s" + h[0]; (porShard[sh] = porShard[sh] || {})[h] = v; } const b = db.batch(); for (const [sh, mm] of Object.entries(porShard)) b.set(col.doc(sh), { m: mm }, { merge: true }); await b.commit(); }
+          }
+          await d.ref.set({ clientesIdxDesde: mes }, { merge: true }); out.meses++;
+        } catch (e) { out.errores++; console.warn(`[recompra_backfill] ${d.id} ${mes}:`, e.message); }
+      }
+      return res.json({ ok: true, ...out, pendientes: pend.length });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
   if (action === 'warm_margenes') {
@@ -2442,7 +2526,26 @@ export default async function handler(req, res) {
       // de una métrica (v2 = facturación TN incluye envío cobrado al cliente;
       // v3 = corte de día TN en hora argentina; v4 = envío ML real con descuentos; v5 = envío ML en cero para ventas devueltas; v6 = Net Revenue = contribución antes de pauta) para que los caches del
       // cliente (P&L mensual) descarten resultados viejos.
-      const responseBody = { engineV: 6, fp, rows, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
+      // Recompra (19/oct/2026): % de la facturación de clientes que ya habían comprado. Lee el índice de
+      // primeras compras, le suma las de este cálculo (período actual y anterior) y calcula ambos períodos.
+      let recompra = null;
+      try {
+        const vCurr = recompraVentas(curr.raw), vPrev = recompraVentas(prev.raw);
+        if (vCurr.length || vPrev.length) {
+          const col = db.collection("users").doc(uid).collection("clientes_idx");
+          const snaps = await db.getAll(...RECOMPRA_SHARDS.map(x => col.doc(x)));
+          const idx = {}; snaps.forEach(sn => { if (sn.exists) Object.assign(idx, sn.data().m || {}); });
+          const nuevas = recompraNuevas([...vPrev, ...vCurr], idx);
+          Object.assign(idx, nuevas);
+          if (!demoMode && Object.keys(nuevas).length) {
+            const porShard = {}; for (const [h, v] of Object.entries(nuevas)) { const sh = "s" + h[0]; (porShard[sh] = porShard[sh] || {})[h] = v; }
+            const b = db.batch(); for (const [sh, m] of Object.entries(porShard)) b.set(col.doc(sh), { m }, { merge: true }); await b.commit();
+          }
+          const desde = userData.clientesIdxDesde || null; // mes más viejo ya cargado por el backfill
+          recompra = { ...recompraDe(vCurr, idx), prev: vPrev.length ? recompraDe(vPrev, idx) : null, historialDesde: desde, historialCompleto: !!userData.clientesIdxCompleto };
+        }
+      } catch (e) { console.warn("[daily_metrics] recompra:", e.message); }
+      const responseBody = { engineV: 6, fp, rows, recompra, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         // Percepciones/retenciones de ML del período: total leído de los pagos, si se
         // descuentan (opt-in) y cuántas órdenes del período tienen el dato.
