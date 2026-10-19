@@ -20041,6 +20041,9 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
   const [step,setStep]=useState("planes");
   const [anual,setAnual]=useState(false);
   const [loadingPlan,setLoadingPlan]=useState(null);
+  // Pago con tarjeta (19/oct/2026): el error queda visible en pantalla (no solo en un cartel que se cierra) y,
+  // si el navegador no abre Stripe (navegadores de WhatsApp / Instagram), aparece el link para abrirlo a mano.
+  const [pagoErr,setPagoErr]=useState(""); const [pagoUrl,setPagoUrl]=useState("");
   const [faqOpen,setFaqOpen]=useState(0);
   const [verMatriz,setVerMatriz]=useState(true);
   const [uDoc,setUDoc]=useState(null);
@@ -20118,15 +20121,27 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
     if(loadingPlan) return;
     setLoadingPlan(planId);
     const pl=PLANES.find(p=>p.id===planId);
+    setPagoErr(""); setPagoUrl("");
+    const ctrl=new AbortController(); const tmo=setTimeout(()=>ctrl.abort(),45000);
     try{
-      const r=await authFetch("/api/stripe?action=checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:(auth.currentUser?.uid||user.uid),plan:planId,periodo:anual?"anual":"mensual"})});
+      const r=await authFetch("/api/stripe?action=checkout",{method:"POST",signal:ctrl.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:(auth.currentUser?.uid||user.uid),plan:planId,periodo:anual?"anual":"mensual"})});
       const d=await r.json().catch(()=>({}));
-      if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
-      if(d.url){ try{ if(d.arrancaAlVencer) sessionStorage.setItem("growith_stripe_diferido","1"); else sessionStorage.removeItem("growith_stripe_diferido"); }catch(e){} window.location.href=d.url; return; }
+      if(!r.ok||d.error) throw new Error(d.error||(r.status===401?"Tu sesión venció: recargá la página e iniciá sesión de nuevo.":`El servidor respondió ${r.status}`));
+      if(d.url){
+        try{ if(d.arrancaAlVencer) sessionStorage.setItem("growith_stripe_diferido","1"); else sessionStorage.removeItem("growith_stripe_diferido"); }catch(e){}
+        setPagoUrl(d.url);
+        window.location.href=d.url;
+        // Si a los 4 s seguimos acá, el navegador no abrió la página de pago: queda el botón para abrirla.
+        setTimeout(()=>setLoadingPlan(null),4000);
+        return;
+      }
       if(d.changed){ toast(`Plan cambiado a ${pl?.nombre}${anual?" anual":""}`,"success"); setLoadingPlan(null); return; }
       if(d.already){ toast("Ya tenés ese plan activo","info"); setLoadingPlan(null); return; }
       throw new Error("Respuesta inesperada");
-    }catch(e){ appAlert("No pudimos iniciar el pago: "+e.message); setLoadingPlan(null); }
+    }catch(e){
+      const msg=e?.name==="AbortError"?"El pago tardó demasiado en abrirse. Revisá tu conexión y probá de nuevo.":(e.message||"Error desconocido");
+      setPagoErr(msg); setLoadingPlan(null);
+    }finally{ clearTimeout(tmo); }
   }
   async function abrirPortal(){
     try{
@@ -20279,6 +20294,23 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
             <button onClick={()=>setAnual(true)} style={seg(anual)}>Anual<span style={{fontSize:DS.font.xs,fontWeight:700,padding:"2px 7px",borderRadius:DS.r.full,background:anual?"rgba(255,255,255,0.22)":T.green+"22",color:anual?"#fff":T.green}}>2 meses gratis</span></button>
           </div>
         </div>
+
+        {(pagoErr||pagoUrl)&&(
+          <Card T={T} padding="lg" style={{marginBottom:18,border:`1px solid ${(pagoErr?T.red:T.accentSolid)}55`}}>
+            {pagoErr?(<>
+              <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.red}}>No pudimos abrir el pago</div>
+              <div style={{fontSize:DS.font.base,color:T.text,marginTop:6,lineHeight:1.5}}>{pagoErr}</div>
+              <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:6,lineHeight:1.5}}>Ya nos llegó el aviso. Si no se resuelve, escribinos{SUPPORT_EMAIL?<> a <strong style={{color:T.text}}>{SUPPORT_EMAIL}</strong></>:""} y te damos acceso mientras lo vemos.</div>
+            </>):(<>
+              <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>¿No se abrió la página de pago?</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginTop:6,lineHeight:1.5}}>Algunos navegadores (por ejemplo el de WhatsApp o Instagram) no la abren solos. Tocá el botón o copiá el link y abrilo en Chrome o Safari.</div>
+              <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}}>
+                <Btn T={T} variant="primary" onClick={()=>{ try{ window.open(pagoUrl,"_blank","noopener"); }catch(_){ window.location.href=pagoUrl; } }}>Abrir el pago</Btn>
+                <Btn T={T} variant="secondary" onClick={async()=>{ try{ await navigator.clipboard.writeText(pagoUrl); appAlert("Link copiado: pegalo en Chrome o Safari para pagar."); }catch(_){ appPrompt("Copiá el link y abrilo en otro navegador:",pagoUrl); } }}>Copiar link</Btn>
+              </div>
+            </>)}
+          </Card>
+        )}
 
         {/* ── Planes ── */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18,alignItems:"stretch",paddingTop:14}}>
@@ -20955,7 +20987,8 @@ function AppAdmin({T, user, onBack}) {
   const etiquetasMes = useMemo(()=>{ const m={}; (statsMes?.cuentas||[]).forEach(c=>{ m[c.uid]=c; }); return m; },[statsMes]);
   const limboN=["dudosos","reversosPendientes","anuladasConIngreso"].reduce((n,k)=>n+((limbo.data||{})[k]||[]).length,0)
     + ((limbo.data||{}).cargasRevision||[]).filter(x=>!envCargas.some(c=>c.id===x.id)).length; // las que ya cuenta envCargas no se suman dos veces
-  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length + limboN + casosAb.length + cronsMal.length;
+  const sinPagar = usuarios.filter(u=>u.stripeCheckoutError?.at&&ahora-u.stripeCheckoutError.at<7*86400000&&u.stripeStatus!=="active"&&u.stripeStatus!=="trialing").length;
+  const porAtender = envCargas.length + pagosPendientes.length + pastDue.length + sinPagar + limboN + casosAb.length + cronsMal.length;
   const primerPagoUid = useMemo(()=>{ const m={}; [...pagosReales].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(p=>{ if(!m[p.uid]) m[p.uid]=p._id; }); return m; },[pagosReales]);
   const esNueva = p => p.billingReason==="subscription_create" || (p.method!=="stripe" && primerPagoUid[p.uid]===p._id);
 
@@ -21086,6 +21119,8 @@ function AdmHacer({ctx, stats}) {
   // Las cargas en revisión ya vienen en envCargas (con su botón de acreditar): acá solo las que no estén ahí.
   const cargasYa=new Set(envCargas.map(c=>c.id));
   (L.cargasRevision||[]).filter(x=>!cargasYa.has(x.id)).forEach((x,i)=>items.push({k:"crv_"+i+(x.id||""),sev:"red",tipo:"Carga en revisión",titulo:quien(x.uid)?.email||x.email||x.uid,desc:`${fmtMoney(x.monto??0)} · ${x.motivo||x.nota||"pago aprobado sobre una carga cancelada"}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","billeteras")}>Ver billeteras</DepBtn>}));
+  // No pudo iniciar el pago con tarjeta en los últimos 7 días (y sigue sin Stripe activo).
+  usuarios.filter(u=>u.stripeCheckoutError?.at&&ahora-u.stripeCheckoutError.at<7*86400000&&u.stripeStatus!=="active"&&u.stripeStatus!=="trialing").forEach(u=>items.push({k:"sce_"+u._id,sev:"red",tipo:"No pudo pagar el plan",titulo:u.email,desc:`${u.stripeCheckoutError.msg||"Error al abrir el pago"} · ${admRel(u.stripeCheckoutError.at)}`,acciones:ver(u._id)}));
   pastDue.forEach(u=>items.push({k:"pd_"+u._id,sev:"red",tipo:"Pago fallido",titulo:u.email,desc:`Stripe no pudo cobrar ${admPlanLabel(u.plan)}${u.stripePaymentFailedAt?" · "+admRel(u.stripePaymentFailedAt):""}. Stripe reintenta solo; si no paga, se cancela.`,acciones:ver(u._id)}));
   casosAb.forEach(c=>items.push({k:"caso_"+c.id,sev:c.nuevoAndreani?"yellow":"red",tipo:c.nuevoAndreani?"Andreani respondió":"Gestión con Andreani",titulo:c.tienda||c.email||c.uid,desc:`${c.motivoLabel||c.motivo} · pedido #${c.numero}${c.ts?" · "+admRel(c.ts):""}`,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("envios","operacion")}>Ver gestión</DepBtn>}));
   cronsMal.forEach(c=>{ const e=cronEstado(c); items.push({k:"cron_"+c.key,sev:e.id==="error"?"red":"yellow",tipo:e.id==="error"?"Cron con error":"Cron atrasado",titulo:c.label,desc:e.desc,acciones:<DepBtn T={T} size="sm" onClick={()=>setTab("sistema")}>Ver sistema</DepBtn>}); });

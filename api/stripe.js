@@ -25,7 +25,7 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { createHmac, timingSafeEqual } from "crypto";
-import { guardUid } from "./_auth.js";
+import { requireUid } from "./_auth.js";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 
 const STRIPE_API = "https://api.stripe.com/v1";
@@ -100,6 +100,27 @@ async function stripe(method, path, params, idemKey) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error?.message || `Stripe HTTP ${r.status}`);
   return j;
+}
+
+// Falla al iniciar un pago con tarjeta (19/oct/2026, caso zensleep "no me deja pagar, no redirecciona"):
+// queda en users/{uid}.stripeCheckoutError (lo muestra el Admin en "Para hacer" y en la ficha) y avisa al
+// fundador por mail, como máximo uno por hora. Nunca rompe la respuesta.
+const FUNDADOR_UID = "WJH3ArqDPQcNLha9lOinvkVi9uJ2";
+async function registrarFallaPago(db, uid, plan, msg, code) {
+  try {
+    const ref = db.collection("users").doc(uid);
+    const snap = await ref.get(); if (!snap.exists) return;
+    const u = snap.data() || {};
+    await ref.set({ stripeCheckoutError: { msg: String(msg || "").slice(0, 300), code: code || null, plan: plan || null, at: new Date() } }, { merge: true });
+    const tope = db.collection("system").doc("mail_tope").collection("temas").doc("stripe_checkout");
+    const ok = await db.runTransaction(async tx => { const s = await tx.get(tope); if (Date.now() - (Number(s.data()?.lastAt) || 0) < 3600000) return false; tx.set(tope, { lastAt: Date.now() }, { merge: true }); return true; });
+    if (!ok) return;
+    const f = await db.collection("users").doc(FUNDADOR_UID).get();
+    const to = f.exists ? String(f.data().email || "").trim() : "";
+    const esc = x => String(x || "").replace(/[<>&]/g, "");
+    if (to) await sendEmail({ to, subject: `Un cliente no pudo pagar el plan: ${esc(u.email || uid)}`,
+      html: `<div style="font-family:system-ui,sans-serif;font-size:15px;line-height:1.6;color:#111"><p><strong>${esc(u.email || uid)}</strong> intentó pagar el plan ${esc(plan || "")} con tarjeta y falló:</p><p style="background:#f4f4f5;padding:10px 14px;border-radius:8px">${esc(msg)}</p><p>Lo ves en Admin → Para hacer. Si el cliente quedó bloqueado, desde su ficha podés darle unos días mientras lo resolvés.</p></div>` });
+  } catch (e) { console.warn("[stripe] registrarFallaPago:", e.message); }
 }
 
 async function sendEmail({ to, subject, html }) {
@@ -347,9 +368,16 @@ export default async function handler(req, res) {
   const body = await new Promise(resolve => { let d = ""; req.on("data", c => d += c); req.on("end", () => { try { resolve(JSON.parse(d || "{}")); } catch { resolve({}); } }); });
   const uid = String(body.uid || req.query.uid || "");
   if (!uid) return res.status(401).json({ error: "Falta uid" });
-  const auth = await guardUid(req, res, uid);
-  if (!auth) return;
-  if (auth.viaTeam) return res.status(403).json({ error: "Solo el dueño de la cuenta puede gestionar la suscripción." });
+  const auth = await requireUid(req, uid);
+  if (!auth.ok) {
+    if (action === "checkout" && auth.code !== 401) await registrarFallaPago(db, uid, body.plan, auth.error, "acceso");
+    return res.status(auth.code).json({ error: auth.error });
+  }
+  if (auth.viaTeam) {
+    const msgTeam = "Solo el dueño de la cuenta puede pagar o cambiar el plan. Entrá con el usuario del dueño.";
+    if (action === "checkout") await registrarFallaPago(db, uid, body.plan, msgTeam, "equipo");
+    return res.status(403).json({ error: msgTeam });
+  }
   const userRef = db.collection("users").doc(uid);
   const u = (await userRef.get()).data() || {};
   const origin = SITE;
@@ -415,6 +443,8 @@ export default async function handler(req, res) {
         billing_address_collection: "auto",
         customer_update: { address: "auto", name: "auto" },
       });
+      if (!session?.url) throw new Error("Stripe no devolvió el link de pago");
+      if (u.stripeCheckoutError) await userRef.set({ stripeCheckoutError: FieldValue.delete() }, { merge: true }).catch(() => {});
       return res.json({ url: session.url, arrancaAlVencer, vence: arrancaAlVencer ? venceManual.toISOString() : null });
     }
 
@@ -436,6 +466,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Acción desconocida" });
   } catch (e) {
     console.error(`[stripe] ${action}:`, e.message);
+    if (action === "checkout") await registrarFallaPago(db, uid, body.plan, e.message, "stripe");
     return res.status(502).json({ error: e.message });
   }
 }
