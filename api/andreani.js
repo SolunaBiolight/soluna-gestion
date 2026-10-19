@@ -2133,7 +2133,9 @@ export default async function handler(req, res) {
       if (envioRef) {
         const eSnap = await envioRef.get();
         const ya = eSnap.exists ? eSnap.data()?.andreani : null;
-        if (ya?.numeroDeEnvio) {
+        // Una etiqueta ANULADA no cuenta como emitida (19/oct/2026): antes el pedido quedaba bloqueado para
+        // siempre ("ya tenía etiqueta") y el número anulado podía subirse a la tienda como seguimiento.
+        if (ya?.numeroDeEnvio && !ya?.anulada) {
           return res.json({
             ok: true, yaEmitido: true,
             numeroDeEnvio: ya.numeroDeEnvio,
@@ -2289,6 +2291,7 @@ export default async function handler(req, res) {
       if (Date.now() - tEmitir0 > 35000) {
         return res.status(503).json({ error: "Andreani tardó demasiado en responder y no se emitió la etiqueta (no se debitó saldo). Reintentá en un minuto.", code: "andreani_lento" });
       }
+      let prevAnulado = null; // número de una etiqueta anterior ANULADA de este mismo pedido (si la hubo)
       const movRef = movCol.doc();
       let saldoRestante;
       try {
@@ -2297,9 +2300,14 @@ export default async function handler(req, res) {
           if (envioRef) {
             const eSnap = await tx.get(envioRef);
             const ea = eSnap.exists ? eSnap.data()?.andreani : null;
-            if (ea?.numeroDeEnvio) { const err = new Error("ya_emitido"); err.yaEmitido = ea; throw err; }
+            if (ea?.numeroDeEnvio && !ea?.anulada) { const err = new Error("ya_emitido"); err.yaEmitido = ea; throw err; }
+            if (ea?.numeroDeEnvio && ea?.anulada) prevAnulado = String(ea.numeroDeEnvio);
             const lockTs = Number(ea?.emitiendoTs || 0);
             if (lockTs && Date.now() - lockTs < 120000) { const err = new Error("emision_en_curso"); err.enCurso = true; throw err; }
+            // Lock VIEJO que nadie borró (19/oct/2026): el lock solo se pone junto con el débito y se borra
+            // al terminar (bien, con reverso o dudosa). Si sigue ahí pasados 2 min, la emisión anterior se
+            // cortó DESPUÉS de cobrar (timeout de la función) → no se cobra de nuevo: queda dudosa.
+            if (lockTs && !ea?.dudosoTs) { const err = new Error("emision_cortada"); err.dudoso = true; err.cortada = lockTs; throw err; }
             // Emisión anterior DUDOSA (no sabemos si Andreani la creó): no se
             // vuelve a emitir hasta que Growith concilie — duplicar es peor.
             if (ea?.dudosoTs && !ea?.dudosoResuelto) { const err = new Error("emision_dudosa"); err.dudoso = true; throw err; }
@@ -2335,6 +2343,10 @@ export default async function handler(req, res) {
         if (e.enCurso) {
           return res.status(409).json({ error: "Este envío se está emitiendo en este momento (otra pestaña o compañera). Esperá unos segundos y actualizá.", code: "en_curso" });
         }
+        if (e.dudoso && e.cortada && envioRef) {
+          try { await envioRef.set({ andreani: { dudosoTs: e.cortada, emitiendoTs: FieldValue.delete() } }, { merge: true }); } catch (_) {}
+          await mailFundador(db, `Emisión Andreani CORTADA — conciliar (uid ${uid})`, `<p>La emisión del envío ${envioId || "(sin id)"} de ${uData.email || uid} se cortó después de debitar (la función no terminó). Quedó como emisión dudosa: verificá en Andreani si la orden se creó y resolvela desde Admin → Envíos → Billeteras (dinero en el limbo).</p>`, "dudosa");
+        }
         if (e.dudoso) {
           return res.status(409).json({ error: "Este pedido tiene una emisión anterior sin confirmar: el equipo de Growith la está conciliando con Andreani para que no se cobre dos veces. Revisá Seguimientos más tarde.", code: "dudoso" });
         }
@@ -2368,6 +2380,10 @@ export default async function handler(req, res) {
         const probadas = [];
         for (let k = 0; k < intentos.length; k++) {
           const it = intentos[k];
+          // Presupuesto de tiempo DESPUÉS del débito (19/oct/2026): la función tiene 60 s. Si ya pasaron 42 s,
+          // no se prueba otra variante (las anteriores fueron rechazos claros → no hay orden creada) y se
+          // devuelve el saldo con un error claro, antes de que Vercel corte a mitad y quede todo sin marcar.
+          if (k > 0 && Date.now() - tEmitir0 > 42000) { ordenErr = "Andreani tardó demasiado en aceptar el punto de destino y no se emitió la etiqueta. Se devolvió el saldo; reintentá en unos minutos."; break; }
           const r = await andreaniFetch(db, env, "/v2/ordenes-de-envio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(it.body) });
           if (r.ok) {
             ordenData = await r.json();
@@ -2378,12 +2394,16 @@ export default async function handler(req, res) {
           const txt = await r.text().catch(() => "");
           const rr = { status: r.status, text: async () => txt };
           ordenErr = await andreaniError(rr, "Andreani rechazó la orden de envío");
+          // Error del lado de Andreani (5xx) o timeout (408): NO es un rechazo claro — la orden pudo haberse
+          // creado igual. Se trata como dudosa (débito retenido, admin concilia) en vez de devolver el saldo
+          // y dejar que el reintento emita y cobre otra etiqueta (19/oct/2026).
+          if (r.status >= 500 || r.status === 408) { ambiguo = true; probadas.push(`${it.nombre || "domicilio"} → HTTP ${r.status} (sin confirmar)`); break; }
           probadas.push(`${it.nombre || "domicilio"}${it.nombre ? `=${JSON.stringify(it.body.destino.sucursal)}` : ""} → HTTP ${r.status} ${String(txt).replace(/\s+/g, " ").slice(0, 240)}`);
           // Solo se sigue si el rechazo es por el identificador y quedan variantes.
           if (!sv || k === intentos.length - 1 || !esErrorIdSucursal(r.status, txt)) break;
           console.log(`[emitir] sucursal ${sucDestinoOficial?.id} variante "${it.nombre}" rechazada (${String(txt).slice(0, 120)}) → pruebo "${intentos[k + 1].nombre}"`);
         }
-        if (ordenErr && sv && probadas.length > 1) {
+        if (ordenErr && sv && probadas.length > 1 && !ambiguo) {
           const detalle = `[${sucIdsResumen(sucDestinoOficial)}] ${probadas.join(" | ")}`;
           console.error(`[emitir] sucursal ${sucDestinoOficial?.id} sin identificador válido: ${detalle}`);
           if (sv.tipo === "hop") {
@@ -2455,6 +2475,8 @@ export default async function handler(req, res) {
       const numeroDeEnvio = String(ordenData.bultos[0].numeroDeEnvio);
       const andreaniInfo = {
         numeroDeEnvio,
+        // Re-emisión de un pedido con etiqueta anulada: se limpia la marca y queda el número viejo de historial.
+        ...(prevAnulado ? { anulada: FieldValue.delete(), anuladaAt: FieldValue.delete(), anulacionInmediata: FieldValue.delete(), anuladas: FieldValue.arrayUnion(prevAnulado) } : {}),
         estado: ordenData.estado || "Pendiente",
         precio,
         tipo,
@@ -3071,7 +3093,7 @@ export default async function handler(req, res) {
           await ensureShopifyToken(db, target, sh);
           if (!sh.accessToken) return res.status(400).json({ error: "Shopify sin token válido — reconectar" });
           tn = { storeId: sh.shop };
-          r = await fetch(`https://${sh.shop}/admin/api/2024-10${path}`, { headers: { "X-Shopify-Access-Token": sh.accessToken }, signal: AbortSignal.timeout(12000) });
+          r = await fetch(`https://${sh.shop}/admin/api/2026-07${path}`, { headers: { "X-Shopify-Access-Token": sh.accessToken }, signal: AbortSignal.timeout(12000) });
         } else {
           tn = (ud.stores || []).find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
           if (!tn) return res.status(400).json({ error: "Esa cuenta no tiene Tienda Nube conectada" });

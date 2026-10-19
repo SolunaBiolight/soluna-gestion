@@ -274,7 +274,7 @@ async function subirTrackingTienda(db, uid, uData, { orderId, tracking }) {
   if (shStore) {
     await ensureShopifyToken(db, uid, shStore);
     const shHeaders = { 'X-Shopify-Access-Token': shStore.accessToken, 'Content-Type': 'application/json' };
-    const shBase = `https://${shStore.shop}/admin/api/2024-10`;
+    const shBase = `https://${shStore.shop}/admin/api/2026-07`;
     // Shopify limita a ~2 req/s por tienda: ante 429 se espera lo que pide
     // (Retry-After) y se reintenta una vez, en vez de fallar el seguimiento.
     const shFetch = async (url, opts) => {
@@ -356,21 +356,33 @@ async function subirTrackingTienda(db, uid, uData, { orderId, tracking }) {
         if (enEspera) return { ok: false, status: 400, code: "shopify_hold", error: `El pedido #${orderId} está en espera en Shopify (retenido o programado): liberalo en Shopify y volvé a enviar el seguimiento.` };
         return { ok: false, status: 400, code: "shopify_sin_items", error: `El pedido #${orderId} no tiene items pendientes de despacho en Shopify.` };
       }
-      // 3. Crear el fulfillment con tracking + aviso al cliente
-      const pr = await shFetch(`${shBase}/fulfillments.json`, {
-        method: 'POST', headers: shHeaders,
-        body: JSON.stringify({ fulfillment: {
-          line_items_by_fulfillment_order: abiertos.map(fo => ({ fulfillment_order_id: fo.id })),
-          tracking_info: { number: tracking, url: trackingUrl, company: "Andreani" },
-          notify_customer: true,
-        } }),
-      });
-      if (pr.status === 401 || pr.status === 403) return sinPermiso();
-      if (!pr.ok) {
+      // 3. Crear el fulfillment con tracking + aviso al cliente (19/oct/2026):
+      //   - solo los FO que esta app puede despachar (supported_actions incluye create_fulfillment); los de
+      //     una app de logística (fulfillment service) son de esa app;
+      //   - UN fulfillment por depósito (assigned_location_id): Shopify rechaza mezclar ubicaciones.
+      const propios = abiertos.filter(fo => !Array.isArray(fo.supported_actions) || fo.supported_actions.includes("create_fulfillment"));
+      if (!propios.length) return { ok: false, status: 400, code: "shopify_fo_ajeno", error: `El pedido #${orderId} lo despacha otra app o depósito conectado a Shopify (por ejemplo una app de logística): Shopify no deja que Growith lo marque como enviado. El seguimiento quedó guardado en Growith; cargalo en esa app o en Shopify.` };
+      const porUbicacion = new Map();
+      for (const fo of propios) { const k = String(fo.assigned_location_id || fo.assigned_location?.location_id || "x"); if (!porUbicacion.has(k)) porUbicacion.set(k, []); porUbicacion.get(k).push(fo); }
+      const fallas = []; let hechos = 0;
+      for (const grupo of porUbicacion.values()) {
+        const pr = await shFetch(`${shBase}/fulfillments.json`, {
+          method: 'POST', headers: shHeaders,
+          body: JSON.stringify({ fulfillment: {
+            line_items_by_fulfillment_order: grupo.map(fo => ({ fulfillment_order_id: fo.id })),
+            tracking_info: { number: tracking, url: trackingUrl, company: "Andreani" },
+            notify_customer: hechos === 0, // un solo mail al comprador aunque haya varios depósitos
+          } }),
+        });
+        if (pr.ok) { hechos++; continue; }
         const pd = await pr.json().catch(() => ({}));
-        const fulfillError = pd.errors ? JSON.stringify(pd.errors).slice(0, 200) : `Shopify ${pr.status}`;
-        return { ok: false, status: 502, code: "shopify_fulfillment", error: `No se pudo crear el fulfillment: ${fulfillError}` };
+        const det = pd.errors ? JSON.stringify(pd.errors).slice(0, 200) : `Shopify ${pr.status}`;
+        // 403 en el POST con los FO ya leídos: no es falta de permiso de la app sino un FO que Shopify no deja
+        // tocar (de otra app / depósito). Antes se informaba como "falta permiso" y el cron lo abandonaba.
+        fallas.push(pr.status === 403 ? "una parte del pedido la maneja otra app o depósito en Shopify" : det);
       }
+      if (!hechos) return { ok: false, status: 502, code: "shopify_fulfillment", error: `No se pudo marcar el pedido #${orderId} como enviado en Shopify: ${fallas.join(" · ")}` };
+      if (fallas.length) return { ok: true, tnOrderId: String(order.id), fulfilled: true, fulfillError: `Se marcó en Shopify, pero no todo: ${fallas.join(" · ")}` };
       return { ok: true, tnOrderId: String(order.id), fulfilled: true, fulfillError: null };
     } catch (e) {
       if (e && e.scope) return sinPermiso();

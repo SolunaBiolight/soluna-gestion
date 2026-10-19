@@ -1290,6 +1290,52 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
 // Confirmación de localidades dudosas antes de descargar el Excel a domicilio (15/oct/2026, zensleep).
 // Un renglón por pedido con lo que escribió el comprador y un desplegable con la sugerencia de
 // Growith ya elegida; "Confirmar" devuelve {numero: entrada | "EXCLUIR"} y se guarda en la memoria.
+// Datos obligatorios que faltan (19/oct/2026, auditoría Shopify): Andreani exige altura (domicilio), DNI y
+// celular. Antes salían vacíos (Excel rechazado) o con altura "0" (etiqueta sin número). Puro.
+function ghFaltanDatos(o,{domicilio}={}){
+  const out=[];
+  if(o?.sinDatosCliente||(domicilio&&o?.canal==="shopify"&&(!String(o.direccion||"").trim()||!String(o.cp||"").trim()))) return ["direccion"];
+  const n=String(o?.dirNumero||"").trim();
+  if(domicilio&&(!n||n==="0"||!/\d/.test(n))) out.push("numero");
+  if(o?.canal==="shopify"){
+    if(String(o.dni||"").replace(/\D/g,"").length<7) out.push("dni");
+    const t=ghTelAR(o.telefono); if(!t.cod||String(t.num||"").length<6) out.push("tel");
+  }
+  return out;
+}
+const GH_FALTA_LABEL={numero:"Altura (número de puerta)",dni:"DNI",tel:"Celular con código de área",direccion:"Dirección"};
+function DatosFaltanModal({T,items,onDone,onCancel}){
+  const [v,setV]=useState(()=>Object.fromEntries(items.map(x=>[x.o.numero,{dirNumero:"",dni:x.o.dni||"",telefono:x.o.telefono||"",excluir:x.faltan.includes("direccion")}])));
+  const iS=InputStyle(T);
+  const ok=x=>{ const e=v[x.o.numero]; if(e.excluir) return true; return x.faltan.every(k=>k==="numero"?/\d/.test(e.dirNumero):k==="dni"?String(e.dni).replace(/\D/g,"").length>=7:(()=>{ const t=ghTelAR(e.telefono); return !!t.cod&&String(t.num).length>=6; })()); };
+  const listos=items.every(ok);
+  const set=(n,k,val)=>setV(s=>({...s,[n]:{...s[n],[k]:val}}));
+  return (<Modal T={T} open onClose={onCancel} title={`Faltan datos en ${items.length===1?"1 pedido":`${items.length} pedidos`}`} width={760} zIndex={1800}>
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>Andreani los pide para hacer la etiqueta. Completalos acá (se usan solo para esta etiqueta) o marcá "No hacer este pedido ahora".</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"58vh",overflowY:"auto"}}>
+        {items.map(x=>{ const o=x.o; const e=v[o.numero]; return (<div key={o.numero} style={{border:`1px solid ${ok(x)?T.border:T.yellow+"66"}`,borderRadius:DS.r.xl,padding:"12px 14px",display:"flex",flexDirection:"column",gap:10,background:T.card,opacity:e.excluir?0.55:1}}>
+          <div style={{display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
+            <strong style={{fontSize:DS.font.lg,color:T.accent}}>#{o.numero}</strong>
+            <span style={{fontSize:DS.font.base,color:T.text,fontWeight:600}}>{o.comprador}</span>
+            <span style={{fontSize:DS.font.md,color:T.textMd,flex:1,minWidth:200}}>{[o.direccion,o.piso,o.ciudad||o.localidad,o.cp?`CP ${o.cp}`:""].filter(Boolean).join(", ")}</span>
+          </div>
+          {x.faltan.includes("direccion")&&<div style={{fontSize:DS.font.md,color:T.yellow,lineHeight:1.5}}>Shopify no mandó la dirección ni los datos del comprador de este pedido. Suele pasar cuando la app de Shopify no tiene habilitados los "datos protegidos del cliente" (nombre, dirección, teléfono) o el plan de la tienda no los da por API. Habilitalos en la app y volvé a sincronizar. Si es un retiro en el local, ignoralo.</div>}
+          {!e.excluir&&!x.faltan.includes("direccion")&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8}}>
+            {x.faltan.includes("numero")&&<label style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:600}}>{GH_FALTA_LABEL.numero}<input value={e.dirNumero} onChange={ev=>set(o.numero,"dirNumero",ev.target.value.replace(/[^\dA-Za-z]/g,"").slice(0,7))} placeholder="Ej. 1234" inputMode="numeric" style={{...iS,marginTop:4}}/></label>}
+            {x.faltan.includes("dni")&&<label style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:600}}>{GH_FALTA_LABEL.dni}<input value={e.dni} onChange={ev=>set(o.numero,"dni",ev.target.value)} placeholder="Ej. 30123456" inputMode="numeric" style={{...iS,marginTop:4}}/></label>}
+            {x.faltan.includes("tel")&&<label style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:600}}>{GH_FALTA_LABEL.tel}<input value={e.telefono} onChange={ev=>set(o.numero,"telefono",ev.target.value)} placeholder="Ej. 11 5555 1234" inputMode="tel" style={{...iS,marginTop:4}}/></label>}
+          </div>}
+          {!x.faltan.includes("direccion")&&<label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.textMd,cursor:"pointer"}}><input type="checkbox" checked={e.excluir} onChange={ev=>set(o.numero,"excluir",ev.target.checked)}/>No hacer este pedido ahora</label>}
+        </div>); })}
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
+        <DepBtn T={T} variant="secondary" size="lg" onClick={onCancel}>Cancelar</DepBtn>
+        <DepBtn T={T} variant="primary" size="lg" ico="check" disabled={!listos} onClick={()=>onDone(v)}>{listos?"Seguir":"Completá los datos marcados"}</DepBtn>
+      </div>
+    </div>
+  </Modal>);
+}
 function LocConfirmModal({T,items,onDone,onCancel}){
   const [sel,setSel]=useState(()=>Object.fromEntries(items.map(x=>[x.o.numero,x.sug])));
   const iS=InputStyle(T);
@@ -4662,6 +4708,7 @@ function buildOrdersFromAPI(data) {
       // id OFICIAL de la sucursal → Envíos emite directo, sin adivinar el punto.
       andreaniSucursalId:o.andreani_sucursal_id||o.shipping_pickup_details?.andreaniSucursalId||null,
       andreaniCheckout:!!o.andreani_checkout,
+      sinDatosCliente:!!o.sin_datos_cliente,
       canal:o.storefront||'', tracking:o.shipping_tracking_number||'',
       linkOrden:o.admin_url||(o.id?`https://www.tiendanube.com/admin/orders/${o.id}`:""),
       fechaPago:o.paid_at||'', fechaEnvio:o.shipped_at||'',
@@ -10587,9 +10634,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // Número de envío Andreani ya emitido para un pedido (sesión local o Firestore)
   function andreaniNumeroDe(o){
     if(!o) return null;
+    // Una etiqueta ANULADA no cuenta (19/oct/2026): el pedido se puede volver a emitir y ese número
+    // nunca se sube a la tienda como seguimiento.
+    const fs=enviosFs[o.numero];
     return andreaniEmitidos[o.numero]?.numeroDeEnvio
-      || enviosFs[o.numero]?.andreani?.numeroDeEnvio
-      || enviosFs[o.numero]?.andreaniNumero
+      || (fs?.andreani?.anulada?null:(fs?.andreani?.numeroDeEnvio||fs?.andreaniNumero))
       || null;
   }
 
@@ -10909,6 +10958,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
   // Match contra el desplegable del template — núcleo único ghMatchSucursal
   // (mismo criterio que la etiqueta individual de Canjes/Reclamos).
+  // Argumentos del match automático de sucursal (19/oct/2026). En Shopify la dirección del pedido es la
+  // CASA del comprador (o, con otra app, no se sabe si es el punto): no se usa para adivinar el punto —
+  // antes una casa con la misma calle y número que un HOP de otra ciudad lo elegía en silencio.
+  // Solo queda el NOMBRE del método de envío; el resto lo resuelve el id del checkout o el selector.
+  function sucArgs(o){
+    if(o?.canal==="shopify"||o?.pickupDetails?.origen==="shopify") return ["",{...(o.pickupDetails||{}),address:{...(o.pickupDetails?.address||{}),address:"",number:""}},""];
+    return [o.direccion,o.pickupDetails,o.dirNumero];
+  }
   function findAndreaniSucursal(locs, direccion, pickupDetails, dirNumero) {
     return ghMatchSucursal(locs, direccion, pickupDetails, dirNumero);
   }
@@ -11032,8 +11089,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const _auto=ubicacionAuto(locs,o);
         const _aMano=!!(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc))||_auto?.motivo==="memoria"; // confirmada por una persona: no se vuelve a acusar
         const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||_auto?.loc||"";
-        const dirNum=extractStreetNum(o.direccion, o.dirNumero);
-        const direccion=extractStreetName(o.direccion, o.dirNumero);
+        // Shopify: la calle y la altura ya vienen separadas y revisadas (partirDireccion + "Faltan datos");
+        // no se saca un número de adentro del nombre de la calle ("Av. 9 de Julio" → 9).
+        const dirNum=o.canal==="shopify"?String(o.dirNumero||"").trim():extractStreetNum(o.direccion, o.dirNumero);
+        const direccion=o.canal==="shopify"?cleanAndreani(o.direccion||""):extractStreetName(o.direccion, o.dirNumero);
         if(!ubicacion||(!_aMano&&verifUbicacionVsPedido(o,ubicacion)==="warn"))verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion||"(sin localidad: la fila sale vacía)",esperado:`${o.localidad||o.ciudad||""}${o.provincia?`, ${o.provincia}`:""}${o.cp?` (CP ${o.cp})`:""}`});
         const cells=[
           sC('A'+rn,""),
@@ -11072,7 +11131,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         // rechaza con "no es del campo desplegable") — se descarta y limpia.
         let ovr=sucursalOverridesRef.current[ovrKey(o)]||"";
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
-        const sucursal=ovr||findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero)||"";
+        const sucursal=ovr||findAndreaniSucursal(locs,...sucArgs(o))||"";
         sucEscritas.push({numero:o.numero,comprador:o.comprador,sucursal});
         if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal,locs.sucursales)==="warn")verifRows.push({o,suave:verifSuave(o,sucursal),numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
@@ -11242,6 +11301,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const puntoMapRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_puntoMap"))||"{}");}catch(_){return {};}})());
   const locMapRef=useRef({}); // memoria de localidades confirmadas a mano (users/{uid}/envios_cfg/loc_map)
   const [locConfirm,setLocConfirm]=useState(null); // {items:[{o,sug,opts}], resolve}
+  const [faltanDatos,setFaltanDatos]=useState(null); // {items:[{o,faltan}], resolve}
+  // Pide los datos obligatorios que faltan (altura, DNI, celular) y los aplica al pedido. Devuelve el
+  // Set de números a NO hacer, o null si se canceló.
+  async function completarFaltantes(domOrders,sucOrders){
+    const items=[...domOrders.map(o=>({o,faltan:ghFaltanDatos(o,{domicilio:true})})),...sucOrders.map(o=>({o,faltan:ghFaltanDatos(o,{domicilio:false})}))].filter(x=>x.faltan.length);
+    if(!items.length) return new Set();
+    const r=await new Promise(resolve=>setFaltanDatos({items,resolve}));
+    setFaltanDatos(null);
+    if(!r) return null;
+    const fuera=new Set();
+    for(const x of items){ const e=r[x.o.numero]; if(!e) continue; if(e.excluir){ fuera.add(x.o.numero); continue; }
+      if(x.faltan.includes("numero")) x.o.dirNumero=e.dirNumero; if(x.faltan.includes("dni")) x.o.dni=String(e.dni).replace(/\D/g,""); if(x.faltan.includes("tel")) x.o.telefono=e.telefono; }
+    return fuera;
+  }
   // Pedidos cuya sucursal Andreani NO está operativa (detectado al exportar):
   // en la próxima exportación no se auto-resuelven — pasan sí o sí por el
   // modal de elección (con cercanas) hasta que se les elija otra sucursal.
@@ -11774,6 +11847,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const sucursalOrdersSinEsquina=sucursalOrders.filter(o=>!esquinaSet.has(o.numero));
       const domicilioOrdersSinEsquina=domicilioOrders.filter(o=>!esquinaSet.has(o.numero));
 
+      // Datos obligatorios que faltan: se completan acá o el pedido no se exporta.
+      { const yaFuera=o=>locationOverridesRef.current[ovrKey(o)]==="EXCLUIR"||sucursalOverridesRef.current[ovrKey(o)]==="EXCLUIR";
+        setExporting(false);
+        const fuera=await completarFaltantes(domicilioOrdersSinEsquina.filter(o=>!yaFuera(o)),sucursalOrdersSinEsquina.filter(o=>!yaFuera(o)));
+        if(fuera===null){ setExportProgress({step:"",pct:0,current:0,total:0}); return; }
+        for(const o of selOrders) if(fuera.has(o.numero)){ if(isSucursalOrder(o)) sucursalOverridesRef.current[ovrKey(o)]="EXCLUIR"; else locationOverridesRef.current[ovrKey(o)]="EXCLUIR"; }
+        if(fuera.size) persistOverrides();
+        setExporting(true);
+      }
       const unresolvedDom=domicilioOrdersSinEsquina.filter(o=>{
         if(locationOverridesRef.current[ovrKey(o)]) return false;
         return !ubicacionAuto(locs,o);
@@ -11793,6 +11875,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           }
         }catch(_){}
       }
+      // Punto elegido en el checkout de Shopify (nuestra tarifa ANDREANI_SUC_<id>): se busca por su id
+      // y se traduce a la entrada EXACTA del desplegable (ghTplDeOficial). Antes el Excel ignoraba el id
+      // y comparaba contra la casa del comprador.
+      const ckPend=sucursalOrdersSinEsquina.filter(o=>o.andreaniSucursalId&&!sucursalOverridesRef.current[ovrKey(o)]);
+      if(ckPend.length){
+        setExportProgress({step:"Buscando los puntos elegidos en el checkout...",pct:35,current:0,total:selOrders.length});
+        await ghPool(ckPend,4,async o=>{ try{ const ofc=await fetchSucursalOficialPorId(o.andreaniSucursalId,cpDestinoDe(o)); if(!ofc) return; o._ckOficial=ofc; const tpl=ghTplDeOficial(locs,ofc); if(tpl&&(locs.sucursales||[]).includes(tpl)) sucursalOverridesRef.current[ovrKey(o)]=tpl; }catch(_){} });
+        persistOverrides();
+      }
       const unresolvedSuc=sucursalOrdersSinEsquina.filter(o=>{
         const _ovr=sucursalOverridesRef.current[ovrKey(o)];
         if(_ovr==="EXCLUIR") return false;
@@ -11806,7 +11897,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         // lista oficial de la API (match exacto, sin texto libre): todos los
         // pedidos a sucursal sin override pasan por el modal de confirmación.
         if(andreani.enabled) return true;
-        const _sf=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
+        const _sf=findAndreaniSucursal(locs,...sucArgs(o));
         return !_sf||_sf.trim()==="";
       });
 
@@ -11986,7 +12077,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // TEMPLATE tiene un match inequívoco (nombre exacto del punto, o su
       // calle+número con resultado único), es la misma sucursal que el modal
       // marcaría como "Sugerido" — usarla directo, sin molestar.
-      const autoDirecto=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
+      const autoDirecto=findAndreaniSucursal(locs,...sucArgs(o));
       if(!forzar&&autoDirecto&&(locs.sucursales||[]).includes(autoDirecto)){
         sucursalOverridesRef.current[ovrKey(o)]=autoDirecto;
         persistOverrides();
@@ -12024,14 +12115,18 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Modal con reintento: no se acepta un valor fuera del desplegable.
       setExporting(false); // el overlay de progreso no puede tapar el modal
       let resuelto=false;
-      const autoMatch0=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
+      const autoMatch0=findAndreaniSucursal(locs,...sucArgs(o));
       while(!resuelto){
         setLocOficialSel("");
         const chosen=await new Promise(resolve=>{
           // Pre-fill: primero intentar auto-match para sugerir la sucursal como búsqueda
-          const autoMatch=findAndreaniSucursal(locs,o.direccion,o.pickupDetails,o.dirNumero);
+          const autoMatch=findAndreaniSucursal(locs,...sucArgs(o));
           let prefill='';
-          if(autoMatch){
+          if(o._ckOficial){
+            // Elegido en el checkout pero no está (o no es único) en la plantilla: se busca ese punto.
+            const dd=o._ckOficial.direccion||{};
+            prefill=[dd.calle,dd.numero].filter(Boolean).join(" ")||o._ckOficial.descripcion||"";
+          } else if(autoMatch){
             prefill=autoMatch;
           } else {
             const pd=o.pickupDetails;
@@ -12134,8 +12229,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     setBulk(b=>({fase,rows:[...bulkRowsRef.current],prog:prog||(b?b.prog:{done:0,total:0})}));
   }
   async function iniciarBulkAndreani(ordersOverride){
-    const selOrders=Array.isArray(ordersOverride)?ordersOverride:(exportSingleOrder?[exportSingleOrder]:[...selected.values()]);
+    let selOrders=Array.isArray(ordersOverride)?ordersOverride:(exportSingleOrder?[exportSingleOrder]:[...selected.values()]);
     if(!selOrders.length) return;
+    // Datos obligatorios que faltan (altura a domicilio, DNI y celular en Shopify): se completan antes
+    // de cotizar; los que se marcan "No hacer ahora" quedan afuera del lote.
+    { const fuera=await completarFaltantes(selOrders.filter(o=>!isSucursalOrder(o)&&!hasEsquinaAddress(o)),selOrders.filter(o=>isSucursalOrder(o)));
+      if(fuera===null) return;
+      if(fuera.size){ selOrders=selOrders.filter(o=>!fuera.has(o.numero)); if(!selOrders.length) return; } }
     bulkRowsRef.current=[];
     bulkCancelRef.current=false;
     setBulk({fase:"resolviendo",rows:[],prog:{done:0,total:selOrders.length}});
@@ -12151,14 +12251,19 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     const resolverSilencioso=async(o)=>{
       const yaNum=andreaniNumeroDe(o);
       if(yaNum) return {row:mkRow(o,{incluido:false,yaEstaba:true,cotError:`Ya tenía etiqueta: envío ${yaNum}`,emitido:{numeroDeEnvio:yaNum,yaEmitido:true}})};
-      if(hasEsquinaAddress(o)) return {modal:"esquina",oficiales:await fetchSucursalesOficiales(cpDestinoDe(o))};
-      if(!isSucursalOrder(o)) return {row:mkRow(o)};
-      // Elegida en el checkout (método Growith·Andreani): el pedido trae el id
-      // oficial → se toma tal cual, sin memoria ni match por texto.
-      if(o.andreaniSucursalId){
+      // Elegida en el checkout (método Growith·Andreani): el pedido trae el id oficial → se toma tal
+      // cual, sin memoria ni match por texto. Va ANTES del chequeo de esquina (que mira la casa del
+      // comprador, no el punto). Si no se puede confirmar, NO se adivina con la dirección: se avisa.
+      if(o.andreaniSucursalId&&isSucursalOrder(o)){
         const ofcCk=await fetchSucursalOficialPorId(o.andreaniSucursalId,cpDestinoDe(o));
         if(ofcCk) return {row:mkRow(o,{oficial:ofcCk,verif:"ok",deCheckout:true,conflictoOk:true})};
+        return {row:mkRow(o,{incluido:false,cotError:`No se pudo confirmar el punto que eligió el comprador (Andreani ${o.andreaniSucursalId}). Reintentá en unos minutos; si sigue, puede que el punto ya no exista.`})};
       }
+      if(hasEsquinaAddress(o)) return {modal:"esquina",oficiales:await fetchSucursalesOficiales(cpDestinoDe(o))};
+      if(!isSucursalOrder(o)) return {row:mkRow(o)};
+      // Shopify a sucursal SIN id de checkout (otra app o tarifa propia): la dirección del pedido puede ser
+      // la casa del comprador → nunca se resuelve sola; va al selector.
+      if(o.canal==="shopify"||o.pickupDetails?.origen==="shopify") return {modal:"sucursal",oficiales:await fetchSucursalesOficiales(cpDestinoDe(o))};
       // Memoria por punto: elección confirmada a mano en un pedido anterior al
       // MISMO punto de retiro → se reusa directo (id oficial guardado).
       const memApi=memoriaPunto(o);
@@ -12352,7 +12457,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         r.emitTipo="dudoso";
       } else if(!resp.ok||d.error){
           const code=d.code||d.error;
-          r.emitTipo=code==="saldo_insuficiente"?"saldo":code==="precio_cambio"?"precio":(code==="dudoso"||resp.status===502&&/no pudimos confirmar/i.test(String(d.error)))?"dudoso":code==="en_curso"?"dudoso":"rechazo";
+          // Respuesta sin JSON con error del servidor (504 de Vercel = la función se cortó, quizá DESPUÉS de
+          // debitar): no se sabe si la etiqueta salió → dudoso, nunca "rechazo" para reintentar (19/oct/2026).
+          const sinCuerpo=!d||(!d.error&&!d.code);
+          r.emitTipo=code==="saldo_insuficiente"?"saldo":code==="precio_cambio"?"precio":(d.dudoso||code==="dudoso"||resp.status===502&&/no pudimos confirmar/i.test(String(d.error))||(sinCuerpo&&resp.status>=500))?"dudoso":code==="en_curso"?"dudoso":"rechazo";
+          if(sinCuerpo&&resp.status>=500){ r.emitError="El servidor se cortó mientras emitía. No sabemos si la etiqueta salió: NO la vuelvas a emitir — revisá Seguimientos en un minuto (si salió, aparece ahí con su número)."; done++; pushBulk("emitiendo",{done,total:inc.length}); return; }
           if(code==="saldo_insuficiente") sinSaldo=true;
           if(code==="precio_cambio"&&typeof d.precio==="number"){ r.cot={...(r.cot||{}),precio:d.precio}; }
           r.emitError=code==="saldo_insuficiente"
@@ -12736,7 +12845,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(!r.ok||d.error){ toast(typeof d.error==="string"?d.error:"No se pudo anular la etiqueta","error"); return false; }
     if(typeof d.saldoRestante==="number") setAndreani(a=>({...a,saldo:d.saldoRestante}));
     toast(`Etiqueta anulada: ${fmtMoney(d.monto)} volvieron a tu saldo`,"success");
-    setAndreaniEmitidos(m=>{ const n={...m}; delete n[numero]; return n; });
+    // andreaniEmitidos va por número de PEDIDO; antes se borraba por número de envío y no se borraba nada.
+    setAndreaniEmitidos(m=>{ const n={...m}; for(const k of Object.keys(n)) if(String(n[k]?.numeroDeEnvio)===String(numero)) delete n[k]; delete n[numero]; return n; });
     refrescarEnviosFs(); cargarCasos(); setSegFicha(null);
     return true;
   }
@@ -13231,6 +13341,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       </AppTopbar>
       {(depArmando||bulkDl)&&!rastrearOpen&&<div style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",zIndex:1650,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:"10px 18px",boxShadow:DS.shadow.lg,display:"flex",alignItems:"center",gap:10,fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}><Spinner size={14} color={T.accent}/>{depArmando?`Preparando la tanda… ${depArmando.done}/${depArmando.total}`:`Armando el PDF… ${bulkDl.done}/${bulkDl.total}`}</div>}
       {locConfirm&&<LocConfirmModal T={T} items={locConfirm.items} onDone={m=>locConfirm.resolve(m)} onCancel={()=>locConfirm.resolve(null)}/>}
+      {faltanDatos&&<DatosFaltanModal T={T} items={faltanDatos.items} onDone={m=>faltanDatos.resolve(m)} onCancel={()=>faltanDatos.resolve(null)}/>}
       {rastrearOpen&&<RastrearPedidosModal T={T} uid={user?.uid} onClose={()=>setRastrearOpen(false)}
         puedeDeposito={!!depositoCliente}
         onDescargar={sel=>{ const w=ghDepVentana("application/pdf"); const l=ghDepOrdenar(sel,x=>ghSkuLinesDe(x)); descargarVarias(l.map(x=>({numero:x.numero,envio:String(x.tracking),skus:ghSkuLinesDe(x)})),w,{conSku:true}); }}
@@ -13242,6 +13353,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         {/* -- PANEL DE ENVIOS -- */}
         {tab==="panel"&&(
           <div>
+            {/* Shopify sin los datos del comprador (datos protegidos sin permiso o plan sin acceso por API). */}
+            {(()=>{ const n=(tabOrders||[]).filter(o=>o.sinDatosCliente).length; if(!n) return null; return (
+              <div style={{border:`1px solid ${T.yellow}66`,background:T.yellow+"12",borderRadius:16,padding:"12px 16px",marginBottom:14,fontSize:13,color:T.text,lineHeight:1.55}}>
+                <strong>Shopify no está mandando la dirección de {n} pedido{n===1?"":"s"}.</strong> Sin esos datos no se puede hacer la etiqueta. En tu app de Shopify (dev.shopify.com → tu app → Configuración → <em>Acceso a los datos protegidos del cliente</em>) habilitá nombre, dirección, teléfono y email, publicá la versión y reconectá Shopify en Growith. En el plan Basic de Shopify esos datos pueden no estar disponibles por API.
+              </div>); })()}
             {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
             <div>
               {showGuia&&(
@@ -15828,7 +15944,9 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
     if(tipo==="sucursal"&&!sucId){ setCotErr("Elegí una sucursal de la lista antes de cotizar."); return; }
     const r=await authFetch("/api/andreani?action=cotizar",{
       method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({tipo,cpDestino,bultos:buildBultos()}),
+      // Punto HOP: se cotiza con el contrato HOP, el mismo con el que se emite (19/oct/2026; antes se
+      // cotizaba con el de sucursal y el precio cobrado podía ser otro).
+      body:JSON.stringify({tipo,cpDestino,bultos:buildBultos(),hop:tipo==="sucursal"&&!!(sucs||[]).find(x=>String(x.id)===String(sucId))?.hop}),
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){
@@ -15848,6 +15966,8 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
       envioId:String(o.numero),
       tipo,
       cpDestino,
+      // Precio que vio el usuario: si Andreani cobra más de 2 % distinto, el servidor frena (409 precio_cambio).
+      precioAceptado:cot?.precio||0,
       destino:tipo==="sucursal"
         ?{sucursalId:sucId}
         :{postal:{codigoPostal:dom.codigoPostal.trim(),calle:dom.calle.trim(),numero:dom.numero.trim(),localidad:dom.localidad.trim(),region:dom.region.trim()}},
@@ -15868,6 +15988,12 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){
+      if(d.code==="precio_cambio"){
+        setCot(c=>c?{...c,precio:typeof d.precio==="number"?d.precio:c.precio}:c);
+        setEmitErr(typeof d.error==="string"?d.error:"El precio de Andreani cambió: revisalo y volvé a tocar Emitir.");
+        toast("El precio cambió: revisalo antes de emitir","warning");
+        return;
+      }
       if(d.error==="saldo_insuficiente"){
         setEmitErr(`Saldo insuficiente: tenés ${fmtMoney(d.saldo)} y la etiqueta cuesta ${fmtMoney(d.precio)}. Faltan ${fmtMoney((d.precio||0)-(d.saldo||0))}.`);
         if(typeof d.saldo==="number") onSaldo&&onSaldo(d.saldo);
@@ -18895,6 +19021,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                       <button onClick={()=>{navigator.clipboard.writeText(GH_SHOPIFY_SCOPES);toast("Scopes copiados ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
+                  <li><strong style={{color:T.text}}>Datos protegidos del cliente</strong> (en la app → <strong style={{color:T.text}}>Configuración → Acceso a los datos protegidos del cliente</strong>): pedí acceso y marcá <strong style={{color:T.text}}>Nombre, Email, Teléfono y Dirección</strong>. Sin esto Shopify manda los pedidos SIN el nombre ni la dirección del comprador y no se pueden hacer las etiquetas. (En el plan Basic de Shopify estos datos pueden no estar disponibles por API.)</li>
                   <li>En <strong style={{color:T.text}}>URL de redireccionamiento</strong> pegá exactamente esta:
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
                       <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>https://www.growithapp.com/api/integrations?platform=shopify</code>

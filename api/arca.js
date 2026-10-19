@@ -3125,7 +3125,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
         // por created_at DESC (más nuevas primero). Sin esto, Shopify devuelve las
         // más VIEJAS primero y, con el tope de páginas, nunca llegaban las ventas
         // recientes → "no tomaba las ventas nuevas". El orden se preserva en el cursor.
-        let pageInfoUrl = `https://${shStore.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
+        let pageInfoUrl = `https://${shStore.shop}/admin/api/2026-07/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00`;
         // Paginación COMPLETA (como Márgenes): seguimos el cursor hasta que no haya
         // más páginas. El tope de 60 es solo un seguro anti-loop (60×250 = 15k).
         for (let i = 0; i < 60; i++) {
@@ -3150,7 +3150,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
           if (!customerId) return null;
           if (customerCache.has(customerId)) return customerCache.get(customerId);
           try {
-            const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/customers/${customerId}.json`, {
+            const r = await fetch(`https://${shStore.shop}/admin/api/2026-07/customers/${customerId}.json`, {
               headers: { "X-Shopify-Access-Token": shStore.accessToken },
             });
             if (!r.ok) { customerCache.set(customerId, null); return null; }
@@ -5668,12 +5668,12 @@ export default async function handler(req, res) {
           await ensureShopifyToken(db, uid, sh);
           const H = { "X-Shopify-Access-Token": sh.accessToken, "Content-Type": "application/json" };
           const nombre = oid.slice(3).startsWith("#") ? oid.slice(3) : "#" + oid.slice(3);
-          const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?name=${encodeURIComponent(nombre)}&status=any&fields=id,name,note`, { headers: H });
+          const r = await fetch(`https://${sh.shop}/admin/api/2026-07/orders.json?name=${encodeURIComponent(nombre)}&status=any&fields=id,name,note`, { headers: H });
           const o = r.ok ? ((await r.json().catch(() => ({}))).orders || [])[0] : null;
           if (!o) return res.status(404).json({ error: "No encontré ese pedido en Shopify" });
           const prev = String(o.note || "");
           if (prev.includes(link)) return res.json({ ok: true, link, yaEstaba: true });
-          const w = await fetch(`https://${sh.shop}/admin/api/2024-10/orders/${o.id}.json`, { method: "PUT", headers: H, body: JSON.stringify({ order: { id: o.id, note: (prev ? prev + "\n" : "") + linea } }) });
+          const w = await fetch(`https://${sh.shop}/admin/api/2026-07/orders/${o.id}.json`, { method: "PUT", headers: H, body: JSON.stringify({ order: { id: o.id, note: (prev ? prev + "\n" : "") + linea } }) });
           if (!w.ok) return res.status(502).json({ error: `Shopify no dejó escribir la nota (HTTP ${w.status})` });
         } else return res.status(400).json({ error: "Solo para pedidos de Tienda Nube o Shopify (Mercado Libre ya recibe la factura sola)" });
       } catch (e) { return res.status(502).json({ error: e.message }); }
@@ -5814,7 +5814,7 @@ export default async function handler(req, res) {
         }
         if (!orden && shStore?.accessToken && shStore?.shop) {
           await ensureShopifyToken(db, uid, shStore);
-          const r = await fetch(`https://${shStore.shop}/admin/api/2024-10/orders.json?name=%23${encodeURIComponent(numero)}&status=any&limit=5`, { headers: { "X-Shopify-Access-Token": shStore.accessToken }, signal: AbortSignal.timeout(15000) });
+          const r = await fetch(`https://${shStore.shop}/admin/api/2026-07/orders.json?name=%23${encodeURIComponent(numero)}&status=any&limit=5`, { headers: { "X-Shopify-Access-Token": shStore.accessToken }, signal: AbortSignal.timeout(15000) });
           const j = r.ok ? await r.json() : {};
           const o = (j.orders || []).find(x => String(x.order_number) === numero || String(x.name || "").replace(/\D/g, "") === numero);
           if (o) orden = { plataforma: "shopify", orderId: `SH-${o.name || numero}`, fecha: o.created_at ? argYmd(new Date(o.created_at)) : null, estado: o.cancelled_at ? "cancelled" : String(o.financial_status || ""), estado_pago: String(o.financial_status || ""), nombre: `${o.customer?.first_name || ""} ${o.customer?.last_name || ""}`.trim() || o.email || "", total: parseFloat(o.total_price) || 0 };
@@ -5999,7 +5999,7 @@ export default async function handler(req, res) {
       if (shStore?.accessToken && shStore?.shop) {
         connections.push("shopify");
         const pullSH = async (extraQS, motivo, detect) => {
-          let url = `https://${shStore.shop}/admin/api/2024-10/orders.json?limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&${extraQS}`;
+          let url = `https://${shStore.shop}/admin/api/2026-07/orders.json?limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&${extraQS}`;
           for (let i = 0; i < 40 && url; i++) {
             if (i === 39) truncated = true;
             const r = await fetch(url, { headers: { "X-Shopify-Access-Token": shStore.accessToken } });

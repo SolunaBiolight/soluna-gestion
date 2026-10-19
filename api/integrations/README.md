@@ -75,7 +75,7 @@ users/{uid}/integrations_orders/{platform}_{orderId}
 
 ### Shopify
 - OAuth 2.0 con `client_credentials` por app embedded o `authorization_code` para custom apps
-- Endpoint: `https://{shop}.myshopify.com/admin/api/2024-10/orders.json?status=any&financial_status=paid&created_at_min=...`
+- Endpoint: `https://{shop}.myshopify.com/admin/api/2026-07/orders.json?status=any&financial_status=paid&created_at_min=...`
 - Importante: el `Billing Company` puede contener CUIT en ARG — ya tenemos esta heurística en `clasificarDoc`
 
 ### Tienda Nube

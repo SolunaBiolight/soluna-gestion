@@ -304,27 +304,51 @@ async function fetchAllPages(storeId, accessToken, extraParams = "") {
 // "Belgrano 1234, 3B", "Ruta 143 12330". Antes se tomaba el ÚLTIMO número ("3") como altura.
 // Devuelve {calle, numero, extra}: el resto (piso, depto, torre…) va a `extra` para el campo Piso.
 export function partirDireccion(addr1) {
+  // Reescrita el 19/oct/2026 (auditoría para un cliente grande de Shopify): se lee palabra por palabra.
+  // Un número es la ALTURA salvo que sea parte del nombre de la calle ("Calle 50", "Ruta 8", "Km 45",
+  // "9 de Julio", "Av. 7") o de una unidad ("Mz 4", "Lote 12", "Torre 2", "Piso 3"). Lo que viene
+  // después de la altura (piso, depto, timbre, "entre 7 y 8"…) va a `extra`. "nro/N° 123" manda.
+  // Sin altura clara devuelve numero "" — nunca adivina (antes salía "0" o un número de otro lado).
   let t = String(addr1 || "").replace(/\s+/g, " ").trim();
   if (!t) return { calle: "", numero: "", extra: "" };
-  let extra = "";
-  // 1) Lo que viene después de una marca de unidad o de una coma que sigue a un número.
-  const marca = t.match(/^(.*?\d[a-zA-Z]?)\s*(?:,\s*|\s+)((?:piso|p\.?|pb|planta|dto|dpto|depto|departamento|dept|torre|t\.|casa|lote|lt|of|oficina|local|ph|unidad|uf|block|blk|monoblock|manzana|mz|mza|esc|escalera|entre|e\/|barrio|b°|bº)\b.*)$/i);
-  if (marca) { t = marca[1].trim(); extra = marca[2].trim(); }
-  else { const coma = t.match(/^(.*?\d[a-zA-Z]?)\s*,\s*(.+)$/); if (coma && /\D/.test(coma[1])) { t = coma[1].trim(); extra = coma[2].trim(); } }
-  // 2) "Belgrano 1234 3B" / "Belgrano 1234 B": altura seguida de un depto corto.
-  const letra = x => /[a-zA-ZÀ-ÿ]/.test(x);
-  const depto = t.match(/^(.+?)\s(\d{1,6})\s+(\d{1,2}\s?[a-zA-Z]|[a-zA-Z])$/);
-  if (depto && letra(depto[1])) return { calle: depto[1].replace(/[\s,]+$/, "").trim(), numero: depto[2], extra: [depto[3], extra].filter(Boolean).join(" ") };
-  // 3) Altura al final ("Ruta 143 12330" → calle "Ruta 143", 12330) o al principio ("742 Siempreviva").
-  let m = t.match(/^(.+?)[\s,]+(\d{1,6}[a-zA-Z]?)$/);
-  if (m && letra(m[1])) return { calle: m[1].replace(/[\s,]+$/, "").trim(), numero: m[2], extra };
-  m = t.match(/^(\d{1,6}[a-zA-Z]?)[\s,]+(.+)$/);
-  if (m) return { calle: m[2].trim(), numero: m[1], extra };
-  return { calle: t, numero: "", extra };
+  t = t.replace(/\b(\d{1,3})\.(\d{3})\b/g, "$1$2"); // "1.234" → "1234"
+  const limpiar = x => String(x || "").replace(/^[\s,;\-–—]+|[\s,;\-–—]+$/g, "").replace(/\s{2,}/g, " ").trim();
+  const VIA = /^(calle|c\.?|ruta|rn|rp|r\.?n\.?|r\.?p\.?|av|av\.|avda\.?|avenida|diag\.?|diagonal|pasaje|pje\.?|psje\.?|camino|bv\.?|bvd\.?|boulevard|bulevar|km\.?|kil[oó]metro|autopista|acceso|colectora|circunvalaci[oó]n)$/i;
+  const UNIDAD = /^(piso|p\.?|pb|planta|dto\.?|dpto\.?|depto\.?|departamento|dept\.?|torre|t\.?|casa|lote|lt\.?|of\.?|oficina|local|ph|unidad|uf|u\.?f\.?|block|blk|monoblock|monoblok|manzana|mz\.?|mza\.?|mzna\.?|esc\.?|escalera|timbre|int\.?|interno|sector|edificio|edif\.?|barrio|b°|bº|b\.?|entre|e\/|esq\.?|esquina|y|cuerpo|modulo|módulo|parcela|nave)$/i;
+  // 1) Marca explícita de altura: "nro 123", "n° 123", "número 123".
+  const mk = t.match(/^(.*?)[\s,]*\b(?:n[°ºo]\.?|nro\.?|num\.?|n[uú]mero|altura)\s*:?\s*(\d{1,6}[a-zA-Z]?)\b(.*)$/i);
+  if (mk && /[a-zA-ZÀ-ÿ]/.test(mk[1])) {
+    let calle = limpiar(mk[1]), extra = limpiar(mk[3]);
+    const corte = calle.match(/^(.*?)\s+((?:entre|e\/|esq\.?|esquina)\b.*)$/i);
+    if (corte) { calle = limpiar(corte[1]); extra = limpiar([corte[2], extra].filter(Boolean).join(" ")); }
+    return { calle, numero: mk[2], extra };
+  }
+  const toks = t.split(" ");
+  const esNum = w => /^\d{1,6}[a-zA-Z]?[,;]?$/.test(w);
+  const num = w => w.replace(/[,;]$/, "");
+  // 2) Altura al principio: "742 Siempreviva" (pero no "25 de Mayo 450" ni "9 de Julio").
+  if (esNum(toks[0]) && toks.length > 1 && !/^de$/i.test(toks[1]) && /[a-zA-ZÀ-ÿ]/.test(toks[1]) && !toks.slice(1).some(esNum)) {
+    return { calle: limpiar(toks.slice(1).join(" ")), numero: num(toks[0]), extra: "" };
+  }
+  // 3) Recorrer: el primer número que no sea parte de la calle ni de una unidad es la altura.
+  let enUnidad = false;
+  for (let i = 0; i < toks.length; i++) {
+    const w = toks[i], prev = (toks[i - 1] || "").replace(/[,;]$/, ""), next = toks[i + 1] || "";
+    if (UNIDAD.test(w.replace(/[,;:]$/, ""))) { enUnidad = true; continue; }
+    if (!esNum(w)) { if (/[a-zA-ZÀ-ÿ]{3,}/.test(w) && !UNIDAD.test(w)) enUnidad = false; continue; }
+    if (enUnidad) continue;                        // "Mz 4", "Lote 12", "entre 7 y 8"
+    if (i === 0) continue;                         // número al principio con más números después ("25 de Mayo 450")
+    if (/^de$/i.test(next)) continue;              // "9 de Julio", "25 de Mayo"
+    if (VIA.test(prev) && !toks.slice(0, i - 1).some(x => /[a-zA-ZÀ-ÿ]{3,}/.test(x) && !VIA.test(x))) continue; // "Calle 50", "Ruta 8", "Av 7"
+    if (/^km\.?$/i.test(prev)) continue;           // "Ruta 2 Km 45 1234"
+    if (!toks.slice(0, i).some(x => /[a-zA-ZÀ-ÿ]/.test(x))) continue;
+    return { calle: limpiar(toks.slice(0, i).join(" ")), numero: num(w), extra: limpiar(toks.slice(i + 1).join(" ")) };
+  }
+  return { calle: limpiar(t), numero: "", extra: "" };
 }
 // DNI / CUIT escrito solo (con o sin puntos): "31.737.977", "20-31737977-5". Si no es eso, "".
 export function soloDocumento(v) {
-  const t = String(v || "").trim();
+  const t = String(v || "").trim().replace(/^(?:d\.?\s?n\.?\s?i\.?|dni|documento|doc\.?|cuit|cuil|c\.?u\.?i\.?t\.?)\s*(?:n[°ºo]\.?|nro\.?)?\s*[:#\-]?\s*/i, "");
   if (!/^[\d.\s\-]{7,15}$/.test(t)) return "";
   const d = t.replace(/\D/g, "");
   return d.length >= 7 && d.length <= 11 ? d : "";
@@ -468,7 +492,7 @@ export default async function handler(req, res) {
     } else {
       // Shopify: mismo agregado leyendo discount_codes[] con paginación por cursor.
       const shHeaders = { 'X-Shopify-Access-Token': shp.accessToken, 'Content-Type': 'application/json' };
-      let url = `https://${shp.shop}/admin/api/2024-10/orders.json?limit=250&status=any&financial_status=paid&fields=id,total_price,discount_codes,cancelled_at&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
+      let url = `https://${shp.shop}/admin/api/2026-07/orders.json?limit=250&status=any&financial_status=paid&fields=id,total_price,discount_codes,cancelled_at&created_at_min=${encodeURIComponent(desde + "T00:00:00-0300")}&created_at_max=${encodeURIComponent(hasta + "T23:59:59-0300")}`;
       let safety = 0, falloShp = false;
       while (url && safety < 12) {
         safety++;
@@ -1585,7 +1609,7 @@ export default async function handler(req, res) {
           const lote = pendAll.slice(0, 400);
           for (let i=0; i<lote.length; i+=50) {
             const ids = lote.slice(i,i+50).map(o => `gid://shopify/Order/${o.id}`);
-            const r = await fetch(`https://${shStoreRef.shop}/admin/api/2024-10/graphql.json`, {
+            const r = await fetch(`https://${shStoreRef.shop}/admin/api/2026-07/graphql.json`, {
               method: "POST", headers: { "X-Shopify-Access-Token": shStoreRef.accessToken, "Content-Type": "application/json" },
               body: JSON.stringify({ query: "query($ids:[ID!]!){nodes(ids:$ids){... on Order{id transactions(first:10){kind status gateway authorizationCode receiptJson}}}}", variables: { ids } }),
               signal: AbortSignal.timeout(12000),
@@ -1610,7 +1634,7 @@ export default async function handler(req, res) {
         for (let i=0; i<pend.length; i+=8) {
           const rs = await Promise.all(pend.slice(i,i+8).map(async o => {
             try {
-              const r = await fetch(`https://${shStoreRef.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": shStoreRef.accessToken } });
+              const r = await fetch(`https://${shStoreRef.shop}/admin/api/2026-07/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": shStoreRef.accessToken } });
               if (!r.ok) return [o.id, null];
               const j = await r.json();
               const ok = (j.transactions||[]).filter(t => t.kind==="sale" && t.status==="success");
@@ -2596,7 +2620,7 @@ export default async function handler(req, res) {
 
   // ── Helpers Shopify ───────────────────────────────────────────────────
   const SH_HEADERS = { 'X-Shopify-Access-Token': accessToken, 'Content-Type': 'application/json' };
-  const SH_BASE = platform === 'shopify' ? `https://${shop}/admin/api/2024-10` : null;
+  const SH_BASE = platform === 'shopify' ? `https://${shop}/admin/api/2026-07` : null;
 
   async function fetchShopifyOrders(from, to, extraParams = '') {
     let all = [], url = `${SH_BASE}/orders.json?limit=250&status=any&financial_status=paid&created_at_min=${encodeURIComponent(from)}&created_at_max=${encodeURIComponent(to)}&fields=id,total_price,created_at${extraParams}`;
@@ -2865,10 +2889,31 @@ export default async function handler(req, res) {
       // principio; si no hay, queda todo como calle y número vacío.
       const dir = partirDireccion(sh.address1);
       let calle = dir.calle, numero = dir.numero;
-      // Sin número parseable → "0": la API de Andreani (action=emitir) exige
-      // `numero` no vacío para envíos a domicilio o devuelve 400 (el XLSX ya
-      // hace el mismo fallback). Andreani interpreta "0" como sin numeración.
-      if (!numero) numero = "0";
+      // Sin altura en address1: si Dirección 2 EMPIEZA con un número ("1234", "N° 1234 3B"), esa es la
+      // altura y el resto va al piso. Si no, queda VACÍA (19/oct/2026): antes se ponía "0" y Andreani
+      // lo aceptaba como "sin numeración" → etiqueta sin altura. Envíos frena el pedido y pide el número.
+      let a2Resto = null;
+      if (!numero) {
+        const m2 = String(sh.address2 || "").trim().match(/^(?:n[°ºo]\.?|nro\.?|n[uú]mero)?\s*(\d{1,6}[a-zA-Z]?)\b[\s,\-]*(.*)$/i);
+        if (m2 && !soloDocumento(sh.address2)) { numero = m2[1]; a2Resto = m2[2].trim(); }
+      }
+      // Qué tipo de envío es (19/oct/2026). Nuestra tarifa del checkout trae ANDREANI_DOM / ANDREANI_SUC_<id>.
+      const sl0 = o.shipping_lines?.[0] || {}; const slTitle = String(sl0.title || ""), slCode = String(sl0.code || "");
+      const nuestroCodigo = /^ANDREANI_(SUC_\d+|DOM)$/.test(slCode);
+      const sucIdCheckout = (/^ANDREANI_SUC_(\d+)/.exec(slCode) || [])[1] || null;
+      const requiereEnvio = (o.line_items || []).some(li => li.requires_shipping !== false);
+      // Retiro en el local / sin envío: no tiene dirección de envío (Shopify local pickup) o el método lo
+      // dice, o nada del pedido se envía. NO es un envío de Andreani: antes entraba como domicilio a la
+      // dirección de FACTURACIÓN. Se marca y no aparece en Por empaquetar / Por enviar.
+      const tituloRetiroLocal = /retiro en (el |la |nuestro |nuestra )?(local|tienda|showroom|oficina|f[aá]brica|dep[oó]sito|domicilio del vendedor)|pick ?up|retir[aáo] por (el |la )?(local|tienda)|local pickup/i.test(slTitle) && !/andreani|sucursal|\bhop\b/i.test(slTitle);
+      // Con método de envío pero SIN dirección (y sin nombre del comprador): casi siempre es Shopify
+      // ocultando los datos protegidos del cliente (app sin permiso o plan sin acceso). NO se esconde
+      // como retiro: queda marcado para que Envíos avise y no se haga una etiqueta vacía.
+      const tieneMetodo = !!(o.shipping_lines && o.shipping_lines.length);
+      const sinDatosCliente = !o.shipping_address && tieneMetodo && !tituloRetiroLocal && requiereEnvio;
+      const noEnvio = !nuestroCodigo && !sinDatosCliente && (!o.shipping_address || tituloRetiroLocal || !requiereEnvio);
+      // Sucursal / punto de retiro: nuestro código, o un título que lo dice ("retirá", "retiro", sucursal, HOP).
+      const esPuntoRetiro = !noEnvio && (!!sucIdCheckout || /sucursal|punto|\bhop\b|retir[aáo]|pickup/i.test(slTitle));
       // Shopify no captura DNI de forma nativa; algunas tiendas lo piden en un
       // campo custom del checkout → llega en note_attributes. Lo buscamos por
       // nombres habituales (DNI/documento/cuit) para no emitir la etiqueta sin
@@ -2880,7 +2925,7 @@ export default async function handler(req, res) {
       // y no se manda como piso (15/oct/2026, zensleep: el DNI salía vacío en el Excel).
       const docA2 = soloDocumento(sh.address2);
       const contactDoc = String(docAttr?.value || "").replace(/\D/g, "") || soloDocumento(sh.company) || soloDocumento(o.billing_address?.company) || docA2;
-      const piso = [docA2 ? "" : String(sh.address2 || "").trim(), dir.extra].filter(Boolean).join(" ").slice(0, 60);
+      const piso = [docA2 ? "" : (a2Resto !== null ? a2Resto : String(sh.address2 || "").trim()), dir.extra].filter(Boolean).join(" ").slice(0, 60);
       return {
         id: o.id,
         number: o.order_number || (o.name || "").replace("#", "") || o.id,
@@ -2918,8 +2963,16 @@ export default async function handler(req, res) {
         // shipping_address con la dirección del punto. Se arma un pickup
         // sintético para que el matcheo de sucursal Andreani y su verificación
         // contra la tienda trabajen igual que con Tienda Nube.
-        shipping_pickup_details: /sucursal|punto|\bhop\b|retiro|pickup/i.test(o.shipping_lines?.[0]?.title || "")
-          ? { name: o.shipping_lines[0].title, address: { address: calle, number: numero === "0" ? "" : numero, locality: sh.city || "", city: sh.city || "", zipcode: sh.zip || "", province: sh.province || "" },
+        no_envio: noEnvio || undefined,
+        sin_datos_cliente: sinDatosCliente || undefined,
+        no_envio_motivo: noEnvio ? (!requiereEnvio ? "Sin productos para enviar" : "Retiro en el local") : undefined,
+        // Con NUESTRA tarifa, Shopify deja en shipping_address la CASA del comprador (no el punto): no se
+        // usa como dirección del punto (el matcheo la comparaba contra la plantilla y podía elegir otro
+        // punto en silencio); el punto se resuelve por el id. Con otra app/tarifa se mantiene, marcado
+        // como "dirección del pedido" para que Envíos no lo dé por bueno sin confirmar.
+        shipping_pickup_details: esPuntoRetiro
+          ? { name: slTitle, origen: "shopify", dirEsDelPedido: !sucIdCheckout,
+              address: sucIdCheckout ? { address: "", number: "", locality: "", city: "", zipcode: "", province: sh.province || "" } : { address: calle, number: numero, locality: sh.city || "", city: sh.city || "", zipcode: sh.zip || "", province: sh.province || "" },
               // Tarifa Growith·Andreani elegida en el checkout: el código trae el
               // id OFICIAL de la sucursal → Envíos emite sin adivinar el punto.
               andreaniSucursalId: (/^ANDREANI_SUC_(\d+)/.exec(String(o.shipping_lines?.[0]?.code || "")) || [])[1] || null }
@@ -3017,7 +3070,8 @@ export default async function handler(req, res) {
     if (tab === 'empaquetar') {
       if (platform === 'shopify') {
         const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=unfulfilled,partial");
-        const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
+        // Retiro en el local / sin envío y pedidos de PRUEBA de Shopify no son etiquetas para hacer.
+        const filtered = orders.filter(o => !o.cancelled_at && !o.test).map(shopifyToTNFormat).filter(o => !o.no_envio);
         if (_countOnly) return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }
@@ -3042,7 +3096,8 @@ export default async function handler(req, res) {
       if (platform === 'shopify') {
         // Shopify no tiene "PACKED" — tomamos partial como ready-to-ship aproximado.
         const orders = await shopifyFetchOrders("financial_status=paid&fulfillment_status=partial");
-        const filtered = orders.filter(o => !o.cancelled_at).map(shopifyToTNFormat);
+        // Retiro en el local / sin envío y pedidos de PRUEBA de Shopify no son etiquetas para hacer.
+        const filtered = orders.filter(o => !o.cancelled_at && !o.test).map(shopifyToTNFormat).filter(o => !o.no_envio);
         if (_countOnly) return res.status(200).json(Array.from({length: filtered.length}, (_,i) => ({id:i})));
         return res.status(200).json(filtered);
       }

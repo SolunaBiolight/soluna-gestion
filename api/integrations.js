@@ -379,7 +379,7 @@ async function shopifyOauthCallback(req, res, db) {
   let shopName = shop, shopEmail = "";
   const __uidFromState = uid;
   try {
-    const infoRes = await fetch(`https://${shop}/admin/api/2024-10/shop.json`, {
+    const infoRes = await fetch(`https://${shop}/admin/api/2026-07/shop.json`, {
       headers: { "X-Shopify-Access-Token": accessToken },
     });
     if (infoRes.ok) {
@@ -900,12 +900,12 @@ async function mpProbe(req, res, db) {
     const sh = (userSnap.data()?.stores||[]).find(s => s.type === "shopify");
     if (sh) await ensureShopifyToken(db, uid, sh);
     if (sh?.shop && sh?.accessToken) {
-      const oRes = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?limit=5&status=any&fields=id,name,order_number,checkout_token,cart_token,note_attributes,payment_gateway_names,total_price,created_at`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+      const oRes = await fetch(`https://${sh.shop}/admin/api/2026-07/orders.json?limit=5&status=any&fields=id,name,order_number,checkout_token,cart_token,note_attributes,payment_gateway_names,total_price,created_at`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
       const oj = await oRes.json();
       for (const o of (oj.orders||[]).slice(0,5)) {
         let txs = [];
         try {
-          const tRes = await fetch(`https://${sh.shop}/admin/api/2024-10/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+          const tRes = await fetch(`https://${sh.shop}/admin/api/2026-07/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
           const tj = await tRes.json();
           txs = (tj.transactions||[]).map(t => ({ gateway:t.gateway, authorization:t.authorization, receipt_id:t.receipt?.id||t.receipt?.payment_id, amount:t.amount, kind:t.kind, status:t.status }));
         } catch(_) {}

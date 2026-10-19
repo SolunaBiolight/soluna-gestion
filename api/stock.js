@@ -24,7 +24,7 @@ function initAdmin() {
 const TN_H  = t => ({ "Authentication":`bearer ${t}`, "User-Agent":"GrowithApp (contacto.growith@gmail.com)" });
 const SH_H  = t => ({ "X-Shopify-Access-Token":t, "Content-Type":"application/json" });
 const ML_H  = t => ({ "Authorization":`Bearer ${t}` });
-const SH_URL = s => `https://${s}/admin/api/2024-10`;
+const SH_URL = s => `https://${s}/admin/api/2026-07`;
 
 // ── Fetch con timeout (Bug #3) ────────────────────────────────────────
 async function fetchT(url, opts={}, ms=15000) {

@@ -244,7 +244,7 @@ async function pushShopify(db, uid, sh, link, item, stock, mode) {
   const pid = link.product_id.replace(/^SH-/, "");
   const base = { item_id: item.id, item_name: item.nombre, link_id: link.product_id, platform: "shopify", to_qty: stock, mode };
   const H = { "X-Shopify-Access-Token": sh.accessToken, "Content-Type": "application/json" };
-  const SHB = `https://${sh.shop}/admin/api/2024-10`;
+  const SHB = `https://${sh.shop}/admin/api/2026-07`;
   const r = await fetch(`${SHB}/products/${pid}.json?fields=id,variants`, { headers: H, signal: AbortSignal.timeout(12000) });
   if (!r.ok) { const e = { ...base, ok: false, error: `Shopify HTTP ${r.status}${r.status===401||r.status===403?" — reconectá Shopify (falta permiso)":""}` }; await syncLog(db, uid, e); return e; }
   const variants = (await r.json())?.product?.variants || [];
@@ -404,7 +404,7 @@ async function syncVentasCuerpo(db, uid) {
     const sh = stores.find(s => s.type === "shopify");
     if (sh) await ensureShopifyToken(db, uid, sh);
     if (sh?.accessToken && sh?.shop) {
-      let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceISO}`;
+      let pageInfoUrl = `https://${sh.shop}/admin/api/2026-07/orders.json?status=any&financial_status=paid&limit=250&order=created_at+desc&created_at_min=${sinceISO}`;
       for (let i = 0; i < 4 && pageInfoUrl; i++) {
         try {
           const r = await fetch(pageInfoUrl, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
@@ -434,7 +434,7 @@ async function syncVentasCuerpo(db, uid) {
       ];
       for (let k = 0; k < extras.length; k++) {
         try {
-          const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?${extras[k]}`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+          const r = await fetch(`https://${sh.shop}/admin/api/2026-07/orders.json?${extras[k]}`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
           if (!r.ok) continue;
           const data = await r.json();
           for (const o of (data.orders || [])) {
@@ -829,7 +829,7 @@ export default async function handler(req, res) {
         const sh = stores.find(s => s.type === "shopify");
         if (sh) await ensureShopifyToken(db, uid, sh);
         if (sh?.accessToken && sh?.shop) {
-          let pageInfoUrl = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
+          let pageInfoUrl = `https://${sh.shop}/admin/api/2026-07/products.json?limit=250`;
           let shFailed = false, shFirstError = null;
           // 16 páginas × 250 = 4000 órdenes. Con 4 (=1000) una tienda que vende
         // ~1900/mes solo veía las más recientes: las ventas que agotaron un
@@ -983,7 +983,7 @@ export default async function handler(req, res) {
           const sh = stores.find(s => s.type === "shopify");
           if (sh) await ensureShopifyToken(db, uid, sh);
           if (sh?.accessToken && sh?.shop) {
-            const r = await fetch(`https://${sh.shop}/admin/api/2024-10/orders.json?status=any&limit=${n}&order=created_at+desc&created_at_min=${desde}&fields=id,name,created_at,financial_status,cancelled_at,line_items`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
+            const r = await fetch(`https://${sh.shop}/admin/api/2026-07/orders.json?status=any&limit=${n}&order=created_at+desc&created_at_min=${desde}&fields=id,name,created_at,financial_status,cancelled_at,line_items`, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
             const j = r.ok ? await r.json() : { error: `HTTP ${r.status}` };
             for (const o of (j.orders || [])) ordenes.push({ plataforma: "shopify", order_id: `SH-ORD-${o.id}`, nombre: o.name, fecha: o.created_at, estado: o.financial_status, cancelada: !!o.cancelled_at, unidades: (o.line_items || []).reduce((a, li) => a + (parseInt(li.quantity) || 0), 0), items: (o.line_items || []).map(li => `${li.sku || li.product_id} x${li.quantity}`) });
             if (j.error) out.diag_shopify_error = j.error;
@@ -1260,7 +1260,7 @@ export default async function handler(req, res) {
       const sh = stores.find(s => s.type === "shopify");
       if (sh) await ensureShopifyToken(db, uid, sh);
       if (sh?.accessToken && sh?.shop) {
-        let url = `https://${sh.shop}/admin/api/2024-10/products.json?limit=250`;
+        let url = `https://${sh.shop}/admin/api/2026-07/products.json?limit=250`;
         for (let i = 0; i < 4 && url; i++) {
           try {
             const r = await fetch(url, { headers: { "X-Shopify-Access-Token": sh.accessToken } });
