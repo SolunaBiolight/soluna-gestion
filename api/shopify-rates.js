@@ -286,7 +286,8 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
   const env = andreaniEnv();
   if (!env) return { rates: [], why: "faltan credenciales Andreani en el servidor" };
   const [cfg, esAdmin] = await Promise.all([getGlobalConfig(db), isPlatformAdmin(db, uid)]);
-  if (!esAdmin && !cfg.habilitados.includes(uid)) return { rates: [], why: "esta tienda no tiene habilitado Envíos Andreani en Growith (lo habilita el admin)" };
+  // Lanzamiento oficial (19/oct/2026): abierto a todas las tiendas, salvo que un admin lo cierre (abiertoATodos:false).
+  if (!esAdmin && cfg.abiertoATodos === false && !cfg.habilitados.includes(uid)) return { rates: [], why: "esta tienda no tiene habilitado Envíos Andreani en Growith (lo habilita el admin)" };
 
   const b = ac.bulto || {};
   const requiresShipping = items.filter(i => i.requires_shipping !== false);

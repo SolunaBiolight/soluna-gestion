@@ -275,6 +275,7 @@ export async function getGlobalConfig(db) {
       // gestión nueva y resuelve todo desde ahí. El token lo genera ejecutivaTokenAsegurar.
       ejecutivaEmail: String(d.ejecutivaEmail || "").trim().slice(0, 160),
       ejecutivaToken: String(d.ejecutivaToken || "").trim(),
+      abiertoATodos: d.abiertoATodos !== false,
       fiscal: (d.fiscal && typeof d.fiscal === "object") ? { iibbPct: Number(d.fiscal.iibbPct) || 0, cuit: String(d.fiscal.cuit || ""), costoConIva: d.fiscal.costoConIva !== false, desde: String(d.fiscal.desde || "") } : null,
     };
   } catch (_) {
@@ -1169,6 +1170,10 @@ async function sendEmail({ to, subject, html }) {
 }
 
 // Mes actual en hora Argentina, formato YYYY-MM (para stats mensuales).
+// Envíos con saldo (etiquetas prepagas): LANZAMIENTO OFICIAL el 19/oct/2026 — abierto a toda cuenta con
+// acceso a la sección Envíos (eso ya lo exige requireUid). La lista `habilitados` solo cuenta si un admin
+// vuelve a cerrar el servicio (andreani_config/global.abiertoATodos = false).
+function enviosSaldoHabilitado(cfg, uid, esAdmin) { return !!esAdmin || cfg?.abiertoATodos !== false || (cfg?.habilitados || []).includes(uid); }
 // Cargas que cuentan como "pendientes de facturar" (Admin → Envíos → Facturación): desde la fecha que el
 // admin elige en la config fiscal (fiscal.desde, AAAA-MM-DD, hora AR); sin fecha, todas.
 function factDesdeMs(fiscal) { const d = String(fiscal?.desde || ""); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? Date.parse(d + "T00:00:00-03:00") : 0; }
@@ -1638,7 +1643,9 @@ export default async function handler(req, res) {
       const cfgS = await getGlobalConfig(db);
       const out = { revisadas: 0, avisadas: 0, errores: 0 };
       const t0 = Date.now();
-      for (const u of cfgS.habilitados) {
+      const uidsS = new Set(cfgS.habilitados.map(String));
+      try { (await db.collection("users").where("andreaniUsadoAt", ">", 0).select().get()).docs.forEach(d => uidsS.add(d.id)); } catch (_) {}
+      for (const u of uidsS) {
         if (Date.now() - t0 > 40000) { out.truncado = true; break; }
         try {
           const uRef = db.collection("users").doc(String(u));
@@ -1724,7 +1731,7 @@ export default async function handler(req, res) {
       }
       return res.json({
         ok: true,
-        enabled: esAdmin || cfg.habilitados.includes(uid),
+        enabled: enviosSaldoHabilitado(cfg, uid, esAdmin),
         saldo,
         etiquetasEstimadas,
         saldoBajo: etiquetasEstimadas != null && etiquetasEstimadas < 5,
@@ -2051,7 +2058,7 @@ export default async function handler(req, res) {
       const [cfgG, snap, esAdmin] = await Promise.all([
         getGlobalConfig(db), userRef.get(), isPlatformAdmin(db, uid),
       ]);
-      if (!esAdmin && !cfgG.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
+      if (!enviosSaldoHabilitado(cfgG, uid, esAdmin)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
       const cfg = cfgParaCuenta(cfgG, snap.data());
 
       const cot = await cotizarAndreani(db, env, { tipo, cpDestino, bultos, sucursalOrigen: sucOrigenDe(snap.data(), cfg), hop: body.hop === true });
@@ -2110,7 +2117,7 @@ export default async function handler(req, res) {
       const [cfgG, snap, esAdmin] = await Promise.all([
         getGlobalConfig(db), userRef.get(), isPlatformAdmin(db, uid),
       ]);
-      if (!esAdmin && !cfgG.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
+      if (!enviosSaldoHabilitado(cfgG, uid, esAdmin)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
       const uData = snap.exists ? snap.data() : {};
       const cfg = cfgParaCuenta(cfgG, uData); // markup por cliente, si lo tiene
       const origen = uData.andreaniOrigen;
@@ -2321,7 +2328,9 @@ export default async function handler(req, res) {
           }
           const nuevo = saldo - precio;
           if (envioRef) tx.set(envioRef, { andreani: { emitiendoTs: Date.now() } }, { merge: true });
-          tx.set(userRef, { andreaniSaldo: nuevo }, { merge: true });
+          // andreaniUsadoAt: con el servicio abierto a todos (19/oct/2026) los crons y el Admin ya no recorren
+          // solo `habilitados`, sino las cuentas que alguna vez usaron saldo.
+          tx.set(userRef, { andreaniSaldo: nuevo, andreaniUsadoAt: Date.now() }, { merge: true });
           tx.set(movRef, {
             tipo: "debito",
             monto: precio,
@@ -2646,7 +2655,7 @@ export default async function handler(req, res) {
     if (action === "carga_solicitar") {
       const cfg = await getGlobalConfig(db);
       const esAdmin = await isPlatformAdmin(db, uid);
-      if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene Andreani prepago habilitado." });
+      if (!enviosSaldoHabilitado(cfg, uid, esAdmin)) return res.status(403).json({ error: "Tu cuenta no tiene Andreani prepago habilitado." });
       const monto = Math.round(Number(body.monto));
       if (!isFinite(monto) || monto < 1000) return res.status(400).json({ error: "El monto mínimo de carga es $1.000." });
       if (monto > 10000000) return res.status(400).json({ error: "Monto demasiado alto." });
@@ -2855,7 +2864,7 @@ export default async function handler(req, res) {
       if (!mpTok) return res.status(500).json({ error: "Mercado Pago no está configurado todavía (falta MP_ACCESS_TOKEN en Vercel)." });
       const cfg = await getGlobalConfig(db);
       const esAdmin = await isPlatformAdmin(db, uid);
-      if (!esAdmin && !cfg.habilitados.includes(uid)) return res.status(403).json({ error: "Tu cuenta no tiene Andreani prepago habilitado." });
+      if (!enviosSaldoHabilitado(cfg, uid, esAdmin)) return res.status(403).json({ error: "Tu cuenta no tiene Andreani prepago habilitado." });
       const monto = Math.round(Number(body.monto));
       if (!isFinite(monto) || monto < 1000) return res.status(400).json({ error: "El monto mínimo de carga es $1.000." });
       if (monto > 10000000) return res.status(400).json({ error: "Monto demasiado alto." });
@@ -3023,7 +3032,7 @@ export default async function handler(req, res) {
           .map(([id, e]) => { const s = slimEnvio(id, e); s.creado = s.creado || fechaDe(e) || null; s.problema = problemaDe(e, ahora); return s; })
           .sort((a, b) => String(b.creado || "").localeCompare(String(a.creado || "")));
         const ud = uSnap.exists ? uSnap.data() : {};
-        return res.json({ ok: true, dias, envios, total: envios.length, truncado: snap.size >= 4000, activados: heal, saldo: Math.round(Number(ud.andreaniSaldo) || 0), email: ud.email || "", habilitado: (await getGlobalConfig(db)).habilitados.includes(targetUid), trackActivo: ud.enviosTrackActivo || null });
+        return res.json({ ok: true, dias, envios, total: envios.length, truncado: snap.size >= 4000, activados: heal, saldo: Math.round(Number(ud.andreaniSaldo) || 0), email: ud.email || "", habilitado: enviosSaldoHabilitado(await getGlobalConfig(db), targetUid, false), trackActivo: ud.enviosTrackActivo || null });
       }
       // Envíos con problema en TODA la plataforma: mismas cuentas que rota el cron
       // de seguimiento (activas en Envíos los últimos 45 días), envíos activos.
@@ -3298,6 +3307,7 @@ export default async function handler(req, res) {
         const cfgL = await getGlobalConfig(db);
         const uids = new Set(cfgL.habilitados.map(String));
         try { (await db.collection("users").where("andreaniSaldo", ">", 0).select("email").get()).docs.forEach(d => uids.add(d.id)); } catch (_) {}
+        try { (await db.collection("users").where("andreaniUsadoAt", ">", 0).select("email").get()).docs.forEach(d => uids.add(d.id)); } catch (_) {}
         const dudosos = [], reversosPendientes = [], anuladasConIngreso = [];
         const emails = {};
         let truncado = false;
@@ -3557,7 +3567,8 @@ export default async function handler(req, res) {
       // que existiera (lee los envíos por API de las cuentas habilitadas).
       if (action === "admin_idx_backfill") {
         const cfg = await getGlobalConfig(db);
-        const uids = [...new Set([...cfg.habilitados, ...FOUNDERS])];
+        const usados = []; try { (await db.collection("users").where("andreaniUsadoAt", ">", 0).select().get()).docs.forEach(d => usados.push(d.id)); } catch (_) {}
+        const uids = [...new Set([...cfg.habilitados, ...FOUNDERS, ...usados])];
         let escritos = 0, vistos = 0; const t0 = Date.now();
         for (const u of uids) {
           if (Date.now() - t0 > 40000) break;
@@ -3636,7 +3647,7 @@ export default async function handler(req, res) {
 
       if (action === "admin_config") {
         const gRef = db.collection("andreani_config").doc("global");
-        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.descuentoPct !== undefined || body.seguroPct !== undefined || body.sucursalOrigen !== undefined || body.datosPago !== undefined)) {
+        if (req.method === "POST" && (body.markupPct !== undefined || body.markupFijo !== undefined || body.habilitados !== undefined || body.abiertoATodos !== undefined || body.descuentoPct !== undefined || body.seguroPct !== undefined || body.sucursalOrigen !== undefined || body.datosPago !== undefined)) {
           const upd = {};
           if (body.markupPct !== undefined) {
             const v = Number(body.markupPct);
@@ -3661,6 +3672,7 @@ export default async function handler(req, res) {
           if (body.sucursalOrigen !== undefined) {
             upd.sucursalOrigen = String(body.sucursalOrigen || "").trim().slice(0, 20);
           }
+          if (body.abiertoATodos !== undefined) upd.abiertoATodos = !!body.abiertoATodos;
           if (body.habilitados !== undefined) {
             if (!Array.isArray(body.habilitados)) return res.status(400).json({ error: "habilitados debe ser un array de uids" });
             upd.habilitados = body.habilitados.map(String).filter(Boolean);

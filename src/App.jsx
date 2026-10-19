@@ -21081,11 +21081,11 @@ function AppAdmin({T, user, onBack}) {
   async function saveSectionsConfig(next) { await adminApi({action:"setSectionsConfig", adminOnlySections:next}); setSectionsConfig(next); toast("Accesos actualizados","success"); }
   // 17/oct/2026: antes no se cargaban los datos de la ejecutiva ni los días de anulación, y como el
   // guardado manda todo, habilitar una cuenta o tocar "Envíos con saldo" los BORRABA (y la anulación volvía a 14).
-  async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); if(c?._lecturaFallo){ toast("No se pudo leer la configuración de Envíos: recargá la página antes de cambiar algo","error"); return; } setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:c.ejecutivaWa||"", ejecutivaNombre:c.ejecutivaNombre||"", ejecutivaEmail:c.ejecutivaEmail||"", emailGestiones:c.emailGestiones||"", anulacionDias:c.anulacionDias??14, _ok:true}); } catch(_){} }
+  async function loadEnvCfg() { try { const c=await admAndreani("admin_config"); if(c?._lecturaFallo){ toast("No se pudo leer la configuración de Envíos: recargá la página antes de cambiar algo","error"); return; } setEnvCfg({markupPct:c.markupPct??0, markupFijo:c.markupFijo??0, descuentoPct:c.descuentoPct??0, seguroPct:c.seguroPct??1, sucursalOrigen:c.sucursalOrigen||"", habilitados:Array.isArray(c.habilitados)?c.habilitados:[], datosPago:c.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:c.ejecutivaWa||"", ejecutivaNombre:c.ejecutivaNombre||"", ejecutivaEmail:c.ejecutivaEmail||"", emailGestiones:c.emailGestiones||"", anulacionDias:c.anulacionDias??14, abiertoATodos:c.abiertoATodos!==false, _ok:true}); } catch(_){} }
   async function saveEnvCfg(next) {
     const body = next || envCfg; if(!body) return false;
     if(!body._ok){ toast("La configuración todavía no cargó: esperá un segundo y probá de nuevo.","warning"); return false; }
-    try { await admAndreani("admin_config",{markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/\D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), ejecutivaEmail:String(body.ejecutivaEmail||"").trim(), emailGestiones:String(body.emailGestiones||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
+    try { await admAndreani("admin_config",{abiertoATodos:body.abiertoATodos!==false, markupPct:parseFloat(body.markupPct)||0, markupFijo:parseFloat(body.markupFijo)||0, descuentoPct:parseFloat(body.descuentoPct)||0, seguroPct:body.seguroPct===""?1:(parseFloat(body.seguroPct)||0), sucursalOrigen:String(body.sucursalOrigen||"").trim(), habilitados:body.habilitados, datosPago:body.datosPago||{alias:"",titular:"",cbu:""}, ejecutivaWa:String(body.ejecutivaWa||"").replace(/\D/g,""), ejecutivaNombre:String(body.ejecutivaNombre||"").trim(), ejecutivaEmail:String(body.ejecutivaEmail||"").trim(), emailGestiones:String(body.emailGestiones||"").trim(), anulacionDias:Math.min(Math.max(parseInt(body.anulacionDias)||14,3),90)}); }
     catch(e){ toast("No se pudo guardar: "+e.message,"error"); return false; }
     setEnvCfg({...body}); return true;
   }
@@ -21505,7 +21505,8 @@ function AdmFicha({ctx, u, onClose, pestana="resumen"}) {
   const userPagos=pagos.filter(p=>p.uid===u._id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const reales=userPagos.filter(p=>!p.isTrial&&p.estado==="confirmado"&&p.amount>0);
   const referidos=Object.values(usuariosPorUid).filter(x=>x.refBy===u._id);
-  const hab=(envCfg?.habilitados||[]).includes(u._id);
+  const habLista=(envCfg?.habilitados||[]).includes(u._id); const abiertoTodos=envCfg?.abiertoATodos!==false;
+  const hab=abiertoTodos||habLista;
   const F=(k,v)=><AdmFila T={T} k={k} v={v}/>;
   const cardT=(t,children,right)=><Card T={T} padding="lg"><AdmTitulo T={T} t={t} right={right}/>{children}</Card>;
   return (
@@ -21566,7 +21567,7 @@ function AdmFicha({ctx, u, onClose, pestana="resumen"}) {
             </div>
             <div>
               <AdmLbl T={T}>Accesos</AdmLbl>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Envíos con saldo<div style={{fontSize:11,color:T.textSm}}>Etiquetas prepagas de Andreani.</div></div><DSToggle T={T} active={hab} onToggle={()=>toggleEnviosSaldo(u).catch(e=>toast(e.message,"error"))}/></div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Envíos con saldo<div style={{fontSize:11,color:T.textSm}}>{abiertoTodos?"Abierto a todas las cuentas (Configuración).":"Etiquetas prepagas de Andreani."}</div></div>{abiertoTodos?<DSBadge T={T} color={T.green} size="sm">Habilitado</DSBadge>:<DSToggle T={T} active={habLista} onToggle={()=>toggleEnviosSaldo(u).catch(e=>toast(e.message,"error"))}/>}</div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"4px 0"}}><div style={{fontSize:12,color:T.text}}>Administrador<div style={{fontSize:11,color:T.textSm}}>{founder?"Acceso total al panel.":"Solo el dueño puede cambiarlo."}</div></div>{founder?<DSToggle T={T} active={!!u.isAdmin} onToggle={()=>toggleAdmin(u).catch(e=>toast(e.message,"error"))}/>:<span style={{fontSize:11,color:u.isAdmin?T.purple:T.textSm,fontWeight:600}}>{u.isAdmin?"Sí":"No"}</span>}</div>
             </div>
           </div></Card>
@@ -24380,7 +24381,11 @@ function AdmConfig({ctx}) {
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
             <Card T={T} padding="lg">
-              <AdmTitulo T={T} t="Cuentas habilitadas" sub="Solo estas cuentas ven las etiquetas prepagas en Envíos."/>
+              <AdmTitulo T={T} t="Envíos con saldo" sub={envCfg?.abiertoATodos!==false?"Lanzamiento oficial: abierto a todas las cuentas con acceso a Envíos. La lista de abajo solo cuenta si lo cerrás.":"Cerrado: solo las cuentas de la lista ven las etiquetas prepagas en Envíos."}/>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"8px 12px",border:`1px solid ${T.border}`,borderRadius:12,marginBottom:12}}>
+                <div style={{fontSize:13,color:T.text,fontWeight:600}}>Abierto a todas las cuentas<div style={{fontSize:11,color:T.textSm,fontWeight:400}}>Apagalo solo si hay que volver a limitarlo a una lista.</div></div>
+                <DSToggle T={T} active={envCfg?.abiertoATodos!==false} onToggle={async()=>{ const abrir=envCfg?.abiertoATodos===false; if(!abrir&&!await appConfirm("¿Cerrar las etiquetas prepagas? Solo las cuentas de la lista las van a poder usar.",{danger:true,okLabel:"Cerrar"})) return; if(await saveEnvCfg({...envCfg,abiertoATodos:abrir})) toast(abrir?"Abierto a todas las cuentas":"Cerrado: solo la lista","success"); }}/>
+              </div>
               <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
                 {(envCfg?.habilitados||[]).length===0&&<div style={{fontSize:12,color:T.textSm}}>Ninguna todavía.</div>}
                 {(envCfg?.habilitados||[]).map(uid=>{ const u=usuariosPorUid[uid]; const s=(saldos||[]).find(c=>c.uid===uid); return (
