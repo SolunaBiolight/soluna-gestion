@@ -275,6 +275,7 @@ export async function getGlobalConfig(db) {
       // gestión nueva y resuelve todo desde ahí. El token lo genera ejecutivaTokenAsegurar.
       ejecutivaEmail: String(d.ejecutivaEmail || "").trim().slice(0, 160),
       ejecutivaToken: String(d.ejecutivaToken || "").trim(),
+      fiscal: (d.fiscal && typeof d.fiscal === "object") ? { iibbPct: Number(d.fiscal.iibbPct) || 0, cuit: String(d.fiscal.cuit || ""), costoConIva: d.fiscal.costoConIva !== false } : null,
     };
   } catch (_) {
     return { markupPct: 0, markupFijo: 0, descuentoPct: 0, seguroPct: 1, sucursalOrigen: "", habilitados: [], datosPago: { alias: "", titular: "", cbu: "" }, ejecutivaWa: "", ejecutivaNombre: "", anulacionDias: 14, emailGestiones: "contacto.growith@gmail.com", ejecutivaEmail: "", ejecutivaToken: "", _lecturaFallo: true };
@@ -1168,6 +1169,11 @@ async function sendEmail({ to, subject, html }) {
 }
 
 // Mes actual en hora Argentina, formato YYYY-MM (para stats mensuales).
+// "YYYY-MM" (hora argentina) de un timestamp en ms.
+function mesDeMs(ms) {
+  if (!ms) return "";
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit" }).format(new Date(ms));
+}
 function mesAR() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit",
@@ -3691,13 +3697,19 @@ export default async function handler(req, res) {
         const desdeMs = new Date(Date.UTC(y, m - 1, 1, 3)).getTime(); // 00:00 AR
         const hastaMs = new Date(Date.UTC(y, m, 1, 3)).getTime();
         const cargasPorUid = {};
-        let cargadoTotal = 0, cargasN = 0;
+        let cargadoTotal = 0, cargasN = 0, cargasFact = 0, montoFact = 0;
+        const serieMeses = [];
+        for (let i = 5; i >= 0; i--) { const dd = new Date(Date.UTC(y, m - 1 - i, 1)); serieMeses.push(dd.toISOString().slice(0, 7)); }
+        const cargadoMes = {};
         try {
-          const cs = await db.collection("andreani_cargas").where("estado", "==", "acreditada").limit(1000).get();
+          const cs = await db.collection("andreani_cargas").where("estado", "==", "acreditada").limit(3000).get();
           cs.docs.forEach(c => {
             const cd = c.data();
             const t = cd.resueltaTs?.toMillis?.() || cd.ts?.toMillis?.() || 0;
+            const mk = mesDeMs(t);
+            if (serieMeses.includes(mk)) cargadoMes[mk] = (cargadoMes[mk] || 0) + Math.round(Number(cd.monto) || 0);
             if (t < desdeMs || t >= hastaMs) return;
+            if (cd.factura?.comprobante) { cargasFact++; montoFact += Math.round(Number(cd.monto) || 0); }
             const monto = Math.round(Number(cd.monto) || 0);
             cargasPorUid[cd.uid] = cargasPorUid[cd.uid] || { monto: 0, n: 0 };
             cargasPorUid[cd.uid].monto += monto; cargasPorUid[cd.uid].n++;
@@ -3727,16 +3739,51 @@ export default async function handler(req, res) {
         })).sort((a, b) => b.monto - a.monto || b.cargado - a.cargado);
         const facturado = Math.round(Number(d.facturado) || 0);
         const costoReal = Math.round(Number(d.costoReal) || 0);
+        // Evolución de los últimos 6 meses (cobrado, costo, margen, etiquetas, cargado)
+        let serie = [];
+        try {
+          const sn = await db.getAll(...serieMeses.map(k => db.collection("andreani_config").doc(`stats_${k}`)));
+          serie = sn.map((x, i) => { const v = x.exists ? x.data() : {}; const cob = Math.round(Number(v.facturado) || 0), cos = Math.round(Number(v.costoReal) || 0);
+            return { mes: serieMeses[i], cobrado: cob, costo: cos, margen: cob - cos, etiquetas: Number(v.etiquetas) || 0, cargado: cargadoMes[serieMeses[i]] || 0 }; });
+        } catch (_) {}
         return res.json({
           mes,
           facturado,
           costoReal,
           margen: facturado - costoReal,
+          serie,
+          fiscal: cfgS.fiscal || null,
+          facturacion: { cargas: cargasN, facturadas: cargasFact, montoFacturado: montoFact, sinFacturar: cargadoTotal - montoFact },
           etiquetas: Number(d.etiquetas) || 0,
           cargadoTotal, cargasN,
           saldoTotal: cuentas.reduce((a, c) => a + (c.saldo || 0), 0),
           cuentas,
         });
+      }
+
+      // Configuración fiscal del negocio de envíos (19/oct/2026): % de Ingresos Brutos y CUIT con el que
+      // se facturan las cargas (uno del Facturador del admin). Solo se usa para estimar y para facturar.
+      if (action === "admin_fiscal_set" && req.method === "POST") {
+        const iibb = Number(body.iibbPct);
+        if (!(iibb >= 0 && iibb <= 20)) return res.status(400).json({ error: "El % de Ingresos Brutos tiene que estar entre 0 y 20" });
+        const fiscal = { iibbPct: Math.round(iibb * 100) / 100, cuit: String(body.cuit || "").replace(/\D/g, "").slice(0, 11), costoConIva: body.costoConIva !== false, at: Date.now(), por: adm.user.uid };
+        await db.collection("andreani_config").doc("global").set({ fiscal }, { merge: true });
+        return res.json({ ok: true, fiscal });
+      }
+      // Cargas de saldo acreditadas en un mes, con su factura (si ya se hizo).
+      if (action === "admin_cargas_mes") {
+        const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? String(body.mes) : mesAR();
+        const [yy, mm] = mes.split("-").map(Number);
+        const desde = new Date(Date.UTC(yy, mm - 1, 1, 3)).getTime(), hasta = new Date(Date.UTC(yy, mm, 1, 3)).getTime();
+        const cs = await db.collection("andreani_cargas").where("estado", "==", "acreditada").limit(3000).get();
+        const cargas = [];
+        cs.docs.forEach(c => { const cd = c.data(); const t = cd.resueltaTs?.toMillis?.() || cd.ts?.toMillis?.() || 0; if (t < desde || t >= hasta) return;
+          cargas.push({ id: c.id, uid: cd.uid, email: cd.email || "", monto: Math.round(Number(cd.monto) || 0), metodo: cd.metodo || "transferencia", ref: cd.ref || cd.codigo || "", ts: t,
+            factura: cd.factura ? { letra: cd.factura.letra || "", pv: cd.factura.pv || null, comprobante: cd.factura.comprobante || null, cae: cd.factura.cae || "", cuit: cd.factura.cuit || "", receptor: cd.factura.receptor || "Consumidor Final", at: cd.factura.at || null, comprobante_id: cd.factura.comprobante_id || "" } : null }); });
+        const faltan = [...new Set(cargas.filter(c => !c.email && c.uid).map(c => c.uid))].slice(0, 100);
+        if (faltan.length) { try { const sn = await db.getAll(...faltan.map(u => db.collection("users").doc(u))); const em = {}; sn.forEach(x => { if (x.exists) em[x.id] = x.data().email || ""; }); cargas.forEach(c => { if (!c.email) c.email = em[c.uid] || ""; }); } catch (_) {} }
+        cargas.sort((a, b) => a.ts - b.ts);
+        return res.json({ mes, cargas });
       }
 
       if (action === "admin_saldos") {

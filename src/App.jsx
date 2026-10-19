@@ -20514,7 +20514,7 @@ const ADM_CAT = { en_camino:["En camino","blue"], en_sucursal:["En sucursal","or
 // Estructura del panel (17/oct/2026): Para hacer · Clientes · Ingresos · Envíos · Configuración · Sistema.
 // Cada pestaña (y subpestaña) vive en el hash: #/admin/<tab>/<sub>, #/admin/cliente/<uid>/<pestaña>.
 const ADM_TABS=[["hacer","Para hacer"],["clientes","Clientes"],["ingresos","Ingresos"],["envios","Envíos"],["config","Configuración"],["sistema","Sistema"]];
-const ADM_SUBS={envios:[["operacion","Operación"],["billeteras","Billeteras"],["rentabilidad","Rentabilidad"]]};
+const ADM_SUBS={envios:[["operacion","Operación"],["billeteras","Billeteras"],["rentabilidad","Rentabilidad"],["facturacion","Facturación"]]};
 const ADM_FICHA_TABS=[["resumen","Resumen"],["plan","Plan y pagos"],["envios","Envíos"],["actividad","Actividad"]];
 const ADM_TAB_DESC={hacer:"Todo lo que necesita tu acción, con el botón para resolverlo ahí mismo.",clientes:"Todas las cuentas: plan, estado, origen, último login e integraciones.",ingresos:"Cobros, MRR, suscripciones y referidos.",envios:"El negocio de etiquetas prepagas: gestiones con Andreani, billeteras y rentabilidad.",config:"Precios de etiquetas, ejecutiva de Andreani, cuentas habilitadas, app de Shopify y accesos.",sistema:"Crons, servicios, registro de acciones y herramientas de mantenimiento."};
 function admPlanLabel(p){ return (p==="plus"||p==="full")?"Pro":p==="medio"?"Intermedio":p==="facturador"?"Facturador":"Free"; }
@@ -23988,7 +23988,7 @@ function AdmEnvios({ctx}) {
           <AdmTitulo T={T} t="Uso por cliente y rentabilidad" sub="Cobrado = lo que pagaron con su saldo. Costo real = lo que factura Andreani a fin de mes. Los tres primeros son el ranking del mes." right={<AdmSelect T={T} value={mes} onChange={e=>loadStats(e.target.value)}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</AdmSelect>}/>
           {stats.loading?<AdmSkeleton T={T} filas={5}/>:stats.error?<div style={{fontSize:12,color:T.red}}>{stats.error}</div>:!stats.data||(!(stats.data.etiquetas>0)&&!(stats.data.cargadoTotal>0)&&!(stats.data.cuentas||[]).length)?<AdmVacio T={T} titulo="Sin actividad en ese mes"/>:(()=>{ const d=stats.data; const cols="minmax(160px,1.4fr) 60px 100px 100px 90px 100px 100px"; return (<>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:14}}>
-              {[{label:"Etiquetas",val:String(d.etiquetas||0)},{label:"Cobrado",val:fmtMoney(d.facturado||0)},{label:"Costo Andreani",val:fmtMoney(d.costoReal||0)},{label:"Margen",val:fmtMoney(d.margen||0),color:(d.margen||0)>=0?T.green:T.red},{label:"Saldo cargado",val:fmtMoney(d.cargadoTotal||0),sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"}`},{label:"En billeteras hoy",val:fmtMoney(d.saldoTotal||0)}].map(k=><div key={k.label} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div><div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.3}}>{k.val}</div>{k.sub&&<div style={{fontSize:10,color:T.textSm}}>{k.sub}</div>}</div>)}
+              {[{label:"Etiquetas",val:String(d.etiquetas||0)},{label:"Cobrado",val:fmtMoney(d.facturado||0)},{label:"Costo Andreani",val:fmtMoney(d.costoReal||0)},{label:"Margen",val:fmtMoney(d.margen||0),sub:d.facturado&&d.costoReal?`${pct1((d.margen||0)/d.facturado*100)} de lo cobrado`:"falta el costo real",color:(d.margen||0)>=0?T.green:T.red},{label:"Saldo cargado",val:fmtMoney(d.cargadoTotal||0),sub:`${d.cargasN||0} carga${d.cargasN===1?"":"s"}`},{label:"En billeteras hoy",val:fmtMoney(d.saldoTotal||0)}].map(k=><div key={k.label} style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 12px"}}><div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{k.label}</div><div style={{fontSize:17,fontWeight:800,color:k.color||T.text,letterSpacing:-0.3}}>{k.val}</div>{k.sub&&<div style={{fontSize:10,color:T.textSm}}>{k.sub}</div>}</div>)}
             </div>
             {(d.cuentas||[]).length>0&&<div style={{border:`1px solid ${T.border}`,borderRadius:10,overflowX:"auto"}}><div style={{minWidth:700}}>
               <div style={{display:"grid",gridTemplateColumns:cols,gap:8,padding:"8px 12px",fontSize:10,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,borderBottom:`1px solid ${T.borderL}`,background:T.surface}}><span>Cliente</span><span style={{textAlign:"right"}}>Etiq.</span><span style={{textAlign:"right"}}>Cobrado</span><span style={{textAlign:"right"}}>Costo</span><span style={{textAlign:"right"}}>Margen</span><span style={{textAlign:"right"}}>Cargó</span><span style={{textAlign:"right"}}>Saldo</span></div>
@@ -24001,8 +24001,10 @@ function AdmEnvios({ctx}) {
             </div></div>}
           </>); })()}
         </Card>
+        {stats.data&&!stats.loading&&<AdmEnviosFiscal T={T} d={stats.data} onGuardado={()=>loadStats(mes)}/>}
         <AdmConciliacion T={T} usuariosPorUid={usuariosPorUid}/>
       </>)}
+      {vista==="facturacion"&&<AdmEnviosFacturacion T={T} meses={meses} usuariosPorUid={usuariosPorUid} setCuenta={setCuenta}/>}
       <AdmAcreditarModal T={T} cuenta={acred} onClose={()=>setAcred(null)} onDone={()=>loadSaldos()}/>
       <AdmMovsModal T={T} cuenta={movs} onClose={()=>setMovs(null)}/>
       <Modal T={T} open={!!compVer} onClose={()=>setCompVer(null)} title={`Comprobante · ${compVer?.ref||""} · ${compVer?fmtMoney(compVer.monto):""}`} width={720} zIndex={1400}>
@@ -24010,6 +24012,141 @@ function AdmEnvios({ctx}) {
       </Modal>
     </>
   );
+}
+
+// ── Negocio de envíos: rentabilidad fiscal y facturación de las cargas (19/oct/2026) ─────────────
+// Pedido de Lautaro: ver porcentualmente cuánto gana (para facturar, IVA e Ingresos Brutos) y un lugar
+// para facturar los ingresos que entran por el checkout. Todo es ESTIMADO: lo cierra el contador.
+const pct1 = v => (isFinite(v) ? (Math.round(v * 10) / 10).toLocaleString("es-AR") + " %" : "—");
+function useAdmMisCuits(){
+  const [cuits,setCuits]=useState(null);
+  useEffect(()=>{ (async()=>{ try{ const uid=auth.currentUser?.uid; const r=await authFetch(`/api/arca?action=list_cuits&uid=${encodeURIComponent(uid||"")}`); const j=await r.json().catch(()=>({})); setCuits(Array.isArray(j.cuits)?j.cuits:[]); }catch(_){ setCuits([]); } })(); },[]);
+  return cuits;
+}
+// Cálculo puro de impuestos estimados del mes (exportable para tests si hace falta).
+function ghEnvFiscal({cobrado=0,costo=0,condicion="RI",iibbPct=0,costoConIva=true}){
+  const ri=condicion!=="MONOTRIBUTO";
+  const netoVenta=ri?cobrado/1.21:cobrado;
+  const netoCosto=ri&&costoConIva?costo/1.21:costo;
+  const ivaDebito=ri?cobrado-netoVenta:0, ivaCredito=ri&&costoConIva?costo-netoCosto:0;
+  const ivaPagar=ivaDebito-ivaCredito;
+  const iibb=netoVenta*(Number(iibbPct)||0)/100;
+  const margenNeto=netoVenta-netoCosto;
+  const ganancia=margenNeto-iibb;
+  return {ri,netoVenta,netoCosto,ivaDebito,ivaCredito,ivaPagar,iibb,margenNeto,ganancia,
+    pctMargen:netoVenta>0?margenNeto/netoVenta*100:NaN, pctMarkup:netoCosto>0?margenNeto/netoCosto*100:NaN, pctGanancia:netoVenta>0?ganancia/netoVenta*100:NaN};
+}
+function AdmEnviosFiscal({T, d, onGuardado}){
+  const cuits=useAdmMisCuits();
+  const fis=d.fiscal||{};
+  const [cuit,setCuit]=useState(fis.cuit||""); const [iibb,setIibb]=useState(String(fis.iibbPct??"")); const [conIva,setConIva]=useState(fis.costoConIva!==false);
+  useEffect(()=>{ if(!cuit&&cuits&&cuits.length) setCuit(String(cuits[0].cuit||"").replace(/\D/g,"")); },[cuits]);
+  const cfgC=(cuits||[]).find(c=>String(c.cuit||"").replace(/\D/g,"")===cuit);
+  const condicion=cfgC?.condicion_fiscal||"RI";
+  const cob=d.facturado||0, cos=d.costoReal||0;
+  const f=ghEnvFiscal({cobrado:cob,costo:cos,condicion,iibbPct:Number(String(iibb).replace(",","."))||0,costoConIva:conIva});
+  const guardar=async()=>{ const v=Number(String(iibb).replace(",","."))||0; await admAndreani("admin_fiscal_set",{iibbPct:v,cuit,costoConIva:conIva}); toast("Guardado","success"); onGuardado&&onGuardado(); };
+  const fila=(l,v,o={})=>(<div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"9px 0",borderBottom:o.last?"none":`1px solid ${T.borderL}`,fontSize:13}}><span style={{color:o.fuerte?T.text:T.textMd,fontWeight:o.fuerte?700:500}}>{l}</span><span style={{color:o.color||T.text,fontWeight:o.fuerte?800:600,fontVariantNumeric:"tabular-nums"}}>{v}</span></div>);
+  const serie=(d.serie||[]).filter(x=>x.cobrado||x.cargado||x.etiquetas);
+  return (<>
+    <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
+      <Card T={T} padding="lg">
+        <AdmTitulo T={T} t="Cuánto te queda" sub={f.ri?"Montos sin IVA. El IVA no es ganancia: se cobra y se paga a ARCA.":"Monotributo: no hay IVA para descontar; todo lo cobrado cuenta para el tope de la categoría."}/>
+        {fila(f.ri?"Cobrado sin IVA":"Cobrado",fmtMoney(Math.round(f.netoVenta)))}
+        {fila(f.ri&&conIva?"Costo Andreani sin IVA":"Costo Andreani",fmtMoney(Math.round(f.netoCosto)))}
+        {fila("Margen",`${fmtMoney(Math.round(f.margenNeto))} · ${pct1(f.pctMargen)} de lo cobrado`,{color:f.margenNeto>=0?T.green:T.red})}
+        {fila("Sobre el costo (markup)",pct1(f.pctMarkup))}
+        {fila(`Ingresos Brutos estimados (${pct1(Number(String(iibb).replace(",","."))||0)})`,`− ${fmtMoney(Math.round(f.iibb))}`)}
+        {fila("Te queda antes de Ganancias",`${fmtMoney(Math.round(f.ganancia))} · ${pct1(f.pctGanancia)}`,{fuerte:true,last:true,color:f.ganancia>=0?T.green:T.red})}
+        {!(cos>0)&&<div style={{fontSize:11,color:T.yellow,marginTop:10,lineHeight:1.5}}>Todavía no hay costo de Andreani de este mes (sale de conciliar su factura, abajo). Hasta entonces el margen sale de más.</div>}
+      </Card>
+      <Card T={T} padding="lg">
+        <AdmTitulo T={T} t="IVA del mes" sub={f.ri?"Débito de lo que facturás menos el crédito de las facturas de Andreani. El crédito es de tu CUIT: si sobra, se usa contra tus otras ventas o queda a favor.":"Con un CUIT monotributista no se calcula IVA."}/>
+        {f.ri?(<>
+          {fila("IVA de tus ventas (débito)",fmtMoney(Math.round(f.ivaDebito)))}
+          {fila("IVA de Andreani (crédito)",`− ${fmtMoney(Math.round(f.ivaCredito))}`)}
+          {fila(f.ivaPagar>=0?"IVA a pagar por este negocio":"Te queda a favor",fmtMoney(Math.round(Math.abs(f.ivaPagar))),{fuerte:true,last:true,color:f.ivaPagar>=0?T.text:T.green})}
+        </>):<div style={{fontSize:13,color:T.textMd,lineHeight:1.6}}>Lo cobrado este mes ({fmtMoney(cob)}) suma para el tope anual del Monotributo. Con estos montos conviene revisar con tu contador si te corresponde pasar a responsable inscripto.</div>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 110px",gap:10,marginTop:16}}>
+          <label style={{fontSize:11,color:T.textSm,fontWeight:600}}>CUIT con el que facturás
+            <select value={cuit} onChange={e=>setCuit(e.target.value)} style={{...InputStyle(T),marginTop:5}}>{cuits===null?<option>Cargando…</option>:!cuits.length?<option value="">No tenés CUITs en el Facturador</option>:cuits.map(c=>{ const v=String(c.cuit||"").replace(/\D/g,""); return <option key={v} value={v}>{c.razon_social||c.nombre_fantasia||v} · {c.condicion_fiscal==="MONOTRIBUTO"?"Monotributo":"Resp. inscripto"}</option>; })}</select></label>
+          <label style={{fontSize:11,color:T.textSm,fontWeight:600}}>Ingresos Brutos %
+            <input value={iibb} onChange={e=>setIibb(e.target.value)} placeholder="Ej. 3,5" inputMode="decimal" style={{...InputStyle(T),marginTop:5}}/></label>
+        </div>
+        {f.ri&&<label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,marginTop:10,cursor:"pointer"}}><input type="checkbox" checked={conIva} onChange={e=>setConIva(e.target.checked)}/>El costo de Andreani incluye IVA (factura A a tu nombre)</label>}
+        <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}><AdmBtn T={T} variant="secondary" size="sm" onClick={guardar}>Guardar</AdmBtn></div>
+        <div style={{fontSize:11,color:T.textSm,marginTop:10,lineHeight:1.5}}>Es una estimación para ordenarte: la liquidación de IVA, Ingresos Brutos y Ganancias la cierra tu contador.</div>
+      </Card>
+    </div>
+    {serie.length>1&&<Card T={T} padding="lg">
+      <AdmTitulo T={T} t="Últimos meses" sub="Margen % = margen sobre lo cobrado (con IVA incluido en ambos, como se cobra)."/>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:620}}>
+        <thead><tr>{["Mes","Etiquetas","Saldo cargado","Cobrado","Costo Andreani","Margen","Margen %"].map((h,i)=><th key={h} style={{textAlign:i?"right":"left",padding:"8px 10px",color:T.textSm,fontWeight:600,borderBottom:`1px solid ${T.border}`}}>{h}</th>)}</tr></thead>
+        <tbody>{serie.map(x=>(<tr key={x.mes}>
+          <td style={{padding:"9px 10px",color:T.text,fontWeight:600}}>{admMesLabel(x.mes)}</td>
+          <td style={{padding:"9px 10px",textAlign:"right",color:T.textMd}}>{x.etiquetas}</td>
+          <td style={{padding:"9px 10px",textAlign:"right",color:T.textMd}}>{fmtMoney(x.cargado)}</td>
+          <td style={{padding:"9px 10px",textAlign:"right",color:T.text,fontWeight:600}}>{fmtMoney(x.cobrado)}</td>
+          <td style={{padding:"9px 10px",textAlign:"right",color:T.textMd}}>{x.costo?fmtMoney(x.costo):"—"}</td>
+          <td style={{padding:"9px 10px",textAlign:"right",color:x.costo?(x.margen>=0?T.green:T.red):T.textSm}}>{x.costo?fmtMoney(x.margen):"—"}</td>
+          <td style={{padding:"9px 10px",textAlign:"right",color:T.text,fontWeight:600}}>{x.costo&&x.cobrado?pct1(x.margen/x.cobrado*100):"—"}</td>
+        </tr>))}</tbody></table></div>
+    </Card>}
+  </>);
+}
+function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
+  const cuits=useAdmMisCuits();
+  const [mes,setMes]=useState(meses[0].v); const [data,setData]=useState(null); const [err,setErr]=useState("");
+  const [sel,setSel]=useState({}); const [datos,setDatos]=useState({}); const [cuit,setCuit]=useState(""); const [busy,setBusy]=useState(false); const [res,setRes]=useState(null);
+  const cargar=async(m=mes)=>{ setData(null); setErr(""); setSel({}); try{ const d=await admAndreani(`admin_cargas_mes&mes=${encodeURIComponent(m)}`); setData(d.cargas||[]); }catch(e){ setErr(e.message); } };
+  useEffect(()=>{ cargar(mes); },[mes]);
+  useEffect(()=>{ (async()=>{ try{ const g=await admAndreani("admin_config"); if(g?.fiscal?.cuit) setCuit(g.fiscal.cuit); }catch(_){} })(); },[]);
+  useEffect(()=>{ if(!cuit&&cuits&&cuits.length) setCuit(String(cuits[0].cuit||"").replace(/\D/g,"")); },[cuits]);
+  const lista=data||[]; const sin=lista.filter(c=>!c.factura); const con=lista.filter(c=>c.factura);
+  const elegidas=sin.filter(c=>sel[c.id]);
+  const tot=a=>a.reduce((s,c)=>s+(c.monto||0),0);
+  const pedirDatos=async(c)=>{ const doc=await appPrompt(`CUIT o DNI del cliente para la carga de ${fmtMoney(c.monto)} (${c.email||c.uid}). Dejalo vacío para Consumidor Final:`, datos[c.id]?.doc_nro||""); if(doc===null||doc===undefined) return; const dn=String(doc).replace(/\D/g,""); if(!dn){ setDatos(p=>{ const n={...p}; delete n[c.id]; return n; }); return; } if(!(dn.length===11||(dn.length>=7&&dn.length<=8))) return toast("Un CUIT tiene 11 dígitos y un DNI 7 u 8","error"); const nom=await appPrompt("Nombre o razón social que va en la factura:", datos[c.id]?.nombre||""); if(!nom) return; setDatos(p=>({...p,[c.id]:{doc_tipo:dn.length===11?"CUIT":"DNI",doc_nro:dn,nombre:String(nom).trim()}})); setSel(p=>({...p,[c.id]:true})); };
+  const facturar=async()=>{
+    if(!cuit) return toast("Elegí el CUIT con el que facturás","error");
+    if(!elegidas.length) return;
+    const cf=elegidas.filter(c=>!datos[c.id]).length;
+    if(!(await appConfirm(`Se emiten ${elegidas.length} factura${elegidas.length===1?"":"s"} en ARCA por ${fmtMoney(tot(elegidas))}${cf?` (${cf} a Consumidor Final)`:""}, con el CUIT ${cuit}. No se puede deshacer (solo con nota de crédito). ¿Seguimos?`))) return;
+    setBusy(true); setRes(null); const out=[];
+    try{
+      for(let i=0;i<elegidas.length;i+=10){
+        const lote=elegidas.slice(i,i+10).map(c=>({id:c.id,...(datos[c.id]||{doc_tipo:"CF"})}));
+        const r=await authFetch("/api/arca?action=admin_facturar_cargas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cuit,cargas:lote})});
+        const j=await r.json().catch(()=>({})); if(!r.ok||j.error) throw new Error(j.error||`HTTP ${r.status}`);
+        out.push(...(j.resultados||[]));
+      }
+    }catch(e){ out.push({ok:false,obs:e.message}); }
+    finally{ setBusy(false); setRes(out); cargar(mes); }
+  };
+  return (<Card T={T} padding="lg">
+    <AdmTitulo T={T} t="Facturar las cargas de saldo" sub="Una factura por carga, por el total que cargó el cliente, como servicio. Por defecto a Consumidor Final; si un cliente te pidió factura, cargale sus datos. Quedan en tu Facturador → Registros." right={<AdmSelect T={T} value={mes} onChange={e=>setMes(e.target.value)}>{meses.map(m=><option key={m.v} value={m.v}>{m.label}</option>)}</AdmSelect>}/>
+    <DepStrip T={T} items={[{c:T.blue,l:"Cargas del mes",v:String(lista.length),s:fmtMoney(tot(lista))},{c:T.green,l:"Facturadas",v:String(con.length),s:fmtMoney(tot(con))},{c:sin.length?T.yellow:T.green,l:"Sin facturar",v:String(sin.length),s:fmtMoney(tot(sin))}]}/>
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",margin:"14px 0"}}>
+      <select value={cuit} onChange={e=>setCuit(e.target.value)} style={{...InputStyle(T),width:"auto",minWidth:260}}>{cuits===null?<option>Cargando CUITs…</option>:!cuits.length?<option value="">No tenés CUITs en el Facturador</option>:cuits.map(c=>{ const v=String(c.cuit||"").replace(/\D/g,""); return <option key={v} value={v}>{c.razon_social||c.nombre_fantasia||v} · {c.condicion_fiscal==="MONOTRIBUTO"?"Monotributo (C)":"Resp. inscripto (A/B)"}</option>; })}</select>
+      {sin.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={()=>setSel(elegidas.length===sin.length?{}:Object.fromEntries(sin.map(c=>[c.id,true])))}>{elegidas.length===sin.length?"Destildar todo":`Seleccionar las ${sin.length} sin facturar`}</Btn>}
+      <div style={{flex:1}}/>
+      <Btn T={T} variant="primary" disabled={busy||!elegidas.length||!cuit} onClick={facturar}>{busy?"Facturando…":elegidas.length?`Facturar ${elegidas.length} · ${fmtMoney(tot(elegidas))}`:"Facturar"}</Btn>
+    </div>
+    {res&&<div style={{border:`1px solid ${res.some(x=>!x.ok)?T.yellow+"66":T.green+"55"}`,borderRadius:14,padding:"10px 14px",marginBottom:12,fontSize:12,color:T.textMd,lineHeight:1.6}}>
+      <div style={{fontWeight:700,color:T.text}}>{res.filter(x=>x.ok&&!x.ya).length} facturada{res.filter(x=>x.ok&&!x.ya).length===1?"":"s"}{res.some(x=>!x.ok)?` · ${res.filter(x=>!x.ok).length} con problema`:""}</div>
+      {res.filter(x=>!x.ok).map((x,i)=><div key={i} style={{color:T.red}}>• {x.id?`Carga ${x.id.slice(0,8)}: `:""}{x.obs||"Error"}</div>)}
+    </div>}
+    {err?<div style={{fontSize:12,color:T.red}}>{err}</div>:data===null?<AdmSkeleton T={T} filas={5}/>:!lista.length?<AdmVacio T={T} titulo="No hubo cargas acreditadas en ese mes"/>:(
+      <div style={{border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
+        {lista.map((c,i)=>{ const dd=datos[c.id]; return (<div key={c.id} style={{display:"grid",gridTemplateColumns:"28px minmax(0,1.6fr) 110px 120px minmax(0,1.4fr)",gap:10,alignItems:"center",padding:"10px 14px",borderBottom:i<lista.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
+          <span>{!c.factura&&<input type="checkbox" checked={!!sel[c.id]} onChange={e=>setSel(p=>({...p,[c.id]:e.target.checked}))}/>}</span>
+          <span style={{minWidth:0}}><button onClick={()=>usuariosPorUid[c.uid]&&setCuenta(c.uid)} style={{background:"transparent",border:"none",padding:0,color:T.text,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{c.email||String(c.uid||"").slice(0,10)}</button><span style={{display:"block",fontSize:11,color:T.textSm}}>{new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})} · {c.metodo==="mp"?"Mercado Pago":"Transferencia"}{c.ref?` · ${c.ref}`:""}</span></span>
+          <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(c.monto)}</span>
+          <span>{c.factura?<DSBadge T={T} color={T.green} size="sm">Factura {c.factura.letra} {String(c.factura.pv||"").padStart(4,"0")}-{String(c.factura.comprobante||"").padStart(8,"0")}</DSBadge>:<DSBadge T={T} color={T.yellow} size="sm">Sin facturar</DSBadge>}</span>
+          <span style={{minWidth:0,color:T.textMd,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>{c.factura?<span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.factura.receptor}</span>:<><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dd?`${dd.nombre} · ${dd.doc_tipo} ${dd.doc_nro}`:"Consumidor Final"}</span><Btn T={T} variant="ghost" size="sm" onClick={()=>pedirDatos(c)}>{dd?"Cambiar":"Con sus datos"}</Btn></>}</span>
+        </div>); })}
+      </div>)}
+    <div style={{fontSize:11,color:T.textSm,marginTop:10,lineHeight:1.5}}>Se emite con el punto de venta por defecto del CUIT, como servicio (concepto 2), con fecha de hoy. Una carga ya facturada no se puede volver a facturar.</div>
+  </Card>);
 }
 
 // Topes del Monotributo (Admin → Configuración): se cargan y se confirman a mano dos veces por año.

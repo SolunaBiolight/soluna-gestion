@@ -4189,6 +4189,71 @@ export default async function handler(req, res) {
     } catch (e) { console.error("[factura_publica]", e.message); return res.status(500).send("No se pudo generar la factura"); }
   }
 
+  // Facturar las cargas de saldo de envíos (19/oct/2026, negocio de etiquetas prepagas del admin): una
+  // factura por carga, por el TOTAL cargado, con un CUIT del Facturador del PROPIO admin (uid del token).
+  // Por defecto a Consumidor Final; con doc_tipo/doc_nro si el cliente pidió factura con sus datos. Usa
+  // ejecutarEmision (misma idempotencia que el Facturador: orden "ENV-<idCarga>") y anota la factura en
+  // andreani_cargas/{id}.factura. Concepto 2 (servicios). Nunca manda mail al cliente.
+  if (action === "admin_facturar_cargas") {
+    const adm = await requireAdmin(req);
+    if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
+    if (req.method !== "POST") return res.status(405).json({ error: "POST" });
+    try {
+      const db0 = initAdmin(); const adminUid = adm.user.uid;
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const cuitE = String(body.cuit || "").replace(/\D/g, "");
+      const cfg0 = cuitE ? await loadCuitConfig(db0, adminUid, cuitE) : null;
+      if (!cfg0) return res.status(400).json({ error: "Elegí un CUIT de tu Facturador" });
+      if (!cfg0.cert_pem || !cfg0.key_pem) return res.status(400).json({ error: "Ese CUIT no tiene el certificado de ARCA cargado (Facturador → Configuración)" });
+      const lista = (Array.isArray(body.cargas) ? body.cargas : []).slice(0, 40);
+      if (!lista.length) return res.status(400).json({ error: "Elegí al menos una carga" });
+      const hoyIso = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+      const ordenes = {}, previas = [], receptorDe = {};
+      for (const it of lista) {
+        const id = String(it.id || "");
+        if (!/^[A-Za-z0-9_-]{4,80}$/.test(id)) continue;
+        const sn = await db0.collection("andreani_cargas").doc(id).get();
+        if (!sn.exists) { previas.push({ id, ok: false, obs: "No existe esa carga" }); continue; }
+        const c = sn.data();
+        if (c.estado !== "acreditada") { previas.push({ id, ok: false, obs: "La carga no está acreditada" }); continue; }
+        if (c.factura?.comprobante) { previas.push({ id, ok: true, ya: true, factura: c.factura }); continue; }
+        const monto = Math.round((Number(c.monto) || 0) * 100) / 100;
+        if (!(monto > 0)) { previas.push({ id, ok: false, obs: "Monto inválido" }); continue; }
+        const dt = String(it.doc_tipo || "CF").toUpperCase(); const dn = String(it.doc_nro || "").replace(/\D/g, "");
+        const conDoc = (dt === "CUIT" && dn.length === 11) || (dt === "DNI" && dn.length >= 7 && dn.length <= 8);
+        if (!conDoc && monto >= 10000000) { previas.push({ id, ok: false, obs: "Por el monto, ARCA exige identificar al cliente: cargá su CUIT o DNI" }); continue; }
+        const nombre = conDoc ? (String(it.nombre || "").trim().slice(0, 80) || "Cliente") : "Consumidor Final";
+        receptorDe[`ENV-${id}`] = conDoc ? `${nombre} (${dt} ${dn})` : "Consumidor Final";
+        ordenes[`ENV-${id}`] = {
+          nombre, doc_tipo: conDoc ? dt : "CF", doc_nro: conDoc ? dn : "", dni: conDoc ? dn : "",
+          ...(conDoc && ["RI", "MONO", "EXENTO", "CF"].includes(String(it.iva_receptor || "")) ? { iva_receptor: it.iva_receptor } : {}),
+          total: monto, subtotal: monto, descuento: 0, envio: 0, estado_pago: "paid", fecha: hoyIso,
+          ciudad: "", provincia: "", email: "", metodo_pago: c.metodo === "mp" ? "Mercado Pago" : "Transferencia",
+          items: [{ nombre: "Servicio de envíos Andreani (carga de saldo prepago)", nombre_original: "Servicio de envíos Andreani", cantidad: 1, precio: monto, descuento_item: 0 }],
+          _cargaId: id,
+        };
+      }
+      let resultados = [];
+      if (Object.keys(ordenes).length) {
+        const r = await ejecutarEmision(db0, adminUid, cfg0, { cuitEmit: cuitE, ordenes, product_map: null, fechaImputacion: null, pvSel: parseInt(body.pv) || null, exentoReq: false, conceptoReq: 2, deadline: Date.now() + 50000 });
+        resultados = r.resultados || [];
+        for (const x of resultados) {
+          const id = String(x.orden_id || "").replace(/^ENV-/, "");
+          if (!id || !(x.ok || x.ya_facturada)) continue;
+          let fact = { cuit: cuitE, letra: x.letra || null, pv: x.punto_venta || null, comprobante: x.comprobante || null, cae: x.cae || "", comprobante_id: x.comprobante_id || "", receptor: receptorDe[x.orden_id] || "Consumidor Final", at: new Date().toISOString(), por: adminUid };
+          // Ya facturada en un intento anterior (se cortó antes de marcar la carga): se toma de Registros.
+          if (x.ya_facturada && !fact.comprobante) {
+            try { const q = await db0.collection("users").doc(adminUid).collection("arca_comprobantes").where("orden_id", "==", x.orden_id).limit(1).get();
+              if (!q.empty) { const c = q.docs[0].data(); fact = { ...fact, letra: c.letra || null, pv: c.punto_venta || null, comprobante: c.nro || null, cae: c.cae || "", comprobante_id: q.docs[0].id, receptor: c.cliente || fact.receptor }; } } catch (_) {}
+          }
+          if (fact.comprobante) await db0.collection("andreani_cargas").doc(id).set({ factura: fact }, { merge: true }).catch(e => console.error("[admin_facturar_cargas] marca:", e.message));
+        }
+      }
+      const out = [...previas, ...resultados.map(x => ({ id: String(x.orden_id || "").replace(/^ENV-/, ""), ok: !!x.ok || !!x.ya_facturada, ya: !!x.ya_facturada, letra: x.letra, comprobante: x.comprobante, obs: x.ok ? "" : (x.obs || x.error || "") }))];
+      return res.json({ ok: true, resultados: out, emitidas: out.filter(x => x.ok && !x.ya).length });
+    } catch (e) { console.error("[admin_facturar_cargas]", e.message); return res.status(500).json({ error: e.message }); }
+  }
+
   // Topes del Monotributo (solo administradores de la plataforma): ver / guardar / confirmar.
   if (action === "mono_topes_admin") {
     const adm = await requireAdmin(req); if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
