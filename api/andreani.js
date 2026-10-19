@@ -2934,7 +2934,7 @@ export default async function handler(req, res) {
     }
 
     // ── ACCIONES ADMIN ────────────────────────────────────────────────────
-    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_punto_map_audit", "admin_tn_probe", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token", "admin_dudoso_resolver", "admin_limbo", "admin_anulada_debitar", "admin_cache_purge", "admin_markup_cliente"];
+    const adminActions = ["admin_acreditar", "admin_config", "admin_movimientos", "admin_saldos", "admin_stats", "admin_cargas", "admin_carga_acreditar", "admin_carga_rechazar", "admin_carga_comprobante", "admin_punto_map", "admin_punto_map_audit", "admin_tn_probe", "admin_envios", "admin_envios_problemas", "admin_casos", "admin_caso_fotos", "admin_caso_estado", "admin_conciliar", "admin_idx_backfill", "admin_ejecutiva_token", "admin_dudoso_resolver", "admin_limbo", "admin_anulada_debitar", "admin_cache_purge", "admin_markup_cliente", "admin_cargas_mes", "admin_fiscal_set"];
     if (adminActions.includes(action)) {
       const adm = await requireAdmin(req);
       if (!adm.ok) return res.status(adm.code).json({ error: adm.error });
