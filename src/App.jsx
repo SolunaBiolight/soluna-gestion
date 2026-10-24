@@ -1104,6 +1104,13 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
           </button>
         </div>
       )}
+      {/* Tienda de productos digitales: sello debajo del logo */}
+      {connectedStores.imp && (collapsed
+        ? <div title="Productos digitales" style={{display:"flex",justifyContent:"center",padding:"10px 0 4px"}}><BrandIcon name="impultienda" size={24}/></div>
+        : <div style={{display:"flex",alignItems:"center",gap:9,margin:"10px 10px 2px",padding:"8px 10px",borderRadius:DS.r.lg,background:T.card,border:`1px solid ${T.border}`}}>
+            <BrandIcon name="impultienda" size={24}/>
+            <span style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text}}>Productos digitales</span>
+          </div>)}
 
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
@@ -19760,7 +19767,6 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Dashboard" sectionId="margenes">
-        <span style={{fontSize:DS.font.sm,color:T.textSm,display:"inline-flex",alignItems:"center",gap:6}}><BrandIcon name="impultienda" size={18}/>Productos digitales</span>
         {vista!=="conexion" && <button onClick={()=>cargar(true)} disabled={cargando} title="Trae ventas y gasto de Meta al momento (saltea la caché)" style={{...BtnPrimary(T),fontSize:12,height:34,padding:"0 17px",borderRadius:DS.r.full,boxSizing:"border-box",display:"inline-flex",alignItems:"center",gap:6,opacity:cargando?0.75:1}}>
           {cargando?<Spinner size={11} color="#fff"/>:"↻"} {cargando?"Actualizando…":"Actualizar"}
         </button>}
