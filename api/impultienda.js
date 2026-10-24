@@ -325,6 +325,7 @@ export async function porHora(db, uid, desde, hasta) {
   const feePct = Number(cfg.feePct ?? 2.9), feeFijo = Number(cfg.feeFijo ?? 0.3);
   const paises = cfg.paises || {};
   const tiendasMap = {};
+  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendasMap[id] = { id, nombre: t.nombre || id, pais: paises[id] || t.pais || null, votos: {} };
   for (const o of ordenes) if (o.store_id && !tiendasMap[o.store_id]) tiendasMap[o.store_id] = { id: o.store_id, nombre: o.store_nombre || o.store_id, pais: paises[o.store_id] || null, votos: {} };
   // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
   for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
@@ -409,6 +410,7 @@ export default async function handler(req, res) {
       }
       const host = req.headers["x-forwarded-host"] || req.headers.host || "www.growithapp.com";
       const tiendas = {};
+      for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendas[id] = { nombre: t.nombre, pais: (cfg.paises || {})[id] || t.pais || null };
       const os = await db.collection("users").doc(uid).collection("impultienda_orders").orderBy("actualizado", "desc").limit(300).get();
       for (const d of os.docs) { const o = d.data(); if (o.store_id && !tiendas[o.store_id]) tiendas[o.store_id] = { nombre: o.store_nombre, pais: (cfg.paises || {})[o.store_id] || null }; }
       return res.json({
@@ -444,6 +446,13 @@ export default async function handler(req, res) {
       if (b.stripe_key === null) { patch.stripeEnc = FieldValue.delete(); await db.collection("users").doc(uid).set({ stripeCobros: FieldValue.delete() }, { merge: true }); }
       if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
+      // Tiendas precargadas a mano (Impultienda no lista tiendas por API): {store_id: {nombre, pais}}
+      if (b.tiendas && typeof b.tiendas === "object") {
+        const tm = {};
+        for (const [id, t] of Object.entries(b.tiendas)) { if (!/^[0-9a-f-]{20,40}$/i.test(id)) continue; tm[id] = { nombre: String(t?.nombre || "").slice(0, 80), pais: String(t?.pais || "").toUpperCase().slice(0, 6) || null }; }
+        patch.tiendasManual = tm;
+        patch.paises = { ...(patch.paises || {}), ...Object.fromEntries(Object.entries(tm).filter(([, t]) => t.pais).map(([id, t]) => [id, t.pais])) };
+      }
       if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), String(v || "").toUpperCase().slice(0, 6)]).filter(([, v]) => v));
       await cfgRef.set(patch, { merge: true });
       return res.json({ ok: true });
