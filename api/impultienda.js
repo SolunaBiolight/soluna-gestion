@@ -125,6 +125,8 @@ async function webhook(req, res, db) {
     buyer_total: d.buyer_total ?? null, buyer_moneda: d.buyer_currency || null,
     pais: d.buyer_country || null, pasarela: d.payment_method || null,
     email: String(d.customer?.email || "").toLowerCase() || null,
+    nombre: [d.customer?.name, d.customer?.last_name].filter(Boolean).join(" ") || null,
+    dni: d.customer?.tax_id || null,
     post_compra: !!d.is_post_purchase, orden_original: d.parent_order_id || null,
     creada_utc: d.order_created_at || null,
     items: (d.items || []).map(i => ({ id: i.product_id, nombre: i.name, precio: i.price, cant: i.quantity, tipo: i.type })),
@@ -326,6 +328,9 @@ export async function porHora(db, uid, desde, hasta) {
   const paises = cfg.paises || {};
   const tiendasMap = {};
   for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendasMap[id] = { id, nombre: t.nombre || id, pais: paises[id] || t.pais || null, votos: {} };
+  const porNombre = {};
+  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) if (id.startsWith("n_")) porNombre[norm(t.nombre)] = id;
+  for (const o of ordenes) { if (o.store_id && !tiendasMap[o.store_id] && porNombre[norm(o.store_nombre)]) o.store_id = porNombre[norm(o.store_nombre)]; }
   for (const o of ordenes) if (o.store_id && !tiendasMap[o.store_id]) tiendasMap[o.store_id] = { id: o.store_id, nombre: o.store_nombre || o.store_id, pais: paises[o.store_id] || null, votos: {} };
   // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
   for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
@@ -446,14 +451,22 @@ export default async function handler(req, res) {
       if (b.stripe_key === null) { patch.stripeEnc = FieldValue.delete(); await db.collection("users").doc(uid).set({ stripeCobros: FieldValue.delete() }, { merge: true }); }
       if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
+      if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), String(v || "").toUpperCase().slice(0, 6)]).filter(([, v]) => v));
       // Tiendas precargadas a mano (Impultienda no lista tiendas por API): {store_id: {nombre, pais}}
       if (b.tiendas && typeof b.tiendas === "object") {
         const tm = {};
-        for (const [id, t] of Object.entries(b.tiendas)) { if (!/^[0-9a-f-]{20,40}$/i.test(id)) continue; tm[id] = { nombre: String(t?.nombre || "").slice(0, 80), pais: String(t?.pais || "").toUpperCase().slice(0, 6) || null }; }
+        const prev = (await cfgRef.get()).data()?.tiendasManual || {};
+        Object.assign(tm, b.reemplazar ? {} : prev);
+        for (const [id0, t] of Object.entries(b.tiendas)) {
+          if (t === null) { delete tm[id0]; continue; }
+          const nombre = String(t?.nombre || "").trim().slice(0, 80);
+          const id = /^[0-9a-f-]{20,40}$/i.test(id0) ? id0 : (nombre ? "n_" + norm(nombre).replace(/ /g, "_").slice(0, 60) : null);
+          if (!id) continue;
+          tm[id] = { nombre: nombre || id, pais: String(t?.pais || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6) || null };
+        }
         patch.tiendasManual = tm;
         patch.paises = { ...(patch.paises || {}), ...Object.fromEntries(Object.entries(tm).filter(([, t]) => t.pais).map(([id, t]) => [id, t.pais])) };
       }
-      if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), String(v || "").toUpperCase().slice(0, 6)]).filter(([, v]) => v));
       await cfgRef.set(patch, { merge: true });
       return res.json({ ok: true });
     }

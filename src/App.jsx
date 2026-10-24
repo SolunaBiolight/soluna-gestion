@@ -963,6 +963,9 @@ const TIKTOK_PRONTO = true;
 // está aprobado. Para reactivar cuando Meta apruebe: poner esto en false.
 const PUBLICADORES_ARCHIVADOS = true;
 // Menú lateral (estático). También alimenta Admin > Sistema > Accesos por sección.
+// Tienda de productos digitales (Impultienda): solo estas secciones. Sin stock,
+// envíos, reclamos, canjes, Mercado Libre, Google Ads, tareas ni calendario.
+const GH_IMP_SECCIONES = new Set(["margenes","arca","meta","referidos","planes","config","admin","porhora"]);
 const SIDEBAR_GROUPS_BASE = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     // {id:"copilot", …} — Copilot oculto del menú temporalmente (2026-09-12)
@@ -1108,6 +1111,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
           // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
           .filter(item=>!item.soloDeposito||depositoNav)
           .filter(item=>!item.soloAdmin||isAdmin)
+          .filter(item=>!connectedStores.imp||item.group||GH_IMP_SECCIONES.has(item.id))
+          .filter((item,i,arr)=>!item.group||(arr[i+1]&&!arr[i+1].group))
           .filter(item=>{ if(!seccionesMiembro) return true; if(item.group||item.soloDeposito) return true; if(item.hub) return item.hub.some(c=>seccionesMiembro[c.permKey]===true); return seccionesMiembro[item.permKey||item.id]===true; })
           // Gateo por plan (sin trial): Facturador ($19) = solo Inicio + Facturador.
           // Intermedio ($39) = TODO menos Dashboard (margenes) + Copilot. Pro = todo.
@@ -1130,7 +1135,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
           // Subs solo cuando estás dentro del módulo (revertido del bloque
           // siempre-desplegado de Escalafy — el usuario prefiere la fluidez
           // del despliegue al click). Se ocultan otra vez al cambiar de módulo.
-          const showSubs = active && item.subs && !collapsed && !closedSubs.has(item.id);
+          const showSubs = active && item.subs && !collapsed && !closedSubs.has(item.id) && !(connectedStores.imp&&item.id==="margenes");
           const hubActivo = item.hub && ((page==="meta"&&metaTab==="creativos")||(page==="ml"&&mlTab==="publicar")||(page==="gads"&&gadsTab==="publicar")||(page==="tiktokads"&&tiktokTab==="publicar"));
           const showHub = item.hub && !collapsed && (pubOpen||hubActivo);
           return (
@@ -19457,6 +19462,16 @@ function ghImpSumar(filas){
   t.ganancia=t.ventas-t.reembolsos-t.comisiones-t.gasto; t.roas=t.gasto?t.ventas/t.gasto:null; t.cpa=t.n&&t.gasto?t.gasto/t.n:null; t.margen=t.ventas?t.ganancia/t.ventas:null;
   return t;
 }
+// Pedido listo para que el cliente le pase a Claude con el conector de Impultienda.
+const GH_IMP_PROMPT_TIENDAS = `Usá el conector de Impultienda para listar TODAS mis tiendas activas. Devolveme SOLO un JSON (sin texto antes ni después) con este formato:
+[{"id":"<id de la tienda>","nombre":"<nombre exacto de la tienda>","pais":"<código ISO de 2 letras del país al que vende, por ejemplo IT, PL, RO>"}]
+Si una tienda vende a varios países, poné el principal. No incluyas tiendas pausadas.`;
+// Lee la lista pegada: el JSON de Claude, o un renglón por tienda "id; nombre; país" / "nombre; país".
+function ghImpParsearTiendas(txt){
+  const t=String(txt||"").trim(); if(!t) return [];
+  try{ const m=t.match(/\[[\s\S]*\]/); const arr=JSON.parse(m?m[0]:t); if(Array.isArray(arr)) return arr.map(x=>({id:String(x.id||x.store_id||"").trim(),nombre:String(x.nombre||x.name||"").trim(),pais:String(x.pais||x.country||"").toUpperCase().trim()})).filter(x=>x.nombre||x.id); }catch(_){}
+  return t.split(/\n+/).map(l=>l.split(/[;\t|]/).map(x=>x.trim()).filter(Boolean)).filter(p=>p.length>=2).map(p=>{ const esId=/^[0-9a-f-]{20,40}$/i.test(p[0]); return esId?{id:p[0],nombre:p[1]||"",pais:(p[2]||"").toUpperCase()}:{id:"",nombre:p[0],pais:(p[1]||"").toUpperCase()}; });
+}
 function ImpultiendaConexion({T,uid,onCambio}){
   const [cfg,setCfg]=useState(null);
   const [secret,setSecret]=useState("");
@@ -19464,6 +19479,8 @@ function ImpultiendaConexion({T,uid,onCambio}){
   const [fee,setFee]=useState({pct:"2.9",fijo:"0.3"});
   const [paises,setPaises]=useState({});
   const [guardando,setGuardando]=useState(false);
+  const [nueva,setNueva]=useState({nombre:"",pais:"",id:""});
+  const [pegado,setPegado]=useState("");
   const inp={...InputStyle(T),fontFamily:"'Inter',system-ui,sans-serif"};
   const cargar=async()=>{ try{ const j=await (await authFetch(`/api/impultienda?action=config&uid=${uid}`)).json(); if(j.error) throw new Error(j.error); setCfg(j); setFee({pct:String(j.feePct),fijo:String(j.feeFijo)}); setPaises(j.paises||{}); }catch(e){ toast(e.message,"error"); } };
   useEffect(()=>{ if(uid) cargar(); /* eslint-disable-next-line */ },[uid]);
@@ -19512,14 +19529,35 @@ function ImpultiendaConexion({T,uid,onCambio}){
       </Card>
       <Card T={T}>
         <div style={tit}>3. Tus tiendas y su país</div>
-        <div style={txt}>Cada tienda de Impultienda aparece sola con su primera venta. Poné el código de país (IT, PL, RO…): con eso Growith le asigna el gasto de las campañas de Meta que tengan ese código en el nombre (por ejemplo "IT | Mi producto").</div>
-        {Object.keys(cfg?.tiendas||{}).length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>Todavía no llegó ninguna venta.</div> :
+        <div style={txt}>Las tiendas aparecen solas con su primera venta, pero conviene cargarlas ya: así el gasto de Meta se asigna desde hoy. Poné el código de país (IT, PL, RO…): Growith le asigna a cada tienda las campañas que tengan ese código en el nombre (por ejemplo "IT | Mi producto"). El ID de Impultienda es opcional: sin él, la venta se asocia por el nombre exacto de la tienda.</div>
+        {Object.keys(cfg?.tiendas||{}).length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:DS.sp.sm}}>Todavía no cargaste ninguna tienda.</div> :
           Object.entries(cfg.tiendas).map(([id,ti])=>(
-            <div key={id} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",padding:"6px 0"}}>
-              <span style={{flex:1,fontSize:DS.font.base,color:T.text}}>{ti.nombre||id}</span>
-              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" style={{...inp,width:80}}/>
+            <div key={id} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${T.borderL||T.border}`}}>
+              <span style={{flex:1,fontSize:DS.font.base,color:T.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ti.nombre||id}</span>
+              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" style={{...inp,width:70}}/>
+              <Btn T={T} size="sm" variant="ghost" onClick={async()=>{ if(!await appConfirm(`¿Quitar ${ti.nombre||id}?`,{danger:true,okLabel:"Quitar"})) return; guardar({tiendas:{[id]:null}}); }}>Quitar</Btn>
             </div>))}
         {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar países</Btn></div>}
+        <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",marginTop:DS.sp.lg,alignItems:"center"}}>
+          <input value={nueva.nombre} onChange={e=>setNueva({...nueva,nombre:e.target.value})} placeholder="Nombre de la tienda (como en Impultienda)" style={{...inp,flex:2,minWidth:200}}/>
+          <input value={nueva.pais} onChange={e=>setNueva({...nueva,pais:e.target.value.toUpperCase()})} placeholder="País (IT)" style={{...inp,width:90}}/>
+          <input value={nueva.id} onChange={e=>setNueva({...nueva,id:e.target.value.trim()})} placeholder="ID de Impultienda (opcional)" style={{...inp,flex:1,minWidth:180}}/>
+          <Btn T={T} size="sm" disabled={guardando||!nueva.nombre.trim()} onClick={()=>{ guardar({tiendas:{[nueva.id||nueva.nombre]:{nombre:nueva.nombre,pais:nueva.pais}}}); setNueva({nombre:"",pais:"",id:""}); }}>Agregar tienda</Btn>
+        </div>
+      </Card>
+      <Card T={T}>
+        <div style={tit}>4. Cargar todas tus tiendas con Claude</div>
+        <div style={txt}>Si tenés muchas tiendas, pedíselas a Claude: conectale el conector de <b>Impultienda</b> (y el de <b>Growith</b>, para preguntarle después por tus números), pegale este pedido, y la lista que te devuelva pegala acá abajo.</div>
+        <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",marginBottom:DS.sp.md}}>
+          <Btn T={T} size="sm" variant="secondary" onClick={()=>{ try{ navigator.clipboard.writeText(GH_IMP_PROMPT_TIENDAS); toast("Pedido copiado","success"); }catch(_){} }}>Copiar el pedido para Claude</Btn>
+          <Btn T={T} size="sm" variant="secondary" onClick={()=>{ window.location.hash="#/claude"; }}>Conectar Claude a Growith</Btn>
+        </div>
+        <textarea value={pegado} onChange={e=>setPegado(e.target.value)} placeholder={'Pegá acá lo que te devolvió Claude, por ejemplo:\n[{"id":"2fc6…","nombre":"Mi tienda (ITA)","pais":"IT"}]'} rows={5} style={{...inp,width:"100%",fontFamily:"ui-monospace,monospace",fontSize:DS.font.md,resize:"vertical"}}/>
+        <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" disabled={guardando||!pegado.trim()} onClick={()=>{
+          const lista=ghImpParsearTiendas(pegado);
+          if(!lista.length){ toast("No pude leer ninguna tienda. Tiene que ser la lista que devuelve Claude (JSON) o una tienda por renglón: id; nombre; país","warning"); return; }
+          guardar({tiendas:Object.fromEntries(lista.map(t=>[t.id||t.nombre,{nombre:t.nombre,pais:t.pais}]))}); setPegado(""); toast(`${lista.length} tiendas cargadas`,"success");
+        }}>Cargar estas tiendas</Btn></div>
       </Card>
     </div>
   );
@@ -32125,7 +32163,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if (nc.nc?.pdf_b64) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+nc.nc.pdf_b64; a.download=nc.nc.nombre_pdf; a.click(); }
       setNotaOp({ titulo:"Paso 2 de 2 — Factura A en ARCA…", sub:`NC ${nc.nc?.letra||"B"} N° ${String(nc.nc?.comprobante||"").padStart(8,"0")} emitida ✓ — facturando a ${razon}` });
       const orden = {
-        _platform: String(resumen.orden_id).startsWith("ML-") ? "mercadolibre" : String(resumen.orden_id).startsWith("SH-") ? "shopify" : "tiendanube",
+        _platform: String(resumen.orden_id).startsWith("ML-") ? "mercadolibre" : String(resumen.orden_id).startsWith("SH-") ? "shopify" : String(resumen.orden_id).startsWith("IT-") ? "impultienda" : "tiendanube",
         nombre: razon.trim(),
         doc_tipo: "CUIT", doc_nro: cuitClean, dni: cuitClean, iva_receptor: "RI",
         total: resumen.total, subtotal: resumen.total, descuento: 0, envio: 0,
@@ -47369,7 +47407,7 @@ export default function App() {
         {id:"calendario",label:"Pagos",icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18"},
         {id:"referidos",label:"Referidos",icon:"M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"},
         {id:"planes",label:"Suscripción",icon:"M2 5h20v14H2zM2 10h20M6 15h4"},
-      ].filter(it=>seccionPermitida(it.id)).map(it=>(
+      ].filter(it=>seccionPermitida(it.id)).filter(it=>!connectedStores.imp||GH_IMP_SECCIONES.has(it.id)).map(it=>(
         <button key={it.id} onClick={()=>setPage(it.id)} style={{
           display:"inline-flex", flexShrink:0, minWidth:64, background:"transparent", border:"none", cursor:"pointer",
           flexDirection:"column", alignItems:"center", gap:2, padding:"6px 6px",
@@ -47620,6 +47658,7 @@ export default function App() {
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="copilot") pageContent = planGate("plus") || <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage} connectedStores={connectedStores}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>;
+  else if(connectedStores.imp && !GH_IMP_SECCIONES.has(page)) pageContent = <PageView T={T} pageKey="margenes"><AppImpultiendaDash T={T} user={user} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="margenes") pageContent = adminGate("margenes") || planGate("plus") || <PageView T={T} pageKey="margenes">{connectedStores.imp ? <AppImpultiendaDash T={T} user={user} tab={margenesTab} setTab={setMargenesTab}/> : <AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/>}</PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("facturador") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("medio") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;

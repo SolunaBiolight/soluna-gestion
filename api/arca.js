@@ -2951,6 +2951,8 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       if (tnStore?.accessToken && tnStore?.storeId) connections.push({ platform: "tiendanube", name: tnStore.storeName || "Tienda Nube", connected: true });
       if (shStore?.accessToken && shStore?.shop) connections.push({ platform: "shopify", name: shStore.storeName || shStore.shop, connected: true });
       if (mlStore?.userId) connections.push({ platform: "mercadolibre", name: mlStore.nickname || `ML #${mlStore.userId}`, connected: true });
+      const impStore = stores.find(s => s.type === "impultienda");
+      if (impStore) connections.push({ platform: "impultienda", name: "Impultienda", connected: true });
       // Tienda DEMO: las ventas salen de users/{uid}/demo_orders (sin llamar a
       // TN ni a ML) con el MISMO shape que arman los fetchers de abajo.
       const tiendaDemo = esDemo(userSnap.data());
@@ -2999,8 +3001,45 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       // después Shopify, después ML — el tiempo total era la suma de los tres).
       // Cada canal escribe en su propio mapa y al final se mergea en orden fijo
       // para mantener determinismo en la respuesta.
-      const ordTN = {}, ordSH = {}, ordML = {};
+      const ordTN = {}, ordSH = {}, ordML = {}, ordIMP = {};
       const fetchers = [];
+
+      // ─── Impultienda (productos digitales) ───
+      // Llegan por webhook a users/{uid}/impultienda_orders. Solo se facturan las
+      // ventas cobradas en PESOS (buyer_currency ARS): las de otros países/monedas
+      // no son operaciones a facturar en ARCA. Fecha = aprobación en hora AR.
+      if (impStore) fetchers.push((async () => {
+        const desdeIso = new Date(Date.parse(`${sinceDate}T00:00:00-03:00`)).toISOString();
+        const hastaIso = new Date(Date.parse(`${untilDate}T23:59:59-03:00`)).toISOString();
+        const snap = await db.collection("users").doc(uid).collection("impultienda_orders")
+          .where("ev_approved", ">=", desdeIso).where("ev_approved", "<=", hastaIso).get();
+        for (const d of snap.docs) {
+          const o = d.data();
+          if (o.ev_refunded || o.ev_chargeback) continue;
+          const enPesos = String(o.buyer_moneda || "").toUpperCase() === "ARS" || (!o.buyer_moneda && String(o.moneda || "").toUpperCase() === "ARS");
+          if (!enPesos) continue;
+          const total = String(o.buyer_moneda || "").toUpperCase() === "ARS" ? Number(o.buyer_total) || 0 : Number(o.total) || 0;
+          if (!(total > 0)) continue;
+          const orderId = "IT-" + String(o.orden ?? o.order_id);
+          const docRaw = o.dni ? String(o.dni).replace(/\D/g, "") : "";
+          const sumaItems = (o.items || []).reduce((a, i) => a + (Number(i.precio) || 0) * (Number(i.cant) || 1), 0) || 1;
+          const factor = total / sumaItems; // los precios de los items vienen en la moneda del vendedor
+          ordIMP[orderId] = {
+            _platform: "impultienda", _platform_label: "IT", _order_number: String(o.orden ?? o.order_id),
+            nombre: o.nombre || "", email: o.email || "",
+            dni: docRaw, ...clasificarDoc(docRaw),
+            total, subtotal: total, descuento: 0, envio: 0,
+            estado_pago: "paid", fecha: o.ev_approved,
+            ciudad: "", provincia: "", direccion: "",
+            metodo_pago: o.pasarela || "Pagado",
+            plataforma_pago: normPlataformaPago(o.pasarela, o.pasarela),
+            items: (o.items || []).map(i => ({
+              nombre: i.nombre || "Producto digital", nombre_original: i.nombre || "Producto digital",
+              cantidad: Number(i.cant) || 1, precio: Math.round((Number(i.precio) || 0) * factor * 100) / 100, descuento_item: 0,
+            })),
+          };
+        }
+      })().catch(e => console.error("[impultienda-pending] error:", e.message)));
 
       // ─── Tienda Nube ───
       if (tnStore?.accessToken && tnStore?.storeId) fetchers.push((async () => {
@@ -3382,7 +3421,7 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       })());
 
       await Promise.all(fetchers);
-      rawOrdenes = Object.assign({}, ordTN, ordSH, ordML);
+      rawOrdenes = Object.assign({}, ordTN, ordSH, ordML, ordIMP);
 
       // Escribir el cache best-effort: si no entra en ~850KB (límite Firestore
       // 1MB por doc) no se cachea y listo — el fetch vivo siguió andando igual.
