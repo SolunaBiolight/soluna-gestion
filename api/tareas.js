@@ -1063,7 +1063,7 @@ async function handlerTareas(req, res) {
       const tiendas = [];
       const docsById = {};
       if (!selfMovida && !selfBorrada && my.tiendaEliminada !== true) {
-        tiendas.push({ uid: myUid, nombre: my.nombreTienda || my.nombre || my.email || "Mi tienda", color: my.colorTienda || "#7c3aed", foto: my.fotoTienda || null, rol: "owner", esSelf: true });
+        tiendas.push({ uid: myUid, nombre: my.nombreTienda || my.nombre || my.email || "Mi tienda", color: my.colorTienda || "#7c3aed", foto: my.fotoTienda || null, rol: "owner", esSelf: true, digital: (my.stores || []).some(x => x?.type === "impultienda") });
         docsById[myUid] = my;
       }
       for (const doc of qs.docs) {
@@ -1071,7 +1071,7 @@ async function handlerTareas(req, res) {
         if (d.deleted === true) continue;
         const m = (d.teamMembers || {})[myUid] || {};
         const esOwner = d.ownerUid === myUid || m.rol === "owner";
-        tiendas.push({ uid: doc.id, nombre: d.nombreTienda || d.nombre || d.email || "Tienda", color: d.colorTienda || "#7c3aed", foto: d.fotoTienda || null, rol: esOwner ? "owner" : "miembro", esSelf: false, secciones: esOwner ? null : (m.secciones || {}), ownerNombre: d.nombre || d.email || "" });
+        tiendas.push({ uid: doc.id, nombre: d.nombreTienda || d.nombre || d.email || "Tienda", color: d.colorTienda || "#7c3aed", foto: d.fotoTienda || null, rol: esOwner ? "owner" : "miembro", esSelf: false, secciones: esOwner ? null : (m.secciones || {}), ownerNombre: d.nombre || d.email || "", digital: (d.stores || []).some(x => x?.type === "impultienda") });
         docsById[doc.id] = d;
       }
       // Tiendas propias: mantenemos el plan del PERFIL espejado en el doc de la

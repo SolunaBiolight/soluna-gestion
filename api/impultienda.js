@@ -360,7 +360,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
   for (const t of Object.values(tiendasMap)) { if (!t.pais) { const top = Object.entries(t.votos).sort((a, b) => b[1] - a[1])[0]; if (top) { t.pais = top[0]; t.paisAuto = true; } } delete t.votos; }
   const filas = {}; // "fecha|hora|tienda"
-  const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
+  const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
   const ventasCamp = {};
   const enRango = (iso) => { const t = Date.parse(iso || ""); return isFinite(t) && t >= desdeMs && t < hastaMs; };
   const meta = await metaPorHora(db, uid, desde, hasta, cfg.metaCuentas || [], tz);
@@ -373,6 +373,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
     if (enRango(o.ev_approved)) {
       const a = zonaDe(o.ev_approved, tz); const f = fila(a.fecha, a.hora, tid);
       f.ventas += usd; f.n += 1;
+      if (o.post_compra) { f.upsell += usd; f.nUpsell += 1; } else { f.front += usd; f.nFront += 1; }
       const ck = campanaDeVenta(o.utm, campLista) || "SIN_CAMPANA";
       const cv = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {} });
       cv.ventas += usd; cv.n += 1;
@@ -407,7 +408,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
     c.ventas = c.ventas || 0; c.n = c.n || 0; c.comisiones = c.comisiones || 0; c.ganancia = c.ventas - c.comisiones - c.gasto; c.roas = c.gasto ? c.ventas / c.gasto : null; c.cpa = c.n && c.gasto ? c.gasto / c.n : null; }
   const lista = Object.values(filas).map(f => ({ ...f, ganancia: f.ventas - f.reembolsos - f.comisiones - f.gasto }));
   lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.tienda.localeCompare(b.tienda));
-  const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
+  const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "front", "nFront", "upsell", "nUpsell", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
@@ -427,7 +428,9 @@ export default async function handler(req, res) {
     try { return await webhook(req, res, db); } catch (e) { console.error("[impultienda webhook]", e.message); return res.status(500).json({ ok: false }); }
   }
   const uid = String(req.query.uid || "");
-  if (!(await guardUid(req, res, uid, "margenes"))) return;
+  const g = await guardUid(req, res, uid, "margenes"); if (!g) return;
+  // Productos digitales: por ahora NO se ven desde "Ver como cliente" del admin.
+  if (g.user?.impersonatedBy) return res.status(403).json({ error: "Productos digitales no se puede ver desde \"Ver como cliente\"." });
   const cfgRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc("main");
   try {
     if (action === "config") {
@@ -544,7 +547,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v2_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });

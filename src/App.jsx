@@ -19471,15 +19471,50 @@ function GhSpk({vals,color,h=30}){
     <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
   </svg>);
 }
-function GhImpCards({T,cards}){
+// Orden y visibilidad de las cards (por navegador), igual que "Personalizar métricas" del Dashboard físico.
+function ghImpCardsPref(){ try{ const j=JSON.parse(localStorage.getItem("growith_imp_cards")||"{}"); return {orden:Array.isArray(j.orden)?j.orden:[],ocultas:j.ocultas||{}}; }catch(_){ return {orden:[],ocultas:{}}; } }
+function GhImpCards({T,cards,editar,setEditar}){
   const [w,setW]=useState(typeof window!=="undefined"?window.innerWidth:1200);
   useEffect(()=>{ const f=()=>setW(window.innerWidth); window.addEventListener("resize",f); return ()=>window.removeEventListener("resize",f); },[]);
-  const cols=Math.min(w<520?2:w<900?3:4, cards.length);
-  return (
+  const [pref,setPrefS]=useState(ghImpCardsPref);
+  const setPref=(p)=>{ setPrefS(p); try{ localStorage.setItem("growith_imp_cards",JSON.stringify(p)); }catch(_){} };
+  const [drag,setDrag]=useState(null);
+  const ordenadas=[...cards].sort((a,b)=>{ const ia=pref.orden.indexOf(a.label), ib=pref.orden.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib); });
+  const mover=(de,a)=>{ if(!de||!a||de===a) return; const cur=ordenadas.map(k=>k.label); const fi=cur.indexOf(de), tiO=cur.indexOf(a); cur.splice(fi,1); let ti=cur.indexOf(a); if(fi<tiO) ti++; cur.splice(ti,0,de); if(cur.join("|")!==ordenadas.map(k=>k.label).join("|")) setPref({...pref,orden:cur}); };
+  const visibles=ordenadas.filter(k=>pref.ocultas[k.label]!==true);
+  const cols=Math.min(w<520?2:w<900?3:4, Math.max(1,visibles.length));
+  return (<>
+    {editar && (
+      <div style={{position:"relative",zIndex:80,height:0}}>
+        <div style={{position:"absolute",right:0,top:-4}}>
+          <div className="gh-dropdown" style={{width:320,maxWidth:"calc(100vw - 32px)",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:"0 2px 6px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.28)",padding:"14px 14px 12px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:2}}>Personalizar métricas</div>
+            <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Arrastrá desde <span style={{color:T.textMd}}>⠿</span> para cambiar el orden. El interruptor muestra u oculta la card.</div>
+            <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:340,overflowY:"auto",margin:"0 -4px",padding:"0 4px"}}>
+              {ordenadas.map(k=>{ const on=pref.ocultas[k.label]!==true; return (
+                <div key={k.label} draggable onDragStart={()=>setDrag(k.label)} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault(); mover(drag,k.label); setDrag(null);}} onDragEnd={()=>setDrag(null)}
+                  className="gh-hover-surface" style={{display:"flex",alignItems:"center",gap:10,padding:"7px 8px",borderRadius:DS.r.md,cursor:"grab",opacity:drag===k.label?0.35:1,border:drag&&drag!==k.label?`1px dashed ${T.border}`:"1px dashed transparent"}}>
+                  <span style={{color:T.textSm,fontSize:13,lineHeight:1}}>⠿</span>
+                  <span style={{flex:1,fontSize:12.5,fontWeight:600,color:on?T.text:T.textSm}}>{k.label}</span>
+                  <DSToggle T={T} active={on} onToggle={()=>setPref({...pref,ocultas:{...pref.ocultas,[k.label]:on}})}/>
+                </div>); })}
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL||T.border}`}}>
+              <Btn T={T} variant="ghost" size="sm" onClick={()=>setPref({...pref,ocultas:{}})}>Mostrar todas</Btn>
+              <div style={{flex:1}}/>
+              <Btn T={T} variant="primary" size="sm" onClick={()=>setEditar&&setEditar(false)}>Listo</Btn>
+            </div>
+          </div>
+        </div>
+      </div>)}
     <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:10}}>
-      {cards.map(k=>(
-        <div key={k.label} className="gh-mcard" style={{background:k.tint?`linear-gradient(150deg, ${T.card} 45%, ${k.tint}16)`:T.card,border:`1px solid ${k.bad?GH_MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",display:"flex",flexDirection:"column",overflow:"hidden",minHeight:k.hero?118:96}}>
-          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:7}}>
+      {visibles.map(k=>(
+        <div key={k.label} className="gh-mcard"
+          onDragOver={e=>{ e.preventDefault(); if(drag&&drag!==k.label) mover(drag,k.label); }} onDrop={e=>{e.preventDefault(); setDrag(null);}}
+          style={{background:k.tint?`linear-gradient(150deg, ${T.card} 45%, ${k.tint}16)`:T.card,border:`1px solid ${k.bad?GH_MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",display:"flex",flexDirection:"column",overflow:"hidden",minHeight:k.hero?118:96,opacity:drag===k.label?0.4:1}}>
+          <span draggable onDragStart={e=>{ setDrag(k.label); try{ e.dataTransfer.effectAllowed="move"; const c=e.currentTarget.parentElement; if(c) e.dataTransfer.setDragImage(c,Math.min(80,c.offsetWidth/2),30); }catch(_){} }} onDragEnd={()=>setDrag(null)}
+            title="Arrastrá para reordenar" style={{position:"absolute",top:9,right:10,cursor:"grab",color:T.textSm,opacity:0.4,fontSize:11,lineHeight:1,userSelect:"none"}}>⠿</span>
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:7,paddingRight:16}}>
             {k.accent && <span style={{width:6,height:6,borderRadius:"50%",background:k.accent,display:"inline-block",flexShrink:0}}/>}{k.label}
           </div>
           <div style={{fontSize:k.hero?30:23,fontWeight:800,color:k.valColor||(k.bad?GH_MC.red:T.text),letterSpacing:k.hero?-1.1:-0.7,lineHeight:1,fontVariantNumeric:"tabular-nums",marginBottom:5}}>{k.val}</div>
@@ -19487,7 +19522,7 @@ function GhImpCards({T,cards}){
           {k.spk && <div style={{marginTop:"auto",margin:k.hero?"auto -18px -14px":"auto -14px -10px",opacity:0.95}}><GhSpk vals={k.spk} color={k.accent||T.accent} h={k.hero?34:24}/></div>}
         </div>))}
     </div>
-  );
+  </>);
 }
 function ghImpCardsDe(t, serie, nTiendas){
   const usd=GH_FMT_USD, x=(v)=>v!=null&&isFinite(v)?v.toFixed(2)+"x":"—", pct=(v)=>v!=null&&isFinite(v)?(v*100).toFixed(1)+"%":"—";
@@ -19507,10 +19542,14 @@ function ghImpCardsDe(t, serie, nTiendas){
     {label:"Ventas", val:String(t.n), accent:GH_MC.blue, hint:"Órdenes aprobadas", spk:sp(d=>d.n)},
     {label:"AOV", val:usd(aov), accent:GH_MC.blue, hint:"Ticket promedio"},
     {label:"Por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Facturación promedio · ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
+    {label:"Comisiones", val:usd(t.comisiones), accent:GH_MC.red, hint:t.ventas?`${pct(t.comisiones/t.ventas)} de la facturación${t.comisionesEstimadas>0.01?" · estimadas":" · reales"}`:"Pasarelas de pago", spk:sp(d=>d.comisiones)},
+    {label:"Ticket front", val:usd(t.nFront?t.front/t.nFront:null), accent:GH_MC.blue, hint:`Promedio de la compra principal · ${t.nFront||0} ventas`},
+    {label:"Upsells", val:usd(t.upsell), accent:GH_MC.green, hint:t.nFront?`${t.nUpsell||0} post-compra · ${pct((t.nUpsell||0)/t.nFront)} de los compradores`:"Ofertas post-compra", spk:sp(d=>d.upsell||0)},
+    {label:"Reembolsos", val:usd(t.reembolsos), accent:GH_MC.red, hint:t.ventas?`${pct(t.reembolsos/t.ventas)} de la facturación · incluye contracargos`:"Incluye contracargos", bad:t.ventas>0&&t.reembolsos/t.ventas>0.05},
   ];
 }
 function ghImpSumar(filas){
-  const t={ventas:0,n:0,reembolsos:0,comisiones:0,comisionesEstimadas:0,gasto:0};
+  const t={ventas:0,n:0,front:0,nFront:0,upsell:0,nUpsell:0,reembolsos:0,comisiones:0,comisionesEstimadas:0,gasto:0};
   for(const f of filas){ for(const k in t) t[k]+=f[k]||0; }
   t.ganancia=t.ventas-t.reembolsos-t.comisiones-t.gasto; t.roas=t.gasto?t.ventas/t.gasto:null; t.cpa=t.n&&t.gasto?t.gasto/t.n:null; t.margen=t.ventas?t.ganancia/t.ventas:null;
   return t;
@@ -19664,6 +19703,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   const [err,setErr]=useState(null);
   const [tiendaSel,setTiendaSel]=useState("todas");
   const [campAbierta,setCampAbierta]=useState(null);
+  const [editCards,setEditCards]=useState(false);
   const cargar = async(fresh=false)=>{
     if(!uid) return; setCargando(true); setErr(null);
     try{ const r=await authFetch(`/api/impultienda?action=por_hora&uid=${uid}&desde=${desde}&hasta=${hasta}&tz=${encodeURIComponent(tz)}${fresh?"&fresh=1":""}`); const j=await r.json(); if(j.error) throw new Error(j.error); setData(j); }
@@ -19711,6 +19751,9 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Dashboard" sectionId="margenes">
         <span style={{fontSize:DS.font.sm,color:T.textSm,display:"inline-flex",alignItems:"center",gap:6}}><BrandIcon name="impultienda" size={18}/>Productos digitales</span>
+        {vista!=="conexion" && <button onClick={()=>cargar(true)} disabled={cargando} title="Trae ventas y gasto de Meta al momento (saltea la caché)" style={{...BtnPrimary(T),fontSize:12,height:34,padding:"0 17px",borderRadius:DS.r.full,boxSizing:"border-box",display:"inline-flex",alignItems:"center",gap:6,opacity:cargando?0.75:1}}>
+          {cargando?<Spinner size={11} color="#fff"/>:"↻"} {cargando?"Actualizando…":"Actualizar"}
+        </button>}
       </AppTopbar>
       <AppTabs T={T} active={vista} onChange={ir} tabs={[{id:"dashboard",label:"Dashboard"},{id:"hora",label:"Por hora"},{id:"conexion",label:"Conexión"}]}/>
       <div style={{padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
@@ -19723,7 +19766,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             <span style={{color:T.textSm,fontSize:DS.font.sm}}>a</span>
             <GhDatePicker T={T} value={hasta} onChange={v=>{setHasta(v); if(v<desde) setDesde(v);}} allowFuture={false}/>
             <select value={tz} onChange={e=>setTz(e.target.value)} title="Zona horaria: define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={{...inp,width:"auto",maxWidth:240}}>
-              {(()=>{ const nav=(()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(_){ return null; } })(); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,"Tu zona"]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,tz]); return l.map(([v,n])=><option key={v} value={v}>{n}{v===nav?" · tu zona":""}</option>); })()}
+              {(()=>{ const nav=(()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(_){ return null; } })(); const ciudad=(z)=>String(z).split("/").pop().replace(/_/g," "); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,ciudad(tz)]); return l.map(([v,n])=><option key={v} value={v}>🕐 {n}</option>); })()}
             </select>
             {vista==="hora" && <DepSeg T={T} value={gran} onChange={setGran} items={[["hora","Por hora"],["dia","Por día"]]}/>}
             {vista==="hora" && tiendas.length>1 && (
@@ -19732,7 +19775,6 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
               </select>)}
             <div style={{marginLeft:"auto",display:"flex",gap:DS.sp.sm,alignItems:"center"}}>
               <span style={{fontSize:DS.font.sm,color:T.textSm}}>{data?.generado?`USD · actualizado ${new Date(data.generado).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:tz})}`:""}</span>
-              <Btn T={T} size="sm" variant="secondary" onClick={()=>cargar(true)} disabled={cargando}>{cargando?"Actualizando…":"Actualizar"}</Btn>
             </div>
           </div>
           {err && <Card T={T}><span style={{color:T.red,fontSize:DS.font.base}}>{err}</span></Card>}
@@ -19740,8 +19782,8 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           {data && filas.length===0 && !cargando && (
             <Card T={T}><DSEmpty T={T} icon="store" title="Todavía no hay ventas en este período" subtitle="Si recién conectás Impultienda, revisá la pestaña Conexión: la URL del webhook tiene que estar cargada en Impultienda con su clave de firma." action={<Btn T={T} onClick={()=>ir("conexion")}>Ir a Conexión</Btn>}/></Card>)}
           {vista==="dashboard" && data && filas.length>0 && (<>
-            <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0"}}>Métricas principales · todas las tiendas</div>
-            {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT)}/>; })()}
+            <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0",display:"flex",alignItems:"center"}}>Métricas principales · todas las tiendas<button onClick={()=>setEditCards(v=>!v)} title="Elegir y ordenar las métricas" style={{marginLeft:"auto",background:editCards?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editCards?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button></div>
+            {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT)} editar={editCards} setEditar={setEditCards}/>; })()}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:DS.sp.md}}>
               {tiendas.filter(x=>x.id!=="SIN_ASIGNAR").map(x=>{ const s=ghImpSumar(filas.filter(f=>f.tienda===x.id)); return (
                 <Card T={T} key={x.id} hoverable onClick={()=>{ setTiendaSel(x.id); ir("hora"); }}>
@@ -46906,7 +46948,6 @@ export default function App() {
   // Multi-tienda: el switcher del sidebar se alimenta de las tiendas del perfil
   // (vienen del workspace). Mantengo los nombres orgs/activeOrgId para no tocar
   // la firma del Sidebar. id = uid de la tienda.
-  const orgs = React.useMemo(()=>(miembroDe?.tiendas||[]).map(t=>({id:t.uid,name:t.nombre,color:t.color||"#7c3aed",foto:t.foto||null,rol:t.rol,esSelf:!!t.esSelf})),[miembroDe]);
   const activeOrgId = miembroDe?.activeTiendaUid || authUser?.uid || null;
   const [onboardingDone,setOnboardingDone]=useState(()=>{try{return localStorage.getItem("growith_onb_done")==="1";}catch(e){return true;}});
   const [orders,setOrders]=useState([]);
@@ -46939,6 +46980,7 @@ export default function App() {
   const [planLoaded,setPlanLoaded]=useState(false);
   const [isAdmin,setIsAdmin]=useState(false);
   const [impersonando,setImpersonando]=useState(()=>{ try{ return JSON.parse(sessionStorage.getItem("growith_impersonate")||"null"); }catch(_){ return null; } });
+  const orgs = React.useMemo(()=>(miembroDe?.tiendas||[]).filter(t=>!(impersonando&&t.digital)).map(t=>({id:t.uid,name:t.nombre,color:t.color||"#7c3aed",foto:t.foto||null,rol:t.rol,esSelf:!!t.esSelf})),[miembroDe,impersonando]);
   const [adminOnlySections,setAdminOnlySections]=useState([]); // default, se sobreescribe al cargar ("rendimiento" legacy = "margenes")
 
   const ADMIN_UIDS=["WJH3ArqDPQcNLha9lOinvkVi9uJ2","ADMIN_UID_2"]; // ADMIN_UID_2: completar cuando tengas el segundo
@@ -47755,6 +47797,7 @@ export default function App() {
   else if(page==="admin"&&isAdmin) pageContent = <AppAdmin T={T} user={user} onBack={()=>setPage("home")}/>;
   else if(page==="copilot") pageContent = planGate("plus") || <PageView T={T} pageKey="copilot"><AppCopilot T={T} user={user} onHome={()=>setPage("home")} onNavigate={setPage} connectedStores={connectedStores}/></PageView>;
   else if(page==="config") pageContent = <ConfigScreen T={T} user={user} onBack={()=>setPage("home")} onNavigate={setPage} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)} orgs={orgs} activeOrgId={activeOrgId} onSwitchOrg={onSwitchOrg} onOpenCreateOrg={()=>setCreateOrgOpen(true)} onOpenManageOrg={(id)=>setManageOrgId(id)}/>;
+  else if(connectedStores.imp && impersonando) pageContent = <PageView T={T} pageKey="margenes"><Card T={T}><DSEmpty T={T} icon="store" title="Tienda de productos digitales" subtitle="Por ahora las tiendas de productos digitales no se pueden ver desde Ver como cliente. Cambiá a una tienda de productos físicos."/></Card></PageView>;
   else if(connectedStores.imp && !GH_IMP_SECCIONES.has(page)) pageContent = <PageView T={T} pageKey="margenes"><AppImpultiendaDash T={T} user={user} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="margenes") pageContent = adminGate("margenes") || planGate("plus") || <PageView T={T} pageKey="margenes">{connectedStores.imp ? <AppImpultiendaDash T={T} user={user} tab={margenesTab} setTab={setMargenesTab}/> : <AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/>}</PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("facturador") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
