@@ -287,6 +287,7 @@ growith_sku_consku         → "1" | "0" (por defecto prendido): "Productos (SKU
 growith_sku_dep_enviados   → JSON {"nombre|tamaño": ts} de los PDF de rótulos ya mandados al depósito desde "SKU en Rótulos" (últimos 30, con ghKey): la tarjeta Despachar muestra "✓ Ya está en el depósito", el botón pasa a "Volver a enviar" (secundario) y pide confirmación antes de crear otra tanda con los mismos pedidos
 growith_imp_tz             → zona horaria IANA elegida en el Dashboard de productos digitales (Impultienda); sin valor = la del navegador
 growith_imp_cards          → orden y cards ocultas del Dashboard de productos digitales ({orden:[], ocultas:{}})
+growith_imp_moneda         → moneda en la que se muestran los montos del Dashboard digital (ARS = dólar cripto, resto = oficial)
 growith_depo_operario      → nombre de quien opera en la PC del depósito (panel por token #/deposito/panel/<pcToken>); viaja en cada acción y queda en el historial de la tanda
 ```
 Patrón SWR: helpers globales `ghSwrGet(key,maxAge)` / `ghSwrSet(key,data)` — pintar cache al instante, refrescar de fondo, y si el refresco falla con cache pintada no romper la vista.

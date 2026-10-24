@@ -92,9 +92,13 @@ export function utcDeLocal(fecha, hora, tz) {
 let _fx = null, _fxAt = 0;
 async function fxPorUsd() {
   if (_fx && Date.now() - _fxAt < 6 * 3600000) return _fx;
-  try { const j = await (await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(6000) })).json(); if (j?.rates) { _fx = j.rates; _fxAt = Date.now(); } } catch (_) {}
+  try { const j = await (await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(6000) })).json(); if (j?.rates) { _fx = { ...j.rates }; _fxAt = Date.now(); } } catch (_) {}
+  // Pesos argentinos: dólar cripto (venta), no el oficial. El resto de las monedas, oficial.
+  try { const c = await (await fetch("https://dolarapi.com/v1/dolares/cripto", { signal: AbortSignal.timeout(5000) })).json(); if (_fx && Number(c?.venta) > 0) { _fx.ARS = Number(c.venta); _fx._arsCripto = true; } } catch (_) {}
   return _fx || { USD: 1 };
 }
+// Monedas que se pueden elegir en el Dashboard (cotización por 1 USD).
+const MONEDAS_VISTA = ["USD","ARS","EUR","GBP","RON","MDL","PLN","TRY","ZAR","BRL","MXN","CLP","COP","UYU","PEN","PYG","BOB","CAD","AUD","CHF","JPY","CNY","INR","HUF","CZK","SEK","NOK","DKK","AED","ILS"];
 const aUsd = (monto, cur, fx) => { const c = String(cur || "USD").toUpperCase(); if (c === "USD") return monto; const r = fx?.[c]; return r ? monto / r : null; };
 
 // ── Webhook ──
@@ -412,7 +416,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
-  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, generado: new Date().toISOString() };
+  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
 }
 
 export default async function handler(req, res) {
@@ -547,7 +551,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v2_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v3_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });

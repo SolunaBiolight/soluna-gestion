@@ -19455,7 +19455,11 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
 // Impultienda + Mercado Pago y/o Stripe (sin TN / Shopify / ML). Montos en USD,
 // hora Argentina (00:00 ART = día nuevo). El gasto de Meta se asigna a cada
 // tienda por el código de país en el nombre de la campaña ("IT | …").
-const GH_FMT_USD = (n)=> n==null||!isFinite(n) ? "—" : (n<0?"-":"")+"US$ "+Math.abs(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+// Moneda en la que se MUESTRA el Dashboard digital (los datos vienen en USD). La fija AppImpultiendaDash en cada render.
+const ghImpMon = { cod:"USD", r:1 };
+const GH_FMT_USD = (n)=>{ if(n==null||!isFinite(n)) return "—"; const v=n*ghImpMon.r; const dec=Math.abs(v)>=100000?0:2;
+  try{ return (v<0?"-":"")+new Intl.NumberFormat("es-AR",{style:"currency",currency:ghImpMon.cod,minimumFractionDigits:dec,maximumFractionDigits:dec}).format(Math.abs(v)); }catch(_){ return (v<0?"-":"")+ghImpMon.cod+" "+Math.abs(v).toFixed(dec); } };
+const GH_IMP_MONEDAS = [["USD","🇺🇸 Dólar"],["ARS","🇦🇷 Peso argentino (cripto)"],["EUR","🇪🇺 Euro"],["GBP","🇬🇧 Libra"],["RON","🇷🇴 Leu rumano"],["MDL","🇲🇩 Leu moldavo"],["PLN","🇵🇱 Złoty"],["TRY","🇹🇷 Lira turca"],["ZAR","🇿🇦 Rand"],["BRL","🇧🇷 Real"],["MXN","🇲🇽 Peso mexicano"],["CLP","🇨🇱 Peso chileno"],["COP","🇨🇴 Peso colombiano"],["UYU","🇺🇾 Peso uruguayo"],["PEN","🇵🇪 Sol"],["PYG","🇵🇾 Guaraní"],["BOB","🇧🇴 Boliviano"],["CAD","🇨🇦 Dólar canadiense"],["AUD","🇦🇺 Dólar australiano"],["CHF","🇨🇭 Franco suizo"],["JPY","🇯🇵 Yen"],["CNY","🇨🇳 Yuan"],["INR","🇮🇳 Rupia"],["HUF","🇭🇺 Forinto"],["CZK","🇨🇿 Corona checa"],["SEK","🇸🇪 Corona sueca"],["NOK","🇳🇴 Corona noruega"],["DKK","🇩🇰 Corona danesa"],["AED","🇦🇪 Dírham"],["ILS","🇮🇱 Séquel"]];
 // Tarjetas con el MISMO diseño que "Métricas Principales" del Dashboard de
 // productos físicos (gh-mcard: punto de color, valor grande, sparkline a lo ancho).
 const GH_MC = { green:"#16c784", red:"#f6465d", blue:"#3861fb", violet:"#7c3aed", gold:"#f0b90b" };
@@ -19706,6 +19710,8 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   const [tiendaSel,setTiendaSel]=useState("todas");
   const [campAbierta,setCampAbierta]=useState(null);
   const [editCards,setEditCards]=useState(false);
+  const [mon,setMonS]=useState(()=>{ try{ return localStorage.getItem("growith_imp_moneda")||"USD"; }catch(_){ return "USD"; } });
+  const setMon=(v)=>{ setMonS(v); try{ localStorage.setItem("growith_imp_moneda",v); }catch(_){} };
   const cargar = async(fresh=false)=>{
     if(!uid) return; setCargando(true); setErr(null);
     try{ const r=await authFetch(`/api/impultienda?action=por_hora&uid=${uid}&desde=${desde}&hasta=${hasta}&tz=${encodeURIComponent(tz)}${fresh?"&fresh=1":""}`); const j=await r.json(); if(j.error) throw new Error(j.error); setData(j); }
@@ -19713,6 +19719,8 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   };
   useEffect(()=>{ if(vista!=="conexion") cargar(); /* eslint-disable-next-line */ },[uid,desde,hasta,vista,tz]);
   useEffect(()=>{ const id=setInterval(()=>{ if(document.visibilityState!=="hidden"&&hasta===hoy&&vista!=="conexion") cargar(); },10*60000); return ()=>clearInterval(id); /* eslint-disable-next-line */ },[desde,hasta,vista]);
+  const rMon = mon==="USD" ? 1 : Number(data?.fx?.[mon])||null;
+  ghImpMon.cod = rMon ? mon : "USD"; ghImpMon.r = rMon || 1;
   const filas=data?.filas||[];
   const tiendas=[...new Map(filas.map(f=>[f.tienda,{id:f.tienda,nombre:f.tiendaNombre,pais:f.pais}])).values()].sort((a,b)=>a.id==="SIN_ASIGNAR"?1:b.id==="SIN_ASIGNAR"?-1:String(a.nombre).localeCompare(String(b.nombre)));
   const t=ghImpSumar(filas);
@@ -19770,13 +19778,16 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             <select value={tz} onChange={e=>setTz(e.target.value)} title="Zona horaria: define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={{...inp,width:"auto",maxWidth:240}}>
               {(()=>{ const nav=(()=>{ try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone); }catch(_){ return null; } })(); const ciudad=(z)=>String(z).split("/").pop().replace(/_/g," "); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,ciudad(tz)]); return l.map(([v,n])=><option key={v} value={v}>🕐 {n}</option>); })()}
             </select>
+            <select value={mon} onChange={e=>setMon(e.target.value)} title="Moneda en la que se muestran los montos. Peso argentino con dólar cripto; el resto con el dólar oficial." style={{...inp,width:"auto",maxWidth:220}}>
+              {GH_IMP_MONEDAS.map(([c,n])=><option key={c} value={c}>{c} · {n}</option>)}
+            </select>
             {vista==="hora" && <DepSeg T={T} value={gran} onChange={setGran} items={[["hora","Por hora"],["dia","Por día"]]}/>}
             {vista==="hora" && tiendas.length>1 && (
               <select value={tiendaSel} onChange={e=>setTiendaSel(e.target.value)} style={{...inp,width:"auto"}}>
                 <option value="todas">Todas las tiendas</option>{tiendas.map(x=><option key={x.id} value={x.id}>{x.nombre}</option>)}
               </select>)}
             <div style={{marginLeft:"auto",display:"flex",gap:DS.sp.sm,alignItems:"center"}}>
-              <span style={{fontSize:DS.font.sm,color:T.textSm}}>{data?.generado?`USD · actualizado ${new Date(data.generado).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:tz})}`:""}</span>
+              <span style={{fontSize:DS.font.sm,color:T.textSm}}>{data?.generado?`${ghImpMon.cod}${ghImpMon.cod!=="USD"?` (1 US$ = ${ghImpMon.r.toLocaleString("es-AR",{maximumFractionDigits:2})}${ghImpMon.cod==="ARS"&&data?.arsCripto?" cripto":""})`:""} · actualizado ${new Date(data.generado).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:tz})}`:""}</span>
             </div>
           </div>
           {err && <Card T={T}><span style={{color:T.red,fontSize:DS.font.base}}>{err}</span></Card>}
