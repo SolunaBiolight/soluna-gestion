@@ -19766,12 +19766,10 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
       <div style={{padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
         {vista==="conexion" ? <ImpultiendaConexion T={T} uid={uid} onCambio={()=>cargar(true)}/> : (<>
           <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
-            <Btn T={T} size="sm" variant={desde===hoy&&hasta===hoy?"primary":"secondary"} onClick={()=>{setDesde(hoy);setHasta(hoy);}}>Hoy</Btn>
-            <Btn T={T} size="sm" variant={desde===ay&&hasta===ay?"primary":"secondary"} onClick={()=>{setDesde(ay);setHasta(ay);}}>Ayer</Btn>
-            <Btn T={T} size="sm" variant={desde===d7&&hasta===hoy?"primary":"secondary"} onClick={()=>{setDesde(d7);setHasta(hoy);}}>7 días</Btn>
-            <GhDatePicker T={T} value={desde} onChange={v=>{setDesde(v); if(v>hasta) setHasta(v);}} allowFuture={false}/>
-            <span style={{color:T.textSm,fontSize:DS.font.sm}}>a</span>
-            <GhDatePicker T={T} value={hasta} onChange={v=>{setHasta(v); if(v<desde) setDesde(v);}} allowFuture={false}/>
+            <DateRangePicker T={T} since={desde} until={hasta} onChange={(a,b)=>{ setDesde(a); setHasta(b); }}
+              presets={(()=>{ const d=(n)=>new Date(Date.parse(hoy)-n*86400000).toISOString().slice(0,10); const [y,m]=hoy.split("-").map(Number); const ini=(yy,mm)=>`${yy}-${String(mm).padStart(2,"0")}-01`; const finMesAnt=new Date(Date.UTC(y,m-1,0)).toISOString().slice(0,10);
+                return [{id:"today",label:"Hoy",range:()=>[hoy,hoy]},{id:"yest",label:"Ayer",range:()=>[d(1),d(1)]},{id:"7d",label:"Últimos 7 días",range:()=>[d(6),hoy]},{id:"14d",label:"Últimos 14 días",range:()=>[d(13),hoy]},{id:"30d",label:"Últimos 30 días",range:()=>[d(29),hoy]},
+                  {id:"mes",label:"Este mes",range:()=>[ini(y,m),hoy]},{id:"mes-1",label:"Mes pasado",range:()=>[m===1?ini(y-1,12):ini(y,m-1),finMesAnt]}]; })()}/>
             <label style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface||T.bg,boxSizing:"border-box",cursor:"pointer"}}>
               <span style={{fontSize:15,lineHeight:1}}>🕐</span>
               <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Horario</span>
@@ -36020,7 +36018,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [juntas,setJuntasS]=useState(()=>{ try{ return localStorage.getItem(ghKey("growith_meta_juntas"))!=="0"; }catch(_){ return true; } });
   const setJuntas=(v)=>{ setJuntasS(v); try{ localStorage.setItem(ghKey("growith_meta_juntas"),v?"1":"0"); }catch(_){} };
   const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[]}); }catch(_){} };
-  useEffect(()=>{ cargarCtasMeta(); /* eslint-disable-next-line */ },[]);
+  useEffect(()=>{ if(activeAccId) cargarCtasMeta(); /* eslint-disable-next-line */ },[activeAccId]); // espera a que esté la tienda activa (window.__ghTiendaUid)
   const ctasJuntas=(ctasMeta?.cuentas||[]).filter(c=>(ctasMeta?.elegidas||[]).includes(c.id));
   const verJuntas=juntas&&ctasJuntas.length>1;
 
