@@ -18629,13 +18629,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
           {/* helper para cada fila */}
           {[
             {
-              key:"tn", group:"Tienda", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : "Ventas, productos y envíos de tu Tienda Nube",
+              key:"tn", group:"Tienda", label:"Tienda Nube", sub: tnStore ? (tnStore.storeName||tnStore.storeId) : impStore ? "Esta tienda es de productos digitales (Impultienda). Para conectar Tienda Nube, creá otra tienda desde el selector de abajo: cada tienda es física o digital." : "Ventas, productos y envíos de tu Tienda Nube",
               connected:!!tnStore, disabled:(!!shStore||!!impStore) && !tnStore, brand:"#00a0e3", iconBg:"#fff",
               icon:<BrandIcon name="tiendanube" size={30}/>,
               onConnect: connectTiendaNube, onDisconnect:()=>disconnectStore("tiendanube"),
             },
             {
-              key:"sh", group:"Tienda", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : "Ventas, productos y el checkout con Andreani",
+              key:"sh", group:"Tienda", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : impStore ? "Esta tienda es de productos digitales (Impultienda). Para conectar Shopify, creá otra tienda desde el selector de abajo: cada tienda es física o digital." : "Ventas, productos y el checkout con Andreani",
               connected:!!shStore, disabled:(!!tnStore||!!impStore) && !shStore, brand:"#95BF47", iconBg:"#fff",
               icon:<BrandIcon name="shopify" size={30}/>,
               onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
@@ -18643,7 +18643,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
             {
               // Productos digitales: una tienda de Growith con Impultienda es SOLO
               // Impultienda + Mercado Pago y/o Stripe (sin TN, Shopify ni ML).
-              key:"imp", group:"Tienda", label:"Impultienda", sub: impStore ? "Conectada · ventas por webhook" : "Productos digitales: ventas en vivo, comisiones de Mercado Pago y Stripe, ganancia por hora",
+              key:"imp", group:"Tienda", label:"Impultienda", sub: impStore ? "Conectada · ventas por webhook" : (tnStore||shStore||mlStore) ? `Esta tienda es de productos físicos (${tnStore?"Tienda Nube":shStore?"Shopify":"Mercado Libre"}). Para productos digitales creá otra tienda desde el selector de abajo y conectá Impultienda ahí: cada tienda es física o digital.` : "Productos digitales: ventas en vivo, comisiones de Mercado Pago y Stripe, ganancia por hora",
               connected:!!impStore, disabled:(!!tnStore||!!shStore||!!mlStore) && !impStore, brand:"#7c3aed", iconBg:"#fff",
               icon:<BrandIcon name="impultienda" size={32}/>,
               onConnect: async ()=>{
@@ -18657,7 +18657,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               onDisconnect:()=>disconnectStore("impultienda"),
             },
             {
-              key:"ml", group:"Marketplace", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : "Ventas, publicaciones, preguntas, mensajes y reputación",
+              key:"ml", group:"Marketplace", label:"Mercado Libre", sub: mlStore ? (mlStore.nickname||mlStore.userId) : impStore ? "Esta tienda es de productos digitales (Impultienda). Para conectar Mercado Libre, creá otra tienda desde el selector de abajo: cada tienda es física o digital." : "Ventas, publicaciones, preguntas, mensajes y reputación",
               connected:!!mlStore, disabled:!!impStore && !mlStore, brand:"#FFE600", iconBg:"#fff",
               icon:<BrandIcon name="mercadolibre" size={34}/>,
               onConnect:()=>setShowMLModal(true), onDisconnect:()=>disconnectStore("mercadolibre"),
