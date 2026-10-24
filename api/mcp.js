@@ -41,6 +41,7 @@ import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
+import { porHora as impPorHora } from "./impultienda.js";
 
 const ORIGINS = ["https://www.growithapp.com", "https://soluna-gestion.vercel.app"];
 const DEFAULT_ORIGIN = ORIGINS[0];
@@ -668,6 +669,9 @@ const TOOLS = [
   tool("rentabilidad", "Rentabilidad de un período",
     "Resultado real de CUALQUIER período con el motor de Growith, comparado con el período anterior: facturación, órdenes, ticket promedio, costo de productos, impuestos, comisiones, envíos, costos fijos, inversión publicitaria por plataforma (Meta, Google, TikTok, Mercado Ads), ganancia neta, margen, ROAS, True ROAS, ROAS de equilibrio y CPA, más desglose por canal y por producto. Usala para preguntas de un período puntual (\"¿cuánto gané en agosto?\", \"¿cómo me fue ayer?\"). Montos en ARS. Si el período no estaba calculado puede tardar hasta un minuto.",
     { type: "object", properties: PROPS_PERIODO, additionalProperties: false }),
+  tool("productos_digitales", "Ventas por tienda, hora y campaña (Impultienda)",
+    "SOLO para clientes con tienda Impultienda (productos digitales). Ventas en USD de cada tienda (una por país), gasto de Meta asignado a cada tienda por el país de la campaña, comisiones reales de Mercado Pago/Stripe, reembolsos y ganancia, por hora en hora Argentina (00:00 ART = día nuevo). Incluye las campañas con las ventas cruzadas por UTM (id de campaña, nombre o código de país) y, dentro de cada campaña, las ventas por anuncio (utm_content). desde/hasta en AAAA-MM-DD (hora Argentina, máximo 31 días; por defecto hoy).",
+    { type: "object", properties: { desde: { type: "string", description: "AAAA-MM-DD (hora Argentina)" }, hasta: { type: "string", description: "AAAA-MM-DD (hora Argentina)" } }, additionalProperties: false }),
   tool("campanas_publicidad", "Campañas de Meta, Google y TikTok",
     "Campañas de Meta Ads, Google Ads y TikTok Ads conectadas a Growith con métricas del período: estado, presupuesto, gasto, impresiones, clicks, CTR, CPC, conversiones o compras, valor y ROAS según cada plataforma. Cada cuenta indica su moneda. Por defecto, últimos 7 días de todas las plataformas.",
     { type: "object", properties: { plataforma: { type: "string", enum: ["todas", "meta", "google", "tiktok"], description: "Plataforma a consultar (por defecto todas)." }, ...PROPS_PERIODO }, additionalProperties: false }),
@@ -851,6 +855,31 @@ async function runTool(db, uid, name, args, origin) {
   if (name === "rentabilidad") {
     const { since, until } = rangoDe(args);
     return { fecha_hora_actual: fecha, ...armarRentabilidad(await margenesDe(db, uid, origin || DEFAULT_ORIGIN, since, until)) };
+  }
+  if (name === "productos_digitales") {
+    const hoy = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+    const desde = /^\d{4}-\d{2}-\d{2}$/.test(args.desde || "") ? args.desde : hoy;
+    const hasta = /^\d{4}-\d{2}-\d{2}$/.test(args.hasta || "") ? args.hasta : desde;
+    const u = (await db.collection("users").doc(uid).get()).data() || {};
+    if (!(u.stores || []).some(s => s.type === "impultienda")) return { error: "Esta tienda no tiene Impultienda conectada." };
+    const r = await impPorHora(db, uid, desde, hasta);
+    // Resumen compacto: totales, por tienda, por hora y campañas (sin la grilla cruda).
+    const porTienda = {}, porHoraT = {};
+    for (const f of r.filas) {
+      const t = porTienda[f.tienda] || (porTienda[f.tienda] = { tienda: f.tiendaNombre, pais: f.pais, ventas: 0, n: 0, gasto: 0, comisiones: 0, reembolsos: 0 });
+      const h = porHoraT[`${f.fecha} ${String(f.hora).padStart(2, "0")}:00`] || (porHoraT[`${f.fecha} ${String(f.hora).padStart(2, "0")}:00`] = { ventas: 0, n: 0, gasto: 0 });
+      for (const k of ["ventas", "n", "gasto", "comisiones", "reembolsos"]) t[k] += f[k] || 0;
+      h.ventas += f.ventas; h.n += f.n; h.gasto += f.gasto;
+    }
+    const r2 = (x) => Math.round(x * 100) / 100;
+    return {
+      fecha_hora_actual: fecha, moneda: "USD", zona: "hora Argentina", desde, hasta,
+      totales: Object.fromEntries(Object.entries(r.totales).map(([k, v]) => [k, typeof v === "number" ? r2(v) : v])),
+      por_tienda: Object.values(porTienda).map(t => ({ ...t, ventas: r2(t.ventas), gasto: r2(t.gasto), comisiones: r2(t.comisiones), reembolsos: r2(t.reembolsos), ganancia: r2(t.ventas - t.gasto - t.comisiones - t.reembolsos), roas: t.gasto ? r2(t.ventas / t.gasto) : null })),
+      por_hora: Object.entries(porHoraT).map(([hora, v]) => ({ hora, ventas: r2(v.ventas), n: v.n, gasto: r2(v.gasto) })),
+      campanas: (r.campanas || []).slice(0, 40).map(c => ({ campana: c.nombre, tienda: (r.tiendas || []).find(t => t.id === c.tienda)?.nombre || null, gasto: r2(c.gasto), ventas: c.n, facturacion: r2(c.ventas), roas: c.roas ? r2(c.roas) : null, cpa: c.cpa ? r2(c.cpa) : null, ganancia: r2(c.ganancia), anuncios: (c.anuncios || []).slice(0, 15).map(a => ({ anuncio: a.anuncio, ventas: a.n, facturacion: r2(a.ventas) })) })),
+      avisos: { gasto_meta_sin_hora: r2(r.meta?.sinHora || 0), errores_meta: r.meta?.errores || [], stripe: r.stripe, mercadopago: r.mp },
+    };
   }
   if (name === "campanas_publicidad") {
     const { since, until } = rangoDe(args, "ultimos_7_dias");

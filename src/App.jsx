@@ -19510,6 +19510,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   const [cargando,setCargando]=useState(false);
   const [err,setErr]=useState(null);
   const [tiendaSel,setTiendaSel]=useState("todas");
+  const [campAbierta,setCampAbierta]=useState(null);
   const cargar = async(fresh=false)=>{
     if(!uid) return; setCargando(true); setErr(null);
     try{ const r=await authFetch(`/api/impultienda?action=por_hora&uid=${uid}&desde=${desde}&hasta=${hasta}${fresh?"&fresh=1":""}`); const j=await r.json(); if(j.error) throw new Error(j.error); setData(j); }
@@ -19619,10 +19620,21 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             </Card>
             {(data.campanas||[]).length>0 && (
               <Card T={T} padding="sm" style={{overflowX:"auto"}}>
-                <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,padding:"6px 10px"}}>Campañas de Meta</div>
+                <div style={{padding:"6px 10px"}}>
+                  <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>Campañas</div>
+                  <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Cada venta se cruza con su campaña por las UTM del link (id de campaña, nombre o código de país). Tocá una campaña para ver los anuncios (utm_content).</div>
+                </div>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr><th style={{...th,textAlign:"left"}}>Campaña</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={th}>Gasto</th></tr></thead>
-                  <tbody>{data.campanas.map(c=>{ const ti=tiendas.find(x=>x.id===c.tienda); return (<tr key={c.nombre} style={{borderTop:`1px solid ${T.borderL||T.border}`}}><td style={{...td,textAlign:"left",whiteSpace:"normal"}}>{c.nombre}</td><td style={{...td,textAlign:"left",color:c.tienda==="SIN_ASIGNAR"?T.orange:T.textMd}}>{ti?.nombre||"Sin asignar"}</td><td style={td}>{GH_FMT_USD(c.gasto)}</td></tr>);})}</tbody>
+                  <thead><tr><th style={{...th,textAlign:"left"}}>Campaña</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={th}>Gasto</th><th style={th}>Ventas</th><th style={th}>Facturación</th><th style={th}>ROAS</th><th style={th}>CPA</th><th style={th}>Ganancia</th></tr></thead>
+                  <tbody>{data.campanas.map(c=>{ const ti=tiendas.find(x=>x.id===c.tienda); const abierta=campAbierta===c.key; return (<React.Fragment key={c.key}>
+                    <tr onClick={()=>setCampAbierta(abierta?null:c.key)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:(c.anuncios||[]).length?"pointer":"default"}}>
+                      <td style={{...td,textAlign:"left",whiteSpace:"normal",color:c.key==="SIN_CAMPANA"?T.orange:T.text}}>{(c.anuncios||[]).length?(abierta?"▾ ":"▸ "):""}{c.nombre}</td>
+                      <td style={{...td,textAlign:"left",color:T.textMd}}>{c.key==="SIN_CAMPANA"?"—":(ti?.nombre||"Sin asignar")}</td>
+                      <td style={td}>{GH_FMT_USD(c.gasto)}</td><td style={td}>{c.n||""}</td><td style={td}>{GH_FMT_USD(c.ventas)}</td><td style={td}>{c.roas?c.roas.toFixed(2):"—"}</td><td style={td}>{c.cpa?GH_FMT_USD(c.cpa):"—"}</td>
+                      <td style={{...td,fontWeight:DS.w.bold,color:c.ganancia>=0?T.green:T.red}}>{GH_FMT_USD(c.ganancia)}</td>
+                    </tr>
+                    {abierta && (c.anuncios||[]).map(a=>(<tr key={a.anuncio} style={{background:T.bg}}><td style={{...td,textAlign:"left",paddingLeft:28,color:T.textMd}}>{a.anuncio}</td><td style={td}></td><td style={td}></td><td style={td}>{a.n}</td><td style={td}>{GH_FMT_USD(a.ventas)}</td><td style={td} colSpan={3}></td></tr>))}
+                  </React.Fragment>);})}</tbody>
                 </table>
               </Card>)}
           </>)}
