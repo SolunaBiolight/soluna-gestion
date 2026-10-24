@@ -19480,6 +19480,10 @@ function ImpultiendaConexion({T,uid,onCambio}){
   const [paises,setPaises]=useState({});
   const [guardando,setGuardando]=useState(false);
   const [nueva,setNueva]=useState({nombre:"",pais:"",id:""});
+  const [cuentas,setCuentas]=useState(null); // {cuentas:[{id,nombre,moneda}], elegidas:[]}
+  const [elegidas,setElegidas]=useState([]);
+  const [filtroCta,setFiltroCta]=useState("");
+  useEffect(()=>{ if(!uid) return; authFetch(`/api/impultienda?action=meta_cuentas&uid=${uid}`).then(r=>r.json()).then(j=>{ if(!j.error){ setCuentas(j); setElegidas(j.elegidas||[]); } }).catch(()=>{}); },[uid]);
   const [pegado,setPegado]=useState("");
   const inp={...InputStyle(T),fontFamily:"'Inter',system-ui,sans-serif"};
   const cargar=async()=>{ try{ const j=await (await authFetch(`/api/impultienda?action=config&uid=${uid}`)).json(); if(j.error) throw new Error(j.error); setCfg(j); setFee({pct:String(j.feePct),fijo:String(j.feeFijo)}); setPaises(j.paises||{}); }catch(e){ toast(e.message,"error"); } };
@@ -19534,7 +19538,7 @@ function ImpultiendaConexion({T,uid,onCambio}){
           Object.entries(cfg.tiendas).map(([id,ti])=>(
             <div key={id} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${T.borderL||T.border}`}}>
               <span style={{flex:1,fontSize:DS.font.base,color:T.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ti.nombre||id}</span>
-              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" style={{...inp,width:70}}/>
+              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" title="Uno o varios códigos: RO MD" style={{...inp,width:90}}/>
               <Btn T={T} size="sm" variant="ghost" onClick={async()=>{ if(!await appConfirm(`¿Quitar ${ti.nombre||id}?`,{danger:true,okLabel:"Quitar"})) return; guardar({tiendas:{[id]:null}}); }}>Quitar</Btn>
             </div>))}
         {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar países</Btn></div>}
@@ -19546,7 +19550,25 @@ function ImpultiendaConexion({T,uid,onCambio}){
         </div>
       </Card>
       <Card T={T}>
-        <div style={tit}>4. Cargar todas tus tiendas con Claude</div>
+        <div style={tit}>4. Cuentas publicitarias de estas tiendas</div>
+        <div style={txt}>Elegí qué cuentas de Meta son de estas tiendas. Si no elegís ninguna, se suman todas las cuentas a las que tiene acceso tu Facebook (incluidas las de otras marcas).</div>
+        {!cuentas ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>{"Cargando cuentas… (si no conectaste Meta en esta tienda, conectalo en Config → Integraciones)"}</div> : cuentas.cuentas.length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>No hay cuentas: conectá Meta en Config → Integraciones.</div> : (<>
+          {cuentas.cuentas.length>8 && <input value={filtroCta} onChange={e=>setFiltroCta(e.target.value)} placeholder="Buscar cuenta…" style={{...inp,marginBottom:DS.sp.sm}}/>}
+          <div style={{maxHeight:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
+            {cuentas.cuentas.filter(c=>!filtroCta||String(c.nombre).toLowerCase().includes(filtroCta.toLowerCase())||c.id.includes(filtroCta)).map(c=>(
+              <label key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 4px",cursor:"pointer",fontSize:DS.font.base,color:T.text}}>
+                <input type="checkbox" checked={elegidas.includes(c.id)} onChange={e=>setElegidas(e.target.checked?[...elegidas,c.id]:elegidas.filter(x=>x!==c.id))}/>
+                <span style={{flex:1}}>{c.nombre||c.id}</span><span style={{fontSize:DS.font.sm,color:T.textSm}}>{c.id.replace("act_","")} · {c.moneda}</span>
+              </label>))}
+          </div>
+          <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.sm}}>
+            <Btn T={T} size="sm" onClick={()=>guardar({metaCuentas:elegidas})} disabled={guardando}>Guardar cuentas</Btn>
+            <span style={{fontSize:DS.font.sm,color:T.textSm}}>{elegidas.length?`${elegidas.length} elegidas`:"Ninguna elegida = se suman todas"}</span>
+          </div>
+        </>)}
+      </Card>
+      <Card T={T}>
+        <div style={tit}>5. Cargar todas tus tiendas con Claude</div>
         <div style={txt}>Si tenés muchas tiendas, pedíselas a Claude: conectale el conector de <b>Impultienda</b> (y el de <b>Growith</b>, para preguntarle después por tus números), pegale este pedido, y la lista que te devuelva pegala acá abajo.</div>
         <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",marginBottom:DS.sp.md}}>
           <Btn T={T} size="sm" variant="secondary" onClick={()=>{ try{ navigator.clipboard.writeText(GH_IMP_PROMPT_TIENDAS); toast("Pedido copiado","success"); }catch(_){} }}>Copiar el pedido para Claude</Btn>

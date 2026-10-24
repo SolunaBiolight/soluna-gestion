@@ -139,7 +139,7 @@ async function webhook(req, res, db) {
 }
 
 // ── Meta: gasto por hora ART ──
-async function metaPorHora(db, uid, desde, hasta) {
+async function metaPorHora(db, uid, desde, hasta, elegidas = []) {
   const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
   const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
   const out = {}; // "fecha|hora|campaña" → usd
@@ -156,6 +156,7 @@ async function metaPorHora(db, uid, desde, hasta) {
     for (const c of cuentas) {
       const id = "act_" + c.account_id;
       if (vistas.has(id)) continue; vistas.add(id);
+      if (elegidas.length && !elegidas.includes(id)) continue;
       const tz = c.timezone_name || "America/Los_Angeles";
       // El día ART empieza en otra hora de la zona de la cuenta: se pide un día de margen.
       const since = addDias(desde, -1), until = addDias(hasta, 1);
@@ -285,9 +286,10 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
 
 // Tienda a la que va el gasto de una campaña: la que tiene su código de país en el
 // nombre ("IT | Lumea…", "Lumea IT", "[PL]"). Si no matchea ninguna, "sin asignar".
+export const paisesDe = (p) => String(p || "").toUpperCase().split(/[^A-Z]+/).filter(x => x.length === 2);
 export function tiendaDeCampana(nombre, tiendas) {
   const toks = String(nombre || "").toUpperCase().split(/[^A-Z]+/).filter(Boolean);
-  const hit = tiendas.filter(t => t.pais && toks.includes(String(t.pais).toUpperCase()));
+  const hit = tiendas.filter(t => paisesDe(t.pais).some(p => toks.includes(p)));
   return hit.length === 1 ? hit[0].id : null;
 }
 
@@ -339,7 +341,7 @@ export async function porHora(db, uid, desde, hasta) {
   const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
   const ventasCamp = {};
   const enRango = (iso) => { const t = Date.parse(iso || ""); return isFinite(t) && t >= desdeMs && t < hastaMs; };
-  const meta = await metaPorHora(db, uid, desde, hasta);
+  const meta = await metaPorHora(db, uid, desde, hasta, cfg.metaCuentas || []);
   const campIdx = {};
   for (const k of Object.keys(meta.porHora)) { const [, , nombre, id] = k.split("|"); if (nombre) campIdx[id || nombre] = { key: id || nombre, id: id || null, nombre }; }
   const campLista = Object.values(campIdx);
@@ -425,6 +427,16 @@ export default async function handler(req, res) {
         paises: cfg.paises || {}, tiendas, ordenes: os.size, ultimaPrueba: cfg.ultimaPrueba || null,
       });
     }
+    if (action === "meta_cuentas") {
+      const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
+      const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
+      const cuentas = new Map();
+      for (const tk of tokens) {
+        try { const r = await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id,name,currency,amount_spent&limit=200&access_token=${encodeURIComponent(tk)}`)).json(); for (const a of r.data || []) cuentas.set("act_" + a.account_id, { id: "act_" + a.account_id, nombre: a.name, moneda: a.currency }); } catch (_) {}
+      }
+      const cfg = (await cfgRef.get()).data() || {};
+      return res.json({ cuentas: [...cuentas.values()].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))), elegidas: cfg.metaCuentas || [] });
+    }
     if (action === "conectar" && req.method === "POST") {
       // Una tienda Impultienda es SOLO Impultienda + Mercado Pago y/o Stripe:
       // no convive con Tienda Nube, Shopify ni Mercado Libre en la misma tienda de Growith.
@@ -451,7 +463,9 @@ export default async function handler(req, res) {
       if (b.stripe_key === null) { patch.stripeEnc = FieldValue.delete(); await db.collection("users").doc(uid).set({ stripeCobros: FieldValue.delete() }, { merge: true }); }
       if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
-      if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), String(v || "").toUpperCase().slice(0, 6)]).filter(([, v]) => v));
+      if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), paisesDe(v).join(" ").slice(0, 20)]).filter(([, v]) => v));
+      // Cuentas publicitarias que cuentan para esta tienda (vacío = todas).
+      if (Array.isArray(b.metaCuentas)) patch.metaCuentas = b.metaCuentas.map(String).filter(x => /^act_\d+$/.test(x)).slice(0, 100);
       // Tiendas precargadas a mano (Impultienda no lista tiendas por API): {store_id: {nombre, pais}}
       if (b.tiendas && typeof b.tiendas === "object") {
         const tm = {};
@@ -462,7 +476,7 @@ export default async function handler(req, res) {
           const nombre = String(t?.nombre || "").trim().slice(0, 80);
           const id = /^[0-9a-f-]{20,40}$/i.test(id0) ? id0 : (nombre ? "n_" + norm(nombre).replace(/ /g, "_").slice(0, 60) : null);
           if (!id) continue;
-          tm[id] = { nombre: nombre || id, pais: String(t?.pais || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 6) || null };
+          tm[id] = { nombre: nombre || id, pais: paisesDe(t?.pais).join(" ").slice(0, 20) || null };
         }
         patch.tiendasManual = tm;
         patch.paises = { ...(patch.paises || {}), ...Object.fromEntries(Object.entries(tm).filter(([, t]) => t.pais).map(([id, t]) => [id, t.pais])) };
