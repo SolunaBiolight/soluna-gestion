@@ -1142,7 +1142,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
           // Subs solo cuando estás dentro del módulo (revertido del bloque
           // siempre-desplegado de Escalafy — el usuario prefiere la fluidez
           // del despliegue al click). Se ocultan otra vez al cambiar de módulo.
-          const showSubs = active && item.subs && !collapsed && !closedSubs.has(item.id) && !(connectedStores.imp&&item.id==="margenes");
+          const showSubs = active && item.subs && !collapsed && !closedSubs.has(item.id);
           const hubActivo = item.hub && ((page==="meta"&&metaTab==="creativos")||(page==="ml"&&mlTab==="publicar")||(page==="gads"&&gadsTab==="publicar")||(page==="tiktokads"&&tiktokTab==="publicar"));
           const showHub = item.hub && !collapsed && (pubOpen||hubActivo);
           return (
@@ -1164,7 +1164,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
                   flexDirection:"column",
                   gap:1,
                 }}>
-                  {item.subs.map(sub=>{
+                  {(connectedStores.imp&&item.id==="margenes"?[{id:"dashboard",label:"Dashboard"},{id:"hora",label:"Por hora"},{id:"conexion",label:"Conexión"}]:item.subs).map(sub=>{
                     // subActive solo cuando el módulo padre es el activo —
                     // antes daba highlight aún navegando otra sección, ahora
                     // que las subs son visibles siempre eso confundía.
@@ -19706,7 +19706,6 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   const [cargando,setCargando]=useState(false);
   const [err,setErr]=useState(null);
   const [tiendaSel,setTiendaSel]=useState("todas");
-  const [campAbierta,setCampAbierta]=useState(null);
   const [editCards,setEditCards]=useState(false);
   const [mon,setMonS]=useState(()=>{ try{ return localStorage.getItem("growith_imp_moneda")||"USD"; }catch(_){ return "USD"; } });
   const setMon=(v)=>{ setMonS(v); try{ localStorage.setItem("growith_imp_moneda",v); }catch(_){} };
@@ -19762,7 +19761,6 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           {cargando?<Spinner size={11} color="#fff"/>:"↻"} {cargando?"Actualizando…":"Actualizar"}
         </button>}
       </AppTopbar>
-      <AppTabs T={T} active={vista} onChange={ir} tabs={[{id:"dashboard",label:"Dashboard"},{id:"hora",label:"Por hora"},{id:"conexion",label:"Conexión"}]}/>
       <div style={{padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
         {vista==="conexion" ? <ImpultiendaConexion T={T} uid={uid} onCambio={()=>cargar(true)}/> : (<>
           <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
@@ -19818,39 +19816,6 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
                 </Card>);})}
             </div>
             {tiendas.some(x=>x.id==="SIN_ASIGNAR") && (()=>{ const s=ghImpSumar(filas.filter(f=>f.tienda==="SIN_ASIGNAR")); return s.gasto>0.01 ? <div style={{fontSize:DS.font.sm,color:T.textMd}}>{GH_FMT_USD(s.gasto)} de anuncios no se pudo asignar a una tienda: la campaña no tiene el código de país de ninguna tienda en el nombre. Está en el total principal.</div> : null; })()}
-            <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"14px 0 0"}}>Desglose · por día y por hora</div>
-            {porDia.length>1 && (
-              <Card T={T} padding="sm" style={{overflowX:"auto"}}>
-                <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,padding:"6px 10px"}}>Por día</div>
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr><th style={{...th,textAlign:"left"}}>Día</th><th style={th}>Facturación</th><th style={th}>Ventas</th><th style={th}>Anuncios</th><th style={th}>Comisiones</th><th style={th}>Reemb.</th><th style={th}>Ganancia</th><th style={th}>ROAS</th></tr></thead>
-                  <tbody>{porDia.map(d=>(<tr key={d.fecha} style={{borderTop:`1px solid ${T.borderL||T.border}`}}><td style={{...td,textAlign:"left"}}>{d.fecha.split("-").reverse().join("/")}</td><td style={td}>{GH_FMT_USD(d.ventas)}</td><td style={td}>{d.n}</td><td style={td}>{GH_FMT_USD(d.gasto)}</td><td style={td}>{GH_FMT_USD(d.comisiones)}</td><td style={td}>{d.reembolsos?GH_FMT_USD(d.reembolsos):""}</td><td style={{...td,fontWeight:DS.w.bold,color:d.ganancia>=0?T.green:T.red}}>{GH_FMT_USD(d.ganancia)}</td><td style={td}>{d.roas?d.roas.toFixed(2):"—"}</td></tr>))}</tbody>
-                </table>
-              </Card>)}
-            <Card T={T} padding="sm" style={{overflowX:"auto"}}>
-              <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text,padding:"6px 10px"}}>Por hora · todas las tiendas</div>
-              {tablaHoras(Object.entries(agrupar(filas,f=>f.fecha+"|"+String(f.hora).padStart(2,"0"))).sort().map(([k,l])=>({fecha:k.split("|")[0],hora:k.split("|")[1],...ghImpSumar(l)})))}
-            </Card>
-            {(data.campanas||[]).length>0 && <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"14px 0 0"}}>Campañas · Meta Ads</div>}
-            {(data.campanas||[]).length>0 && (
-              <Card T={T} padding="sm" style={{overflowX:"auto"}}>
-                <div style={{padding:"6px 10px"}}>
-                  <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>Campañas</div>
-                  <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Gasto: lo lee Growith de Meta. Ventas y facturación: las reales de Impultienda, cruzadas con su campaña por la UTM del link (id de campaña, nombre o código de país). "Meta dice" es lo que reporta el píxel, para comparar. Tocá una campaña para ver los anuncios (utm_content).</div>
-                </div>
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr><th style={{...th,textAlign:"left"}}>Campaña</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={th}>Gasto</th><th style={th}>Ventas</th><th style={th}>Facturación</th><th style={th} title="Lo que reporta el píxel de Meta (su atribución, en la zona de la cuenta)">Meta dice</th><th style={th}>ROAS</th><th style={th}>CPA</th><th style={th}>Ganancia</th></tr></thead>
-                  <tbody>{data.campanas.map(c=>{ const ti=tiendas.find(x=>x.id===c.tienda); const abierta=campAbierta===c.key; return (<React.Fragment key={c.key}>
-                    <tr onClick={()=>setCampAbierta(abierta?null:c.key)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:(c.anuncios||[]).length?"pointer":"default"}}>
-                      <td style={{...td,textAlign:"left",whiteSpace:"normal",color:c.key==="SIN_CAMPANA"?T.orange:T.text}}>{(c.anuncios||[]).length?(abierta?"▾ ":"▸ "):""}{c.nombre}</td>
-                      <td style={{...td,textAlign:"left",color:T.textMd}}>{c.key==="SIN_CAMPANA"?"—":(ti?.nombre||"Sin asignar")}</td>
-                      <td style={td}>{GH_FMT_USD(c.gasto)}</td><td style={td}>{c.n||""}</td><td style={td}>{GH_FMT_USD(c.ventas)}</td><td style={{...td,color:T.textSm}}>{c.metaDice?`${c.metaDice.compras} · ${GH_FMT_USD(c.metaDice.valor)}`:"—"}</td><td style={td}>{c.roas?c.roas.toFixed(2):"—"}</td><td style={td}>{c.cpa?GH_FMT_USD(c.cpa):"—"}</td>
-                      <td style={{...td,fontWeight:DS.w.bold,color:c.ganancia>=0?T.green:T.red}}>{GH_FMT_USD(c.ganancia)}</td>
-                    </tr>
-                    {abierta && (c.anuncios||[]).map(a=>(<tr key={a.anuncio} style={{background:T.bg}}><td style={{...td,textAlign:"left",paddingLeft:28,color:T.textMd}}>{a.anuncio}</td><td style={td}></td><td style={td}></td><td style={td}>{a.n}</td><td style={td}>{GH_FMT_USD(a.ventas)}</td><td style={td} colSpan={4}></td></tr>))}
-                  </React.Fragment>);})}</tbody>
-                </table>
-              </Card>)}
           </>)}
           {vista==="hora" && data && filas.length>0 && (<>
             {kpis(ghImpSumar(filasH),false)}

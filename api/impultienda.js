@@ -377,13 +377,14 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
     const usd = aUsd(o.total, o.moneda, fx) ?? 0;
     if (enRango(o.ev_approved)) {
       const a = zonaDe(o.ev_approved, tz); const f = fila(a.fecha, a.hora, tid);
-      f.ventas += usd; f.n += 1;
+      // Una venta = la compra principal; el post-compra suma facturación pero NO es otra venta (igual que Impultienda).
+      f.ventas += usd; if (!o.post_compra) f.n += 1;
       if (o.post_compra) { f.upsell += usd; f.nUpsell += 1; } else { f.front += usd; f.nFront += 1; }
       const ck = campanaDeVenta(o.utm, campLista) || "SIN_CAMPANA";
       const cv = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {} });
-      cv.ventas += usd; cv.n += 1;
+      cv.ventas += usd; if (!o.post_compra) cv.n += 1;
       const ad = String(o.utm?.utm_content || "sin anuncio").slice(0, 80);
-      const av = cv.anuncios[ad] || (cv.anuncios[ad] = { anuncio: ad, ventas: 0, n: 0 }); av.ventas += usd; av.n += 1;
+      const av = cv.anuncios[ad] || (cv.anuncios[ad] = { anuncio: ad, ventas: 0, n: 0 }); av.ventas += usd; if (!o.post_compra) av.n += 1;
       const real = o.stripe?.fee ?? o.mp?.fee;
       const com = real != null ? real : usd * feePct / 100 + feeFijo;
       f.comisiones += com; if (real == null) f.comisionesEstimadas += com;
@@ -573,7 +574,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v4_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v5_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });
