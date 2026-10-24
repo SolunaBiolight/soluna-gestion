@@ -18590,7 +18590,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
         <div style={{minWidth:0}}>
         {(()=>{ const H={cuenta:["Cuenta","Tu perfil de acceso: nombre, email de contacto y foto. Es a nivel cuenta, no de una tienda."],tiendas:["Tiendas","Las tiendas de esta cuenta. Cada una tiene sus propias integraciones y datos."],integraciones:["Integraciones","Conectá tu tienda, el marketplace, la publicidad y las apps externas. Cada tienda tiene sus propias conexiones."],notificaciones:["Notificaciones","Qué te avisamos y por dónde: mails de tareas y WhatsApp de colaboradores."],ayuda:["Ayuda y legal","Soporte, suscripción y documentos legales."]}[cfgSec]||["",""]; return (
           <div style={{marginBottom:18,paddingBottom:14,borderBottom:`1px solid ${T.borderL}`}}>
-            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.4}}>{H[0]}</div>
+            <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.4}}>{H[0]}{cfgSec==="integraciones"&&(()=>{ const n=(orgs||[]).find(o=>o.id===activeOrgId)?.name; return n?<span style={{fontWeight:600,color:T.textSm}}> (Tienda: {n})</span>:null; })()}</div>
             <div style={{fontSize:12.5,color:T.textSm,marginTop:4,lineHeight:1.5}}>{H[1]}</div>
           </div>
         ); })()}
