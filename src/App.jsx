@@ -19456,6 +19456,59 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
 // hora Argentina (00:00 ART = día nuevo). El gasto de Meta se asigna a cada
 // tienda por el código de país en el nombre de la campaña ("IT | …").
 const GH_FMT_USD = (n)=> n==null||!isFinite(n) ? "—" : (n<0?"-":"")+"US$ "+Math.abs(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+// Tarjetas con el MISMO diseño que "Métricas Principales" del Dashboard de
+// productos físicos (gh-mcard: punto de color, valor grande, sparkline a lo ancho).
+const GH_MC = { green:"#16c784", red:"#f6465d", blue:"#3861fb", violet:"#7c3aed", gold:"#f0b90b" };
+function GhSpk({vals,color,h=30}){
+  if(!vals||vals.length<2) return null;
+  const min=Math.min(0,...vals), max=Math.max(...vals), rng=max-min||1, W=140, H=h;
+  const py=v=>H-((v-min)/rng)*(H*0.8)-H*0.08;
+  const pts=vals.map((v,i)=>`${(i/(vals.length-1))*W},${py(v)}`).join(" ");
+  const id=`ghs${(color.charCodeAt(1)||7)}${vals.length}${Math.round(max)}`;
+  return (<svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{display:"block",width:"100%",height:H}}>
+    <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.22"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+    <polygon points={`0,${H} ${pts} ${W},${H}`} fill={`url(#${id})`}/>
+    <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
+  </svg>);
+}
+function GhImpCards({T,cards}){
+  const [w,setW]=useState(typeof window!=="undefined"?window.innerWidth:1200);
+  useEffect(()=>{ const f=()=>setW(window.innerWidth); window.addEventListener("resize",f); return ()=>window.removeEventListener("resize",f); },[]);
+  const cols=Math.min(w<520?2:w<900?3:4, cards.length);
+  return (
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:10}}>
+      {cards.map(k=>(
+        <div key={k.label} className="gh-mcard" style={{background:k.tint?`linear-gradient(150deg, ${T.card} 45%, ${k.tint}16)`:T.card,border:`1px solid ${k.bad?GH_MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",display:"flex",flexDirection:"column",overflow:"hidden",minHeight:k.hero?118:96}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:7}}>
+            {k.accent && <span style={{width:6,height:6,borderRadius:"50%",background:k.accent,display:"inline-block",flexShrink:0}}/>}{k.label}
+          </div>
+          <div style={{fontSize:k.hero?30:23,fontWeight:800,color:k.valColor||(k.bad?GH_MC.red:T.text),letterSpacing:k.hero?-1.1:-0.7,lineHeight:1,fontVariantNumeric:"tabular-nums",marginBottom:5}}>{k.val}</div>
+          <div style={{fontSize:10,color:T.textSm,marginBottom:k.spk?8:0}}>{k.hint}</div>
+          {k.spk && <div style={{marginTop:"auto",margin:k.hero?"auto -18px -14px":"auto -14px -10px",opacity:0.95}}><GhSpk vals={k.spk} color={k.accent||T.accent} h={k.hero?34:24}/></div>}
+        </div>))}
+    </div>
+  );
+}
+function ghImpCardsDe(t, serie, nTiendas){
+  const usd=GH_FMT_USD, x=(v)=>v!=null&&isFinite(v)?v.toFixed(2)+"x":"—", pct=(v)=>v!=null&&isFinite(v)?(v*100).toFixed(1)+"%":"—";
+  const neto=t.ventas-t.comisiones-t.reembolsos; // todo descontado, antes de pauta
+  const be=neto>0?t.ventas/neto:null, trueRoas=t.gasto?neto/t.gasto:null, cpaBE=t.n?neto/t.n:null, aov=t.n?t.ventas/t.n:null;
+  const sp=(f)=>serie.map(f);
+  return [
+    {label:"Revenue", val:usd(t.ventas), hero:true, accent:GH_MC.blue, hint:"Facturación total", spk:sp(d=>d.ventas)},
+    {label:"Profit", val:usd(t.ganancia), hero:true, tint:t.ganancia>=0?GH_MC.green:GH_MC.red, accent:t.ganancia>=0?GH_MC.green:GH_MC.red, valColor:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:"Ganancia neta", spk:sp(d=>d.ganancia)},
+    {label:"Ad Spend", val:usd(t.gasto), hero:true, accent:GH_MC.violet, hint:"Meta", spk:sp(d=>d.gasto)},
+    {label:"Break Even", val:x(be), hero:true, accent:GH_MC.gold, hint:"ROAS de equilibrio"},
+    {label:"ROAS", val:x(t.roas), accent:GH_MC.blue, hint:"Revenue / Ad Spend", spk:sp(d=>d.gasto?d.ventas/d.gasto:0), bad:be!=null&&t.roas!=null&&t.roas<be},
+    {label:"Margen", val:pct(t.margen), accent:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:"Profit / Revenue", bad:(t.margen||0)<0},
+    {label:"CPA Break Even", val:usd(cpaBE), accent:GH_MC.gold, hint:"CPA máx. antes de perder"},
+    {label:"True ROAS", val:x(trueRoas), accent:GH_MC.green, hint:"Neto de comisiones / Ad Spend", bad:trueRoas!=null&&trueRoas<1},
+    {label:"CPA real", val:usd(t.cpa), accent:GH_MC.violet, hint:"Ad Spend / Ventas", bad:t.cpa!=null&&cpaBE!=null&&t.cpa>cpaBE},
+    {label:"Ventas", val:String(t.n), accent:GH_MC.blue, hint:"Órdenes aprobadas", spk:sp(d=>d.n)},
+    {label:"AOV", val:usd(aov), accent:GH_MC.blue, hint:"Ticket promedio"},
+    {label:"Por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Facturación promedio · ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
+  ];
+}
 function ghImpSumar(filas){
   const t={ventas:0,n:0,reembolsos:0,comisiones:0,comisionesEstimadas:0,gasto:0};
   for(const f of filas){ for(const k in t) t[k]+=f[k]||0; }
@@ -19687,8 +19740,8 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           {data && filas.length===0 && !cargando && (
             <Card T={T}><DSEmpty T={T} icon="store" title="Todavía no hay ventas en este período" subtitle="Si recién conectás Impultienda, revisá la pestaña Conexión: la URL del webhook tiene que estar cargada en Impultienda con su clave de firma." action={<Btn T={T} onClick={()=>ir("conexion")}>Ir a Conexión</Btn>}/></Card>)}
           {vista==="dashboard" && data && filas.length>0 && (<>
-            <div style={{fontSize:DS.font.xl,fontWeight:DS.w.bold,color:T.text}}>Principal · todas las tiendas</div>
-            {kpis(t,true)}
+            <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0"}}>Métricas principales · todas las tiendas</div>
+            {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT)}/>; })()}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:DS.sp.md}}>
               {tiendas.filter(x=>x.id!=="SIN_ASIGNAR").map(x=>{ const s=ghImpSumar(filas.filter(f=>f.tienda===x.id)); return (
                 <Card T={T} key={x.id} hoverable onClick={()=>{ setTiendaSel(x.id); ir("hora"); }}>

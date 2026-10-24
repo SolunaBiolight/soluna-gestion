@@ -341,7 +341,10 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const desdeMs = utcDeLocal(desde, 0, tz), hastaMs = utcDeLocal(addDias(hasta, 1), 0, tz);
   // Órdenes tocadas en el rango o un poco antes (un reembolso de hoy puede ser de una venta vieja).
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 40 * 86400000).toISOString()).get();
-  const ordenes = snap.docs.map(d => d.data());
+  // Una orden importada se descarta si el webhook ya trajo la misma (tienda + número).
+  const todas = snap.docs.map(d => d.data());
+  const delWebhook = new Set(todas.filter(o => !o.importado && o.store_id && o.orden != null).map(o => `${o.store_id}|${o.orden}`));
+  const ordenes = todas.filter(o => !o.importado || !delWebhook.has(`${o.store_id}|${o.orden}`));
   const fx = await fxPorUsd();
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
   const [stripe, mp] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs)]);
@@ -456,6 +459,36 @@ export default async function handler(req, res) {
       }
       const cfg = (await cfgRef.get()).data() || {};
       return res.json({ cuentas: [...cuentas.values()].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))), elegidas: cfg.metaCuentas || [] });
+    }
+    // Importación de ventas pasadas (antes de conectar el webhook): la lista que da
+    // el conector de Impultienda (impultienda_listar_ventas) — orden, fecha UTC, total,
+    // moneda, pasarela, post_compra. Sin UTM ni comprador: entran a su tienda pero no
+    // a una campaña. Doc id propio (imp_<tienda>_<orden>) y porHora descarta la
+    // importada si el webhook ya trajo esa misma orden.
+    if (action === "importar" && req.method === "POST") {
+      const b = JSON.parse((await readBody(req)).toString() || "{}");
+      const sid = String(b.store_id || ""); if (!/^[0-9a-f-]{20,40}$/i.test(sid)) return res.status(400).json({ error: "store_id inválido" });
+      const ventas = Array.isArray(b.ventas) ? b.ventas.slice(0, 2000) : [];
+      let n = 0; let batch = db.batch(); let enBatch = 0;
+      for (const v of ventas) {
+        const orden = Number(v.orden); const t = Date.parse(v.fecha || "");
+        if (!orden || !isFinite(t)) continue;
+        const doc = db.collection("users").doc(uid).collection("impultienda_orders").doc(`imp_${sid}_${orden}`);
+        batch.set(doc, {
+          order_id: `imp_${sid}_${orden}`, orden, store_id: sid, store_nombre: String(b.store_nombre || "").slice(0, 80) || null,
+          estado: "approved", total: Number(v.total) || 0, moneda: String(v.moneda || "USD").toUpperCase(),
+          pasarela: v.metodo_pago || null, post_compra: !!v.post_compra, importado: true,
+          ev_approved: new Date(t).toISOString(), actualizado: new Date().toISOString(),
+        }, { merge: true });
+        n++; enBatch++;
+        if (enBatch >= 400) { await batch.commit(); batch = db.batch(); enBatch = 0; }
+      }
+      if (enBatch) await batch.commit();
+      // borrar las cachés de reportes para que se vea al toque
+      const cs = await cfgRef.parent.get(); const bd = db.batch(); let k = 0;
+      for (const d of cs.docs) if (d.id.startsWith("cache_")) { bd.delete(d.ref); k++; }
+      if (k) await bd.commit();
+      return res.json({ ok: true, importadas: n });
     }
     if (action === "conectar" && req.method === "POST") {
       // Una tienda Impultienda es SOLO Impultienda + Mercado Pago y/o Stripe:
