@@ -19655,11 +19655,14 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
       </table>);
   };
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
+      <AppTopbar T={T} section="Dashboard" sectionId="margenes">
+        <span style={{fontSize:DS.font.sm,color:T.textSm,display:"inline-flex",alignItems:"center",gap:6}}><BrandIcon name="impultienda" size={18}/>Productos digitales</span>
+      </AppTopbar>
       <AppTabs T={T} active={vista} onChange={ir} tabs={[{id:"dashboard",label:"Dashboard"},{id:"hora",label:"Por hora"},{id:"conexion",label:"Conexión"}]}/>
-      <div style={{padding:DS.sp["2xl"],display:"flex",flexDirection:"column",gap:DS.sp.lg,maxWidth:1240}}>
+      <div style={{padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
         {vista==="conexion" ? <ImpultiendaConexion T={T} uid={uid} onCambio={()=>cargar(true)}/> : (<>
-          <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
             <Btn T={T} size="sm" variant={desde===hoy&&hasta===hoy?"primary":"secondary"} onClick={()=>{setDesde(hoy);setHasta(hoy);}}>Hoy</Btn>
             <Btn T={T} size="sm" variant={desde===ay&&hasta===ay?"primary":"secondary"} onClick={()=>{setDesde(ay);setHasta(ay);}}>Ayer</Btn>
             <Btn T={T} size="sm" variant={desde===d7&&hasta===hoy?"primary":"secondary"} onClick={()=>{setDesde(d7);setHasta(hoy);}}>7 días</Btn>
@@ -19680,13 +19683,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             </div>
           </div>
           {err && <Card T={T}><span style={{color:T.red,fontSize:DS.font.base}}>{err}</span></Card>}
-          {data && (data.meta?.errores?.length>0 || data.meta?.sinHora>0.01 || data.stripe?.error || data.mp?.error) && (
-            <Card T={T} padding="md"><div style={{fontSize:DS.font.sm,color:T.textMd,lineHeight:1.6}}>
-              {data.meta?.sinHora>0.01 && <div>Meta todavía no informó la hora de {GH_FMT_USD(data.meta.sinHora)} de hoy: está sumado a la hora actual.</div>}
-              {data.stripe?.error && <div style={{color:T.red}}>Stripe: {data.stripe.error}</div>}
-              {data.mp?.error && <div style={{color:T.red}}>Mercado Pago: {data.mp.error}</div>}
-              {(data.meta?.errores||[]).slice(0,3).map((e,i)=><div key={i} style={{color:T.red}}>Meta: {e}</div>)}
-            </div></Card>)}
+
           {data && filas.length===0 && !cargando && (
             <Card T={T}><DSEmpty T={T} icon="store" title="Todavía no hay ventas en este período" subtitle="Si recién conectás Impultienda, revisá la pestaña Conexión: la URL del webhook tiene que estar cargada en Impultienda con su clave de firma." action={<Btn T={T} onClick={()=>ir("conexion")}>Ir a Conexión</Btn>}/></Card>)}
           {vista==="dashboard" && data && filas.length>0 && (<>
@@ -19726,18 +19723,18 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
               <Card T={T} padding="sm" style={{overflowX:"auto"}}>
                 <div style={{padding:"6px 10px"}}>
                   <div style={{fontSize:DS.font.base,fontWeight:DS.w.semibold,color:T.text}}>Campañas</div>
-                  <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Cada venta se cruza con su campaña por las UTM del link (id de campaña, nombre o código de país). Tocá una campaña para ver los anuncios (utm_content).</div>
+                  <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>Gasto: lo lee Growith de Meta. Ventas y facturación: las reales de Impultienda, cruzadas con su campaña por la UTM del link (id de campaña, nombre o código de país). "Meta dice" es lo que reporta el píxel, para comparar. Tocá una campaña para ver los anuncios (utm_content).</div>
                 </div>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr><th style={{...th,textAlign:"left"}}>Campaña</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={th}>Gasto</th><th style={th}>Ventas</th><th style={th}>Facturación</th><th style={th}>ROAS</th><th style={th}>CPA</th><th style={th}>Ganancia</th></tr></thead>
+                  <thead><tr><th style={{...th,textAlign:"left"}}>Campaña</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={th}>Gasto</th><th style={th}>Ventas</th><th style={th}>Facturación</th><th style={th} title="Lo que reporta el píxel de Meta (su atribución, en la zona de la cuenta)">Meta dice</th><th style={th}>ROAS</th><th style={th}>CPA</th><th style={th}>Ganancia</th></tr></thead>
                   <tbody>{data.campanas.map(c=>{ const ti=tiendas.find(x=>x.id===c.tienda); const abierta=campAbierta===c.key; return (<React.Fragment key={c.key}>
                     <tr onClick={()=>setCampAbierta(abierta?null:c.key)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:(c.anuncios||[]).length?"pointer":"default"}}>
                       <td style={{...td,textAlign:"left",whiteSpace:"normal",color:c.key==="SIN_CAMPANA"?T.orange:T.text}}>{(c.anuncios||[]).length?(abierta?"▾ ":"▸ "):""}{c.nombre}</td>
                       <td style={{...td,textAlign:"left",color:T.textMd}}>{c.key==="SIN_CAMPANA"?"—":(ti?.nombre||"Sin asignar")}</td>
-                      <td style={td}>{GH_FMT_USD(c.gasto)}</td><td style={td}>{c.n||""}</td><td style={td}>{GH_FMT_USD(c.ventas)}</td><td style={td}>{c.roas?c.roas.toFixed(2):"—"}</td><td style={td}>{c.cpa?GH_FMT_USD(c.cpa):"—"}</td>
+                      <td style={td}>{GH_FMT_USD(c.gasto)}</td><td style={td}>{c.n||""}</td><td style={td}>{GH_FMT_USD(c.ventas)}</td><td style={{...td,color:T.textSm}}>{c.metaDice?`${c.metaDice.compras} · ${GH_FMT_USD(c.metaDice.valor)}`:"—"}</td><td style={td}>{c.roas?c.roas.toFixed(2):"—"}</td><td style={td}>{c.cpa?GH_FMT_USD(c.cpa):"—"}</td>
                       <td style={{...td,fontWeight:DS.w.bold,color:c.ganancia>=0?T.green:T.red}}>{GH_FMT_USD(c.ganancia)}</td>
                     </tr>
-                    {abierta && (c.anuncios||[]).map(a=>(<tr key={a.anuncio} style={{background:T.bg}}><td style={{...td,textAlign:"left",paddingLeft:28,color:T.textMd}}>{a.anuncio}</td><td style={td}></td><td style={td}></td><td style={td}>{a.n}</td><td style={td}>{GH_FMT_USD(a.ventas)}</td><td style={td} colSpan={3}></td></tr>))}
+                    {abierta && (c.anuncios||[]).map(a=>(<tr key={a.anuncio} style={{background:T.bg}}><td style={{...td,textAlign:"left",paddingLeft:28,color:T.textMd}}>{a.anuncio}</td><td style={td}></td><td style={td}></td><td style={td}>{a.n}</td><td style={td}>{GH_FMT_USD(a.ventas)}</td><td style={td} colSpan={4}></td></tr>))}
                   </React.Fragment>);})}</tbody>
                 </table>
               </Card>)}
@@ -19746,6 +19743,13 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             {kpis(ghImpSumar(filasH),false)}
             <Card T={T} padding="sm" style={{overflowX:"auto"}}>{gran==="dia" ? tablaHoras(Object.entries(agrupar(filasH,f=>f.fecha)).sort().map(([fecha,l])=>({fecha,hora:null,...ghImpSumar(l)}))) : tablaHoras(porHora)}</Card>
           </>)}
+          {data && (data.meta?.errores?.length>0 || data.stripe?.error || data.mp?.error) && (
+            <div style={{fontSize:DS.font.sm,color:T.red,lineHeight:1.6}}>
+              {data.stripe?.error && <div>Stripe: {data.stripe.error}</div>}
+              {data.mp?.error && <div>Mercado Pago: {data.mp.error}</div>}
+              {(data.meta?.errores||[]).slice(0,3).map((e,i)=><div key={i}>Meta: {e}</div>)}
+            </div>)}
+          {data?.meta?.sinHora>0.01 && <div style={{fontSize:DS.font.sm,color:T.textSm}}>{GH_FMT_USD(data.meta.sinHora)} de gasto de hoy todavía sin hora exacta en Meta: está en la hora actual.</div>}
         </>)}
       </div>
     </div>

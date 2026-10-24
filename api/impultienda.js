@@ -154,6 +154,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
   const errores = [];
   let sinHora = 0;
   const vistas = new Set();
+  const metaDice = {}; // campaign_id → {compras, valor} según el píxel de Meta (su atribución, su zona horaria)
   const fx = await fxPorUsd();
   for (const tk of tokens) {
     let cuentas = [];
@@ -185,6 +186,14 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
           }
           url = r.paging?.next || null;
         }
+        // Lo que Meta dice que vendió cada campaña (píxel), para comparar con la venta real.
+        try {
+          const rr = await (await fetch(`https://graph.facebook.com/v23.0/${id}/insights?level=campaign&fields=campaign_id,actions,action_values&time_range=${encodeURIComponent(JSON.stringify({ since: desde, until: hasta }))}&limit=500&access_token=${encodeURIComponent(tk)}`)).json();
+          for (const row of rr.data || []) {
+            const pick = (arr) => { const a = (arr || []).find(x => x.action_type === "purchase") || (arr || []).find(x => x.action_type === "offsite_conversion.fb_pixel_purchase"); return a ? Number(a.value) || 0 : 0; };
+            metaDice[row.campaign_id] = { compras: pick(row.actions), valor: aUsd(pick(row.action_values), c.currency, fx) || 0 };
+          }
+        } catch (_) {}
         // Trampa conocida: el desglose horario puede no traer todavía las horas de HOY
         // (zona de la cuenta). Se compara con el gasto del día y la diferencia va a la
         // hora ART actual, marcada como "sin hora exacta".
@@ -199,7 +208,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
       } catch (e) { errores.push(`${id}: ${e.message}`); }
     }
   }
-  return { porHora: out, sinHora, cuentas: vistas.size, errores };
+  return { porHora: out, sinHora, cuentas: vistas.size, errores, metaDice };
 }
 
 // ── Stripe: comisión real por venta ──
@@ -391,7 +400,8 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
     c.ventas = v.ventas; c.n = v.n; c.comisiones = v.comisiones;
     c.anuncios = Object.values(v.anuncios).sort((a, b) => b.ventas - a.ventas);
   }
-  for (const c of Object.values(campanas)) { c.ventas = c.ventas || 0; c.n = c.n || 0; c.comisiones = c.comisiones || 0; c.ganancia = c.ventas - c.comisiones - c.gasto; c.roas = c.gasto ? c.ventas / c.gasto : null; c.cpa = c.n && c.gasto ? c.gasto / c.n : null; }
+  for (const c of Object.values(campanas)) { if (c.id && meta.metaDice?.[c.id]) c.metaDice = meta.metaDice[c.id];
+    c.ventas = c.ventas || 0; c.n = c.n || 0; c.comisiones = c.comisiones || 0; c.ganancia = c.ventas - c.comisiones - c.gasto; c.roas = c.gasto ? c.ventas / c.gasto : null; c.cpa = c.n && c.gasto ? c.gasto / c.n : null; }
   const lista = Object.values(filas).map(f => ({ ...f, ganancia: f.ventas - f.reembolsos - f.comisiones - f.gasto }));
   lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.tienda.localeCompare(b.tienda));
   const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
