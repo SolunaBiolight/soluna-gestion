@@ -347,8 +347,9 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 40 * 86400000).toISOString()).get();
   // Una orden importada se descarta si el webhook ya trajo la misma (tienda + número).
   const todas = snap.docs.map(d => d.data());
-  const delWebhook = new Set(todas.filter(o => !o.importado && o.store_id && o.orden != null).map(o => `${o.store_id}|${o.orden}`));
-  const ordenes = todas.filter(o => !o.importado || !delWebhook.has(`${o.store_id}|${o.orden}`));
+  // El número de orden de Impultienda es único en toda la plataforma: una importada se descarta si el webhook trajo esa orden.
+  const delWebhook = new Set(todas.filter(o => !o.importado && o.orden != null).map(o => String(o.orden)));
+  const ordenes = todas.filter(o => !o.importado || !delWebhook.has(String(o.orden)));
   const fx = await fxPorUsd();
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
   const [stripe, mp] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs)]);
@@ -474,7 +475,12 @@ export default async function handler(req, res) {
     // importada si el webhook ya trajo esa misma orden.
     if (action === "importar" && req.method === "POST") {
       const b = JSON.parse((await readBody(req)).toString() || "{}");
-      const sid = String(b.store_id || ""); if (!/^[0-9a-f-]{20,40}$/i.test(sid)) return res.status(400).json({ error: "store_id inválido" });
+      // Sin el id real de Impultienda: la tienda se identifica por nombre (n_<nombre>) y se da de alta
+      // en tiendasManual con su país; las ventas del webhook después se cruzan por ese mismo nombre.
+      const sid0 = String(b.store_id || ""), nomT = String(b.store_nombre || "").slice(0, 80);
+      const sid = /^[0-9a-f-]{20,40}$/i.test(sid0) ? sid0 : (nomT ? "n_" + norm(nomT).replace(/ /g, "_").slice(0, 60) : "");
+      if (!sid) return res.status(400).json({ error: "Falta store_id o store_nombre" });
+      if (sid.startsWith("n_")) await cfgRef.set({ tiendasManual: { [sid]: { nombre: nomT, pais: String(b.pais || "").toUpperCase().slice(0, 2) || null } } }, { merge: true });
       const ventas = Array.isArray(b.ventas) ? b.ventas.slice(0, 2000) : [];
       let n = 0; let batch = db.batch(); let enBatch = 0;
       for (const v of ventas) {
