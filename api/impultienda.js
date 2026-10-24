@@ -19,6 +19,7 @@ import crypto from "crypto";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid } from "./_auth.js";
+import { getValidMLToken } from "./integrations.js";
 
 export const config = { api: { bodyParser: false } };
 
@@ -139,7 +140,7 @@ async function webhook(req, res, db) {
 async function metaPorHora(db, uid, desde, hasta) {
   const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
   const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
-  const out = {}; // "fecha|hora" → usd
+  const out = {}; // "fecha|hora|campaña" → usd
   const errores = [];
   let sinHora = 0;
   const vistas = new Set();
@@ -156,7 +157,7 @@ async function metaPorHora(db, uid, desde, hasta) {
       const tz = c.timezone_name || "America/Los_Angeles";
       // El día ART empieza en otra hora de la zona de la cuenta: se pide un día de margen.
       const since = addDias(desde, -1), until = addDias(hasta, 1);
-      let url = `https://graph.facebook.com/v23.0/${id}/insights?level=account&fields=spend&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
+      let url = `https://graph.facebook.com/v23.0/${id}/insights?level=campaign&fields=spend,campaign_name&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
       const porDiaLocal = {};
       try {
         for (let i = 0; url && i < 20; i++) {
@@ -167,7 +168,7 @@ async function metaPorHora(db, uid, desde, hasta) {
             const usd = aUsd(Number(row.spend) || 0, c.currency, fx);
             if (!isFinite(hh) || usd == null) continue;
             const a = artDe(new Date(utcDeLocal(row.date_start, hh, tz)).toISOString());
-            const k = `${a.fecha}|${a.hora}`;
+            const k = `${a.fecha}|${a.hora}|${String(row.campaign_name || "").replace(/\|/g, "/")}`;
             out[k] = (out[k] || 0) + usd;
             porDiaLocal[row.date_start] = (porDiaLocal[row.date_start] || 0) + usd;
           }
@@ -182,7 +183,7 @@ async function metaPorHora(db, uid, desde, hasta) {
         const falta = totalHoy - (porDiaLocal[hoyLocal] || 0);
         if (falta > 0.01) {
           const a = artDe(new Date().toISOString());
-          if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}`; out[k] = (out[k] || 0) + falta; sinHora += falta; }
+          if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}|`; out[k] = (out[k] || 0) + falta; sinHora += falta; }
         }
       } catch (e) { errores.push(`${id}: ${e.message}`); }
     }
@@ -239,6 +240,55 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
   return { conectado: true, cruzadas, transacciones: txs.length };
 }
 
+// ── Mercado Pago: comisión real por venta (cuenta conectada como "Mercado Pago") ──
+async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
+  const deMp = ordenes.filter(o => o.pasarela === "mercadopago" && !o.mp?.id);
+  if (!deMp.length) return { conectado: null };
+  let tok = null;
+  try { tok = await getValidMLToken(db, uid); } catch (_) {}
+  if (!tok?.accessToken) return { conectado: false };
+  const pagos = [];
+  try {
+    for (let off = 0; off < 2000; off += 100) {
+      const u = `https://api.mercadopago.com/v1/payments/search?status=approved&sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(new Date(desdeMs - 900000).toISOString())}&end_date=${encodeURIComponent(new Date(hastaMs + 900000).toISOString())}&limit=100&offset=${off}`;
+      const j = await (await fetch(u, { headers: { Authorization: `Bearer ${tok.accessToken}` } })).json();
+      pagos.push(...(j.results || []));
+      if (!j.results || j.results.length < 100) break;
+    }
+  } catch (e) { return { conectado: true, error: e.message }; }
+  const fx = await fxPorUsd();
+  const usados = new Set(); let cruzadas = 0;
+  const batch = db.batch(); let n = 0;
+  for (const o of deMp) {
+    const tAp = Date.parse(o.ev_approved || ""); if (!isFinite(tAp)) continue;
+    const cand = pagos.filter(p => {
+      if (usados.has(p.id)) return false;
+      if (Math.abs(Date.parse(p.date_approved || p.date_created) - tAp) > 10 * 60000) return false;
+      const mail = String(p.payer?.email || "").toLowerCase();
+      if (o.email && mail && mail !== o.email) return false;
+      const cur = String(p.currency_id || "").toUpperCase();
+      const esperado = cur === String(o.buyer_moneda || "").toUpperCase() && o.buyer_total != null ? Number(o.buyer_total) : (cur === String(o.moneda || "").toUpperCase() ? o.total : null);
+      return esperado != null && Math.abs(Number(p.transaction_amount) - esperado) <= Math.max(1, esperado * 0.01);
+    });
+    if (cand.length !== 1) continue;
+    const p = cand[0]; usados.add(p.id);
+    const fee = (p.fee_details || []).filter(fd => fd.fee_payer !== "payer").reduce((a, fd) => a + (Number(fd.amount) || 0), 0);
+    const usd = aUsd(fee, p.currency_id, fx); if (usd == null) continue;
+    o.mp = { id: p.id, fee: usd };
+    batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(o.order_id), { mp: o.mp }, { merge: true }); n++; cruzadas++;
+  }
+  if (n) await batch.commit().catch(() => {});
+  return { conectado: true, cruzadas, pagos: pagos.length };
+}
+
+// Tienda a la que va el gasto de una campaña: la que tiene su código de país en el
+// nombre ("IT | Lumea…", "Lumea IT", "[PL]"). Si no matchea ninguna, "sin asignar".
+export function tiendaDeCampana(nombre, tiendas) {
+  const toks = String(nombre || "").toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+  const hit = tiendas.filter(t => t.pais && toks.includes(String(t.pais).toUpperCase()));
+  return hit.length === 1 ? hit[0].id : null;
+}
+
 // ── Reporte por hora ──
 async function porHora(db, uid, desde, hasta) {
   const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
@@ -247,39 +297,47 @@ async function porHora(db, uid, desde, hasta) {
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 40 * 86400000).toISOString()).get();
   const ordenes = snap.docs.map(d => d.data());
   const fx = await fxPorUsd();
-  const stripe = await stripeComisiones(db, uid, cfg, ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs), desdeMs, hastaMs);
+  const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
+  const [stripe, mp] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs)]);
   const feePct = Number(cfg.feePct ?? 2.9), feeFijo = Number(cfg.feeFijo ?? 0.3);
   const paises = cfg.paises || {};
-  const filas = {}; // "fecha|hora|pais"
-  const fila = (fecha, hora, pais) => { const k = `${fecha}|${hora}|${pais}`; return filas[k] || (filas[k] = { fecha, hora, pais, ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
+  const tiendasMap = {};
+  for (const o of ordenes) if (o.store_id && !tiendasMap[o.store_id]) tiendasMap[o.store_id] = { id: o.store_id, nombre: o.store_nombre || o.store_id, pais: paises[o.store_id] || null };
+  const filas = {}; // "fecha|hora|tienda"
+  const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
   const enRango = (iso) => { const t = Date.parse(iso || ""); return isFinite(t) && t >= desdeMs && t < hastaMs; };
   for (const o of ordenes) {
-    const pais = paises[o.store_id] || o.pais || "??";
+    const tid = o.store_id || "SIN_TIENDA";
     const usd = aUsd(o.total, o.moneda, fx) ?? 0;
     if (enRango(o.ev_approved)) {
-      const a = artDe(o.ev_approved); const f = fila(a.fecha, a.hora, pais);
+      const a = artDe(o.ev_approved); const f = fila(a.fecha, a.hora, tid);
       f.ventas += usd; f.n += 1;
-      if (o.stripe?.fee != null) f.comisiones += o.stripe.fee;
-      else if (!o.pasarela || o.pasarela === "stripe" || o.pasarela === "card") { const est = usd * feePct / 100 + feeFijo; f.comisiones += est; f.comisionesEstimadas += est; }
+      const real = o.stripe?.fee ?? o.mp?.fee;
+      if (real != null) f.comisiones += real;
+      else { const est = usd * feePct / 100 + feeFijo; f.comisiones += est; f.comisionesEstimadas += est; }
     }
     // Reembolso y contracargo restan cuando ocurren (solo si la venta se había aprobado).
     for (const ev of ["ev_refunded", "ev_chargeback"]) {
-      if (o.ev_approved && enRango(o[ev])) { const a = artDe(o[ev]); fila(a.fecha, a.hora, pais).reembolsos += usd; }
+      if (o.ev_approved && enRango(o[ev])) { const a = artDe(o[ev]); fila(a.fecha, a.hora, tid).reembolsos += usd; }
     }
   }
   const meta = await metaPorHora(db, uid, desde, hasta);
+  const tiendasLista = Object.values(tiendasMap);
+  const campanas = {};
   for (const [k, usd] of Object.entries(meta.porHora)) {
-    const [fecha, hora] = k.split("|");
+    const [fecha, hora, camp] = k.split("|");
     if (fecha < desde || fecha > hasta) continue;
-    fila(fecha, parseInt(hora, 10), "META").gasto += usd; // el gasto es por cuenta, no por país
+    const tid = tiendaDeCampana(camp, tiendasLista) || "SIN_ASIGNAR";
+    fila(fecha, parseInt(hora, 10), tid).gasto += usd;
+    if (camp) { const c = campanas[camp] || (campanas[camp] = { nombre: camp, tienda: tid, gasto: 0 }); c.gasto += usd; }
   }
   const lista = Object.values(filas).map(f => ({ ...f, ganancia: f.ventas - f.reembolsos - f.comisiones - f.gasto }));
-  lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.pais.localeCompare(b.pais));
+  lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.tienda.localeCompare(b.tienda));
   const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
-  return { desde, hasta, zona: "America/Argentina/Buenos_Aires", filas: lista, totales: tot, meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, generado: new Date().toISOString() };
+  return { desde, hasta, zona: "America/Argentina/Buenos_Aires", filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => b.gasto - a.gasto), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, generado: new Date().toISOString() };
 }
 
 export default async function handler(req, res) {
@@ -311,6 +369,16 @@ export default async function handler(req, res) {
         feePct: cfg.feePct ?? 2.9, feeFijo: cfg.feeFijo ?? 0.3,
         paises: cfg.paises || {}, tiendas, ordenes: os.size, ultimaPrueba: cfg.ultimaPrueba || null,
       });
+    }
+    if (action === "conectar" && req.method === "POST") {
+      // Una tienda Impultienda es SOLO Impultienda + Mercado Pago y/o Stripe:
+      // no convive con Tienda Nube, Shopify ni Mercado Libre en la misma tienda de Growith.
+      const uref = db.collection("users").doc(uid);
+      const stores = (await uref.get()).data()?.stores || [];
+      const otra = stores.find(x => ["tiendanube", "shopify", "mercadolibre", "meli"].includes(x.type));
+      if (otra) return res.status(409).json({ error: `Esta tienda ya tiene ${otra.type === "tiendanube" ? "Tienda Nube" : otra.type === "shopify" ? "Shopify" : "Mercado Libre"} conectada. Impultienda va en una tienda aparte: creala desde el selector de tiendas y conectala ahí.` });
+      if (!stores.some(x => x.type === "impultienda")) await uref.set({ stores: [...stores, { type: "impultienda", storeName: "Impultienda", conectadaAt: new Date().toISOString() }] }, { merge: true });
+      return res.json({ ok: true });
     }
     if (action === "config_set" && req.method === "POST") {
       const b = JSON.parse((await readBody(req)).toString() || "{}");
