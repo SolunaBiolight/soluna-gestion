@@ -994,7 +994,7 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"calendario", label:"Calendario de Pagos", icon:"M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", alertKey:"calendario", badge:"red"},
     { group:"ANALYTICS" },
     {id:"meta",     label:"Meta Ads",  icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z", integrationKey:"meta",
-      subs:[{id:"analisis",label:"Análisis"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"reglas",label:"Reglas"}]),/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"cuenta",label:"Cuenta"}]},
+      subs:[{id:"analisis",label:"Análisis"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"reglas",label:"Reglas"}]),/* {id:"publicador",label:"Publicador IA"} — oculto por ahora (Thiago, 2026-09-11) */{id:"config",label:"Configuración"},{id:"cuenta",label:"Cuenta"}]},
     {id:"stock",    label:"Stock",     icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", alertKey:"stock", badge:"red",
       },
     {id:"ml",       label:"Mercado Libre", icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01", integrationKey:"ml", alertKey:"ml", badge:"orange",
@@ -19654,21 +19654,8 @@ function ImpultiendaConexion({T,uid,onCambio}){
       </Card>
       <Card T={T}>
         <div style={tit}>4. Cuentas publicitarias de estas tiendas</div>
-        <div style={txt}>Elegí qué cuentas de Meta son de estas tiendas. Si no elegís ninguna, se suman todas las cuentas a las que tiene acceso tu Facebook (incluidas las de otras marcas).</div>
-        {!cuentas ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>{"Cargando cuentas… (si no conectaste Meta en esta tienda, conectalo en Config → Integraciones)"}</div> : cuentas.cuentas.length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>No hay cuentas: conectá Meta en Config → Integraciones.</div> : (<>
-          {cuentas.cuentas.length>8 && <input value={filtroCta} onChange={e=>setFiltroCta(e.target.value)} placeholder="Buscar cuenta…" style={{...inp,marginBottom:DS.sp.sm}}/>}
-          <div style={{maxHeight:260,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
-            {cuentas.cuentas.filter(c=>!filtroCta||String(c.nombre).toLowerCase().includes(filtroCta.toLowerCase())||c.id.includes(filtroCta)).map(c=>(
-              <label key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 4px",cursor:"pointer",fontSize:DS.font.base,color:T.text}}>
-                <input type="checkbox" checked={elegidas.includes(c.id)} onChange={e=>setElegidas(e.target.checked?[...elegidas,c.id]:elegidas.filter(x=>x!==c.id))}/>
-                <span style={{flex:1}}>{c.nombre||c.id}</span><span style={{fontSize:DS.font.sm,color:T.textSm}}>{c.id.replace("act_","")} · {c.moneda}</span>
-              </label>))}
-          </div>
-          <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.sm}}>
-            <Btn T={T} size="sm" onClick={()=>guardar({metaCuentas:elegidas})} disabled={guardando}>Guardar cuentas</Btn>
-            <span style={{fontSize:DS.font.sm,color:T.textSm}}>{elegidas.length?`${elegidas.length} elegidas`:"Ninguna elegida = se suman todas"}</span>
-          </div>
-        </>)}
+        <div style={txt}>Se eligen en Meta Ads → Configuración: las cuentas que actives ahí se suman en este Dashboard y se pueden ver todas juntas en Análisis.{cuentas?.elegidas?.length?` Hoy: ${cuentas.elegidas.length} elegida${cuentas.elegidas.length===1?"":"s"}.`:" Hoy no hay ninguna elegida, así que se suman todas."}</div>
+        <Btn T={T} size="sm" onClick={()=>{ try{ window.location.hash="#/meta/config"; }catch(_){} }}>Elegir cuentas en Meta Ads</Btn>
       </Card>
       <Card T={T}>
         <div style={tit}>5. Cargar todas tus tiendas con Claude</div>
@@ -36028,6 +36015,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [loading,setLoading]=useState(true);
   const [accounts,setAccounts]=useState([]);
   const [activeAccId,setActiveAccId]=useState(null);
+  // Varias cuentas publicitarias juntas (las elegidas en Meta → Configuración): todas las campañas en una tabla.
+  const [ctasMeta,setCtasMeta]=useState(null); // {cuentas:[{id,nombre,moneda}], elegidas:[act_…]}
+  const [juntas,setJuntasS]=useState(()=>{ try{ return localStorage.getItem(ghKey("growith_meta_juntas"))!=="0"; }catch(_){ return true; } });
+  const setJuntas=(v)=>{ setJuntasS(v); try{ localStorage.setItem(ghKey("growith_meta_juntas"),v?"1":"0"); }catch(_){} };
+  const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[]}); }catch(_){} };
+  useEffect(()=>{ cargarCtasMeta(); /* eslint-disable-next-line */ },[]);
+  const ctasJuntas=(ctasMeta?.cuentas||[]).filter(c=>(ctasMeta?.elegidas||[]).includes(c.id));
+  const verJuntas=juntas&&ctasJuntas.length>1;
 
   // Estado del tab Análisis (Ads Manager)
   const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad
@@ -36476,7 +36471,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   useEffect(()=>{
     if(tab==="analisis"&&activeAccId) loadInsights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[aLevel,aSince,aUntil,aDrill]);
+  },[aLevel,aSince,aUntil,aDrill,verJuntas,ctasJuntas.map(c=>c.id).join(",")]);
 
   // Cargar filas segmentadas cuando hay breakdown elegido
   useEffect(()=>{
@@ -36506,7 +36501,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const lastParent = aDrill[aDrill.length-1];
     // SWR: pintar al instante el último resultado de esta vista exacta
     // (cuenta+nivel+rango+drill) mientras Meta responde de fondo.
-    const swrKey = `growith_meta_ins_${activeAccId}_${aLevel}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
+    const swrKey = `growith_meta_ins_${verJuntas&&!lastParent?"juntas"+ctasJuntas.length:activeAccId}_${aLevel}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
     const cached = ghSwrGet(swrKey, 30*60000); // 30 min: métricas de pauta cambian rápido
     setALoading(true);
     setAError(null);
@@ -36517,8 +36512,16 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if (lastParent) {
         params.parent_id = lastParent.id;
         params.parent_type = lastParent.level;
+        if (lastParent.act) params.ad_account = lastParent.act;
       }
-      const d = await metaApi("insights","GET",null,params);
+      let d;
+      if (verJuntas && !lastParent) {
+        // Todas las cuentas elegidas en paralelo, unidas en una sola lista (cada fila sabe de qué cuenta es).
+        const res = await Promise.all(ctasJuntas.map(c=>metaApi("insights","GET",null,{...params,ad_account:c.id}).then(x=>({c,x})).catch(e=>({c,x:{error:e.message}}))));
+        const errs = res.filter(r=>r.x?.error).map(r=>`${r.c.nombre}: ${r.x.error}`);
+        const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...row,_act:r.c.id,_cuenta:r.c.nombre,name:`${row.name||""}  ·  ${r.c.nombre}`})));
+        d = rows.length||!errs.length ? {rows} : {error:errs.join(" | ")};
+      } else d = await metaApi("insights","GET",null,params);
       // Si dispararon otra carga después de esta, descartamos.
       if (myReqId !== loadInsightsReqIdRef.current) return;
       if(d.error) { setAError(d.error); if(!cached) setARows([]); }
@@ -36534,10 +36537,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Drill down: cuando se hace click en una row, entrar a sus hijos
   function drillInto(row) {
     if (aLevel === "campaign") {
-      setADrill([{level:"campaign", id:row.id, name:row.name}]);
+      setADrill([{level:"campaign", id:row.id, name:row.name, act:row._act||null}]);
       setALevel("adset");
     } else if (aLevel === "adset") {
-      setADrill(prev=>[...prev, {level:"adset", id:row.id, name:row.name}]);
+      setADrill(prev=>[...prev, {level:"adset", id:row.id, name:row.name, act:prev[prev.length-1]?.act||null}]);
       setALevel("ad");
     }
   }
@@ -37618,6 +37621,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               <NoAccount/>
             ) : (
               <>
+                {ctasJuntas.length>1 && aDrill.length===0 && (
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:12}}>
+                    <DSToggle T={T} active={juntas} onToggle={()=>setJuntas(!juntas)}/>
+                    <span style={{fontWeight:700,color:T.text}}>Ver {ctasJuntas.length} cuentas juntas</span>
+                    <span style={{color:T.textSm,flex:1,minWidth:200}}>{juntas?ctasJuntas.map(c=>c.nombre).join(" · "):`Solo ${activeAcc?.name||"la cuenta activa"}`}</span>
+                    <button onClick={()=>setTab("config")} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontWeight:600,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Elegir cuentas</button>
+                  </div>)}
                 {/* Breadcrumb de drill-down */}
                 {aDrill.length > 0 && (
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",fontSize:12}}>
@@ -38209,6 +38219,30 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         )}
 
         {/* ── REGLAS (Fase 3 optimizador) ──────────────── */}
+        {tab==="config"&&(()=>{
+          const elegidas=ctasMeta?.elegidas||[];
+          const toggle=(id)=>setCtasMeta(m=>({...m,elegidas:elegidas.includes(id)?elegidas.filter(x=>x!==id):[...elegidas,id]}));
+          return (
+          <div style={{maxWidth:760}}>
+            <Card T={T}>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:4}}>Cuentas publicitarias</div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm,lineHeight:1.55,marginBottom:DS.sp.md}}>Elegí con qué cuentas trabajás. Las elegidas se suman en el Dashboard y, en Análisis, podés ver todas sus campañas juntas en una sola tabla (algo que el Administrador de anuncios de Meta no permite).</div>
+              {!ctasMeta ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>Cargando cuentas…</div> : ctasMeta.cuentas.length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>No encontramos cuentas: conectá Meta en la pestaña Cuenta.</div> : (<>
+                <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:420,overflowY:"auto"}}>
+                  {ctasMeta.cuentas.map(c=>{ const on=elegidas.includes(c.id); return (
+                    <div key={c.id} className="gh-hover-surface" style={{display:"flex",alignItems:"center",gap:10,padding:"8px 8px",borderRadius:DS.r.md}}>
+                      <span style={{flex:1,fontSize:DS.font.base,fontWeight:DS.w.semibold,color:on?T.text:T.textMd}}>{c.nombre||c.id}</span>
+                      <span style={{fontSize:DS.font.sm,color:T.textSm}}>{c.id.replace("act_","")} · {c.moneda}</span>
+                      <DSToggle T={T} active={on} onToggle={()=>toggle(c.id)}/>
+                    </div>); })}
+                </div>
+                <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.md,paddingTop:DS.sp.md,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                  <span style={{fontSize:DS.font.sm,color:T.textSm,flex:1}}>{elegidas.length?`${elegidas.length} elegida${elegidas.length===1?"":"s"}`:"Ninguna elegida: el Dashboard suma todas"}</span>
+                  <Btn T={T} size="sm" onClick={async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=config_set&uid=${u}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({metaCuentas:elegidas})}).then(r=>r.json()); if(j.error) throw new Error(j.error); toast("Cuentas guardadas","success"); setJuntas(true); }catch(e){ toast("No se pudo guardar: "+e.message,"error"); } }}>Guardar</Btn>
+                </div>
+              </>)}
+            </Card>
+          </div>); })()}
         {tab==="reglas"&&(
           <div>
             {!activeAccId ? (
@@ -46927,7 +46961,8 @@ export default function App() {
   const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{try{return localStorage.getItem("growith_sidebar")==="1";}catch(e){return false;}});
   const [enviosTab,setEnviosTab]=useState("panel");
   const [reclamosView,setReclamosView]=useState("reclamos");
-  const [metaTab,setMetaTab]=useState("analisis");
+  const [metaTab,setMetaTab]=useState(()=>{ const p=(typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/'); return p[0]==="meta"&&p[1]==="config"?"config":"analisis"; });
+  useEffect(()=>{ const f=()=>{ const p=window.location.hash.replace('#/','').split('/'); if(p[0]==="meta"&&p[1]==="config") setMetaTab("config"); }; window.addEventListener("hashchange",f); return ()=>window.removeEventListener("hashchange",f); },[]);
   const [stockTab,setStockTab]=useState(()=>{
     const parts = (typeof window!=="undefined"?window.location.hash:"").replace('#/','').split('/');
     if(parts[0]==="stock"&&parts[1]) return parts[1];

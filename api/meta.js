@@ -1657,8 +1657,11 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
     if (action === "insights" && req.method === "GET") {
       const accIdQ = req.query.acc_id;
       if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
-      const cfg = await loadMetaAccount(db, uid, accIdQ);
+      let cfg = await loadMetaAccount(db, uid, accIdQ);
       if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
+      // Vista de varias cuentas juntas: otra cuenta publicitaria con el MISMO token (Meta valida el acceso).
+      const adAccQ = String(req.query.ad_account || "");
+      if (/^act_\d{5,25}$/.test(adAccQ)) cfg = { ...cfg, ad_account_id: adAccQ };
       if (!cfg.ad_account_id) return res.status(400).json({ error: "Falta seleccionar ad_account_id en la cuenta" });
 
       const level = String(req.query.level || "campaign");
