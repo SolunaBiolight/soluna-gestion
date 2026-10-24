@@ -387,7 +387,12 @@ export default async function handler(req, res) {
   const db = initAdmin();
   const action = String(req.query.action || "");
   if (action === "webhook") {
-    if (req.method !== "POST") return res.status(405).end();
+    if (req.method !== "POST") {
+      // Abierto en el navegador: explicar en vez de tirar un 405 pelado.
+      const ok = /^[A-Za-z0-9_-]{16,64}$/.test(String(req.query.k || "")) && (await db.collection("impultienda_hooks").doc(String(req.query.k)).get()).exists;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(200).send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Inter,system-ui,sans-serif;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px"><div style="max-width:460px;line-height:1.6"><h2 style="margin:0 0 8px">${ok ? "✓ Este link funciona" : "Link no reconocido"}</h2><p style="color:#9da7b3">${ok ? "No hay que abrirlo en el navegador: pegalo en Impultienda → Configuraciones → Webhooks → Agregar endpoint, con los eventos order.approved, order.refunded y order.chargeback. Después pegá en Growith la clave de firma que te da Impultienda y tocá «Probar»." : "Copiá de nuevo la URL desde Growith → Dashboard → Conexión."}</p></div></body>`);
+    }
     try { return await webhook(req, res, db); } catch (e) { console.error("[impultienda webhook]", e.message); return res.status(500).json({ ok: false }); }
   }
   const uid = String(req.query.uid || "");
