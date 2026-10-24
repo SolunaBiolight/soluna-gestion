@@ -19541,7 +19541,7 @@ function ghImpCardsDe(t, serie, nTiendas){
   const be=neto>0?t.ventas/neto:null, trueRoas=t.gasto?neto/t.gasto:null, cpaBE=t.n?neto/t.n:null, aov=t.n?t.ventas/t.n:null;
   const sp=(f)=>serie.map(f);
   return [
-    {label:"Revenue", val:usd(t.ventas), hero:true, accent:GH_MC.blue, hint:"Facturación total", spk:sp(d=>d.ventas)},
+    {label:"Revenue total", val:usd(t.ventas), hero:true, accent:GH_MC.blue, hint:"Front + post-compra", spk:sp(d=>d.ventas)},
     {label:"Profit", val:usd(t.ganancia), hero:true, tint:t.ganancia>=0?GH_MC.green:GH_MC.red, accent:t.ganancia>=0?GH_MC.green:GH_MC.red, valColor:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:"Ganancia neta", spk:sp(d=>d.ganancia)},
     {label:"Ad Spend", val:usd(t.gasto), hero:true, accent:GH_MC.violet, hint:"Meta", spk:sp(d=>d.gasto)},
     {label:"Break Even", val:x(be), hero:true, accent:GH_MC.gold, hint:"ROAS de equilibrio"},
@@ -19550,7 +19550,7 @@ function ghImpCardsDe(t, serie, nTiendas){
     {label:"CPA Break Even", val:usd(cpaBE), accent:GH_MC.gold, hint:"CPA máx. antes de perder"},
     {label:"True ROAS", val:x(trueRoas), accent:GH_MC.green, hint:"Neto de comisiones / Ad Spend", bad:trueRoas!=null&&trueRoas<1},
     {label:"CPA real", val:usd(t.cpa), accent:GH_MC.violet, hint:"Ad Spend / Ventas", bad:t.cpa!=null&&cpaBE!=null&&t.cpa>cpaBE},
-    {label:"Ventas", val:String(t.n), accent:GH_MC.blue, hint:"Órdenes aprobadas", spk:sp(d=>d.n)},
+    {label:"Ventas front", val:String(t.n), accent:GH_MC.blue, hint:"Compras principales (como cuenta Impultienda)", spk:sp(d=>d.n)},
     {label:"AOV", val:usd(aov), accent:GH_MC.blue, hint:"Ticket promedio"},
     {label:"Ventas post-compra", val:String(t.nUpsell||0), accent:GH_MC.green, hint:t.n?`Upsells aceptados · ${pct((t.nUpsell||0)/t.n)} de las ventas`:"Upsells aceptados", spk:sp(d=>d.nUpsell||0)},
     {label:"Comisiones", val:usd(t.comisiones), accent:GH_MC.red, hint:t.ventas?`${pct(t.comisiones/t.ventas)} de la facturación${t.comisionesEstimadas>0.01?" · estimadas":" · reales"}`:"Pasarelas de pago", spk:sp(d=>d.comisiones)},
