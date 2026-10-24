@@ -94,7 +94,7 @@ async function fxPorUsd() {
   if (_fx && Date.now() - _fxAt < 6 * 3600000) return _fx;
   try { const j = await (await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(6000) })).json(); if (j?.rates) { _fx = { ...j.rates }; _fxAt = Date.now(); } } catch (_) {}
   // Pesos argentinos: dólar cripto (venta), no el oficial. El resto de las monedas, oficial.
-  try { const c = await (await fetch("https://dolarapi.com/v1/dolares/cripto", { signal: AbortSignal.timeout(5000) })).json(); if (_fx && Number(c?.venta) > 0) { _fx.ARS = Number(c.venta); _fx._arsCripto = true; } } catch (_) {}
+  try { const c = await (await fetch("https://dolarapi.com/v1/dolares/cripto", { signal: AbortSignal.timeout(5000) })).json(); if (_fx && Number(c?.venta) > 0) { _fx.ARS = Number(c.venta); _fx._arsVista = Math.min(Number(c.compra) || Infinity, Number(c.venta)); _fx._arsCripto = true; } } catch (_) {}
   return _fx || { USD: 1 };
 }
 // Monedas que se pueden elegir en el Dashboard (cotización por 1 USD).
@@ -417,7 +417,23 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
-  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
+  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
+}
+
+// Las 16 métricas del Dashboard digital, calculadas en Growith (las usa también el conector de Claude).
+export function metricasDigitales(t, nTiendas) {
+  const r2 = (x) => x == null || !isFinite(x) ? null : Math.round(x * 100) / 100;
+  const neto = t.ventas - t.comisiones - t.reembolsos;
+  return {
+    revenue: r2(t.ventas), profit: r2(t.ganancia), ad_spend: r2(t.gasto),
+    break_even_roas: r2(neto > 0 ? t.ventas / neto : null), roas: r2(t.gasto ? t.ventas / t.gasto : null),
+    margen_pct: r2(t.ventas ? t.ganancia / t.ventas * 100 : null), cpa_break_even: r2(t.n ? neto / t.n : null),
+    true_roas: r2(t.gasto ? neto / t.gasto : null), cpa_real: r2(t.n && t.gasto ? t.gasto / t.n : null),
+    ventas: t.n, aov: r2(t.n ? t.ventas / t.n : null), facturacion_promedio_por_tienda: r2(nTiendas ? t.ventas / nTiendas : null),
+    comisiones: r2(t.comisiones), comisiones_estimadas: r2(t.comisionesEstimadas),
+    revenue_front: r2(t.front), ventas_front: t.nFront, revenue_backend_postcompra: r2(t.upsell), upsells: t.nUpsell,
+    take_rate_upsell_pct: r2(t.nFront ? t.nUpsell / t.nFront * 100 : null), reembolsos: r2(t.reembolsos),
+  };
 }
 
 export default async function handler(req, res) {
@@ -557,7 +573,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v3_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v4_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });

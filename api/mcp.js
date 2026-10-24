@@ -41,7 +41,7 @@ import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
-import { porHora as impPorHora } from "./impultienda.js";
+import { porHora as impPorHora, metricasDigitales } from "./impultienda.js";
 
 const ORIGINS = ["https://www.growithapp.com", "https://soluna-gestion.vercel.app"];
 const DEFAULT_ORIGIN = ORIGINS[0];
@@ -670,7 +670,7 @@ const TOOLS = [
     "Resultado real de CUALQUIER período con el motor de Growith, comparado con el período anterior: facturación, órdenes, ticket promedio, costo de productos, impuestos, comisiones, envíos, costos fijos, inversión publicitaria por plataforma (Meta, Google, TikTok, Mercado Ads), ganancia neta, margen, ROAS, True ROAS, ROAS de equilibrio y CPA, más desglose por canal y por producto. Usala para preguntas de un período puntual (\"¿cuánto gané en agosto?\", \"¿cómo me fue ayer?\"). Montos en ARS. Si el período no estaba calculado puede tardar hasta un minuto.",
     { type: "object", properties: PROPS_PERIODO, additionalProperties: false }),
   tool("productos_digitales", "Ventas por tienda, hora y campaña (Impultienda)",
-    "SOLO para clientes con tienda Impultienda (productos digitales). Ventas en USD de cada tienda (una por país), gasto de Meta asignado a cada tienda por el país de la campaña, comisiones reales de Mercado Pago/Stripe, reembolsos y ganancia, por hora en hora Argentina (00:00 ART = día nuevo). Incluye las campañas con las ventas cruzadas por UTM (id de campaña, nombre o código de país) y, dentro de cada campaña, las ventas por anuncio (utm_content). desde/hasta en AAAA-MM-DD (hora Argentina, máximo 31 días; por defecto hoy).",
+    "SOLO para clientes con tienda Impultienda (productos digitales). Devuelve las 16 métricas del Dashboard YA CALCULADAS por Growith (revenue, profit, ad spend, break even, ROAS, margen, CPA break even, true ROAS, CPA real, ventas, AOV, promedio por tienda, comisiones, revenue front, revenue backend post-compra, reembolsos): usalas tal cual, no las recalcules. Cada campaña trae las ventas REALES (Impultienda + UTM) y meta_dice (lo que reporta Meta) para compararlas. Ventas en USD de cada tienda (una por país), gasto de Meta asignado a cada tienda por el país de la campaña, comisiones reales de Mercado Pago/Stripe, reembolsos y ganancia, por hora en hora Argentina (00:00 ART = día nuevo). Incluye las campañas con las ventas cruzadas por UTM (id de campaña, nombre o código de país) y, dentro de cada campaña, las ventas por anuncio (utm_content). desde/hasta en AAAA-MM-DD (hora Argentina, máximo 31 días; por defecto hoy).",
     { type: "object", properties: { desde: { type: "string", description: "AAAA-MM-DD (hora Argentina)" }, hasta: { type: "string", description: "AAAA-MM-DD (hora Argentina)" } }, additionalProperties: false }),
   tool("campanas_publicidad", "Campañas de Meta, Google y TikTok",
     "Campañas de Meta Ads, Google Ads y TikTok Ads conectadas a Growith con métricas del período: estado, presupuesto, gasto, impresiones, clicks, CTR, CPC, conversiones o compras, valor y ROAS según cada plataforma. Cada cuenta indica su moneda. Por defecto, últimos 7 días de todas las plataformas.",
@@ -679,7 +679,7 @@ const TOOLS = [
   // deja la descripción como objeto y claude.ai descarta la lista ENTERA
   // ("Este conector no tiene herramientas disponibles"), ver testTools abajo.
   tool("listar_clientes", "Clientes (tiendas) del usuario",
-    "Lista los clientes (tiendas) de Growith a los que este usuario tiene acceso, con sus plataformas conectadas (Tienda Nube, Shopify, Mercado Libre) y cuál está activo en este chat. Llamala primero si no sabés sobre qué cliente responder."),
+    "Lista los clientes (tiendas) de Growith a los que este usuario tiene acceso, con sus plataformas conectadas (Tienda Nube, Shopify, Mercado Libre o Impultienda para productos digitales) y cuál está activo en este chat. Llamala primero si no sabés sobre qué cliente responder."),
   tool("seleccionar_cliente", "Elegir el cliente activo de este chat",
     "Fija el cliente (tienda) activo para ESTE chat. Todas las demás herramientas (resumen_negocio, rentabilidad, stock, envios, campañas…) pasan a responder sobre ese cliente. Otros chats no se ven afectados.",
     { type: "object", properties: { cliente_id: { type: "string", description: "El cliente_id que devuelve listar_clientes." } }, required: ["cliente_id"], additionalProperties: false }),
@@ -731,7 +731,7 @@ async function cuentaDe(db, perfil) {
 
 // ─── Clientes (tiendas) del perfil y sesiones MCP ─────────────────────────
 
-const PLATAFORMA_LABEL = { tiendanube: "Tienda Nube", shopify: "Shopify", mercadolibre: "Mercado Libre", meli: "Mercado Libre", mercadopago: "Mercado Pago" };
+const PLATAFORMA_LABEL = { tiendanube: "Tienda Nube", shopify: "Shopify", mercadolibre: "Mercado Libre", meli: "Mercado Libre", mercadopago: "Mercado Pago" , impultienda: "Impultienda (productos digitales: usar productos_digitales)" };
 function plataformasDe(d) {
   const out = [];
   for (const s of (d.stores || [])) { const l = PLATAFORMA_LABEL[s.type]; if (l && !out.includes(l)) out.push(l); }
@@ -874,10 +874,11 @@ async function runTool(db, uid, name, args, origin) {
     const r2 = (x) => Math.round(x * 100) / 100;
     return {
       fecha_hora_actual: fecha, moneda: "USD", zona: "hora Argentina", desde, hasta,
+      metricas: metricasDigitales(r.totales, new Set(r.filas.filter(f => f.n > 0).map(f => f.tienda)).size),
       totales: Object.fromEntries(Object.entries(r.totales).map(([k, v]) => [k, typeof v === "number" ? r2(v) : v])),
       por_tienda: Object.values(porTienda).map(t => ({ ...t, ventas: r2(t.ventas), gasto: r2(t.gasto), comisiones: r2(t.comisiones), reembolsos: r2(t.reembolsos), ganancia: r2(t.ventas - t.gasto - t.comisiones - t.reembolsos), roas: t.gasto ? r2(t.ventas / t.gasto) : null })),
       por_hora: Object.entries(porHoraT).map(([hora, v]) => ({ hora, ventas: r2(v.ventas), n: v.n, gasto: r2(v.gasto) })),
-      campanas: (r.campanas || []).slice(0, 40).map(c => ({ campana: c.nombre, tienda: (r.tiendas || []).find(t => t.id === c.tienda)?.nombre || null, gasto: r2(c.gasto), ventas: c.n, facturacion: r2(c.ventas), roas: c.roas ? r2(c.roas) : null, cpa: c.cpa ? r2(c.cpa) : null, ganancia: r2(c.ganancia), anuncios: (c.anuncios || []).slice(0, 15).map(a => ({ anuncio: a.anuncio, ventas: a.n, facturacion: r2(a.ventas) })) })),
+      campanas: (r.campanas || []).slice(0, 40).map(c => ({ campana: c.nombre, tienda: (r.tiendas || []).find(t => t.id === c.tienda)?.nombre || null, gasto: r2(c.gasto), ventas: c.n, facturacion: r2(c.ventas), roas: c.roas ? r2(c.roas) : null, cpa: c.cpa ? r2(c.cpa) : null, ganancia: r2(c.ganancia), meta_dice: c.metaDice ? { compras: c.metaDice.compras, valor: r2(c.metaDice.valor) } : null, anuncios: (c.anuncios || []).slice(0, 15).map(a => ({ anuncio: a.anuncio, ventas: a.n, facturacion: r2(a.ventas) })) })),
       avisos: { gasto_meta_sin_hora: r2(r.meta?.sinHora || 0), errores_meta: r.meta?.errores || [], stripe: r.stripe, mercadopago: r.mp },
     };
   }
