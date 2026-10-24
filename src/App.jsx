@@ -19682,9 +19682,11 @@ const GH_IMP_ZONAS = [
   ["America/Mexico_City","México"],["America/Bogota","Colombia"],["America/Santiago","Chile"],["America/Sao_Paulo","Brasil"],["America/Montevideo","Uruguay"],
   ["Europe/Madrid","España"],["Europe/Rome","Italia"],["Europe/Bucharest","Rumania"],["Europe/Istanbul","Turquía"],["Africa/Johannesburg","Sudáfrica"],["UTC","UTC"],
 ];
+// Algunos navegadores dan nombres viejos (America/Buenos_Aires, America/Cordoba): se llevan a la zona de la lista para mostrar el país.
+const ghImpTzCanon = (z)=> /^America\/(Argentina\/.+|Buenos_Aires|Cordoba|Mendoza|Catamarca|Jujuy|Rosario)$/.test(z||"") ? "America/Argentina/Buenos_Aires" : z;
 function ghImpTzDefault(){
-  try{ const g=localStorage.getItem("growith_imp_tz"); if(g) return g; }catch(_){}
-  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"America/Argentina/Buenos_Aires"; }catch(_){ return "America/Argentina/Buenos_Aires"; }
+  try{ const g=localStorage.getItem("growith_imp_tz"); if(g) return ghImpTzCanon(g); }catch(_){}
+  try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone)||"America/Argentina/Buenos_Aires"; }catch(_){ return "America/Argentina/Buenos_Aires"; }
 }
 const ghHoyEn = (tz)=>{ try{ return new Intl.DateTimeFormat("en-CA",{timeZone:tz,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()); }catch(_){ return new Date().toISOString().slice(0,10); } };
 function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
@@ -19766,7 +19768,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             <span style={{color:T.textSm,fontSize:DS.font.sm}}>a</span>
             <GhDatePicker T={T} value={hasta} onChange={v=>{setHasta(v); if(v<desde) setDesde(v);}} allowFuture={false}/>
             <select value={tz} onChange={e=>setTz(e.target.value)} title="Zona horaria: define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={{...inp,width:"auto",maxWidth:240}}>
-              {(()=>{ const nav=(()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(_){ return null; } })(); const ciudad=(z)=>String(z).split("/").pop().replace(/_/g," "); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,ciudad(tz)]); return l.map(([v,n])=><option key={v} value={v}>🕐 {n}</option>); })()}
+              {(()=>{ const nav=(()=>{ try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone); }catch(_){ return null; } })(); const ciudad=(z)=>String(z).split("/").pop().replace(/_/g," "); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,ciudad(tz)]); return l.map(([v,n])=><option key={v} value={v}>🕐 {n}</option>); })()}
             </select>
             {vista==="hora" && <DepSeg T={T} value={gran} onChange={setGran} items={[["hora","Por hora"],["dia","Por día"]]}/>}
             {vista==="hora" && tiendas.length>1 && (
