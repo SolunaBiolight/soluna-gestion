@@ -19635,30 +19635,18 @@ function ImpultiendaConexion({T,uid,onCambio}){
         </div>
       </Card>
       <Card T={T}>
-        <div style={tit}>3. Tus tiendas y su país</div>
-        <div style={txt}>Las tiendas aparecen solas con su primera venta, pero conviene cargarlas ya: así el gasto de Meta se asigna desde hoy. Poné el código de país (IT, PL, RO…): Growith le asigna a cada tienda las campañas que tengan ese código en el nombre (por ejemplo "IT | Mi producto"). El ID de Impultienda es opcional: sin él, la venta se asocia por el nombre exacto de la tienda.</div>
-        {Object.keys(cfg?.tiendas||{}).length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:DS.sp.sm}}>Todavía no cargaste ninguna tienda.</div> :
+        <div style={tit}>3. Tus tiendas y su código</div>
+        <div style={txt}>Las tiendas se agregan solas a medida que entran ventas de Impultienda. Acá elegís el código de cada una: Growith le asigna las campañas que tengan ese código en el nombre (por ejemplo "IT | Mi producto"). Puede ser un país (IT, PL), varios separados por espacio (RO MD) o cualquier otra etiqueta que uses en tus campañas (VERANO, EBOOK2).</div>
+        {Object.keys(cfg?.tiendas||{}).length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:DS.sp.sm}}>Todavía no entraron ventas: las tiendas aparecen solas con la primera.</div> :
           Object.entries(cfg.tiendas).map(([id,ti])=>(
             <div key={id} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${T.borderL||T.border}`}}>
               <span style={{flex:1,fontSize:DS.font.base,color:T.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ti.nombre||id}</span>
-              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" title="Uno o varios códigos: RO MD" style={{...inp,width:90}}/>
-              <Btn T={T} size="sm" variant="ghost" onClick={async()=>{ if(!await appConfirm(`¿Quitar ${ti.nombre||id}?`,{danger:true,okLabel:"Quitar"})) return; guardar({tiendas:{[id]:null}}); }}>Quitar</Btn>
+              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" title="País, varios (RO MD) u otra etiqueta de tus campañas" style={{...inp,width:150}}/>
             </div>))}
-        {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar países</Btn></div>}
-        <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",marginTop:DS.sp.lg,alignItems:"center"}}>
-          <input value={nueva.nombre} onChange={e=>setNueva({...nueva,nombre:e.target.value})} placeholder="Nombre de la tienda (como en Impultienda)" style={{...inp,flex:2,minWidth:200}}/>
-          <input value={nueva.pais} onChange={e=>setNueva({...nueva,pais:e.target.value.toUpperCase()})} placeholder="País (IT)" style={{...inp,width:90}}/>
-          <input value={nueva.id} onChange={e=>setNueva({...nueva,id:e.target.value.trim()})} placeholder="ID de Impultienda (opcional)" style={{...inp,flex:1,minWidth:180}}/>
-          <Btn T={T} size="sm" disabled={guardando||!nueva.nombre.trim()} onClick={()=>{ guardar({tiendas:{[nueva.id||nueva.nombre]:{nombre:nueva.nombre,pais:nueva.pais}}}); setNueva({nombre:"",pais:"",id:""}); }}>Agregar tienda</Btn>
-        </div>
+        {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar códigos</Btn></div>}
       </Card>
       <Card T={T}>
-        <div style={tit}>4. Cuentas publicitarias de estas tiendas</div>
-        <div style={txt}>Se eligen en Meta Ads → Configuración: las cuentas que actives ahí se suman en este Dashboard y se pueden ver todas juntas en Análisis.{cuentas?.elegidas?.length?` Hoy: ${cuentas.elegidas.length} elegida${cuentas.elegidas.length===1?"":"s"}.`:" Hoy no hay ninguna elegida, así que se suman todas."}</div>
-        <Btn T={T} size="sm" onClick={()=>{ try{ window.location.hash="#/meta/config"; }catch(_){} }}>Elegir cuentas en Meta Ads</Btn>
-      </Card>
-      <Card T={T}>
-        <div style={tit}>5. Cargar todas tus tiendas con Claude</div>
+        <div style={tit}>4. Cargar todas tus tiendas con Claude</div>
         <div style={txt}>Si tenés muchas tiendas, pedíselas a Claude: conectale el conector de <b>Impultienda</b> (y el de <b>Growith</b>, para preguntarle después por tus números), pegale este pedido, y la lista que te devuelva pegala acá abajo.</div>
         <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",marginBottom:DS.sp.md}}>
           <Btn T={T} size="sm" variant="secondary" onClick={()=>{ try{ navigator.clipboard.writeText(GH_IMP_PROMPT_TIENDAS); toast("Pedido copiado","success"); }catch(_){} }}>Copiar el pedido para Claude</Btn>
@@ -35980,12 +35968,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [activeAccId,setActiveAccId]=useState(null);
   // Varias cuentas publicitarias juntas (las elegidas en Meta → Configuración): todas las campañas en una tabla.
   const [ctasMeta,setCtasMeta]=useState(null); // {cuentas:[{id,nombre,moneda}], elegidas:[act_…]}
-  const [juntas,setJuntasS]=useState(()=>{ try{ return localStorage.getItem(ghKey("growith_meta_juntas"))!=="0"; }catch(_){ return true; } });
-  const setJuntas=(v)=>{ setJuntasS(v); try{ localStorage.setItem(ghKey("growith_meta_juntas"),v?"1":"0"); }catch(_){} };
+  // Cuentas que se están viendo (subconjunto de las elegidas en Configuración). Vacío = todas las elegidas.
+  const [selCtas,setSelCtasS]=useState(()=>{ try{ const v=JSON.parse(localStorage.getItem(ghKey("growith_meta_sel"))||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; } });
+  const setSelCtas=(v)=>{ setSelCtasS(v); try{ localStorage.setItem(ghKey("growith_meta_sel"),JSON.stringify(v)); }catch(_){} };
+  const [selOpen,setSelOpen]=useState(false);
   const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[]}); }catch(_){} };
   useEffect(()=>{ if(activeAccId) cargarCtasMeta(); /* eslint-disable-next-line */ },[activeAccId]); // espera a que esté la tienda activa (window.__ghTiendaUid)
-  const ctasJuntas=(ctasMeta?.cuentas||[]).filter(c=>(ctasMeta?.elegidas||[]).includes(c.id));
-  const verJuntas=juntas&&ctasJuntas.length>1;
+  const ctasElegidas=(ctasMeta?.cuentas||[]).filter(c=>(ctasMeta?.elegidas||[]).includes(c.id));
+  const ctasJuntas=(()=>{ const v=ctasElegidas.filter(c=>selCtas.includes(c.id)); return v.length?v:ctasElegidas; })();
+  const verJuntas=ctasElegidas.length>0;
 
   // Estado del tab Análisis (Ads Manager)
   const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad
@@ -37446,7 +37437,32 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         }}/>
       )}
       {/* Selector compacto para cambiar entre cuentas (CP5/CP7) del mismo token */}
-      {activeAcc && activeAcc.ad_account_id && (
+      {activeAcc && activeAcc.ad_account_id && ctasElegidas.length>0 && (
+        <div style={{maxWidth:"100%",padding:"16px 24px 0",boxSizing:"border-box"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px",position:"relative"}}>
+            <BrandIcon name="meta" size={18}/>
+            <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6,marginRight:4}}>Cuentas</span>
+            {ctasJuntas.map(c=>(
+              <span key={c.id} style={{display:"inline-flex",alignItems:"center",gap:6,height:30,padding:"0 6px 0 12px",borderRadius:DS.r.full,background:T.accent+"18",border:`1px solid ${T.accent}44`,color:T.text,fontSize:12.5,fontWeight:600}}>
+                {c.nombre}<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>{c.moneda}</span>
+                {ctasJuntas.length>1 && <button onClick={()=>setSelCtas(ctasJuntas.filter(x=>x.id!==c.id).map(x=>x.id))} title="Sacar de la vista" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 4px"}}>×</button>}
+              </span>))}
+            {ctasElegidas.length>ctasJuntas.length && (
+              <div style={{position:"relative"}}>
+                <button onClick={()=>setSelOpen(v=>!v)} style={{height:30,padding:"0 12px",borderRadius:DS.r.full,border:`1px dashed ${T.border}`,background:"transparent",color:T.accent,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar cuenta</button>
+                {selOpen && (
+                  <div className="gh-dropdown" style={{position:"absolute",top:36,left:0,zIndex:90,minWidth:260,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:"0 16px 48px rgba(0,0,0,0.28)",padding:6}}>
+                    {ctasElegidas.filter(c=>!ctasJuntas.some(x=>x.id===c.id)).map(c=>(
+                      <button key={c.id} onClick={()=>{ setSelCtas([...ctasJuntas.map(x=>x.id),c.id]); setSelOpen(false); }} className="gh-hover-surface" style={{display:"flex",width:"100%",justifyContent:"space-between",gap:10,padding:"8px 10px",background:"transparent",border:"none",borderRadius:DS.r.md,color:T.text,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>
+                        {c.nombre}<span style={{color:T.textSm,fontWeight:500}}>{c.moneda}</span>
+                      </button>))}
+                  </div>)}
+              </div>)}
+            <button onClick={()=>setTab("config")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Configurar cuentas</button>
+          </div>
+        </div>
+      )}
+      {activeAcc && activeAcc.ad_account_id && ctasElegidas.length===0 && (
         <AdAccountPicker T={T} accId={activeAccId} activeAcc={activeAcc} metaApi={metaApi} compact onPicked={()=>{
           metaApi("accounts").then(d=>{ if(d.accounts) setAccounts(d.accounts); });
         }}/>
@@ -37582,15 +37598,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <div>
             {!activeAccId ? (
               <NoAccount/>
+            ) : (typeof window!=="undefined"&&window.__ghEsDigital&&ctasMeta&&ctasElegidas.length===0) ? (
+              <div style={{...Card,textAlign:"center",padding:"36px 24px"}}>
+                <div style={{fontSize:16,fontWeight:800,color:T.text,marginBottom:6}}>Elegí tus cuentas publicitarias</div>
+                <div style={{fontSize:13,color:T.textSm,lineHeight:1.55,maxWidth:520,margin:"0 auto 16px"}}>En una tienda de productos digitales, el gasto del Dashboard y las campañas salen solo de las cuentas que elijas. Elegilas una vez y quedan guardadas.</div>
+                <Btn T={T} onClick={()=>setTab("config")}>Elegir cuentas</Btn>
+              </div>
             ) : (
               <>
-                {ctasJuntas.length>1 && aDrill.length===0 && (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:12}}>
-                    <DSToggle T={T} active={juntas} onToggle={()=>setJuntas(!juntas)}/>
-                    <span style={{fontWeight:700,color:T.text}}>Ver {ctasJuntas.length} cuentas juntas</span>
-                    <span style={{color:T.textSm,flex:1,minWidth:200}}>{juntas?ctasJuntas.map(c=>c.nombre).join(" · "):`Solo ${activeAcc?.name||"la cuenta activa"}`}</span>
-                    <button onClick={()=>setTab("config")} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontWeight:600,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Elegir cuentas</button>
-                  </div>)}
                 {/* Breadcrumb de drill-down */}
                 {aDrill.length > 0 && (
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",fontSize:12}}>
@@ -38187,7 +38202,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           const toggle=(id)=>setCtasMeta(m=>({...m,elegidas:elegidas.includes(id)?elegidas.filter(x=>x!==id):[...elegidas,id]}));
           return (
           <div style={{maxWidth:760}}>
-            <Card T={T}>
+            <div style={Card}>
               <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:4}}>Cuentas publicitarias</div>
               <div style={{fontSize:DS.font.sm,color:T.textSm,lineHeight:1.55,marginBottom:DS.sp.md}}>Elegí con qué cuentas trabajás. Las elegidas se suman en el Dashboard y, en Análisis, podés ver todas sus campañas juntas en una sola tabla (algo que el Administrador de anuncios de Meta no permite).</div>
               {!ctasMeta ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>Cargando cuentas…</div> : ctasMeta.cuentas.length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>No encontramos cuentas: conectá Meta en la pestaña Cuenta.</div> : (<>
@@ -38201,10 +38216,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 </div>
                 <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.md,paddingTop:DS.sp.md,borderTop:`1px solid ${T.borderL||T.border}`}}>
                   <span style={{fontSize:DS.font.sm,color:T.textSm,flex:1}}>{elegidas.length?`${elegidas.length} elegida${elegidas.length===1?"":"s"}`:"Ninguna elegida: el Dashboard suma todas"}</span>
-                  <Btn T={T} size="sm" onClick={async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=config_set&uid=${u}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({metaCuentas:elegidas})}).then(r=>r.json()); if(j.error) throw new Error(j.error); toast("Cuentas guardadas","success"); setJuntas(true); }catch(e){ toast("No se pudo guardar: "+e.message,"error"); } }}>Guardar</Btn>
+                  <Btn T={T} size="sm" onClick={async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=config_set&uid=${u}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({metaCuentas:elegidas})}).then(r=>r.json()); if(j.error) throw new Error(j.error); toast("Cuentas guardadas","success"); }catch(e){ toast("No se pudo guardar: "+e.message,"error"); } }}>Guardar</Btn>
                 </div>
               </>)}
-            </Card>
+            </div>
           </div>); })()}
         {tab==="reglas"&&(
           <div>
@@ -47316,6 +47331,7 @@ export default function App() {
       const meta=(d.metaAccounts||[]).length>0;
       const arca=(d.cuits||[]).length>0;
       const imp=!!d.stores?.find(s=>s.type==="impultienda");
+      try{ window.__ghEsDigital=imp; }catch(_){}
       setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,imp,meta,arca,loaded:true});
       setEnviosProblemasN(Number(d.enviosProblemasN)||0);
       if(!ml) setMlPreguntasCount(0);

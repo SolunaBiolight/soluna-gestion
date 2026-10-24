@@ -307,9 +307,10 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
 
 // Tienda a la que va el gasto de una campaña: la que tiene su código de país en el
 // nombre ("IT | Lumea…", "Lumea IT", "[PL]"). Si no matchea ninguna, "sin asignar".
-export const paisesDe = (p) => String(p || "").toUpperCase().split(/[^A-Z]+/).filter(x => x.length === 2);
+// Códigos de una tienda: país (IT), varios (RO MD) u otra etiqueta que el cliente use en sus campañas (VERANO).
+export const paisesDe = (p) => String(p || "").toUpperCase().split(/[^A-Z0-9]+/).filter(x => x.length >= 2 && x.length <= 20);
 export function tiendaDeCampana(nombre, tiendas) {
-  const toks = String(nombre || "").toUpperCase().split(/[^A-Z]+/).filter(Boolean);
+  const toks = String(nombre || "").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
   const hit = tiendas.filter(t => paisesDe(t.pais).some(p => toks.includes(p)));
   return hit.length === 1 ? hit[0].id : null;
 }
@@ -546,7 +547,7 @@ export default async function handler(req, res) {
       if (b.stripe_key === null) { patch.stripeEnc = FieldValue.delete(); await db.collection("users").doc(uid).set({ stripeCobros: FieldValue.delete() }, { merge: true }); }
       if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
-      if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), paisesDe(v).join(" ").slice(0, 20)]).filter(([, v]) => v));
+      if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), paisesDe(v).join(" ").slice(0, 60)]).filter(([, v]) => v));
       // Cuentas publicitarias que cuentan para esta tienda (vacío = todas).
       if (Array.isArray(b.metaCuentas)) patch.metaCuentas = b.metaCuentas.map(String).filter(x => /^act_\d+$/.test(x)).slice(0, 100);
       // Tiendas precargadas a mano (Impultienda no lista tiendas por API): {store_id: {nombre, pais}}
