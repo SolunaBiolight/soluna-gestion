@@ -1104,13 +1104,6 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
           </button>
         </div>
       )}
-      {/* Tienda de productos digitales: sello debajo del logo */}
-      {connectedStores.imp && (collapsed
-        ? <div title="Productos digitales" style={{display:"flex",justifyContent:"center",padding:"10px 0 4px"}}><BrandIcon name="impultienda" size={24}/></div>
-        : <div style={{display:"flex",alignItems:"center",gap:9,margin:"10px 10px 2px",padding:"8px 10px",borderRadius:DS.r.lg,background:T.card,border:`1px solid ${T.border}`}}>
-            <BrandIcon name="impultienda" size={24}/>
-            <span style={{fontSize:DS.font.md,fontWeight:DS.w.semibold,color:T.text}}>Productos digitales</span>
-          </div>)}
 
       {/* Nav */}
       <nav style={{flex:1,padding:DS.sp.sm,display:"flex",flexDirection:"column",gap:2,overflowY:"auto"}}>
@@ -19678,6 +19671,24 @@ function ghImpTzDefault(){
   try{ const g=localStorage.getItem("growith_imp_tz"); if(g) return ghImpTzCanon(g); }catch(_){}
   try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone)||"America/Argentina/Buenos_Aires"; }catch(_){ return "America/Argentina/Buenos_Aires"; }
 }
+// Píldora de filtro con etiqueta (Período / Horario / Moneda), igual en el Dashboard digital y en Meta.
+function GhFiltroPill({T,icon,label,children}){
+  return (<label style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface||T.bg,boxSizing:"border-box",cursor:"pointer"}}>
+    <span style={{fontSize:15,lineHeight:1}}>{icon}</span>
+    <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>{label}</span>
+    {children}
+  </label>);
+}
+const ghFiltroSel=(T)=>({background:"transparent",border:"none",outline:"none",color:T.text,fontSize:DS.font.md,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",maxWidth:150,padding:"0 4px"});
+function GhTzSelect({T,value,onChange}){
+  const nav=(()=>{ try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone); }catch(_){ return null; } })();
+  const ciudad=(z)=>"🌐 "+String(z).split("/").pop().replace(/_/g," ");
+  const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(value&&!l.some(z=>z[0]===value)) l.unshift([value,ciudad(value)]);
+  return <GhFiltroPill T={T} icon="🕐" label="Horario"><select value={value} onChange={e=>onChange(e.target.value)} title="Define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={ghFiltroSel(T)}>{l.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></GhFiltroPill>;
+}
+function GhMonSelect({T,value,onChange,extra}){
+  return <GhFiltroPill T={T} icon="💱" label="Moneda"><select value={value} onChange={e=>onChange(e.target.value)} title="Peso argentino con dólar cripto; el resto con el dólar oficial" style={ghFiltroSel(T)}>{extra}{GH_IMP_MONEDAS.map(([c,n])=><option key={c} value={c}>{n} ({c})</option>)}</select></GhFiltroPill>;
+}
 const ghHoyEn = (tz)=>{ try{ return new Intl.DateTimeFormat("en-CA",{timeZone:tz,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()); }catch(_){ return new Date().toISOString().slice(0,10); } };
 function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   // La tienda activa (multi-tienda): Meta, el webhook y los cobros son de esa tienda.
@@ -19752,24 +19763,12 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
       <div style={{padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
         {vista==="conexion" ? <ImpultiendaConexion T={T} uid={uid} onCambio={()=>cargar(true)}/> : (<>
           <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
-            <DateRangePicker T={T} since={desde} until={hasta} onChange={(a,b)=>{ setDesde(a); setHasta(b); }}
+            <GhFiltroPill T={T} icon="📅" label="Período"><DateRangePicker T={T} since={desde} until={hasta} onChange={(a,b)=>{ setDesde(a); setHasta(b); }}
               presets={(()=>{ const d=(n)=>new Date(Date.parse(hoy)-n*86400000).toISOString().slice(0,10); const [y,m]=hoy.split("-").map(Number); const ini=(yy,mm)=>`${yy}-${String(mm).padStart(2,"0")}-01`; const finMesAnt=new Date(Date.UTC(y,m-1,0)).toISOString().slice(0,10);
                 return [{id:"today",label:"Hoy",range:()=>[hoy,hoy]},{id:"yest",label:"Ayer",range:()=>[d(1),d(1)]},{id:"7d",label:"Últimos 7 días",range:()=>[d(6),hoy]},{id:"14d",label:"Últimos 14 días",range:()=>[d(13),hoy]},{id:"30d",label:"Últimos 30 días",range:()=>[d(29),hoy]},
-                  {id:"mes",label:"Este mes",range:()=>[ini(y,m),hoy]},{id:"mes-1",label:"Mes pasado",range:()=>[m===1?ini(y-1,12):ini(y,m-1),finMesAnt]}]; })()}/>
-            <label style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface||T.bg,boxSizing:"border-box",cursor:"pointer"}}>
-              <span style={{fontSize:15,lineHeight:1}}>🕐</span>
-              <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Horario</span>
-              <select value={tz} onChange={e=>setTz(e.target.value)} title="Define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:DS.font.md,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",maxWidth:150,padding:"0 4px"}}>
-              {(()=>{ const nav=(()=>{ try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone); }catch(_){ return null; } })(); const ciudad=(z)=>"🌐 "+String(z).split("/").pop().replace(/_/g," "); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,ciudad(tz)]); return l.map(([v,n])=><option key={v} value={v}>{n}</option>); })()}
-              </select>
-            </label>
-            <label style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface||T.bg,boxSizing:"border-box",cursor:"pointer"}}>
-              <span style={{fontSize:15,lineHeight:1}}>💱</span>
-              <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Moneda</span>
-              <select value={mon} onChange={e=>setMon(e.target.value)} title="Peso argentino con dólar cripto; el resto con el dólar oficial" style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:DS.font.md,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",maxWidth:150,padding:"0 4px"}}>
-              {GH_IMP_MONEDAS.map(([c,n])=><option key={c} value={c}>{n} ({c})</option>)}
-              </select>
-            </label>
+                  {id:"mes",label:"Este mes",range:()=>[ini(y,m),hoy]},{id:"mes-1",label:"Mes pasado",range:()=>[m===1?ini(y-1,12):ini(y,m-1),finMesAnt]}]; })()}/></GhFiltroPill>
+            <GhTzSelect T={T} value={tz} onChange={setTz}/>
+            <GhMonSelect T={T} value={mon} onChange={setMon}/>
             {vista==="hora" && <DepSeg T={T} value={gran} onChange={setGran} items={[["hora","Por hora"],["dia","Por día"]]}/>}
             {vista==="hora" && tiendas.length>1 && (
               <select value={tiendaSel} onChange={e=>setTiendaSel(e.target.value)} style={{...inp,width:"auto"}}>
@@ -35972,6 +35971,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [selCtas,setSelCtasS]=useState(()=>{ try{ const v=JSON.parse(localStorage.getItem(ghKey("growith_meta_sel"))||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; } });
   const setSelCtas=(v)=>{ setSelCtasS(v); try{ localStorage.setItem(ghKey("growith_meta_sel"),JSON.stringify(v)); }catch(_){} };
   const [selOpen,setSelOpen]=useState(false);
+  // Horario y moneda: los mismos que el Dashboard digital (último elegido queda por defecto).
+  const [mtz,setMtzS]=useState(ghImpTzDefault);
+  const setMtz=(v)=>{ setMtzS(v); try{ localStorage.setItem("growith_imp_tz",v); }catch(_){} };
+  const [mmon,setMmonS]=useState(()=>{ try{ return localStorage.getItem("growith_imp_moneda")||""; }catch(_){ return ""; } });
+  const setMmon=(v)=>{ setMmonS(v); try{ if(v) localStorage.setItem("growith_imp_moneda",v); else localStorage.removeItem("growith_imp_moneda"); }catch(_){} };
+  const [fxM,setFxM]=useState(null);
+  useEffect(()=>{ if(!mmon||fxM) return; const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; authFetch(`/api/impultienda?action=fx&uid=${u}`).then(r=>r.json()).then(j=>{ if(j.fx) setFxM(j.fx); }).catch(()=>{}); /* eslint-disable-next-line */ },[mmon]);
+  const convFila=(row,de)=>{ if(!mmon||!fxM) return row; const a=fxM[String(de||"USD").toUpperCase()], b=fxM[mmon]; if(!a||!b) return row; const k=b/a; const o={...row}; for(const f of ["spend","purchase_value","cpa","cpm","cpc","daily_budget"]) if(typeof o[f]==="number") o[f]=o[f]*k; return o; };
   const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[]}); }catch(_){} };
   useEffect(()=>{ if(activeAccId) cargarCtasMeta(); /* eslint-disable-next-line */ },[activeAccId]); // espera a que esté la tienda activa (window.__ghTiendaUid)
   const ctasElegidas=(ctasMeta?.cuentas||[]).filter(c=>(ctasMeta?.elegidas||[]).includes(c.id));
@@ -36203,7 +36210,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     /* eslint-disable-next-line */
   },[defBudget]);
   // Símbolo de la moneda REAL de la cuenta publicitaria (US$ si es cuenta en dólares)
-  const cur=currencySymbol(activeAcc?.currency||"ARS");
+  const cur=currencySymbol((mmon&&fxM?mmon:null)||activeAcc?.currency||"ARS");
   const tokenDead = activeAcc && (activeAcc.token_invalid || !activeAcc.has_token);
 
   const iS={width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 12px",fontSize:13,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",boxSizing:"border-box"};
@@ -36425,7 +36432,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   useEffect(()=>{
     if(tab==="analisis"&&activeAccId) loadInsights();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[aLevel,aSince,aUntil,aDrill,verJuntas,ctasJuntas.map(c=>c.id).join(",")]);
+  },[aLevel,aSince,aUntil,aDrill,verJuntas,ctasJuntas.map(c=>c.id).join(","),mtz,mmon,!!fxM]);
 
   // Cargar filas segmentadas cuando hay breakdown elegido
   useEffect(()=>{
@@ -36455,14 +36462,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const lastParent = aDrill[aDrill.length-1];
     // SWR: pintar al instante el último resultado de esta vista exacta
     // (cuenta+nivel+rango+drill) mientras Meta responde de fondo.
-    const swrKey = `growith_meta_ins_${verJuntas&&!lastParent?"juntas"+ctasJuntas.length:activeAccId}_${aLevel}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
+    const swrKey = `growith_meta_ins_${verJuntas&&!lastParent?"juntas"+ctasJuntas.map(c=>c.id).join(""):activeAccId}_${mtz}_${mmon}_${aLevel}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
     const cached = ghSwrGet(swrKey, 30*60000); // 30 min: métricas de pauta cambian rápido
     setALoading(true);
     setAError(null);
     // Con cache mostramos eso; sin cache limpiamos YA para no ver el nivel anterior.
     if (cached) setARows(cached); else setARows([]);
     try {
-      const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil};
+      const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil,tz:mtz};
       if (lastParent) {
         params.parent_id = lastParent.id;
         params.parent_type = lastParent.level;
@@ -36473,9 +36480,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         // Todas las cuentas elegidas en paralelo, unidas en una sola lista (cada fila sabe de qué cuenta es).
         const res = await Promise.all(ctasJuntas.map(c=>metaApi("insights","GET",null,{...params,ad_account:c.id}).then(x=>({c,x})).catch(e=>({c,x:{error:e.message}}))));
         const errs = res.filter(r=>r.x?.error).map(r=>`${r.c.nombre}: ${r.x.error}`);
-        const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...row,_act:r.c.id,_cuenta:r.c.nombre,name:`${row.name||""}  ·  ${r.c.nombre}`})));
+        const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...convFila(row,r.c.moneda),_act:r.c.id,_cuenta:r.c.nombre,name:`${row.name||""}  ·  ${r.c.nombre}`})));
         d = rows.length||!errs.length ? {rows} : {error:errs.join(" | ")};
-      } else d = await metaApi("insights","GET",null,params);
+      } else { d = await metaApi("insights","GET",null,params); if (d?.rows) { const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency; d={...d,rows:d.rows.map(r=>convFila(r,de))}; } }
       // Si dispararon otra carga después de esta, descartamos.
       if (myReqId !== loadInsightsReqIdRef.current) return;
       if(d.error) { setAError(d.error); if(!cached) setARows([]); }
@@ -37458,7 +37465,16 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       </button>))}
                   </div>)}
               </div>)}
-            <button onClick={()=>setTab("config")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Configurar cuentas</button>
+            <button onClick={()=>setTab(tab==="config"?"analisis":"config")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>{tab==="config"?"← Ir al Análisis":"Configurar cuentas"}</button>
+          </div>
+        </div>
+      )}
+      {activeAcc && activeAcc.ad_account_id && tab==="analisis" && (
+        <div style={{maxWidth:"100%",padding:"12px 24px 0",boxSizing:"border-box"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
+            <GhFiltroPill T={T} icon="📅" label="Período"><DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/></GhFiltroPill>
+            <GhTzSelect T={T} value={mtz} onChange={setMtz}/>
+            <GhMonSelect T={T} value={mmon} onChange={setMmon} extra={<option value="">{`Moneda de la cuenta${activeAcc?.currency?` (${activeAcc.currency})`:""}`}</option>}/>
           </div>
         </div>
       )}
@@ -37779,8 +37795,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         {aLevel === "adset" ? "Adsets" : "Ads"} de {aDrill[aDrill.length-1].name.slice(0,30)}{aDrill[aDrill.length-1].name.length>30?"…":""}
                       </div>
                     )}
-                    {/* Date range con calendario inline */}
-                    <DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/>
                     {/* Columnas */}
                     <div style={{position:"relative"}}>
                       <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg> Columnas</button>

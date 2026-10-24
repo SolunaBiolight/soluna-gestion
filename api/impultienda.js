@@ -491,6 +491,11 @@ export default async function handler(req, res) {
     // moneda, pasarela, post_compra. Sin UTM ni comprador: entran a su tienda pero no
     // a una campaña. Doc id propio (imp_<tienda>_<orden>) y porHora descarta la
     // importada si el webhook ya trajo esa misma orden.
+    // Cotizaciones por 1 USD para mostrar montos en otra moneda (ARS = dólar cripto más bajo).
+    if (action === "fx") {
+      const fx = await fxPorUsd();
+      return res.json({ fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])) });
+    }
     if (action === "importar" && req.method === "POST") {
       const b = JSON.parse((await readBody(req)).toString() || "{}");
       // Sin el id real de Impultienda: la tienda se identifica por nombre (n_<nombre>) y se da de alta

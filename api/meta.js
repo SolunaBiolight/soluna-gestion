@@ -14,6 +14,7 @@ import { guardUid, guardCron } from "./_auth.js";
 import { getValidDriveToken } from "./google-drive-callback.js";
 import { esDemo } from "./_demo.js";
 import { esTiendaDemo, metaDemo } from "./_demo_ads.js";
+import { utcDeLocal, zonaDe, tzValida } from "./impultienda.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1845,7 +1846,47 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
           }
         }
 
-        return res.json({ rows, since, until, level });
+        // Horario elegido por el usuario (no el de la cuenta publicitaria): se rearma con el desglose
+        // por hora de Meta y se suma solo lo que cae dentro de los días pedidos en esa zona.
+        const tzQ = String(req.query.tz || "");
+        let tzInfo = null;
+        if (tzQ && tzValida(tzQ)) {
+          try {
+            const accInfo = await metaGet(cfg.ad_account_id, { fields: "timezone_name" }, cfg.access_token);
+            const accTz = accInfo?.timezone_name;
+            if (accTz && accTz !== tzQ) {
+              const dd = (f, n) => new Date(Date.parse(f + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+              const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
+              const hp = { level, "time_range[since]": dd(since, -1), "time_range[until]": dd(until, 1), time_increment: 1,
+                breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone", fields: `${idField},spend,impressions,clicks,actions,action_values`, limit: 500,
+                action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]) };
+              if (filteringParam) hp.filtering = filteringParam;
+              const all = []; let pg = await metaGet(`${cfg.ad_account_id}/insights`, hp, cfg.access_token); all.push(...(pg.data || []));
+              let nx = pg.paging?.next || null, sf = 0;
+              while (nx && sf < 40) { sf++; try { const j = await (await fetch(nx)).json(); if (j.error) break; all.push(...(j.data || [])); nx = j.paging?.next || null; } catch (_) { break; } }
+              const isP = (a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase";
+              const acc = {};
+              for (const r of all) {
+                const h = parseInt(String(r.hourly_stats_aggregated_by_advertiser_time_zone || "").slice(0, 2), 10);
+                if (!isFinite(h) || !r.date_start) continue;
+                const z = zonaDe(new Date(utcDeLocal(r.date_start, h, accTz)).toISOString(), tzQ);
+                if (z.fecha < since || z.fecha > until) continue;
+                const a = acc[r[idField]] || (acc[r[idField]] = { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0 });
+                a.spend += parseFloat(r.spend) || 0; a.impressions += parseInt(r.impressions) || 0; a.clicks += parseInt(r.clicks) || 0;
+                a.purchases += parseInt((r.actions || []).find(isP)?.value) || 0; a.purchase_value += parseFloat((r.action_values || []).find(isP)?.value) || 0;
+              }
+              for (const row of rows) {
+                const a = acc[row.id] || { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0 };
+                Object.assign(row, a, {
+                  ctr: a.impressions ? a.clicks / a.impressions * 100 : 0, cpm: a.impressions ? a.spend / a.impressions * 1000 : 0,
+                  cpc: a.clicks ? a.spend / a.clicks : 0, roas: a.spend ? a.purchase_value / a.spend : 0, cpa: a.purchases ? a.spend / a.purchases : 0,
+                });
+              }
+              tzInfo = { zona: tzQ, zonaCuenta: accTz };
+            }
+          } catch (e) { tzInfo = { error: e.message }; }
+        }
+        return res.json({ rows, since, until, level, tz: tzInfo });
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }
