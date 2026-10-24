@@ -433,8 +433,10 @@ export default async function handler(req, res) {
         const r = await fetch("https://api.stripe.com/v1/balance_transactions?limit=1", { headers: { Authorization: `Bearer ${k}` } });
         if (!r.ok) { const j = await r.json().catch(() => ({})); return res.status(400).json({ error: `Stripe rechazó la clave: ${j.error?.message || r.status}. Tiene que tener permiso de lectura de Balance transactions y Charges.` }); }
         patch.stripeEnc = cifrar(k);
+        // Bandera visible en el doc de la tienda (la clave NO: vive cifrada en impultienda_cfg).
+        await db.collection("users").doc(uid).set({ stripeCobros: { conectado: true, at: new Date().toISOString(), modo: k.includes("_test_") ? "test" : "live" } }, { merge: true });
       }
-      if (b.stripe_key === null) patch.stripeEnc = FieldValue.delete();
+      if (b.stripe_key === null) { patch.stripeEnc = FieldValue.delete(); await db.collection("users").doc(uid).set({ stripeCobros: FieldValue.delete() }, { merge: true }); }
       if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
       if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), String(v || "").toUpperCase().slice(0, 6)]).filter(([, v]) => v));
