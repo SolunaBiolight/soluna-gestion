@@ -19487,6 +19487,7 @@ function GhImpCards({T,cards,editar,setEditar}){
   const mover=(de,a)=>{ if(!de||!a||de===a) return; const cur=ordenadas.map(k=>k.label); const fi=cur.indexOf(de), tiO=cur.indexOf(a); cur.splice(fi,1); let ti=cur.indexOf(a); if(fi<tiO) ti++; cur.splice(ti,0,de); if(cur.join("|")!==ordenadas.map(k=>k.label).join("|")) setPref({...pref,orden:cur}); };
   const visibles=ordenadas.filter(k=>pref.ocultas[k.label]!==true);
   const cols=Math.min(w<520?2:w<900?3:4, Math.max(1,visibles.length));
+  const cel=w<520; // en el celu: números y márgenes más chicos para que entren dos por fila
   return (<>
     {editar && (
       <div style={{position:"relative",zIndex:80,height:0}}>
@@ -19511,19 +19512,19 @@ function GhImpCards({T,cards,editar,setEditar}){
           </div>
         </div>
       </div>)}
-    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:cel?8:10}}>
       {visibles.map(k=>(
         <div key={k.label} className="gh-mcard"
           onDragOver={e=>{ e.preventDefault(); if(drag&&drag!==k.label) mover(drag,k.label); }} onDrop={e=>{e.preventDefault(); setDrag(null);}}
-          style={{background:k.tint?`linear-gradient(150deg, ${T.card} 45%, ${k.tint}16)`:T.card,border:`1px solid ${k.bad?GH_MC.red+"44":"transparent"}`,borderRadius:12,padding:k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",display:"flex",flexDirection:"column",overflow:"hidden",minHeight:k.hero?118:96,opacity:drag===k.label?0.4:1}}>
+          style={{background:k.tint?`linear-gradient(150deg, ${T.card} 45%, ${k.tint}16)`:T.card,border:`1px solid ${k.bad?GH_MC.red+"44":"transparent"}`,borderRadius:12,padding:cel?"10px 11px 8px":k.hero?"16px 18px 14px":"12px 14px 10px",position:"relative",display:"flex",flexDirection:"column",overflow:"hidden",minHeight:cel?82:k.hero?118:96,opacity:drag===k.label?0.4:1}}>
           <span draggable onDragStart={e=>{ setDrag(k.label); try{ e.dataTransfer.effectAllowed="move"; const c=e.currentTarget.parentElement; if(c) e.dataTransfer.setDragImage(c,Math.min(80,c.offsetWidth/2),30); }catch(_){} }} onDragEnd={()=>setDrag(null)}
             title="Arrastrá para reordenar" style={{position:"absolute",top:9,right:10,cursor:"grab",color:T.textSm,opacity:0.4,fontSize:11,lineHeight:1,userSelect:"none"}}>⠿</span>
-          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:7,paddingRight:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,fontSize:cel?9:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:cel?5:7,paddingRight:16}}>
             {k.accent && <span style={{width:6,height:6,borderRadius:"50%",background:k.accent,display:"inline-block",flexShrink:0}}/>}{k.label}
           </div>
-          <div style={{fontSize:k.hero?30:23,fontWeight:800,color:k.valColor||(k.bad?GH_MC.red:T.text),letterSpacing:k.hero?-1.1:-0.7,lineHeight:1,fontVariantNumeric:"tabular-nums",marginBottom:5}}>{k.val}</div>
-          <div style={{fontSize:10,color:T.textSm,marginBottom:k.spk?8:0}}>{k.hint}</div>
-          {k.spk && <div style={{marginTop:"auto",margin:k.hero?"auto -18px -14px":"auto -14px -10px",opacity:0.95}}><GhSpk vals={k.spk} color={k.accent||T.accent} h={k.hero?34:24}/></div>}
+          <div style={{fontSize:cel?(k.hero?19:16):k.hero?30:23,fontWeight:800,color:k.valColor||(k.bad?GH_MC.red:T.text),letterSpacing:cel?-0.4:k.hero?-1.1:-0.7,lineHeight:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums",marginBottom:5}}>{k.val}</div>
+          <div style={{fontSize:cel?9:10,color:T.textSm,marginBottom:k.spk?8:0,lineHeight:1.3,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{k.hint}</div>
+          {k.spk && <div style={{marginTop:"auto",margin:cel?"auto -11px -8px":k.hero?"auto -18px -14px":"auto -14px -10px",opacity:0.95}}><GhSpk vals={k.spk} color={k.accent||T.accent} h={cel?18:k.hero?34:24}/></div>}
         </div>))}
     </div>
   </>);
@@ -19760,7 +19761,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           {cargando?<Spinner size={11} color="#fff"/>:"↻"} {cargando?"Actualizando…":"Actualizar"}
         </button>}
       </AppTopbar>
-      <div style={{padding:"20px 24px 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
+      <div style={{padding:"16px clamp(10px,4vw,24px) 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
         {vista==="conexion" ? <ImpultiendaConexion T={T} uid={uid} onCambio={()=>cargar(true)}/> : (<>
           <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
             <GhFiltroPill T={T} icon="📅" label="Período"><DateRangePicker T={T} since={desde} until={hasta} onChange={(a,b)=>{ setDesde(a); setHasta(b); }}
