@@ -19584,10 +19584,24 @@ function ImpultiendaConexion({T,uid,onCambio}){
     </div>
   );
 }
+// Zonas para elegir en el Dashboard de productos digitales (más la del navegador).
+const GH_IMP_ZONAS = [
+  ["America/Argentina/Buenos_Aires","Argentina"],["America/Los_Angeles","EE.UU. Pacífico (cuentas de Meta)"],["America/New_York","EE.UU. Este"],
+  ["America/Mexico_City","México"],["America/Bogota","Colombia"],["America/Santiago","Chile"],["America/Sao_Paulo","Brasil"],["America/Montevideo","Uruguay"],
+  ["Europe/Madrid","España"],["Europe/Rome","Italia"],["Europe/Bucharest","Rumania"],["Europe/Istanbul","Turquía"],["Africa/Johannesburg","Sudáfrica"],["UTC","UTC"],
+];
+function ghImpTzDefault(){
+  try{ const g=localStorage.getItem("growith_imp_tz"); if(g) return g; }catch(_){}
+  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone||"America/Argentina/Buenos_Aires"; }catch(_){ return "America/Argentina/Buenos_Aires"; }
+}
+const ghHoyEn = (tz)=>{ try{ return new Intl.DateTimeFormat("en-CA",{timeZone:tz,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()); }catch(_){ return new Date().toISOString().slice(0,10); } };
 function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   // La tienda activa (multi-tienda): Meta, el webhook y los cobros son de esa tienda.
   const uid = (typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid;
-  const hoy = new Date(Date.now()-3*3600000).toISOString().slice(0,10);
+  const [tz,setTzS]=useState(ghImpTzDefault);
+  const setTz=(v)=>{ setTzS(v); try{ localStorage.setItem("growith_imp_tz",v); }catch(_){} };
+  const hoy = ghHoyEn(tz);
+  const [gran,setGran]=useState("hora"); // hora | dia, en la pestaña Por hora
   const vista = ["dashboard","hora","conexion"].includes(tab)?tab:"dashboard";
   const ir = (v)=> setTab ? setTab(v) : null;
   const [desde,setDesde]=useState(hoy);
@@ -19599,10 +19613,10 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   const [campAbierta,setCampAbierta]=useState(null);
   const cargar = async(fresh=false)=>{
     if(!uid) return; setCargando(true); setErr(null);
-    try{ const r=await authFetch(`/api/impultienda?action=por_hora&uid=${uid}&desde=${desde}&hasta=${hasta}${fresh?"&fresh=1":""}`); const j=await r.json(); if(j.error) throw new Error(j.error); setData(j); }
+    try{ const r=await authFetch(`/api/impultienda?action=por_hora&uid=${uid}&desde=${desde}&hasta=${hasta}&tz=${encodeURIComponent(tz)}${fresh?"&fresh=1":""}`); const j=await r.json(); if(j.error) throw new Error(j.error); setData(j); }
     catch(e){ setErr(e.message); } finally{ setCargando(false); }
   };
-  useEffect(()=>{ if(vista!=="conexion") cargar(); /* eslint-disable-next-line */ },[uid,desde,hasta,vista]);
+  useEffect(()=>{ if(vista!=="conexion") cargar(); /* eslint-disable-next-line */ },[uid,desde,hasta,vista,tz]);
   useEffect(()=>{ const id=setInterval(()=>{ if(document.visibilityState!=="hidden"&&hasta===hoy&&vista!=="conexion") cargar(); },10*60000); return ()=>clearInterval(id); /* eslint-disable-next-line */ },[desde,hasta,vista]);
   const filas=data?.filas||[];
   const tiendas=[...new Map(filas.map(f=>[f.tienda,{id:f.tienda,nombre:f.tiendaNombre,pais:f.pais}])).values()].sort((a,b)=>a.id==="SIN_ASIGNAR"?1:b.id==="SIN_ASIGNAR"?-1:String(a.nombre).localeCompare(String(b.nombre)));
@@ -19630,10 +19644,10 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
     const maxV=Math.max(1,...lista.map(h=>Math.max(h.ventas,h.gasto)));
     return lista.length===0 ? <DSEmpty T={T} icon="clock" title="Sin movimientos en el período" subtitle="Cuando entren ventas por el webhook o haya gasto de Meta, aparecen acá."/> : (
       <table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead><tr><th style={{...th,textAlign:"left"}}>Hora</th><th style={{...th,width:"24%"}}></th><th style={th}>Facturación</th><th style={th}>Ventas</th><th style={th}>Anuncios</th><th style={th}>Comisiones</th><th style={th}>Reemb.</th><th style={th}>Ganancia</th><th style={th}>ROAS</th></tr></thead>
+        <thead><tr><th style={{...th,textAlign:"left"}}>{lista[0]?.hora==null?"Día":"Hora"}</th><th style={{...th,width:"24%"}}></th><th style={th}>Facturación</th><th style={th}>Ventas</th><th style={th}>Anuncios</th><th style={th}>Comisiones</th><th style={th}>Reemb.</th><th style={th}>Ganancia</th><th style={th}>ROAS</th></tr></thead>
         <tbody>{lista.map(h=>(
           <tr key={h.fecha+h.hora} style={{borderTop:`1px solid ${T.borderL||T.border}`}}>
-            <td style={{...td,textAlign:"left",color:T.textMd}}>{desde!==hasta?h.fecha.slice(5).split("-").reverse().join("/")+" ":""}{h.hora}:00</td>
+            <td style={{...td,textAlign:"left",color:T.textMd}}>{h.hora==null?h.fecha.split("-").reverse().join("/"):`${desde!==hasta?h.fecha.slice(5).split("-").reverse().join("/")+" ":""}${h.hora}:00`}</td>
             <td style={{padding:"8px 10px"}}><div style={{display:"flex",flexDirection:"column",gap:2}}><div style={{height:5,borderRadius:DS.r.full,background:T.green,width:`${h.ventas/maxV*100}%`}}/><div style={{height:5,borderRadius:DS.r.full,background:T.blue,width:`${h.gasto/maxV*100}%`}}/></div></td>
             <td style={td}>{GH_FMT_USD(h.ventas)}</td><td style={td}>{h.n||""}</td><td style={td}>{GH_FMT_USD(h.gasto)}</td><td style={td}>{GH_FMT_USD(h.comisiones)}</td><td style={td}>{h.reembolsos?GH_FMT_USD(h.reembolsos):""}</td>
             <td style={{...td,fontWeight:DS.w.bold,color:h.ganancia>=0?T.green:T.red}}>{GH_FMT_USD(h.ganancia)}</td><td style={td}>{h.roas?h.roas.toFixed(2):"—"}</td>
@@ -19652,12 +19666,16 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             <GhDatePicker T={T} value={desde} onChange={v=>{setDesde(v); if(v>hasta) setHasta(v);}} allowFuture={false}/>
             <span style={{color:T.textSm,fontSize:DS.font.sm}}>a</span>
             <GhDatePicker T={T} value={hasta} onChange={v=>{setHasta(v); if(v<desde) setDesde(v);}} allowFuture={false}/>
+            <select value={tz} onChange={e=>setTz(e.target.value)} title="Zona horaria: define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={{...inp,width:"auto",maxWidth:240}}>
+              {(()=>{ const nav=(()=>{ try{ return Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(_){ return null; } })(); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,"Tu zona"]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,tz]); return l.map(([v,n])=><option key={v} value={v}>{n}{v===nav?" · tu zona":""}</option>); })()}
+            </select>
+            {vista==="hora" && <DepSeg T={T} value={gran} onChange={setGran} items={[["hora","Por hora"],["dia","Por día"]]}/>}
             {vista==="hora" && tiendas.length>1 && (
               <select value={tiendaSel} onChange={e=>setTiendaSel(e.target.value)} style={{...inp,width:"auto"}}>
                 <option value="todas">Todas las tiendas</option>{tiendas.map(x=><option key={x.id} value={x.id}>{x.nombre}</option>)}
               </select>)}
             <div style={{marginLeft:"auto",display:"flex",gap:DS.sp.sm,alignItems:"center"}}>
-              <span style={{fontSize:DS.font.sm,color:T.textSm}}>{data?.generado?`USD · hora Argentina · ${new Date(data.generado).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}`:""}</span>
+              <span style={{fontSize:DS.font.sm,color:T.textSm}}>{data?.generado?`USD · actualizado ${new Date(data.generado).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:tz})}`:""}</span>
               <Btn T={T} size="sm" variant="secondary" onClick={()=>cargar(true)} disabled={cargando}>{cargando?"Actualizando…":"Actualizar"}</Btn>
             </div>
           </div>
@@ -19726,7 +19744,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           </>)}
           {vista==="hora" && data && filas.length>0 && (<>
             {kpis(ghImpSumar(filasH),false)}
-            <Card T={T} padding="sm" style={{overflowX:"auto"}}>{tablaHoras(porHora)}</Card>
+            <Card T={T} padding="sm" style={{overflowX:"auto"}}>{gran==="dia" ? tablaHoras(Object.entries(agrupar(filasH,f=>f.fecha)).sort().map(([fecha,l])=>({fecha,hora:null,...ghImpSumar(l)}))) : tablaHoras(porHora)}</Card>
           </>)}
         </>)}
       </div>

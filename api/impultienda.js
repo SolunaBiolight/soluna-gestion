@@ -64,6 +64,14 @@ function descifrar(s) {
 
 // ── Hora Argentina (UTC−3, sin horario de verano) ──
 const ART_MS = 3 * 3600000;
+// Fecha y hora de un instante en una zona IANA cualquiera (la del usuario).
+export function zonaDe(iso, tz) {
+  const t = Date.parse(iso); if (!isFinite(t)) return null;
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit" }).formatToParts(new Date(t));
+  const g = k => p.find(x => x.type === k).value;
+  return { fecha: `${g("year")}-${g("month")}-${g("day")}`, hora: parseInt(g("hour"), 10) };
+}
+export const tzValida = (tz) => { try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; } };
 export function artDe(iso) { const t = Date.parse(iso); if (!isFinite(t)) return null; const d = new Date(t - ART_MS).toISOString(); return { fecha: d.slice(0, 10), hora: parseInt(d.slice(11, 13), 10) }; }
 const hoyART = () => new Date(Date.now() - ART_MS).toISOString().slice(0, 10);
 const addDias = (ymd, n) => new Date(Date.parse(ymd + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
@@ -139,7 +147,7 @@ async function webhook(req, res, db) {
 }
 
 // ── Meta: gasto por hora ART ──
-async function metaPorHora(db, uid, desde, hasta, elegidas = []) {
+async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/Argentina/Buenos_Aires") {
   const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
   const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
   const out = {}; // "fecha|hora|campaña" → usd
@@ -170,7 +178,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = []) {
             const hh = parseInt(String(row.hourly_stats_aggregated_by_advertiser_time_zone || "").slice(0, 2), 10);
             const usd = aUsd(Number(row.spend) || 0, c.currency, fx);
             if (!isFinite(hh) || usd == null) continue;
-            const a = artDe(new Date(utcDeLocal(row.date_start, hh, tz)).toISOString());
+            const a = zonaDe(new Date(utcDeLocal(row.date_start, hh, tz)).toISOString(), tzU);
             const k = `${a.fecha}|${a.hora}|${String(row.campaign_name || "").replace(/\|/g, "/")}|${row.campaign_id || ""}`;
             out[k] = (out[k] || 0) + usd;
             porDiaLocal[row.date_start] = (porDiaLocal[row.date_start] || 0) + usd;
@@ -185,7 +193,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = []) {
         const totalHoy = aUsd(Number(r2.data?.[0]?.spend) || 0, c.currency, fx) || 0;
         const falta = totalHoy - (porDiaLocal[hoyLocal] || 0);
         if (falta > 0.01) {
-          const a = artDe(new Date().toISOString());
+          const a = zonaDe(new Date().toISOString(), tzU);
           if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}||`; out[k] = (out[k] || 0) + falta; sinHora += falta; }
         }
       } catch (e) { errores.push(`${id}: ${e.message}`); }
@@ -317,9 +325,11 @@ export function campanaDeVenta(utm, campanas) {
 }
 
 // ── Reporte por hora ──
-export async function porHora(db, uid, desde, hasta) {
+export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Buenos_Aires") {
+  if (!tzValida(tz)) tz = "America/Argentina/Buenos_Aires";
   const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
-  const desdeMs = Date.parse(desde + "T03:00:00Z"), hastaMs = Date.parse(addDias(hasta, 1) + "T03:00:00Z");
+  // El día va de 00:00 a 00:00 en la zona elegida.
+  const desdeMs = utcDeLocal(desde, 0, tz), hastaMs = utcDeLocal(addDias(hasta, 1), 0, tz);
   // Órdenes tocadas en el rango o un poco antes (un reembolso de hoy puede ser de una venta vieja).
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 40 * 86400000).toISOString()).get();
   const ordenes = snap.docs.map(d => d.data());
@@ -341,7 +351,7 @@ export async function porHora(db, uid, desde, hasta) {
   const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
   const ventasCamp = {};
   const enRango = (iso) => { const t = Date.parse(iso || ""); return isFinite(t) && t >= desdeMs && t < hastaMs; };
-  const meta = await metaPorHora(db, uid, desde, hasta, cfg.metaCuentas || []);
+  const meta = await metaPorHora(db, uid, desde, hasta, cfg.metaCuentas || [], tz);
   const campIdx = {};
   for (const k of Object.keys(meta.porHora)) { const [, , nombre, id] = k.split("|"); if (nombre) campIdx[id || nombre] = { key: id || nombre, id: id || null, nombre }; }
   const campLista = Object.values(campIdx);
@@ -349,7 +359,7 @@ export async function porHora(db, uid, desde, hasta) {
     const tid = o.store_id || "SIN_TIENDA";
     const usd = aUsd(o.total, o.moneda, fx) ?? 0;
     if (enRango(o.ev_approved)) {
-      const a = artDe(o.ev_approved); const f = fila(a.fecha, a.hora, tid);
+      const a = zonaDe(o.ev_approved, tz); const f = fila(a.fecha, a.hora, tid);
       f.ventas += usd; f.n += 1;
       const ck = campanaDeVenta(o.utm, campLista) || "SIN_CAMPANA";
       const cv = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {} });
@@ -363,7 +373,7 @@ export async function porHora(db, uid, desde, hasta) {
     }
     // Reembolso y contracargo restan cuando ocurren (solo si la venta se había aprobado).
     for (const ev of ["ev_refunded", "ev_chargeback"]) {
-      if (o.ev_approved && enRango(o[ev])) { const a = artDe(o[ev]); fila(a.fecha, a.hora, tid).reembolsos += usd; }
+      if (o.ev_approved && enRango(o[ev])) { const a = zonaDe(o[ev], tz); fila(a.fecha, a.hora, tid).reembolsos += usd; }
     }
   }
 
@@ -388,7 +398,7 @@ export async function porHora(db, uid, desde, hasta) {
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
-  return { desde, hasta, zona: "America/Argentina/Buenos_Aires", filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, generado: new Date().toISOString() };
+  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, generado: new Date().toISOString() };
 }
 
 export default async function handler(req, res) {
@@ -485,17 +495,18 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
     if (action === "por_hora") {
-      const hoy = hoyART();
+      const tz = tzValida(String(req.query.tz || "")) ? String(req.query.tz) : "America/Argentina/Buenos_Aires";
+      const hoy = zonaDe(new Date().toISOString(), tz).fecha;
       const desde = /^\d{4}-\d{2}-\d{2}$/.test(req.query.desde || "") ? req.query.desde : hoy;
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_${desde}_${hasta}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });
       }
-      const out = await porHora(db, uid, desde, hasta);
+      const out = await porHora(db, uid, desde, hasta, tz);
       await cacheRef.set({ ts: Date.now(), body: JSON.stringify(out) }).catch(() => {});
       return res.json(out);
     }

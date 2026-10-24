@@ -285,6 +285,7 @@ growith_reclamos_vista     → "prioridad" | "etapa": vista del tablero de Recla
 growith_sku_segauto        → "1" | "0" (por defecto prendido): en rótulos con SKU del flujo Excel, el botón principal ("Enviar al depósito y avisar" para clientes del depósito, "Descargar y enviar seguimientos" para el resto) manda también los seguimientos del mismo PDF a la tienda; apagado, cada cosa va por su botón
 growith_sku_consku         → "1" | "0" (por defecto prendido): "Productos (SKU) en la etiqueta" en el Paso 1 de rótulos del flujo Excel; apagado, se descarga / manda al depósito el PDF tal cual se subió (al depósito igual viajan los productos como dato para el picking)
 growith_sku_dep_enviados   → JSON {"nombre|tamaño": ts} de los PDF de rótulos ya mandados al depósito desde "SKU en Rótulos" (últimos 30, con ghKey): la tarjeta Despachar muestra "✓ Ya está en el depósito", el botón pasa a "Volver a enviar" (secundario) y pide confirmación antes de crear otra tanda con los mismos pedidos
+growith_imp_tz             → zona horaria IANA elegida en el Dashboard de productos digitales (Impultienda); sin valor = la del navegador
 growith_depo_operario      → nombre de quien opera en la PC del depósito (panel por token #/deposito/panel/<pcToken>); viaja en cada acción y queda en el historial de la tanda
 ```
 Patrón SWR: helpers globales `ghSwrGet(key,maxAge)` / `ghSwrSet(key,data)` — pintar cache al instante, refrescar de fondo, y si el refresco falla con cache pintada no romper la vista.
