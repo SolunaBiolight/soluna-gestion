@@ -19547,8 +19547,8 @@ function ghImpCardsDe(t, serie, nTiendas){
     {label:"AOV", val:usd(aov), accent:GH_MC.blue, hint:"Ticket promedio"},
     {label:"Por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Facturación promedio · ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
     {label:"Comisiones", val:usd(t.comisiones), accent:GH_MC.red, hint:t.ventas?`${pct(t.comisiones/t.ventas)} de la facturación${t.comisionesEstimadas>0.01?" · estimadas":" · reales"}`:"Pasarelas de pago", spk:sp(d=>d.comisiones)},
-    {label:"Ticket front", val:usd(t.nFront?t.front/t.nFront:null), accent:GH_MC.blue, hint:`Promedio de la compra principal · ${t.nFront||0} ventas`},
-    {label:"Upsells", val:usd(t.upsell), accent:GH_MC.green, hint:t.nFront?`${t.nUpsell||0} post-compra · ${pct((t.nUpsell||0)/t.nFront)} de los compradores`:"Ofertas post-compra", spk:sp(d=>d.upsell||0)},
+    {label:"Revenue front", val:usd(t.front), accent:GH_MC.blue, hint:`Compras principales (con order bumps) · ${t.nFront||0} ventas${t.ventas?` · ${pct(t.front/t.ventas)}`:""}`, spk:sp(d=>d.front||0)},
+    {label:"Revenue backend", val:usd(t.upsell), accent:GH_MC.green, hint:t.nFront?`Solo post-compra · ${t.nUpsell||0} upsells · ${pct((t.nUpsell||0)/t.nFront)} de los compradores`:"Solo ofertas post-compra", spk:sp(d=>d.upsell||0)},
     {label:"Reembolsos", val:usd(t.reembolsos), accent:GH_MC.red, hint:t.ventas?`${pct(t.reembolsos/t.ventas)} de la facturación · incluye contracargos`:"Incluye contracargos", bad:t.ventas>0&&t.reembolsos/t.ventas>0.05},
   ];
 }
