@@ -19689,9 +19689,13 @@ function ImpultiendaConexion({T,uid,onCambio}){
 }
 // Zonas para elegir en el Dashboard de productos digitales (más la del navegador).
 const GH_IMP_ZONAS = [
-  ["America/Argentina/Buenos_Aires","Argentina"],["America/Los_Angeles","EE.UU. Pacífico (cuentas de Meta)"],["America/New_York","EE.UU. Este"],
-  ["America/Mexico_City","México"],["America/Bogota","Colombia"],["America/Santiago","Chile"],["America/Sao_Paulo","Brasil"],["America/Montevideo","Uruguay"],
-  ["Europe/Madrid","España"],["Europe/Rome","Italia"],["Europe/Bucharest","Rumania"],["Europe/Istanbul","Turquía"],["Africa/Johannesburg","Sudáfrica"],["UTC","UTC"],
+  ["America/Argentina/Buenos_Aires","🇦🇷 Argentina"],["America/Montevideo","🇺🇾 Uruguay"],["America/Santiago","🇨🇱 Chile"],["America/Sao_Paulo","🇧🇷 Brasil"],["America/Asuncion","🇵🇾 Paraguay"],
+  ["America/La_Paz","🇧🇴 Bolivia"],["America/Lima","🇵🇪 Perú"],["America/Bogota","🇨🇴 Colombia"],["America/Guayaquil","🇪🇨 Ecuador"],["America/Caracas","🇻🇪 Venezuela"],
+  ["America/Panama","🇵🇦 Panamá"],["America/Costa_Rica","🇨🇷 Costa Rica"],["America/Mexico_City","🇲🇽 México"],["America/Santo_Domingo","🇩🇴 Rep. Dominicana"],
+  ["America/New_York","🇺🇸 EE.UU. Este"],["America/Chicago","🇺🇸 EE.UU. Centro"],["America/Denver","🇺🇸 EE.UU. Montaña"],["America/Los_Angeles","🇺🇸 EE.UU. Pacífico (cuentas de Meta)"],["America/Toronto","🇨🇦 Canadá"],
+  ["Europe/Madrid","🇪🇸 España"],["Europe/Lisbon","🇵🇹 Portugal"],["Europe/London","🇬🇧 Reino Unido"],["Europe/Paris","🇫🇷 Francia"],["Europe/Berlin","🇩🇪 Alemania"],["Europe/Rome","🇮🇹 Italia"],
+  ["Europe/Warsaw","🇵🇱 Polonia"],["Europe/Prague","🇨🇿 Chequia"],["Europe/Bucharest","🇷🇴 Rumania"],["Europe/Chisinau","🇲🇩 Moldavia"],["Europe/Athens","🇬🇷 Grecia"],["Europe/Istanbul","🇹🇷 Turquía"],
+  ["Africa/Johannesburg","🇿🇦 Sudáfrica"],["Asia/Dubai","🇦🇪 Emiratos"],["Asia/Kolkata","🇮🇳 India"],["Asia/Tokyo","🇯🇵 Japón"],["Australia/Sydney","🇦🇺 Australia"],["UTC","🌐 UTC"],
 ];
 // Algunos navegadores dan nombres viejos (America/Buenos_Aires, America/Cordoba): se llevan a la zona de la lista para mostrar el país.
 const ghImpTzCanon = (z)=> /^America\/(Argentina\/.+|Buenos_Aires|Cordoba|Mendoza|Catamarca|Jujuy|Rosario)$/.test(z||"") ? "America/Argentina/Buenos_Aires" : z;
@@ -19781,12 +19785,20 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             <GhDatePicker T={T} value={desde} onChange={v=>{setDesde(v); if(v>hasta) setHasta(v);}} allowFuture={false}/>
             <span style={{color:T.textSm,fontSize:DS.font.sm}}>a</span>
             <GhDatePicker T={T} value={hasta} onChange={v=>{setHasta(v); if(v<desde) setDesde(v);}} allowFuture={false}/>
-            <select value={tz} onChange={e=>setTz(e.target.value)} title="Zona horaria: define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={{...inp,width:"auto",maxWidth:240}}>
-              {(()=>{ const nav=(()=>{ try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone); }catch(_){ return null; } })(); const ciudad=(z)=>String(z).split("/").pop().replace(/_/g," "); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,ciudad(tz)]); return l.map(([v,n])=><option key={v} value={v}>🕐 {n}</option>); })()}
-            </select>
-            <select value={mon} onChange={e=>setMon(e.target.value)} title="Moneda en la que se muestran los montos. Peso argentino con dólar cripto; el resto con el dólar oficial." style={{...inp,width:"auto",maxWidth:220}}>
-              {GH_IMP_MONEDAS.map(([c,n])=><option key={c} value={c}>{c} · {n}</option>)}
-            </select>
+            <label style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface||T.bg,boxSizing:"border-box",cursor:"pointer"}}>
+              <span style={{fontSize:15,lineHeight:1}}>🕐</span>
+              <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Horario</span>
+              <select value={tz} onChange={e=>setTz(e.target.value)} title="Define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:DS.font.md,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",maxWidth:210,padding:"0 4px"}}>
+              {(()=>{ const nav=(()=>{ try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone); }catch(_){ return null; } })(); const ciudad=(z)=>"🌐 "+String(z).split("/").pop().replace(/_/g," "); const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(!l.some(z=>z[0]===tz)) l.unshift([tz,ciudad(tz)]); return l.map(([v,n])=><option key={v} value={v}>{n}</option>); })()}
+              </select>
+            </label>
+            <label style={{display:"inline-flex",alignItems:"center",gap:8,height:34,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface||T.bg,boxSizing:"border-box",cursor:"pointer"}}>
+              <span style={{fontSize:15,lineHeight:1}}>💱</span>
+              <span style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.6}}>Moneda</span>
+              <select value={mon} onChange={e=>setMon(e.target.value)} title="Peso argentino con dólar cripto; el resto con el dólar oficial" style={{background:"transparent",border:"none",outline:"none",color:T.text,fontSize:DS.font.md,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",maxWidth:210,padding:"0 4px"}}>
+              {GH_IMP_MONEDAS.map(([c,n])=><option key={c} value={c}>{n} ({c})</option>)}
+              </select>
+            </label>
             {vista==="hora" && <DepSeg T={T} value={gran} onChange={setGran} items={[["hora","Por hora"],["dia","Por día"]]}/>}
             {vista==="hora" && tiendas.length>1 && (
               <select value={tiendaSel} onChange={e=>setTiendaSel(e.target.value)} style={{...inp,width:"auto"}}>
