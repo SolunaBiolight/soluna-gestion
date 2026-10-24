@@ -1,0 +1,353 @@
+// Impultienda en Growith (24/oct/2026): ventas de tiendas de productos digitales
+// por webhook, comisiones reales de Stripe (clave restringida de solo lectura del
+// usuario) y ganancia POR HORA en hora Argentina (00:00 ART = día nuevo).
+//
+// Impultienda no tiene API REST: manda webhooks firmados (doc: impultienda.ar/docs/webhooks)
+//   headers X-Impultienda-Signature = HMAC-SHA256 hex de "{X-Impultienda-Timestamp}.{cuerpo crudo}"
+//   idempotencia por payload.id (los reintentos reenvían el mismo id)
+//   "Probar" del panel manda test:true y order_id "TEST-…" → no se guarda.
+//
+// Firestore (todo server-only):
+//   impultienda_hooks/{hookKey}            {uid, creado}       — la URL del webhook lleva hookKey (no adivinable)
+//   users/{uid}/impultienda_cfg/main       {hookKey, secretEnc, stripeEnc, feePct, feeFijo, paises:{store_id:"IT"}}
+//   users/{uid}/impultienda_orders/{order_id}  la orden (último payload + fechas de cada evento + stripe)
+//   impultienda_deliveries/{payload.id}    {uid, at} — dedupe de entregas
+//
+// NO es api/stripe.js (ese es la facturación de Growith): esta conexión es del usuario, para SUS cobros.
+
+import crypto from "crypto";
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { guardUid } from "./_auth.js";
+
+export const config = { api: { bodyParser: false } };
+
+function initAdmin() {
+  if (!getApps().length) {
+    initializeApp({
+      credential: cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/"/g, ""),
+      }),
+    });
+  }
+  return getFirestore();
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", c => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+// ── Cifrado de secretos (clave de firma del webhook, clave de Stripe) ──
+// AES-256-GCM con una clave derivada de una variable que ya existe en Vercel.
+function clave() { return crypto.createHash("sha256").update(String(process.env.FIREBASE_PRIVATE_KEY || "") + "|impultienda-v1").digest(); }
+function cifrar(txt) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv("aes-256-gcm", clave(), iv);
+  const enc = Buffer.concat([c.update(String(txt), "utf8"), c.final()]);
+  return [iv.toString("base64"), c.getAuthTag().toString("base64"), enc.toString("base64")].join(".");
+}
+function descifrar(s) {
+  try {
+    const [iv, tag, enc] = String(s || "").split(".").map(x => Buffer.from(x, "base64"));
+    const d = crypto.createDecipheriv("aes-256-gcm", clave(), iv);
+    d.setAuthTag(tag);
+    return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
+  } catch (_) { return null; }
+}
+
+// ── Hora Argentina (UTC−3, sin horario de verano) ──
+const ART_MS = 3 * 3600000;
+export function artDe(iso) { const t = Date.parse(iso); if (!isFinite(t)) return null; const d = new Date(t - ART_MS).toISOString(); return { fecha: d.slice(0, 10), hora: parseInt(d.slice(11, 13), 10) }; }
+const hoyART = () => new Date(Date.now() - ART_MS).toISOString().slice(0, 10);
+const addDias = (ymd, n) => new Date(Date.parse(ymd + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+// Instante UTC de "fecha hora:00" en una zona horaria IANA (para las horas de Meta).
+export function utcDeLocal(fecha, hora, tz) {
+  const guess = Date.parse(`${fecha}T${String(hora).padStart(2, "0")}:00:00Z`);
+  const off = (ms) => {
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ms));
+    const g = k => parseInt(p.find(x => x.type === k).value, 10);
+    return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute")) - ms;
+  };
+  let t = guess - off(guess);
+  t = guess - off(t); // segunda pasada por si el cambio de horario cae en el medio
+  return t;
+}
+
+// ── Monedas → USD (open.er-api.com, sin clave, caché 6 h en memoria) ──
+let _fx = null, _fxAt = 0;
+async function fxPorUsd() {
+  if (_fx && Date.now() - _fxAt < 6 * 3600000) return _fx;
+  try { const j = await (await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(6000) })).json(); if (j?.rates) { _fx = j.rates; _fxAt = Date.now(); } } catch (_) {}
+  return _fx || { USD: 1 };
+}
+const aUsd = (monto, cur, fx) => { const c = String(cur || "USD").toUpperCase(); if (c === "USD") return monto; const r = fx?.[c]; return r ? monto / r : null; };
+
+// ── Webhook ──
+async function webhook(req, res, db) {
+  const raw = await readBody(req);
+  const hookKey = String(req.query.k || "");
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(hookKey)) return res.status(404).json({ ok: false });
+  const h = await db.collection("impultienda_hooks").doc(hookKey).get();
+  if (!h.exists) return res.status(404).json({ ok: false, reason: "endpoint_desconocido" });
+  const uid = h.data().uid;
+  const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
+  const secret = descifrar(cfg.secretEnc);
+  if (!secret) return res.status(401).json({ ok: false, reason: "falta_clave_de_firma" });
+  const ts = String(req.headers["x-impultienda-timestamp"] || "");
+  const sig = String(req.headers["x-impultienda-signature"] || "");
+  if (!ts || Math.abs(Date.now() / 1000 - Number(ts)) > 300) return res.status(401).json({ ok: false, reason: "timestamp" });
+  const esperada = crypto.createHmac("sha256", secret).update(ts + "." + raw.toString("utf8")).digest("hex");
+  if (sig.length !== esperada.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(esperada))) return res.status(401).json({ ok: false, reason: "firma" });
+  let p; try { p = JSON.parse(raw.toString("utf8")); } catch { return res.status(400).json({ ok: false, reason: "json" }); }
+  const d = p?.data || {};
+  if (p.test === true || d.test === true || String(d.order_id || "").startsWith("TEST-")) {
+    await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").set({ ultimaPrueba: new Date().toISOString() }, { merge: true });
+    return res.status(200).json({ ok: true, test: true });
+  }
+  if (!d.order_id || !p.event) return res.status(200).json({ ok: false, reason: "sin_orden" });
+  // Dedupe por id de entrega (los reintentos reenvían el mismo payload.id).
+  const delRef = db.collection("impultienda_deliveries").doc(String(p.id || `${d.order_id}_${p.event}`).slice(0, 200));
+  const nueva = await db.runTransaction(async tx => { const s = await tx.get(delRef); if (s.exists) return false; tx.set(delRef, { uid, at: new Date() }); return true; });
+  if (!nueva) return res.status(200).json({ ok: true, duplicado: true });
+  const ev = String(p.event).replace(/^order\./, "");
+  const cuando = p.created_at || new Date().toISOString();
+  const orden = {
+    order_id: String(d.order_id), orden: d.order_number ?? null,
+    store_id: d.store?.id || null, store_nombre: d.store?.name || null,
+    estado: d.status || ev, total: Number(d.total) || 0, moneda: d.currency || "USD",
+    buyer_total: d.buyer_total ?? null, buyer_moneda: d.buyer_currency || null,
+    pais: d.buyer_country || null, pasarela: d.payment_method || null,
+    email: String(d.customer?.email || "").toLowerCase() || null,
+    post_compra: !!d.is_post_purchase, orden_original: d.parent_order_id || null,
+    creada_utc: d.order_created_at || null,
+    items: (d.items || []).map(i => ({ id: i.product_id, nombre: i.name, precio: i.price, cant: i.quantity, tipo: i.type })),
+    utm: d.tracking || null,
+    actualizado: new Date().toISOString(),
+    [`ev_${ev}`]: cuando,
+  };
+  await db.collection("users").doc(uid).collection("impultienda_orders").doc(String(d.order_id)).set(orden, { merge: true });
+  return res.status(200).json({ ok: true });
+}
+
+// ── Meta: gasto por hora ART ──
+async function metaPorHora(db, uid, desde, hasta) {
+  const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
+  const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
+  const out = {}; // "fecha|hora" → usd
+  const errores = [];
+  let sinHora = 0;
+  const vistas = new Set();
+  const fx = await fxPorUsd();
+  for (const tk of tokens) {
+    let cuentas = [];
+    try {
+      const r = await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id,currency,timezone_name&limit=200&access_token=${encodeURIComponent(tk)}`)).json();
+      cuentas = r.data || [];
+    } catch (e) { errores.push(e.message); }
+    for (const c of cuentas) {
+      const id = "act_" + c.account_id;
+      if (vistas.has(id)) continue; vistas.add(id);
+      const tz = c.timezone_name || "America/Los_Angeles";
+      // El día ART empieza en otra hora de la zona de la cuenta: se pide un día de margen.
+      const since = addDias(desde, -1), until = addDias(hasta, 1);
+      let url = `https://graph.facebook.com/v23.0/${id}/insights?level=account&fields=spend&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
+      const porDiaLocal = {};
+      try {
+        for (let i = 0; url && i < 20; i++) {
+          const r = await (await fetch(url)).json();
+          if (r.error) { errores.push(`${id}: ${r.error.message}`); break; }
+          for (const row of r.data || []) {
+            const hh = parseInt(String(row.hourly_stats_aggregated_by_advertiser_time_zone || "").slice(0, 2), 10);
+            const usd = aUsd(Number(row.spend) || 0, c.currency, fx);
+            if (!isFinite(hh) || usd == null) continue;
+            const a = artDe(new Date(utcDeLocal(row.date_start, hh, tz)).toISOString());
+            const k = `${a.fecha}|${a.hora}`;
+            out[k] = (out[k] || 0) + usd;
+            porDiaLocal[row.date_start] = (porDiaLocal[row.date_start] || 0) + usd;
+          }
+          url = r.paging?.next || null;
+        }
+        // Trampa conocida: el desglose horario puede no traer todavía las horas de HOY
+        // (zona de la cuenta). Se compara con el gasto del día y la diferencia va a la
+        // hora ART actual, marcada como "sin hora exacta".
+        const hoyLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+        const r2 = await (await fetch(`https://graph.facebook.com/v23.0/${id}/insights?level=account&fields=spend&time_range=${encodeURIComponent(JSON.stringify({ since: hoyLocal, until: hoyLocal }))}&access_token=${encodeURIComponent(tk)}`)).json();
+        const totalHoy = aUsd(Number(r2.data?.[0]?.spend) || 0, c.currency, fx) || 0;
+        const falta = totalHoy - (porDiaLocal[hoyLocal] || 0);
+        if (falta > 0.01) {
+          const a = artDe(new Date().toISOString());
+          if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}`; out[k] = (out[k] || 0) + falta; sinHora += falta; }
+        }
+      } catch (e) { errores.push(`${id}: ${e.message}`); }
+    }
+  }
+  return { porHora: out, sinHora, cuentas: vistas.size, errores };
+}
+
+// ── Stripe: comisión real por venta ──
+// Cruce: balance_transaction (type charge) con el cargo expandido → email del
+// comprador + monto + ±10 min de la aprobación. Ambiguo o sin cruce = estimada.
+async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
+  const key = descifrar(cfg.stripeEnc);
+  if (!key) return { conectado: false };
+  const txs = [];
+  let url = `https://api.stripe.com/v1/balance_transactions?limit=100&type=charge&created[gte]=${Math.floor(desdeMs / 1000) - 900}&created[lte]=${Math.floor(hastaMs / 1000) + 900}&expand[]=data.source`;
+  try {
+    for (let i = 0; i < 30; i++) {
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+      const j = await r.json();
+      if (j.error) return { conectado: true, error: j.error.message };
+      txs.push(...(j.data || []));
+      if (!j.has_more || !j.data?.length) break;
+      url = url.replace(/&starting_after=[^&]*/, "") + `&starting_after=${j.data[j.data.length - 1].id}`;
+    }
+  } catch (e) { return { conectado: true, error: e.message }; }
+  const fx = await fxPorUsd();
+  const usados = new Set();
+  let cruzadas = 0;
+  const batch = db.batch(); let escrituras = 0;
+  for (const o of ordenes) {
+    if (o.stripe?.bt) { usados.add(o.stripe.bt); cruzadas++; continue; }
+    if (o.pasarela && o.pasarela !== "stripe" && o.pasarela !== "card") continue;
+    const tAp = Date.parse(o.ev_approved || "");
+    if (!isFinite(tAp)) continue;
+    const cand = txs.filter(t => {
+      if (usados.has(t.id)) return false;
+      const ch = t.source || {};
+      const mail = String(ch.billing_details?.email || ch.receipt_email || "").toLowerCase();
+      if (o.email && mail && mail !== o.email) return false;
+      if (Math.abs(t.created * 1000 - tAp) > 10 * 60000) return false;
+      const montoCh = (ch.amount || 0) / 100, curCh = String(ch.currency || "").toUpperCase();
+      const esperado = curCh === String(o.buyer_moneda || "").toUpperCase() && o.buyer_total != null ? Number(o.buyer_total) : (curCh === String(o.moneda || "").toUpperCase() ? o.total : null);
+      return esperado == null ? false : Math.abs(montoCh - esperado) <= Math.max(0.02, esperado * 0.01);
+    });
+    if (cand.length !== 1) continue;
+    const t = cand[0]; usados.add(t.id);
+    const fee = aUsd(t.fee / 100, t.currency, fx);
+    if (fee == null) continue;
+    o.stripe = { bt: t.id, fee, at: new Date().toISOString() };
+    batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(o.order_id), { stripe: o.stripe }, { merge: true });
+    escrituras++; cruzadas++;
+  }
+  if (escrituras) await batch.commit().catch(() => {});
+  return { conectado: true, cruzadas, transacciones: txs.length };
+}
+
+// ── Reporte por hora ──
+async function porHora(db, uid, desde, hasta) {
+  const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
+  const desdeMs = Date.parse(desde + "T03:00:00Z"), hastaMs = Date.parse(addDias(hasta, 1) + "T03:00:00Z");
+  // Órdenes tocadas en el rango o un poco antes (un reembolso de hoy puede ser de una venta vieja).
+  const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 40 * 86400000).toISOString()).get();
+  const ordenes = snap.docs.map(d => d.data());
+  const fx = await fxPorUsd();
+  const stripe = await stripeComisiones(db, uid, cfg, ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs), desdeMs, hastaMs);
+  const feePct = Number(cfg.feePct ?? 2.9), feeFijo = Number(cfg.feeFijo ?? 0.3);
+  const paises = cfg.paises || {};
+  const filas = {}; // "fecha|hora|pais"
+  const fila = (fecha, hora, pais) => { const k = `${fecha}|${hora}|${pais}`; return filas[k] || (filas[k] = { fecha, hora, pais, ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
+  const enRango = (iso) => { const t = Date.parse(iso || ""); return isFinite(t) && t >= desdeMs && t < hastaMs; };
+  for (const o of ordenes) {
+    const pais = paises[o.store_id] || o.pais || "??";
+    const usd = aUsd(o.total, o.moneda, fx) ?? 0;
+    if (enRango(o.ev_approved)) {
+      const a = artDe(o.ev_approved); const f = fila(a.fecha, a.hora, pais);
+      f.ventas += usd; f.n += 1;
+      if (o.stripe?.fee != null) f.comisiones += o.stripe.fee;
+      else if (!o.pasarela || o.pasarela === "stripe" || o.pasarela === "card") { const est = usd * feePct / 100 + feeFijo; f.comisiones += est; f.comisionesEstimadas += est; }
+    }
+    // Reembolso y contracargo restan cuando ocurren (solo si la venta se había aprobado).
+    for (const ev of ["ev_refunded", "ev_chargeback"]) {
+      if (o.ev_approved && enRango(o[ev])) { const a = artDe(o[ev]); fila(a.fecha, a.hora, pais).reembolsos += usd; }
+    }
+  }
+  const meta = await metaPorHora(db, uid, desde, hasta);
+  for (const [k, usd] of Object.entries(meta.porHora)) {
+    const [fecha, hora] = k.split("|");
+    if (fecha < desde || fecha > hasta) continue;
+    fila(fecha, parseInt(hora, 10), "META").gasto += usd; // el gasto es por cuenta, no por país
+  }
+  const lista = Object.values(filas).map(f => ({ ...f, ganancia: f.ventas - f.reembolsos - f.comisiones - f.gasto }));
+  lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.pais.localeCompare(b.pais));
+  const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
+  tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
+  tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
+  tot.cpa = tot.n ? tot.gasto / tot.n : null;
+  return { desde, hasta, zona: "America/Argentina/Buenos_Aires", filas: lista, totales: tot, meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, generado: new Date().toISOString() };
+}
+
+export default async function handler(req, res) {
+  const db = initAdmin();
+  const action = String(req.query.action || "");
+  if (action === "webhook") {
+    if (req.method !== "POST") return res.status(405).end();
+    try { return await webhook(req, res, db); } catch (e) { console.error("[impultienda webhook]", e.message); return res.status(500).json({ ok: false }); }
+  }
+  const uid = String(req.query.uid || "");
+  if (!(await guardUid(req, res, uid, "margenes"))) return;
+  const cfgRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc("main");
+  try {
+    if (action === "config") {
+      let cfg = (await cfgRef.get()).data() || {};
+      if (!cfg.hookKey) {
+        const k = crypto.randomBytes(18).toString("base64url");
+        await db.collection("impultienda_hooks").doc(k).set({ uid, creado: new Date() });
+        await cfgRef.set({ hookKey: k }, { merge: true });
+        cfg.hookKey = k;
+      }
+      const host = req.headers["x-forwarded-host"] || req.headers.host || "www.growithapp.com";
+      const tiendas = {};
+      const os = await db.collection("users").doc(uid).collection("impultienda_orders").orderBy("actualizado", "desc").limit(300).get();
+      for (const d of os.docs) { const o = d.data(); if (o.store_id && !tiendas[o.store_id]) tiendas[o.store_id] = { nombre: o.store_nombre, pais: (cfg.paises || {})[o.store_id] || null }; }
+      return res.json({
+        url: `https://${host}/api/impultienda?action=webhook&k=${cfg.hookKey}`,
+        tieneFirma: !!cfg.secretEnc, tieneStripe: !!cfg.stripeEnc,
+        feePct: cfg.feePct ?? 2.9, feeFijo: cfg.feeFijo ?? 0.3,
+        paises: cfg.paises || {}, tiendas, ordenes: os.size, ultimaPrueba: cfg.ultimaPrueba || null,
+      });
+    }
+    if (action === "config_set" && req.method === "POST") {
+      const b = JSON.parse((await readBody(req)).toString() || "{}");
+      const patch = {};
+      if (typeof b.secret === "string" && b.secret.trim()) patch.secretEnc = cifrar(b.secret.trim());
+      if (typeof b.stripe_key === "string" && b.stripe_key.trim()) {
+        const k = b.stripe_key.trim();
+        if (!/^(rk|sk)_(live|test)_/.test(k)) return res.status(400).json({ error: "Esa no parece una clave de Stripe (empieza con rk_live_…)." });
+        const r = await fetch("https://api.stripe.com/v1/balance_transactions?limit=1", { headers: { Authorization: `Bearer ${k}` } });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); return res.status(400).json({ error: `Stripe rechazó la clave: ${j.error?.message || r.status}. Tiene que tener permiso de lectura de Balance transactions y Charges.` }); }
+        patch.stripeEnc = cifrar(k);
+      }
+      if (b.stripe_key === null) patch.stripeEnc = FieldValue.delete();
+      if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
+      if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
+      if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), String(v || "").toUpperCase().slice(0, 6)]).filter(([, v]) => v));
+      await cfgRef.set(patch, { merge: true });
+      return res.json({ ok: true });
+    }
+    if (action === "por_hora") {
+      const hoy = hoyART();
+      const desde = /^\d{4}-\d{2}-\d{2}$/.test(req.query.desde || "") ? req.query.desde : hoy;
+      const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
+      if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
+      // Caché de 10 minutos por rango (fresh=1 la saltea).
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_${desde}_${hasta}`);
+      if (req.query.fresh !== "1") {
+        const c = await cacheRef.get();
+        if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });
+      }
+      const out = await porHora(db, uid, desde, hasta);
+      await cacheRef.set({ ts: Date.now(), body: JSON.stringify(out) }).catch(() => {});
+      return res.json(out);
+    }
+    return res.status(400).json({ error: "acción desconocida" });
+  } catch (e) {
+    console.error("[impultienda]", action, e.message);
+    return res.status(500).json({ error: e.message });
+  }
+}

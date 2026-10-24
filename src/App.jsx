@@ -974,6 +974,7 @@ const SIDEBAR_GROUPS_BASE = [
       // adicionales, fact. externa, dólar) — las 5 entradas viejas son tabs
       // internas de esa página; sus ids siguen vivos como margenesTab (aliases).
       subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Configuraciones"}]},
+    {id:"porhora",  label:"Ventas por hora", soloAdmin:true, icon:"M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z"},
     {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
@@ -1107,6 +1108,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
         {GROUPS.filter(item=>!(adminOnlySections||[]).includes(item.id)||isAdmin)
           // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
           .filter(item=>!item.soloDeposito||depositoNav)
+          .filter(item=>!item.soloAdmin||isAdmin)
           .filter(item=>{ if(!seccionesMiembro) return true; if(item.group||item.soloDeposito) return true; if(item.hub) return item.hub.some(c=>seccionesMiembro[c.permKey]===true); return seccionesMiembro[item.permKey||item.id]===true; })
           // Gateo por plan (sin trial): Facturador ($19) = solo Inicio + Facturador.
           // Intermedio ($39) = TODO menos Dashboard (margenes) + Copilot. Pro = todo.
@@ -19400,6 +19402,182 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
     </Modal>
   );
 }
+
+// ── Ventas por hora (Impultienda + Meta + Stripe), hora Argentina ──────────
+// Backend: api/impultienda.js. 00:00 ART = día nuevo. Por ahora solo admins
+// (soloAdmin en el sidebar) mientras se valida con las tiendas propias.
+const GH_FMT_USD = (n)=> n==null||!isFinite(n) ? "—" : (n<0?"-":"")+"US$ "+Math.abs(n).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+function AppPorHora({T,user}){
+  // La tienda activa (multi-tienda): Meta y el webhook son de esa tienda.
+  const uid = (typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid;
+  const hoy = new Date(Date.now()-3*3600000).toISOString().slice(0,10);
+  const [tab,setTab]=useState("hora");
+  const [desde,setDesde]=useState(hoy);
+  const [hasta,setHasta]=useState(hoy);
+  const [data,setData]=useState(null);
+  const [cargando,setCargando]=useState(false);
+  const [err,setErr]=useState(null);
+  const [cfg,setCfg]=useState(null);
+  const [secret,setSecret]=useState("");
+  const [stripeKey,setStripeKey]=useState("");
+  const [fee,setFee]=useState({pct:"2.9",fijo:"0.3"});
+  const [paises,setPaises]=useState({});
+  const [guardando,setGuardando]=useState(false);
+  const [paisSel,setPaisSel]=useState("todos");
+  const cargar = async(fresh=false)=>{
+    if(!uid) return; setCargando(true); setErr(null);
+    try{ const r=await authFetch(`/api/impultienda?action=por_hora&uid=${uid}&desde=${desde}&hasta=${hasta}${fresh?"&fresh=1":""}`); const j=await r.json(); if(j.error) throw new Error(j.error); setData(j); }
+    catch(e){ setErr(e.message); } finally{ setCargando(false); }
+  };
+  const cargarCfg = async()=>{
+    if(!uid) return;
+    try{ const j=await (await authFetch(`/api/impultienda?action=config&uid=${uid}`)).json(); if(j.error) throw new Error(j.error); setCfg(j); setFee({pct:String(j.feePct),fijo:String(j.feeFijo)}); setPaises(j.paises||{}); }catch(e){ toast(e.message,"error"); }
+  };
+  useEffect(()=>{ cargar(); /* eslint-disable-next-line */ },[uid,desde,hasta]);
+  useEffect(()=>{ cargarCfg(); /* eslint-disable-next-line */ },[uid]);
+  useEffect(()=>{ const id=setInterval(()=>{ if(document.visibilityState!=="hidden"&&desde===hoy) cargar(); },10*60000); return ()=>clearInterval(id); /* eslint-disable-next-line */ },[desde,hasta]);
+  const guardar = async(extra={})=>{
+    setGuardando(true);
+    try{
+      const body={feePct:fee.pct,feeFijo:fee.fijo,paises,...extra};
+      if(secret.trim()) body.secret=secret.trim();
+      if(stripeKey.trim()) body.stripe_key=stripeKey.trim();
+      const j=await (await authFetch(`/api/impultienda?action=config_set&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
+      if(j.error) throw new Error(j.error);
+      setSecret(""); setStripeKey(""); toast("Guardado","success"); cargarCfg(); cargar(true);
+    }catch(e){ toast(e.message,"error"); } finally{ setGuardando(false); }
+  };
+  const filas=(data?.filas||[]);
+  const paisesData=[...new Set(filas.map(f=>f.pais).filter(p=>p!=="META"))].sort();
+  // Por hora: suma países (o el elegido) + el gasto de Meta (es por cuenta, no por país).
+  const porHora={};
+  for(const f of filas){
+    if(paisSel!=="todos" && f.pais!==paisSel && f.pais!=="META") continue;
+    const k=f.fecha+"|"+f.hora; const h=porHora[k]||(porHora[k]={fecha:f.fecha,hora:f.hora,ventas:0,n:0,reembolsos:0,comisiones:0,gasto:0});
+    h.ventas+=f.ventas; h.n+=f.n; h.reembolsos+=f.reembolsos; h.comisiones+=f.comisiones; h.gasto+=f.gasto;
+  }
+  const horas=Object.values(porHora).sort((a,b)=>(a.fecha+String(a.hora).padStart(2,"0")).localeCompare(b.fecha+String(b.hora).padStart(2,"0")));
+  const porPais={};
+  for(const f of filas){ if(f.pais==="META") continue; const p=porPais[f.pais]||(porPais[f.pais]={pais:f.pais,ventas:0,n:0,reembolsos:0,comisiones:0}); p.ventas+=f.ventas; p.n+=f.n; p.reembolsos+=f.reembolsos; p.comisiones+=f.comisiones; }
+  const t=data?.totales;
+  const maxV=Math.max(1,...horas.map(h=>Math.max(h.ventas,h.gasto)));
+  const th={textAlign:"right",padding:"8px 10px",fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.semibold,whiteSpace:"nowrap"};
+  const td={textAlign:"right",padding:"8px 10px",fontSize:DS.font.md,color:T.text,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
+  const inp={...InputStyle(T),fontFamily:"'Inter',system-ui,sans-serif"};
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif"}}>
+      <AppTabs T={T} active={tab} onChange={setTab} tabs={[{id:"hora",label:"Por hora"},{id:"pais",label:"Por país"},{id:"config",label:"Conexión"}]}/>
+      <div style={{padding:DS.sp["2xl"],display:"flex",flexDirection:"column",gap:DS.sp.lg,maxWidth:1200}}>
+        {tab!=="config" && (
+          <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center"}}>
+            <Btn T={T} size="sm" variant={desde===hoy&&hasta===hoy?"primary":"secondary"} onClick={()=>{setDesde(hoy);setHasta(hoy);}}>Hoy</Btn>
+            {(()=>{ const ay=new Date(Date.parse(hoy)-86400000).toISOString().slice(0,10); return <Btn T={T} size="sm" variant={desde===ay&&hasta===ay?"primary":"secondary"} onClick={()=>{setDesde(ay);setHasta(ay);}}>Ayer</Btn>; })()}
+            <GhDatePicker T={T} value={desde} onChange={v=>{setDesde(v); if(v>hasta) setHasta(v);}} allowFuture={false}/>
+            <span style={{color:T.textSm,fontSize:DS.font.sm}}>a</span>
+            <GhDatePicker T={T} value={hasta} onChange={v=>{setHasta(v); if(v<desde) setDesde(v);}} allowFuture={false}/>
+            {tab==="hora" && paisesData.length>1 && (
+              <select value={paisSel} onChange={e=>setPaisSel(e.target.value)} style={{...inp,width:"auto"}}>
+                <option value="todos">Todos los países</option>{paisesData.map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+            )}
+            <div style={{marginLeft:"auto",display:"flex",gap:DS.sp.sm,alignItems:"center"}}>
+              <span style={{fontSize:DS.font.sm,color:T.textSm}}>{data?.generado?`Hora Argentina · ${new Date(data.generado).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}${data.cache?" (caché)":""}`:""}</span>
+              <Btn T={T} size="sm" variant="secondary" onClick={()=>cargar(true)} disabled={cargando}>{cargando?"Actualizando…":"Actualizar"}</Btn>
+            </div>
+          </div>
+        )}
+        {tab!=="config" && err && <Card T={T}><span style={{color:T.red,fontSize:DS.font.base}}>{err}</span></Card>}
+        {tab!=="config" && t && (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:DS.sp.md}}>
+            <KPI T={T} label="Ventas" value={GH_FMT_USD(t.ventas)} sub={`${t.n} ventas`} color={T.green}/>
+            <KPI T={T} label="Gasto Meta" value={GH_FMT_USD(t.gasto)} sub={`${data.meta?.cuentas||0} cuentas`} color={T.blue}/>
+            <KPI T={T} label="Comisiones" value={GH_FMT_USD(t.comisiones)} sub={t.comisionesEstimadas>0.01?`${GH_FMT_USD(t.comisionesEstimadas)} estimadas`:"reales de Stripe"} color={T.orange}/>
+            <KPI T={T} label="Reembolsos" value={GH_FMT_USD(t.reembolsos)} color={T.red}/>
+            <KPI T={T} label="Ganancia" value={GH_FMT_USD(t.ganancia)} color={t.ganancia>=0?T.green:T.red}/>
+            <KPI T={T} label="ROAS · CPA" value={t.roas?t.roas.toFixed(2):"—"} sub={t.cpa?`CPA ${GH_FMT_USD(t.cpa)}`:""} color={T.accent}/>
+          </div>
+        )}
+        {tab!=="config" && data && (data.meta?.errores?.length>0 || data.meta?.sinHora>0.01 || data.stripe?.error) && (
+          <Card T={T} padding="md"><div style={{fontSize:DS.font.sm,color:T.textMd,lineHeight:1.6}}>
+            {data.meta?.sinHora>0.01 && <div>Meta todavía no informó la hora de {GH_FMT_USD(data.meta.sinHora)} de hoy: va sumado a la hora actual.</div>}
+            {data.stripe?.error && <div style={{color:T.red}}>Stripe: {data.stripe.error}</div>}
+            {(data.meta?.errores||[]).slice(0,3).map((e,i)=><div key={i} style={{color:T.red}}>Meta: {e}</div>)}
+          </div></Card>
+        )}
+        {tab==="hora" && data && (
+          <Card T={T} padding="sm" style={{overflowX:"auto"}}>
+            {horas.length===0 ? <DSEmpty T={T} icon="clock" title="Sin movimientos en el período" subtitle="Cuando entren ventas por el webhook o haya gasto de Meta, aparecen acá."/> : (
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr><th style={{...th,textAlign:"left"}}>Hora</th><th style={{...th,textAlign:"left",width:"30%"}}></th><th style={th}>Ventas</th><th style={th}>N°</th><th style={th}>Gasto</th><th style={th}>Comisiones</th><th style={th}>Reemb.</th><th style={th}>Ganancia</th><th style={th}>ROAS</th></tr></thead>
+                <tbody>{horas.map(h=>{ const g=h.ventas-h.reembolsos-h.comisiones-h.gasto; return (
+                  <tr key={h.fecha+h.hora} style={{borderTop:`1px solid ${T.borderL||T.border}`}}>
+                    <td style={{...td,textAlign:"left",color:T.textMd}}>{desde!==hasta?h.fecha.slice(5).split("-").reverse().join("/")+" ":""}{String(h.hora).padStart(2,"0")}:00</td>
+                    <td style={{padding:"8px 10px"}}><div style={{display:"flex",flexDirection:"column",gap:2}}><div style={{height:5,borderRadius:DS.r.full,background:T.green,width:`${h.ventas/maxV*100}%`}}/><div style={{height:5,borderRadius:DS.r.full,background:T.blue,width:`${h.gasto/maxV*100}%`}}/></div></td>
+                    <td style={td}>{GH_FMT_USD(h.ventas)}</td><td style={td}>{h.n||""}</td><td style={td}>{GH_FMT_USD(h.gasto)}</td><td style={td}>{GH_FMT_USD(h.comisiones)}</td><td style={td}>{h.reembolsos?GH_FMT_USD(h.reembolsos):""}</td>
+                    <td style={{...td,fontWeight:DS.w.bold,color:g>=0?T.green:T.red}}>{GH_FMT_USD(g)}</td><td style={td}>{h.gasto?(h.ventas/h.gasto).toFixed(2):"—"}</td>
+                  </tr>);})}</tbody>
+              </table>)}
+          </Card>
+        )}
+        {tab==="pais" && data && (
+          <Card T={T} padding="sm" style={{overflowX:"auto"}}>
+            <div style={{fontSize:DS.font.sm,color:T.textSm,padding:"6px 10px"}}>El gasto de Meta es por cuenta publicitaria; acá va el total arriba y por país solo lo que se vendió.</div>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr><th style={{...th,textAlign:"left"}}>País</th><th style={th}>Ventas</th><th style={th}>N°</th><th style={th}>Comisiones</th><th style={th}>Reemb.</th><th style={th}>Neto</th></tr></thead>
+              <tbody>{Object.values(porPais).sort((a,b)=>b.ventas-a.ventas).map(p=>(
+                <tr key={p.pais} style={{borderTop:`1px solid ${T.borderL||T.border}`}}><td style={{...td,textAlign:"left",fontWeight:DS.w.semibold}}>{p.pais}</td><td style={td}>{GH_FMT_USD(p.ventas)}</td><td style={td}>{p.n}</td><td style={td}>{GH_FMT_USD(p.comisiones)}</td><td style={td}>{p.reembolsos?GH_FMT_USD(p.reembolsos):""}</td><td style={{...td,fontWeight:DS.w.bold}}>{GH_FMT_USD(p.ventas-p.comisiones-p.reembolsos)}</td></tr>
+              ))}</tbody>
+            </table>
+          </Card>
+        )}
+        {tab==="config" && (
+          <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+            <Card T={T}>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:6}}>1. Webhook de Impultienda</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.6,marginBottom:DS.sp.md}}>En Impultienda: Configuraciones → Webhooks → Agregar endpoint. Pegá esta URL, marcá order.approved, order.refunded y order.chargeback, y copiá acá la clave de firma que te da.</div>
+              <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap"}}>
+                <input readOnly value={cfg?.url||"…"} style={{...inp,flex:1,minWidth:260}} onFocus={e=>e.target.select()}/>
+                <Btn T={T} variant="secondary" onClick={()=>{ try{ navigator.clipboard.writeText(cfg?.url||""); toast("URL copiada","success"); }catch(_){} }}>Copiar</Btn>
+              </div>
+              <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",marginTop:DS.sp.md}}>
+                <input type="password" value={secret} onChange={e=>setSecret(e.target.value)} placeholder={cfg?.tieneFirma?"Clave de firma guardada (pegá otra para cambiarla)":"Clave de firma del endpoint"} style={{...inp,flex:1,minWidth:260}}/>
+                <Btn T={T} onClick={()=>guardar()} disabled={guardando||!secret.trim()}>Guardar clave</Btn>
+              </div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:DS.sp.sm}}>{cfg?.tieneFirma?"✓ Clave de firma cargada":"Falta la clave de firma"} · {cfg?.ordenes||0} órdenes recibidas{cfg?.ultimaPrueba?` · última prueba ${new Date(cfg.ultimaPrueba).toLocaleString("es-AR")}`:""}</div>
+            </Card>
+            <Card T={T}>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:6}}>2. Comisiones reales de Stripe</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.6,marginBottom:DS.sp.md}}>En Stripe: Desarrolladores → Claves de API → Crear clave restringida, con permiso de LECTURA en Balance transactions, Charges, Refunds y Disputes. Pegala acá: se guarda cifrada. Mientras una venta no se cruza con su cobro, se usa la comisión estimada.</div>
+              <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap"}}>
+                <input type="password" value={stripeKey} onChange={e=>setStripeKey(e.target.value)} placeholder={cfg?.tieneStripe?"Clave guardada (pegá otra para cambiarla)":"rk_live_…"} style={{...inp,flex:1,minWidth:260}}/>
+                <Btn T={T} onClick={()=>guardar()} disabled={guardando||!stripeKey.trim()}>Guardar clave</Btn>
+                {cfg?.tieneStripe && <Btn T={T} variant="ghost" onClick={()=>guardar({stripe_key:null})} disabled={guardando}>Quitar</Btn>}
+              </div>
+              <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.md,flexWrap:"wrap"}}>
+                <span style={{fontSize:DS.font.sm,color:T.textMd}}>Comisión estimada:</span>
+                <input value={fee.pct} onChange={e=>setFee({...fee,pct:e.target.value})} style={{...inp,width:70}}/><span style={{fontSize:DS.font.sm,color:T.textSm}}>% +</span>
+                <input value={fee.fijo} onChange={e=>setFee({...fee,fijo:e.target.value})} style={{...inp,width:70}}/><span style={{fontSize:DS.font.sm,color:T.textSm}}>US$ por venta</span>
+                <Btn T={T} size="sm" variant="secondary" onClick={()=>guardar()} disabled={guardando}>Guardar</Btn>
+              </div>
+            </Card>
+            <Card T={T}>
+              <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:6}}>3. País de cada tienda</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.6,marginBottom:DS.sp.md}}>Las tiendas aparecen solas con la primera venta. Si no ponés el país, se usa el del comprador.</div>
+              {Object.keys(cfg?.tiendas||{}).length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>Todavía no llegó ninguna venta.</div> :
+                Object.entries(cfg.tiendas).map(([id,ti])=>(
+                  <div key={id} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",padding:"6px 0"}}>
+                    <span style={{flex:1,fontSize:DS.font.base,color:T.text}}>{ti.nombre||id}</span>
+                    <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" style={{...inp,width:80}}/>
+                  </div>))}
+              {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar países</Btn></div>}
+            </Card>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AppCalendarioPagos({T,user,onHome}){
   const iS=InputStyle(T);
   const hoy=hoyAR();
@@ -24339,7 +24517,7 @@ function AdmConfig({ctx}) {
   const q=nuevo.trim().toLowerCase(); const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null; const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
   const upd=patch=>setEnvCfg(c=>({...(c||{habilitados:[]}),...patch}));
   const clienteBtn=(uid,label)=><button onClick={()=>usuariosPorUid[uid]&&setCuenta(uid)} style={{background:"transparent",border:"none",padding:0,cursor:usuariosPorUid[uid]?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{label}</button>;
-  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub&&!it.soloDeposito);
+  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub&&!it.soloDeposito&&!it.soloAdmin);
   return (
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
@@ -46325,7 +46503,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario","deposito"];
+  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario","deposito","porhora"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   // "equipo" fue sección propia hasta el 28/sep/2026; hoy es la pestaña Equipo
   // de Tareas (#/equipo y #/tareas/equipo abren esa pestaña).
@@ -47363,6 +47541,7 @@ export default function App() {
         // La dueña, dentro de Growith, opera como un cliente más (25/sep): la consola va por el link.
         : <PageView T={T} pageKey="deposito"><AppDeposito T={T} user={user} info={depositoInfo.rol==="owner"?{...depositoInfo,rol:null}:depositoInfo} onHome={()=>setPage("home")}/></PageView>)
     : <div style={{padding:40}}><DSEmpty T={T} title={depositoInfo===null?"Cargando…":depositoInfo?.error?"No pudimos consultar el depósito":"Esta sección no está disponible para tu cuenta"} subtitle={depositoInfo===null?"":depositoInfo?.error?"Revisá tu conexión y volvé a intentar.":"El depósito se habilita por cliente. Si tu mercadería se despacha desde nuestro depósito, pedinos el alta."} action={depositoInfo?.error?<Btn T={T} variant="secondary" onClick={()=>window.location.reload()}>Reintentar</Btn>:null}/></div>;
+  else if(page==="porhora") pageContent = isAdmin ? <PageView T={T} pageKey="porhora"><AppPorHora T={T} user={user}/></PageView> : null;
   else if(page==="calendario") pageContent = <PageView T={T} pageKey="calendario"><AppCalendarioPagos T={T} user={user} onHome={()=>setPage("home")}/></PageView>;
   else if(page==="demo") pageContent = (String(user?.email||"").toLowerCase()===DEMO_EMAIL_UI||isAdmin) ? <PageView T={T} pageKey="demo"><AppDemo T={T} user={user} authUid={authUser?.uid} onSwitchOrg={onSwitchOrg} onHome={()=>setPage("home")}/></PageView> : null;
   else if(page==="envios") pageContent = adminGate("envios") || planGate("medio") || requiereTN("Envíos") || <PageView T={T} pageKey="envios"><AppEnvios depositoCliente={depositoInfo?.cliente||null} depositoCfg={depositoInfo||null} T={T} orders={orders} ordersStatus={ordersStatus} fetchOrders={(tab)=>fetchOrders(user?.uid,tab)} user={user} onHome={()=>setPage("home")} canjesPedidos={canjesPedidos} tab={enviosTab} setTab={setEnviosTab}/></PageView>;
