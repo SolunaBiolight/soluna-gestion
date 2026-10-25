@@ -263,7 +263,9 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
       const esperado = curCh === String(o.buyer_moneda || "").toUpperCase() && o.buyer_total != null ? Number(o.buyer_total) : (curCh === String(o.moneda || "").toUpperCase() ? o.total : null);
       return esperado == null ? false : Math.abs(montoCh - esperado) <= Math.max(0.02, esperado * 0.01);
     });
-    if (cand.length !== 1) continue;
+    if (!cand.length) continue;
+    // Varios cobros iguales en la ventana (mismo monto, sin email en el cobro): el más cercano en tiempo a la aprobación.
+    cand.sort((x, y) => Math.abs(x.created * 1000 - tAp) - Math.abs(y.created * 1000 - tAp));
     const t = cand[0]; usados.add(t.id);
     const fee = aUsd(t.fee / 100, t.currency, fx);
     if (fee == null) continue;
