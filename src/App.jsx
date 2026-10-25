@@ -19579,14 +19579,16 @@ function GhImpVentasLista({T,ventas,prom}){
     </Card>
   </>);
 }
-function ghImpCardsDe(t, serie, nTiendas, fijos=0, fijosMes=0){
+function ghImpCardsDe(t0, serie, nTiendas, fijos=0, fijosMes=0){
+  // El profit ya descuenta los gastos fijos del período.
+  const t={...t0, ganancia:t0.ganancia-fijos}; t.margen=t.ventas?t.ganancia/t.ventas:null;
   const usd=GH_FMT_USD, x=(v)=>v!=null&&isFinite(v)?v.toFixed(2)+"x":"—", pct=(v)=>v!=null&&isFinite(v)?(v*100).toFixed(1)+"%":"—";
   const neto=t.ventas-t.comisiones-t.reembolsos; // todo descontado, antes de pauta
   const be=neto>0?t.ventas/neto:null, trueRoas=t.gasto?neto/t.gasto:null, cpaBE=t.n?neto/t.n:null, aov=t.n?t.ventas/t.n:null;
   const sp=(f)=>serie.map(f);
   return [
     {label:"Revenue total", val:usd(t.ventas), hero:true, accent:GH_MC.blue, hint:"Front + post-compra", spk:sp(d=>d.ventas)},
-    {label:"Profit", val:usd(t.ganancia), hero:true, tint:t.ganancia>=0?GH_MC.green:GH_MC.red, accent:t.ganancia>=0?GH_MC.green:GH_MC.red, valColor:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:"Ganancia neta", spk:sp(d=>d.ganancia)},
+    {label:"Profit", val:usd(t.ganancia), hero:true, tint:t.ganancia>=0?GH_MC.green:GH_MC.red, accent:t.ganancia>=0?GH_MC.green:GH_MC.red, valColor:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:fijos?"Ganancia neta, con gastos fijos":"Ganancia neta", spk:sp(d=>d.ganancia)},
     {label:"Ad Spend", val:usd(t.gasto), hero:true, accent:GH_MC.violet, hint:"Meta", spk:sp(d=>d.gasto)},
     {label:"Break Even", val:x(be), hero:true, accent:GH_MC.gold, hint:"ROAS de equilibrio"},
     {label:"ROAS", val:x(t.roas), accent:GH_MC.blue, hint:"Revenue / Ad Spend", spk:sp(d=>d.gasto?d.ventas/d.gasto:0), bad:be!=null&&t.roas!=null&&t.roas<be},
@@ -19604,7 +19606,7 @@ function ghImpCardsDe(t, serie, nTiendas, fijos=0, fijosMes=0){
     {label:"% post-compra", val:pct(t.n?(t.nUpsell||0)/t.n:null), accent:GH_MC.green, hint:`${t.nUpsell||0} upsells cada ${t.n||0} ventas front`},
     {label:"Gastos fijos", val:usd(fijos), accent:GH_MC.red, hint:fijosMes?`${usd(fijosMes)} por mes, repartido por día`:"Cargalos en Dashboard → Conexión"},
     {label:"Por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Facturación promedio · ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
-    {label:"Profit neto", val:usd(t.ganancia-fijos), hero:false, accent:(t.ganancia-fijos)>=0?GH_MC.green:GH_MC.red, valColor:(t.ganancia-fijos)>=0?GH_MC.green:GH_MC.red, hint:"Profit menos gastos fijos: lo que te queda"},
+    {label:"Ganancia por venta", val:usd(t.n?t.ganancia/t.n:null), accent:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:"Lo que te deja cada venta front, con upsells, comisiones, Meta y fijos", bad:t.ganancia<0},
   ];
 }
 function ghImpSumar(filas){

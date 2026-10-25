@@ -469,8 +469,9 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
 }
 
 // Las 16 métricas del Dashboard digital, calculadas en Growith (las usa también el conector de Claude).
-export function metricasDigitales(t, nTiendas) {
+export function metricasDigitales(t0, nTiendas) {
   const r2 = (x) => x == null || !isFinite(x) ? null : Math.round(x * 100) / 100;
+  const t = { ...t0, ganancia: t0.ganancia - (t0.fijos || 0) }; // el profit descuenta los gastos fijos del período
   const neto = t.ventas - t.comisiones - t.reembolsos;
   return {
     revenue: r2(t.ventas), profit: r2(t.ganancia), ad_spend: r2(t.gasto),
@@ -480,6 +481,7 @@ export function metricasDigitales(t, nTiendas) {
     ventas: t.n, aov: r2(t.n ? t.ventas / t.n : null), facturacion_promedio_por_tienda: r2(nTiendas ? t.ventas / nTiendas : null),
     comisiones: r2(t.comisiones), comisiones_estimadas: r2(t.comisionesEstimadas),
     revenue_front: r2(t.front), ventas_front: t.nFront, revenue_backend_postcompra: r2(t.upsell), upsells: t.nUpsell,
+    gastos_fijos: r2(t0.fijos || 0), ganancia_por_venta: r2(t.n ? t.ganancia / t.n : null),
     take_rate_upsell_pct: r2(t.nFront ? t.nUpsell / t.nFront * 100 : null), reembolsos: r2(t.reembolsos),
   };
 }
