@@ -19605,8 +19605,8 @@ function ghImpCardsDe(t0, serie, nTiendas, fijos=0, fijosMes=0){
     {label:"Reembolsos", val:usd(t.reembolsos), accent:GH_MC.red, hint:t.ventas?`${pct(t.reembolsos/t.ventas)} de la facturación · incluye contracargos`:"Incluye contracargos", bad:t.ventas>0&&t.reembolsos/t.ventas>0.05},
     {label:"% post-compra", val:pct(t.n?(t.nUpsell||0)/t.n:null), accent:GH_MC.green, hint:`${t.nUpsell||0} upsells cada ${t.n||0} ventas front`},
     {label:"Gastos fijos", val:usd(fijos), accent:GH_MC.red, hint:fijosMes?`${usd(fijosMes)} por mes, repartido por día`:"Cargalos en Dashboard → Conexión"},
-    {label:"Por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Facturación promedio · ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
-    {label:"Ganancia por venta", val:usd(t.n?t.ganancia/t.n:null), accent:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:"Lo que te deja cada venta front, con upsells, comisiones, Meta y fijos", bad:t.ganancia<0},
+    {label:"Facturación por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Promedio entre ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
+    {label:"Ganancia por tienda", val:usd(nTiendas?t.ganancia/nTiendas:null), accent:t.ganancia>=0?GH_MC.green:GH_MC.red, valColor:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:`Profit promedio entre ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`, bad:t.ganancia<0},
   ];
 }
 function ghImpSumar(filas){
