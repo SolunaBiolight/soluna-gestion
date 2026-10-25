@@ -357,7 +357,16 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const fx = await fxPorUsd();
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
   const [stripe, mp] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs)]);
-  const feePct = Number(cfg.feePct ?? 2.9), feeFijo = Number(cfg.feeFijo ?? 0.3);
+  // Con Stripe conectado, la comisión de las ventas que no se pudieron cruzar es el PROMEDIO REAL de las cruzadas
+  // (no un % cargado a mano). Sin Stripe o con pocas cruzadas, el estimado del cliente.
+  const conFee = ordenes.filter(o => o.stripe?.fee != null);
+  let pctReal = null;
+  if (cfg.stripeEnc && conFee.length >= 5) {
+    const sm = conFee.reduce((a, o) => { a.f += o.stripe.fee; a.u += aUsd(Number(o.total) || 0, o.moneda, fx) || 0; return a; }, { f: 0, u: 0 });
+    if (sm.u > 0) pctReal = sm.f / sm.u * 100;
+  }
+  const feePct = pctReal ?? Number(cfg.feePct ?? 2.9), feeFijo = pctReal != null ? 0 : Number(cfg.feeFijo ?? 0.3);
+  const ventasLista = [];
   const paises = cfg.paises || {};
   const tiendasMap = {};
   for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendasMap[id] = { id, nombre: t.nombre || id, pais: paises[id] || t.pais || null, votos: {} };
@@ -393,6 +402,11 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       const com = real != null ? real : usd * feePct / 100 + feeFijo;
       f.comisiones += com; if (real == null) f.comisionesEstimadas += com;
       cv.comisiones += com;
+      ventasLista.push({ orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
+        total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
+        comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
+        pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: o.utm?.utm_content || null, importado: !!o.importado,
+        reembolsada: !!(o.ev_refunded || o.ev_chargeback) });
     }
     // Reembolso y contracargo restan cuando ocurren (solo si la venta se había aprobado).
     for (const ev of ["ev_refunded", "ev_chargeback"]) {
@@ -422,7 +436,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
-  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
+  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, comisionPromedio: { pct: feePct, fijo: feeFijo, real: pctReal != null, cruzadas: conFee.length }, ventas: ventasLista.sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 2000), fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
 }
 
 // Las 16 métricas del Dashboard digital, calculadas en Growith (las usa también el conector de Claude).
@@ -583,7 +597,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v5_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v6_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });

@@ -19529,6 +19529,47 @@ function GhImpCards({T,cards,editar,setEditar}){
     </div>
   </>);
 }
+// Ventas una por una (debajo de las tiendas): para controlar la comisión de cada cobro.
+function GhImpVentasLista({T,ventas,prom}){
+  const [abierta,setAbierta]=useState(null);
+  const [n,setN]=useState(50);
+  const [q,setQ]=useState("");
+  const lista=ventas.filter(v=>!q||String(v.orden).includes(q)||String(v.tienda).toLowerCase().includes(q.toLowerCase()));
+  if(!ventas.length) return null;
+  const th={textAlign:"right",padding:"8px 10px",fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.semibold,whiteSpace:"nowrap"};
+  const td={textAlign:"right",padding:"9px 10px",fontSize:DS.font.md,color:T.text,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
+  const FUENTE={stripe:["Stripe",T.green],mercadopago:["Mercado Pago",T.blue],estimada:["Estimada",T.orange]};
+  return (<>
+    <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"14px 0 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>Ventas · una por una
+      <span style={{fontSize:DS.font.sm,fontWeight:500,color:T.textSm}}>{lista.length} {prom?`· estimadas al ${prom.pct.toFixed(1)}%${prom.real?" (promedio real de Stripe)":" (cargado a mano)"}`:""}</span>
+      <input value={q} onChange={e=>{setQ(e.target.value);setN(50);}} placeholder="Buscar orden o tienda…" style={{...InputStyle(T),marginLeft:"auto",width:200,fontSize:DS.font.sm}}/>
+    </div>
+    <Card T={T} padding="sm" style={{overflowX:"auto"}}>
+      <table style={{width:"100%",borderCollapse:"collapse"}}>
+        <thead><tr><th style={{...th,textAlign:"left"}}>Fecha</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={{...th,textAlign:"left"}}>Orden</th><th style={th}>Total</th><th style={th}>Comisión</th><th style={th}>%</th><th style={th}>Neto</th></tr></thead>
+        <tbody>{lista.slice(0,n).map(v=>{ const k=String(v.orden)+v.at; const ab=abierta===k; const [fl,fc]=FUENTE[v.fuente]||FUENTE.estimada; return (
+          <React.Fragment key={k}>
+            <tr onClick={()=>setAbierta(ab?null:k)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:"pointer",opacity:v.reembolsada?0.5:1}} className="gh-hover-surface">
+              <td style={{...td,textAlign:"left",color:T.textMd}}>{v.fecha.slice(5).split("-").reverse().join("/")} {String(v.hora).padStart(2,"0")}:{String(new Date(v.at).getUTCMinutes()).padStart(2,"0")}</td>
+              <td style={{...td,textAlign:"left",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{v.tienda}</td>
+              <td style={{...td,textAlign:"left"}}>#{v.orden}{v.post_compra && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"1px 7px"}}>POST-COMPRA</span>}{v.reembolsada && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:99,padding:"1px 7px"}}>REEMBOLSADA</span>}</td>
+              <td style={td}>{GH_FMT_USD(v.total)}</td>
+              <td style={td}>{GH_FMT_USD(v.comision)} <span style={{fontSize:10,fontWeight:700,color:fc,background:fc+"18",borderRadius:99,padding:"1px 7px",marginLeft:4}}>{fl}</span></td>
+              <td style={{...td,color:T.textMd}}>{v.total?(v.comision/v.total*100).toFixed(1)+"%":"—"}</td>
+              <td style={{...td,fontWeight:DS.w.bold}}>{GH_FMT_USD(v.total-v.comision)}</td>
+            </tr>
+            {ab && <tr style={{background:T.bg}}><td colSpan={7} style={{padding:"10px 14px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"6px 18px",fontSize:DS.font.sm}}>
+                {[["Cobrado",`${v.totalOriginal.toLocaleString("es-AR",{maximumFractionDigits:2})} ${v.monedaOriginal}`],["Pasarela",v.pasarela||"—"],["Comisión",v.fuente==="stripe"?"Real, leída de Stripe":v.fuente==="mercadopago"?"Real, leída de Mercado Pago":`Estimada (${prom?.pct?.toFixed(1)||"?"}%)${v.importado?" · venta importada sin email: no se puede cruzar":""}`],["ID de Stripe",v.stripe_id||"—"],["Campaña (UTM)",v.campana||"—"],["Anuncio (UTM)",v.anuncio||"—"]].map(([l,x])=>(
+                  <div key={l}><div style={{color:T.textSm}}>{l}</div><div style={{color:T.text,fontWeight:DS.w.semibold,wordBreak:"break-all"}}>{x}</div></div>))}
+              </div>
+            </td></tr>}
+          </React.Fragment>); })}</tbody>
+      </table>
+      {lista.length>n && <div style={{textAlign:"center",padding:10}}><Btn T={T} size="sm" variant="secondary" onClick={()=>setN(n+100)}>Ver más ({lista.length-n})</Btn></div>}
+    </Card>
+  </>);
+}
 function ghImpCardsDe(t, serie, nTiendas){
   const usd=GH_FMT_USD, x=(v)=>v!=null&&isFinite(v)?v.toFixed(2)+"x":"—", pct=(v)=>v!=null&&isFinite(v)?(v*100).toFixed(1)+"%":"—";
   const neto=t.ventas-t.comisiones-t.reembolsos; // todo descontado, antes de pauta
@@ -19621,12 +19662,15 @@ function ImpultiendaConexion({T,uid,onCambio}){
           <Btn T={T} onClick={()=>guardar()} disabled={guardando||!stripeKey.trim()}>Guardar clave</Btn>
           {cfg?.tieneStripe && <Btn T={T} variant="ghost" onClick={()=>guardar({stripe_key:null})} disabled={guardando}>Quitar</Btn>}
         </div>
+        {cfg?.tieneStripe ? (
+          <div style={{marginTop:DS.sp.md,fontSize:DS.font.sm,color:T.green,lineHeight:1.55}}>✓ Stripe conectado: Growith toma la comisión real de cada venta. Las pocas que no se pueden cruzar con su cobro (por ejemplo, ventas importadas sin email) usan el promedio real de tus comisiones de Stripe, no un % cargado a mano.</div>
+        ) : (
         <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.md,flexWrap:"wrap"}}>
           <span style={{fontSize:DS.font.sm,color:T.textMd}}>Comisión estimada:</span>
           <input value={fee.pct} onChange={e=>setFee({...fee,pct:e.target.value})} style={{...inp,width:70}}/><span style={{fontSize:DS.font.sm,color:T.textSm}}>% +</span>
           <input value={fee.fijo} onChange={e=>setFee({...fee,fijo:e.target.value})} style={{...inp,width:70}}/><span style={{fontSize:DS.font.sm,color:T.textSm}}>US$ por venta</span>
           <Btn T={T} size="sm" variant="secondary" onClick={()=>guardar()} disabled={guardando}>Guardar</Btn>
-        </div>
+        </div>)}
       </Card>
       <Card T={T}>
         <div style={tit}>3. Tus tiendas y su código</div>
@@ -19804,6 +19848,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
                 </Card>);})}
             </div>
             {tiendas.some(x=>x.id==="SIN_ASIGNAR") && (()=>{ const s=ghImpSumar(filas.filter(f=>f.tienda==="SIN_ASIGNAR")); return s.gasto>0.01 ? <div style={{fontSize:DS.font.sm,color:T.textMd}}>{GH_FMT_USD(s.gasto)} de anuncios no se pudo asignar a una tienda: la campaña no tiene el código de país de ninguna tienda en el nombre. Está en el total principal.</div> : null; })()}
+            <GhImpVentasLista T={T} ventas={data.ventas||[]} prom={data.comisionPromedio} tiendaSel={null}/>
           </>)}
           {vista==="hora" && data && filas.length>0 && (<>
             {kpis(ghImpSumar(filasH),false)}
