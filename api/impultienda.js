@@ -225,13 +225,14 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
   const key = descifrar(cfg.stripeEnc);
   if (!key) return { conectado: false };
   const txs = [];
-  let url = `https://api.stripe.com/v1/balance_transactions?limit=100&type=charge&created[gte]=${Math.floor(desdeMs / 1000) - 900}&created[lte]=${Math.floor(hastaMs / 1000) + 900}&expand[]=data.source`;
+  let url = `https://api.stripe.com/v1/balance_transactions?limit=100&created[gte]=${Math.floor(desdeMs / 1000) - 900}&created[lte]=${Math.floor(hastaMs / 1000) + 900}&expand[]=data.source`;
   try {
     for (let i = 0; i < 30; i++) {
       const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
       const j = await r.json();
       if (j.error) return { conectado: true, error: j.error.message };
-      txs.push(...(j.data || []));
+      // Cobros con tarjeta (charge) y con métodos locales o en otra moneda (payment: BLIK, P24, etc.).
+      txs.push(...(j.data || []).filter(t => t.type === "charge" || t.type === "payment"));
       if (!j.has_more || !j.data?.length) break;
       url = url.replace(/&starting_after=[^&]*/, "") + `&starting_after=${j.data[j.data.length - 1].id}`;
     }
