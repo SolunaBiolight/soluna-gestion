@@ -253,16 +253,25 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
     if (o.pasarela && o.pasarela !== "stripe" && o.pasarela !== "card") continue;
     const tAp = Date.parse(o.ev_approved || "");
     if (!isFinite(tAp)) continue;
-    const cand = txs.filter(t => {
+    const montoOk = (t) => {
+      const ch = t.source || {};
+      const montoCh = (ch.amount || 0) / 100, curCh = String(ch.currency || "").toUpperCase();
+      const esperado = curCh === String(o.buyer_moneda || "").toUpperCase() && o.buyer_total != null ? Number(o.buyer_total) : (curCh === String(o.moneda || "").toUpperCase() ? o.total : null);
+      if (esperado != null && Math.abs(montoCh - esperado) <= Math.max(0.02, esperado * 0.01)) return true;
+      // Si la moneda del cobro no coincide (cobro convertido), se compara en dólares con un 3% de margen.
+      const uTx = aUsd(t.amount / 100, t.currency, fx), uO = aUsd(Number(o.total) || 0, o.moneda, fx);
+      return uTx != null && uO ? Math.abs(uTx - uO) <= uO * 0.03 : false;
+    };
+    let cand = txs.filter(t => {
       if (usados.has(t.id)) return false;
       const ch = t.source || {};
       const mail = String(ch.billing_details?.email || ch.receipt_email || "").toLowerCase();
       if (o.email && mail && mail !== o.email) return false;
       if (Math.abs(t.created * 1000 - tAp) > 10 * 60000) return false;
-      const montoCh = (ch.amount || 0) / 100, curCh = String(ch.currency || "").toUpperCase();
-      const esperado = curCh === String(o.buyer_moneda || "").toUpperCase() && o.buyer_total != null ? Number(o.buyer_total) : (curCh === String(o.moneda || "").toUpperCase() ? o.total : null);
-      return esperado == null ? false : Math.abs(montoCh - esperado) <= Math.max(0.02, esperado * 0.01);
+      return montoOk(t);
     });
+    // Segunda pasada: mismo monto, hasta 30 min de diferencia y sin exigir el email (pagos locales que se aprueban más tarde o con otro mail).
+    if (!cand.length) cand = txs.filter(t => !usados.has(t.id) && Math.abs(t.created * 1000 - tAp) <= 30 * 60000 && montoOk(t));
     if (!cand.length) continue;
     // Varios cobros iguales en la ventana (mismo monto, sin email en el cobro): el más cercano en tiempo a la aprobación.
     cand.sort((x, y) => Math.abs(x.created * 1000 - tAp) - Math.abs(y.created * 1000 - tAp));
