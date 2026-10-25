@@ -283,7 +283,8 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
     escrituras++; cruzadas++;
   }
   if (escrituras) await batch.commit().catch(() => {});
-  return { conectado: true, cruzadas, transacciones: txs.length };
+  const sueltos = txs.filter(t => !usados.has(t.id)).slice(0, 30).map(t => ({ creado: new Date(t.created * 1000).toISOString(), tipo: t.type, monto: t.amount / 100, moneda: t.currency, cobro: (t.source?.amount || 0) / 100, monedaCobro: t.source?.currency || null, conMail: !!(t.source?.billing_details?.email || t.source?.receipt_email) }));
+  return { conectado: true, cruzadas, transacciones: txs.length, sueltos };
 }
 
 // ── Mercado Pago: comisión real por venta (cuenta conectada como "Mercado Pago") ──
