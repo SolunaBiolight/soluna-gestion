@@ -19546,7 +19546,7 @@ function GhImpVentasLista({T,ventas,prom}){
     </div>
     <Card T={T} padding="sm" style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead><tr><th style={{...th,textAlign:"left"}}>Fecha</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={{...th,textAlign:"left"}}>Orden</th><th style={th}>Total</th><th style={th}>Comisión</th><th style={th}>%</th><th style={th}>Neto</th></tr></thead>
+        <thead><tr><th style={{...th,textAlign:"left"}}>Fecha</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={{...th,textAlign:"left"}}>Orden</th><th style={th}>Total</th><th style={th}>Comisión</th><th style={th}>Meta</th><th style={th}>Profit</th></tr></thead>
         <tbody>{lista.slice(0,n).map(v=>{ const k=String(v.orden)+v.at; const ab=abierta===k; const [fl,fc]=FUENTE[v.fuente]||FUENTE.estimada; return (
           <React.Fragment key={k}>
             <tr onClick={()=>setAbierta(ab?null:k)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:"pointer",opacity:v.reembolsada?0.5:1}} className="gh-hover-surface">
@@ -19555,13 +19555,22 @@ function GhImpVentasLista({T,ventas,prom}){
               <td style={{...td,textAlign:"left"}}>#{v.orden}{v.post_compra && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"1px 7px"}}>POST-COMPRA</span>}{v.reembolsada && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:99,padding:"1px 7px"}}>REEMBOLSADA</span>}</td>
               <td style={td}>{GH_FMT_USD(v.total)}</td>
               <td style={td}>{GH_FMT_USD(v.comision)} <span style={{fontSize:10,fontWeight:700,color:fc,background:fc+"18",borderRadius:99,padding:"1px 7px",marginLeft:4}}>{fl}</span></td>
-              <td style={{...td,color:T.textMd}}>{v.total?(v.comision/v.total*100).toFixed(1)+"%":"—"}</td>
-              <td style={{...td,fontWeight:DS.w.bold}}>{GH_FMT_USD(v.total-v.comision)}</td>
+              <td style={{...td,color:T.textMd}}>{GH_FMT_USD(v.meta||0)}</td>
+              <td style={{...td,fontWeight:DS.w.bold,color:(v.profit??0)>=0?T.green:T.red}}>{GH_FMT_USD(v.profit??(v.total-v.comision))}</td>
             </tr>
             {ab && <tr style={{background:T.bg}}><td colSpan={7} style={{padding:"10px 14px"}}>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"6px 18px",fontSize:DS.font.sm}}>
-                {[["Cobrado",`${v.totalOriginal.toLocaleString("es-AR",{maximumFractionDigits:2})} ${v.monedaOriginal}`],["Pasarela",v.pasarela||"—"],["Comisión",v.fuente==="stripe"?"Real, leída de Stripe":v.fuente==="mercadopago"?"Real, leída de Mercado Pago":`Estimada (${prom?.pct?.toFixed(1)||"?"}%)${v.importado?" · venta importada sin email: no se puede cruzar":""}`],["ID de Stripe",v.stripe_id||"—"],["Campaña (UTM)",v.campana||"—"],["Anuncio (UTM)",v.anuncio||"—"]].map(([l,x])=>(
-                  <div key={l}><div style={{color:T.textSm}}>{l}</div><div style={{color:T.text,fontWeight:DS.w.semibold,wordBreak:"break-all"}}>{x}</div></div>))}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18}}>
+                <div style={{fontSize:DS.font.sm}}>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:6}}>De dónde sale el profit</div>
+                  {[["Venta",v.total,T.text],...((v.comisionDetalle&&v.comisionDetalle.length)?v.comisionDetalle.map(d=>[`− ${d.desc}`,-d.monto,T.textMd]):[[`− Comisión ${v.fuente==="estimada"?`estimada (${prom?.pct?.toFixed(1)||"?"}%)`:v.fuente==="stripe"?"de Stripe":"de Mercado Pago"}`,-v.comision,T.textMd]]),["− Meta Ads (parte de esta venta)",-(v.meta||0),T.textMd]].map(([l,x,c],ix)=>(
+                    <div key={ix} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"3px 0",color:c}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{GH_FMT_USD(x)}</span></div>))}
+                  <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0 0",marginTop:4,borderTop:`1px solid ${T.border}`,fontWeight:800,color:(v.profit??0)>=0?T.green:T.red}}><span>Profit</span><span>{GH_FMT_USD(v.profit??0)} {v.total?`(${((v.profit??0)/v.total*100).toFixed(0)}%)`:""}</span></div>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:6,lineHeight:1.45}}>Meta: gasto de su tienda ese día repartido según cuánto pesó esta venta en la facturación del día.</div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 14px",fontSize:DS.font.sm,alignContent:"start"}}>
+                  {[["Cobrado",`${v.totalOriginal.toLocaleString("es-AR",{maximumFractionDigits:2})} ${v.monedaOriginal}`],["Pasarela",v.pasarela||"—"],["Comisión",v.fuente==="stripe"?"Real, de Stripe":v.fuente==="mercadopago"?"Real, de Mercado Pago":`Estimada${v.importado?" · importada sin email":""}`],["ID de Stripe",v.stripe_id||"—"],["Campaña (UTM)",v.campana||"—"],["Anuncio (UTM)",v.anuncio||"—"]].map(([l,x])=>(
+                    <div key={l}><div style={{color:T.textSm}}>{l}</div><div style={{color:T.text,fontWeight:DS.w.semibold,wordBreak:"break-all"}}>{x}</div></div>))}
+                </div>
               </div>
             </td></tr>}
           </React.Fragment>); })}</tbody>

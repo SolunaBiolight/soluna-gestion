@@ -240,8 +240,15 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
   const usados = new Set();
   let cruzadas = 0;
   const batch = db.batch(); let escrituras = 0;
+  // Desglose de la comisión que da Stripe (procesamiento, internacional, conversión, impuestos…).
+  const detDe = (t) => (t.fee_details || []).map(d => ({ tipo: d.type, desc: d.description || d.type, monto: aUsd(d.amount / 100, d.currency, fx) ?? 0 }));
+  const porBt = Object.fromEntries(txs.map(t => [t.id, t]));
   for (const o of ordenes) {
-    if (o.stripe?.bt) { usados.add(o.stripe.bt); cruzadas++; continue; }
+    if (o.stripe?.bt) {
+      usados.add(o.stripe.bt); cruzadas++;
+      if (!o.stripe.det && porBt[o.stripe.bt]) { const t = porBt[o.stripe.bt]; o.stripe = { ...o.stripe, det: detDe(t), neto: aUsd(t.net / 100, t.currency, fx) }; batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(o.order_id), { stripe: o.stripe }, { merge: true }); escrituras++; }
+      continue;
+    }
     if (o.pasarela && o.pasarela !== "stripe" && o.pasarela !== "card") continue;
     const tAp = Date.parse(o.ev_approved || "");
     if (!isFinite(tAp)) continue;
@@ -259,7 +266,7 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
     const t = cand[0]; usados.add(t.id);
     const fee = aUsd(t.fee / 100, t.currency, fx);
     if (fee == null) continue;
-    o.stripe = { bt: t.id, fee, at: new Date().toISOString() };
+    o.stripe = { bt: t.id, fee, det: detDe(t), neto: aUsd(t.net / 100, t.currency, fx), at: new Date().toISOString() };
     batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(o.order_id), { stripe: o.stripe }, { merge: true });
     escrituras++; cruzadas++;
   }
@@ -402,7 +409,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       const com = real != null ? real : usd * feePct / 100 + feeFijo;
       f.comisiones += com; if (real == null) f.comisionesEstimadas += com;
       cv.comisiones += com;
-      ventasLista.push({ orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
+      ventasLista.push({ tid, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
         total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
         comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
         pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: o.utm?.utm_content || null, importado: !!o.importado,
@@ -430,6 +437,10 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   }
   for (const c of Object.values(campanas)) { if (c.id && meta.metaDice?.[c.id]) c.metaDice = meta.metaDice[c.id];
     c.ventas = c.ventas || 0; c.n = c.n || 0; c.comisiones = c.comisiones || 0; c.ganancia = c.ventas - c.comisiones - c.gasto; c.roas = c.gasto ? c.ventas / c.gasto : null; c.cpa = c.n && c.gasto ? c.gasto / c.n : null; }
+  // Meta atribuido a cada venta: el gasto de su tienda ese día, repartido según lo que pesó la venta en la facturación del día.
+  const td = {};
+  for (const f of Object.values(filas)) { const k = `${f.tienda}|${f.fecha}`; const x = td[k] || (td[k] = { ventas: 0, gasto: 0 }); x.ventas += f.ventas; x.gasto += f.gasto; }
+  for (const v of ventasLista) { const x = td[`${v.tid}|${v.fecha}`]; v.meta = x && x.ventas > 0 ? x.gasto * v.total / x.ventas : 0; v.profit = v.total - v.comision - v.meta; }
   const lista = Object.values(filas).map(f => ({ ...f, ganancia: f.ventas - f.reembolsos - f.comisiones - f.gasto }));
   lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.tienda.localeCompare(b.tienda));
   const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "front", "nFront", "upsell", "nUpsell", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
@@ -597,7 +608,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v6_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v7_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });
