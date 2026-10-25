@@ -147,6 +147,9 @@ async function webhook(req, res, db) {
     [`ev_${ev}`]: cuando,
   };
   await db.collection("users").doc(uid).collection("impultienda_orders").doc(String(d.order_id)).set(orden, { merge: true });
+  // Venta nueva: se borran los reportes en caché para que el Dashboard la muestre al instante.
+  try { const cs = await db.collection("users").doc(uid).collection("impultienda_cfg").get(); const bd = db.batch(); let k = 0;
+    for (const x of cs.docs) if (x.id.startsWith("cache_")) { bd.delete(x.ref); k++; } if (k) await bd.commit(); } catch (_) {}
   return res.status(200).json({ ok: true });
 }
 

@@ -19715,7 +19715,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
     catch(e){ setErr(e.message); } finally{ setCargando(false); }
   };
   useEffect(()=>{ if(vista!=="conexion") cargar(); /* eslint-disable-next-line */ },[uid,desde,hasta,vista,tz]);
-  useEffect(()=>{ const id=setInterval(()=>{ if(document.visibilityState!=="hidden"&&hasta===hoy&&vista!=="conexion") cargar(); },10*60000); return ()=>clearInterval(id); /* eslint-disable-next-line */ },[desde,hasta,vista]);
+  useEffect(()=>{ const id=setInterval(()=>{ if(document.visibilityState!=="hidden"&&hasta===hoy&&vista!=="conexion") cargar(); },2*60000); return ()=>clearInterval(id); /* eslint-disable-next-line */ },[desde,hasta,vista]);
   const rMon = mon==="USD" ? 1 : Number(data?.fx?.[mon])||null;
   ghImpMon.cod = rMon ? mon : "USD"; ghImpMon.r = rMon || 1;
   const filas=data?.filas||[];
