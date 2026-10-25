@@ -443,8 +443,13 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   for (const v of ventasLista) { const x = td[`${v.tid}|${v.fecha}`]; v.meta = x && x.ventas > 0 ? x.gasto * v.total / x.ventas : 0; v.profit = v.total - v.comision - v.meta; }
   const lista = Object.values(filas).map(f => ({ ...f, ganancia: f.ventas - f.reembolsos - f.comisiones - f.gasto }));
   lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.tienda.localeCompare(b.tienda));
+  // Gastos fijos mensuales del cliente, repartidos por día (mes de 30/31 días según corresponda).
+  const fijosMes = (cfg.gastosFijos || []).reduce((t, g) => t + (Number(g.monto) || 0), 0);
+  let fijos = 0;
+  for (let d = desde; d <= hasta; d = addDias(d, 1)) { const [yy, mm] = d.split("-").map(Number); fijos += fijosMes / new Date(Date.UTC(yy, mm, 0)).getUTCDate(); }
   const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "front", "nFront", "upsell", "nUpsell", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
+  tot.fijos = fijos; tot.fijosMes = fijosMes;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
   return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, comisionPromedio: { pct: feePct, fijo: feeFijo, real: pctReal != null, cruzadas: conFee.length }, ventas: ventasLista.sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 2000), fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
@@ -500,7 +505,7 @@ export default async function handler(req, res) {
       return res.json({
         url: `https://${host}/api/impultienda?action=webhook&k=${cfg.hookKey}`,
         tieneFirma: !!cfg.secretEnc, tieneStripe: !!cfg.stripeEnc,
-        feePct: cfg.feePct ?? 2.9, feeFijo: cfg.feeFijo ?? 0.3,
+        feePct: cfg.feePct ?? 2.9, feeFijo: cfg.feeFijo ?? 0.3, gastosFijos: cfg.gastosFijos || [],
         paises: cfg.paises || {}, tiendas, ordenes: os.size, ultimaPrueba: cfg.ultimaPrueba || null,
       });
     }
@@ -579,6 +584,7 @@ export default async function handler(req, res) {
       }
       if (b.stripe_key === null) { patch.stripeEnc = FieldValue.delete(); await db.collection("users").doc(uid).set({ stripeCobros: FieldValue.delete() }, { merge: true }); }
       if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
+      if (Array.isArray(b.gastosFijos)) patch.gastosFijos = b.gastosFijos.slice(0, 50).map(g => ({ nombre: String(g.nombre || "").slice(0, 60), monto: Math.max(0, Number(g.monto) || 0) })).filter(g => g.nombre || g.monto);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
       if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), paisesDe(v).join(" ").slice(0, 60)]).filter(([, v]) => v));
       // Cuentas publicitarias que cuentan para esta tienda (vacío = todas).
@@ -599,6 +605,7 @@ export default async function handler(req, res) {
         patch.paises = { ...(patch.paises || {}), ...Object.fromEntries(Object.entries(tm).filter(([, t]) => t.pais).map(([id, t]) => [id, t.pais])) };
       }
       await cfgRef.set(patch, { merge: true });
+      { const cs = await cfgRef.parent.get(); const bd = db.batch(); let k = 0; for (const x of cs.docs) if (x.id.startsWith("cache_")) { bd.delete(x.ref); k++; } if (k) await bd.commit(); }
       return res.json({ ok: true });
     }
     if (action === "por_hora") {
@@ -608,7 +615,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v7_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v8_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });

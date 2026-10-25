@@ -19579,7 +19579,7 @@ function GhImpVentasLista({T,ventas,prom}){
     </Card>
   </>);
 }
-function ghImpCardsDe(t, serie, nTiendas){
+function ghImpCardsDe(t, serie, nTiendas, fijos=0, fijosMes=0){
   const usd=GH_FMT_USD, x=(v)=>v!=null&&isFinite(v)?v.toFixed(2)+"x":"—", pct=(v)=>v!=null&&isFinite(v)?(v*100).toFixed(1)+"%":"—";
   const neto=t.ventas-t.comisiones-t.reembolsos; // todo descontado, antes de pauta
   const be=neto>0?t.ventas/neto:null, trueRoas=t.gasto?neto/t.gasto:null, cpaBE=t.n?neto/t.n:null, aov=t.n?t.ventas/t.n:null;
@@ -19601,6 +19601,10 @@ function ghImpCardsDe(t, serie, nTiendas){
     {label:"Revenue front", val:usd(t.front), accent:GH_MC.blue, hint:`Compras principales (con order bumps) · ${t.nFront||0} ventas${t.ventas?` · ${pct(t.front/t.ventas)}`:""}`, spk:sp(d=>d.front||0)},
     {label:"Revenue post-compra", val:usd(t.upsell), accent:GH_MC.green, hint:t.nUpsell?`Ticket promedio post-compra ${usd(t.upsell/t.nUpsell)}`:"Solo ofertas post-compra", spk:sp(d=>d.upsell||0)},
     {label:"Reembolsos", val:usd(t.reembolsos), accent:GH_MC.red, hint:t.ventas?`${pct(t.reembolsos/t.ventas)} de la facturación · incluye contracargos`:"Incluye contracargos", bad:t.ventas>0&&t.reembolsos/t.ventas>0.05},
+    {label:"% post-compra", val:pct(t.n?(t.nUpsell||0)/t.n:null), accent:GH_MC.green, hint:`${t.nUpsell||0} upsells cada ${t.n||0} ventas front`},
+    {label:"Gastos fijos", val:usd(fijos), accent:GH_MC.red, hint:fijosMes?`${usd(fijosMes)} por mes, repartido por día`:"Cargalos en Dashboard → Conexión"},
+    {label:"Por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Facturación promedio · ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
+    {label:"Profit neto", val:usd(t.ganancia-fijos), hero:false, accent:(t.ganancia-fijos)>=0?GH_MC.green:GH_MC.red, valColor:(t.ganancia-fijos)>=0?GH_MC.green:GH_MC.red, hint:"Profit menos gastos fijos: lo que te queda"},
   ];
 }
 function ghImpSumar(filas){
@@ -19624,6 +19628,8 @@ function ImpultiendaConexion({T,uid,onCambio}){
   const [secret,setSecret]=useState("");
   const [stripeKey,setStripeKey]=useState("");
   const [fee,setFee]=useState({pct:"2.9",fijo:"0.3"});
+  const [gFijos,setGFijos]=useState(null);
+  useEffect(()=>{ if(cfg&&gFijos===null) setGFijos((cfg.gastosFijos||[]).map(g=>({nombre:g.nombre,monto:String(g.monto)}))); /* eslint-disable-next-line */ },[cfg]);
   const [paises,setPaises]=useState({});
   const [guardando,setGuardando]=useState(false);
   const [nueva,setNueva]=useState({nombre:"",pais:"",id:""});
@@ -19693,7 +19699,22 @@ function ImpultiendaConexion({T,uid,onCambio}){
         {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar códigos</Btn></div>}
       </Card>
       <Card T={T}>
-        <div style={tit}>4. Cargar todas tus tiendas con Claude</div>
+        <div style={tit}>4. Gastos fijos mensuales</div>
+        <div style={txt}>Herramientas, sueldos, suscripciones: lo que pagás todos los meses aunque no vendas. Growith lo reparte por día y lo resta en "Profit neto".</div>
+        {(gFijos||[]).map((g,ix)=>(
+          <div key={ix} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",padding:"4px 0"}}>
+            <input value={g.nombre} onChange={e=>setGFijos(gFijos.map((x,i2)=>i2===ix?{...x,nombre:e.target.value}:x))} placeholder="Ej: Impultienda, editor, CapCut" style={{...inp,flex:1}}/>
+            <input value={g.monto} onChange={e=>setGFijos(gFijos.map((x,i2)=>i2===ix?{...x,monto:e.target.value}:x))} placeholder="US$ por mes" style={{...inp,width:130}}/>
+            <Btn T={T} size="sm" variant="ghost" onClick={()=>setGFijos(gFijos.filter((_,i2)=>i2!==ix))}>×</Btn>
+          </div>))}
+        <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.sm,flexWrap:"wrap"}}>
+          <Btn T={T} size="sm" variant="secondary" onClick={()=>setGFijos([...(gFijos||[]),{nombre:"",monto:""}])}>+ Agregar gasto</Btn>
+          <Btn T={T} size="sm" onClick={()=>guardar({gastosFijos:(gFijos||[]).map(g=>({nombre:g.nombre,monto:Number(String(g.monto).replace(",","."))||0}))})} disabled={guardando}>Guardar gastos fijos</Btn>
+          <span style={{fontSize:DS.font.sm,color:T.textSm}}>Total: US$ {(gFijos||[]).reduce((a,g)=>a+(Number(String(g.monto).replace(",","."))||0),0).toLocaleString("es-AR",{maximumFractionDigits:2})} por mes</span>
+        </div>
+      </Card>
+      <Card T={T}>
+        <div style={tit}>5. Cargar todas tus tiendas con Claude</div>
         <div style={txt}>Si tenés muchas tiendas, pedíselas a Claude: conectale el conector de <b>Impultienda</b> (y el de <b>Growith</b>, para preguntarle después por tus números), pegale este pedido, y la lista que te devuelva pegala acá abajo.</div>
         <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",marginBottom:DS.sp.md}}>
           <Btn T={T} size="sm" variant="secondary" onClick={()=>{ try{ navigator.clipboard.writeText(GH_IMP_PROMPT_TIENDAS); toast("Pedido copiado","success"); }catch(_){} }}>Copiar el pedido para Claude</Btn>
@@ -19838,7 +19859,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             <Card T={T}><DSEmpty T={T} icon="store" title="Todavía no hay ventas en este período" subtitle="Si recién conectás Impultienda, revisá la pestaña Conexión: la URL del webhook tiene que estar cargada en Impultienda con su clave de firma." action={<Btn T={T} onClick={()=>ir("conexion")}>Ir a Conexión</Btn>}/></Card>)}
           {vista==="dashboard" && data && filas.length>0 && (<>
             <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0",display:"flex",alignItems:"center"}}>Métricas principales · todas las tiendas<button onClick={()=>setEditCards(v=>!v)} title="Elegir y ordenar las métricas" style={{marginLeft:"auto",background:editCards?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editCards?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button></div>
-            {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT)} editar={editCards} setEditar={setEditCards}/>; })()}
+            {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT,data?.totales?.fijos||0,data?.totales?.fijosMes||0)} editar={editCards} setEditar={setEditCards}/>; })()}
             <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"14px 0 0"}}>Tiendas · por país</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:DS.sp.md}}>
               {tiendas.filter(x=>x.id!=="SIN_ASIGNAR").map(x=>{ const s=ghImpSumar(filas.filter(f=>f.tienda===x.id)); return (
