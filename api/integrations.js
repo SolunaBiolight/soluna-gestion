@@ -1519,6 +1519,41 @@ export default async function handler(req, res) {
           status, otorgados: scopes, faltan: scopes ? pedidos.filter(x => /^write_/.test(x) && !scopes.includes(x)) : null,
           fulfillOk: scopes ? scopes.includes(SHOPIFY_SCOPE_FULFILL) : null, refreshError: sh.refreshError || null });
       }
+      // Admin (26/oct/2026, caso tienda COYA): qué dejó guardado Shopify en una cuenta y cómo limpiarlo para
+      // conectar de cero. diag = solo lectura; reset = saca las tiendas Shopify del doc del usuario, los
+      // vínculos shopify_shops que apuntan a esa cuenta y los intentos de OAuth a medias (oauth_pending).
+      // No toca nada en Shopify (la app del cliente sigue instalada en su tienda).
+      if ((action === "admin_shopify_diag" && req.method === "GET") || (action === "admin_shopify_reset" && req.method === "POST")) {
+        const au = await verifyAuth(req);
+        if (!au?.uid || !(await isPlatformAdmin(db, au.uid))) return res.status(403).json({ error: "Solo admin" });
+        const tUid = String(req.query.target || req.body?.target || "").trim();
+        if (!tUid) return res.status(400).json({ error: "Falta target" });
+        const uRef = db.collection("users").doc(tUid); const uSnap = await uRef.get();
+        if (!uSnap.exists) return res.status(404).json({ error: "No existe esa cuenta" });
+        const ud = uSnap.data() || {};
+        const stores = Array.isArray(ud.stores) ? ud.stores : [];
+        const shStores = stores.filter(st => st.type === "shopify");
+        const [shopsSnap, pendSnap] = await Promise.all([
+          db.collection("shopify_shops").where("uid", "==", tUid).limit(50).get().catch(() => ({ docs: [] })),
+          db.collection("oauth_pending").where("uid", "==", tUid).limit(50).get().catch(() => ({ docs: [] })),
+        ]);
+        // Para cada tienda Shopify guardada: ¿a qué cuenta apunta su vínculo? (otra cuenta = la tienda quedó atada a otro usuario)
+        const otrosVinculos = [];
+        for (const st of shStores) { if (!st.shop) continue; try { const v = await db.collection("shopify_shops").doc(String(st.shop)).get(); if (v.exists && v.data().uid && v.data().uid !== tUid) otrosVinculos.push({ shop: st.shop, uid: v.data().uid }); } catch (_) {} }
+        const info = {
+          email: ud.email || "", tiendaNube: stores.some(st => st.type === "tiendanube"),
+          shopify: shStores.map(st => ({ shop: st.shop || "", central: !!st.central, connectedAt: st.connectedAt || null, reconnectedAt: st.reconnectedAt || null, conToken: !!st.accessToken, scopes: Array.isArray(st.scopes) ? st.scopes.length : null, refreshError: st.refreshError || null })),
+          vinculos: shopsSnap.docs.map(d => d.id), pendientes: pendSnap.docs.map(d => ({ shop: d.data().shop || "", central: !!d.data().central, created_at: d.data().created_at || null })), otrosVinculos,
+        };
+        if (action === "admin_shopify_diag") return res.json({ ok: true, ...info });
+        const b = db.batch();
+        b.set(uRef, { stores: stores.filter(st => st.type !== "shopify") }, { merge: true });
+        shopsSnap.docs.forEach(d => b.delete(d.ref));
+        pendSnap.docs.forEach(d => b.delete(d.ref));
+        await b.commit();
+        await db.collection("admin_log").add({ adminUid: au.uid, action: "shopify_reset", targetUid: tUid, targetEmail: ud.email || null, detalle: `Tiendas: ${info.shopify.map(x => x.shop).join(", ") || "ninguna"} · vínculos ${info.vinculos.length} · pendientes ${info.pendientes.length}`, at: new Date() }).catch(() => {});
+        return res.json({ ok: true, borrado: { tiendas: info.shopify.length, vinculos: info.vinculos.length, pendientes: info.pendientes.length }, antes: info });
+      }
       // Admin: apps de Shopify por tienda (distribución custom). Solo admins de plataforma.
       if (["apps_list", "app_set", "app_delete"].includes(action)) {
         const au = await verifyAuth(req);

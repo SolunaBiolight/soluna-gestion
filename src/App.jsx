@@ -22030,7 +22030,32 @@ function AdmFichaEnvios({ctx, u}) {
 // Permisos de Shopify de la cuenta (diagnóstico del caso "no puede marcar envíos").
 function AdmShopifyPermisos({T,u}){
   const [d,setD]=useState(null);
+  // Diagnóstico y limpieza de la conexión de Shopify (26/oct/2026, caso tienda COYA).
+  const [dg,setDg]=useState(null); const [dgBusy,setDgBusy]=useState(false);
+  const urlDg=a=>`/api/integrations?platform=shopify&action=${a}&target=${encodeURIComponent(u._id)}`;
+  const diag=async()=>{ setDgBusy(true); try{ const r=await authFetch(urlDg("admin_shopify_diag")); const x=await r.json().catch(()=>({})); if(!r.ok||x.error) throw new Error(x.error||`HTTP ${r.status}`); setDg(x); }catch(e){ toast(e.message,"error"); } setDgBusy(false); };
+  const reset=async()=>{ if(!await appConfirm(`¿Borrar la conexión de Shopify de ${u.email||u._id}? Se sacan las tiendas Shopify guardadas y los intentos de conexión a medias. No toca nada en Shopify: después el cliente conecta de cero.`,{danger:true,okLabel:"Borrar"})) return;
+    setDgBusy(true); try{ const r=await authFetch(urlDg("admin_shopify_reset"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({target:u._id})}); const x=await r.json().catch(()=>({})); if(!r.ok||x.error) throw new Error(x.error||`HTTP ${r.status}`); toast(`Listo: ${x.borrado.tiendas} tienda(s), ${x.borrado.vinculos} vínculo(s) y ${x.borrado.pendientes} intento(s) borrados. Ya puede conectar de cero.`,"success"); setD(null); await diag(); }catch(e){ toast(e.message,"error"); } setDgBusy(false); };
+  const fila=(k,v)=><div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"7px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}><span style={{color:T.textMd}}>{k}</span><span style={{color:T.text,textAlign:"right"}}>{v}</span></div>;
+  const modal=dg&&(<Modal T={T} open onClose={()=>setDg(null)} title={`Shopify · ${dg.email||u._id}`} width={620} zIndex={1500}>
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div>
+        {fila("Tienda Nube conectada",dg.tiendaNube?<span style={{color:T.yellow,fontWeight:600}}>Sí — bloquea conectar Shopify en esta misma tienda</span>:"No")}
+        {fila("Tiendas Shopify guardadas",dg.shopify.length?dg.shopify.map(x=><div key={x.shop}>{x.shop} · {x.central?"app de Growith":"app propia"} · {x.conToken?"con acceso":"sin acceso"}{x.connectedAt?` · ${new Date(x.connectedAt).toLocaleDateString("es-AR")}`:""}{x.refreshError?<span style={{color:T.red}}> · {x.refreshError}</span>:null}</div>):"Ninguna")}
+        {fila("Vínculos de tienda → esta cuenta",dg.vinculos.length?dg.vinculos.join(", "):"Ninguno")}
+        {fila("Intentos de conexión a medias",dg.pendientes.length?dg.pendientes.map((x,i)=><div key={i}>{x.shop||"?"}{x.created_at?` · ${new Date(x.created_at).toLocaleString("es-AR")}`:""}</div>):"Ninguno")}
+        {dg.otrosVinculos.length>0&&fila("Atadas a OTRA cuenta",<span style={{color:T.red}}>{dg.otrosVinculos.map(x=>`${x.shop} → ${x.uid}`).join(", ")}</span>)}
+      </div>
+      <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Borrar deja la cuenta sin Shopify para conectar de cero. No desinstala nada en Shopify ni toca Tienda Nube.</div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+        <Btn T={T} variant="secondary" onClick={()=>setDg(null)}>Cerrar</Btn>
+        <Btn T={T} variant="danger" disabled={dgBusy||(!dg.shopify.length&&!dg.vinculos.length&&!dg.pendientes.length)} onClick={reset}>{dgBusy?"Borrando…":"Borrar la conexión de Shopify"}</Btn>
+      </div>
+    </div>
+  </Modal>);
   return (<span style={{display:"inline-flex",gap:8,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+    {modal}
+    <AdmBtn T={T} variant="ghost" size="sm" onClick={diag}>{dgBusy&&!dg?"Revisando…":"Diagnóstico y limpieza"}</AdmBtn>
     {d?(d.conectado===false?<span style={{color:T.textSm}}>sin Shopify</span>:<span style={{color:d.fulfillOk?T.green:T.red,fontWeight:600}}>{d.central?"app de Growith":"app propia"} · {d.fulfillOk?"puede marcar envíos":d.otorgados?"SIN permiso de marcar envíos":"token inválido"}{d.faltan?.length?<span style={{color:T.textSm,fontWeight:400}}> · faltan {d.faltan.join(", ")}</span>:null}</span>):null}
     <AdmBtn T={T} variant="secondary" size="sm" onClick={async()=>{ const r=await authFetch(`/api/integrations?platform=shopify&action=admin_scopes&target=${encodeURIComponent(u._id)}`); const x=await r.json().catch(()=>({})); if(!r.ok||x.error) throw new Error(x.error||`HTTP ${r.status}`); setD(x); }}>{d?"Revisar de nuevo":"Revisar permisos"}</AdmBtn>
   </span>);
