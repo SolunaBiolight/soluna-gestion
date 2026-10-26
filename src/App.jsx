@@ -17806,7 +17806,7 @@ function DSToggle({T, active, onToggle}) {
 // SHOPIFY_SCOPES en api/integrations.js). El tutorial del modal copiaba una
 // lista vieja SIN los de fulfillment → las apps creadas con él no podían
 // marcar envíos y reconectar no lo arreglaba (caso zensleep, 17/9/2026).
-const GH_SHOPIFY_SCOPES = "read_all_orders,read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts,read_inventory";
+const GH_SHOPIFY_SCOPES = "read_customers,read_orders,write_orders,read_products,read_shipping,write_shipping,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,read_fulfillments,write_fulfillments,read_discounts,write_discounts,read_inventory";
 function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
   const uid = user?.uid;
   const [st,setSt] = React.useState(null);      // respuesta de carrier_status
@@ -18867,7 +18867,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <ol style={{margin:0,paddingLeft:18}}>
                     <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → abrí <strong style={{color:T.text}}>tu app de Growith</strong></li>
                     <li>Andá a <strong style={{color:T.text}}>Versiones</strong> → tocá <strong style={{color:T.text}}>"Crear versión"</strong> (a partir de la última)</li>
-                    <li>En <strong style={{color:T.text}}>"Acceso" → "Seleccionar alcances"</strong>, marcá <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code> (sumado a los que ya tenías: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_all_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>write_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_customers</code>)</li>
+                    <li>En <strong style={{color:T.text}}>"Acceso" → "Seleccionar alcances"</strong>, marcá <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code> (sumado a los que ya tenías: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>write_orders</code>, <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:10}}>read_customers</code>)</li>
                     <li><strong style={{color:T.text}}>Publicar</strong> esa versión nueva</li>
                     <li>Volvé acá → tocá <strong style={{color:T.red}}>Desvincular</strong> en Shopify (arriba) → después <strong style={{color:T.accent}}>Conectar</strong> de nuevo con las mismas credenciales. Vas a re-autorizar la app y el nuevo scope queda activo.</li>
                   </ol>

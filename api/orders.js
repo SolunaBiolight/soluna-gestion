@@ -590,7 +590,11 @@ export default async function handler(req, res) {
         if (Date.now() - t0 > 20000) break; // un mes en vivo puede tardar 15-50 s: no se encadenan muchos
         const x = d.data(); const desde = x.clientesIdxDesde || hoyAr.slice(0, 7); const mes = mesMenos(desde, 1);
         out.cuentas++;
-        if (mes < limite) { await d.ref.set({ clientesIdxCompleto: true }, { merge: true }); out.completas++; continue; }
+        // Shopify sin read_all_orders (permiso protegido, ya no se pide desde el 26/oct/2026): la API solo da los
+        // últimos 60 días, así que no se recorren meses que vendrían vacíos.
+        const shSinHistoria = (x.stores || []).some(st => st.type === "shopify" && Array.isArray(st.scopes) && st.scopes.length > 0 && !st.scopes.includes("read_all_orders")) && !(x.stores || []).some(st => st.type === "tiendanube" || st.type === "mercadolibre");
+        const limiteCuenta = shSinHistoria ? mesMenos(hoyAr.slice(0, 7), 2) : limite;
+        if (mes < limiteCuenta) { await d.ref.set({ clientesIdxCompleto: true }, { merge: true }); out.completas++; continue; }
         try {
           const [y, m] = mes.split("-").map(Number); const ult = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
           const u = new URL(`https://${req.headers.host}/api/stock`); u.searchParams.set("uid", d.id); u.searchParams.set("action", "products"); u.searchParams.set("date_from", `${mes}-01`); u.searchParams.set("date_to", ult);
