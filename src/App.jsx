@@ -1301,8 +1301,8 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
 function ghFaltanDatos(o,{domicilio}={}){
   const out=[];
   if(o?.sinDatosCliente||(domicilio&&o?.canal==="shopify"&&(!String(o.direccion||"").trim()||!String(o.cp||"").trim()))) return ["direccion"];
-  const n=String(o?.dirNumero||"").trim();
-  if(domicilio&&(!n||n==="0"||!/\d/.test(n))) out.push("numero");
+  // Sin número de puerta (S/N, manzana y lote, "entre X e Y"): sale con altura 0, sin preguntar
+  // (25/oct/2026, Lautaro: "cuando no tiene número poner 0 siempre, no hace falta ese paso extra").
   if(o?.canal==="shopify"){
     if(String(o.dni||"").replace(/\D/g,"").length<7) out.push("dni");
     const t=ghTelAR(o.telefono); if(!t.cod||String(t.num||"").length<6) out.push("tel");
@@ -11101,7 +11101,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const ubicacion=(_ovrLoc&&_ovrLoc!=="EXCLUIR"&&locs.list.includes(_ovrLoc)?_ovrLoc:"")||_auto?.loc||"";
         // Shopify: la calle y la altura ya vienen separadas y revisadas (partirDireccion + "Faltan datos");
         // no se saca un número de adentro del nombre de la calle ("Av. 9 de Julio" → 9).
-        const dirNum=o.canal==="shopify"?String(o.dirNumero||"").trim():extractStreetNum(o.direccion, o.dirNumero);
+        const dirNum=o.canal==="shopify"?(String(o.dirNumero||"").trim()||"0"):extractStreetNum(o.direccion, o.dirNumero);
         const direccion=o.canal==="shopify"?cleanAndreani(o.direccion||""):extractStreetName(o.direccion, o.dirNumero);
         if(!ubicacion||(!_aMano&&verifUbicacionVsPedido(o,ubicacion)==="warn"))verifRows.push({o,numero:o.numero,comprador:o.comprador,tipo:"domicilio",escrito:ubicacion||"(sin localidad: la fila sale vacía)",esperado:`${o.localidad||o.ciudad||""}${o.provincia?`, ${o.provincia}`:""}${o.cp?` (CP ${o.cp})`:""}`});
         const cells=[
@@ -12441,7 +12441,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             cpDestino:r.tipo==="sucursal"?cpDestinoDe(o):String(o.cp||"").trim(),
             destino:r.tipo==="sucursal"
               ?{sucursalId:String(r.oficial.id)}
-              :{postal:{codigoPostal:ghLocCp(o.cp)||String(o.cp||"").trim(),calle:String(o.direccion||"").trim(),numero:String(o.dirNumero||"").trim(),localidad:String(o.localidad||o.ciudad||"").trim(),ciudad:String(o.ciudad||"").trim(),region:String(o.provincia||"").trim()}},
+              :{postal:{codigoPostal:ghLocCp(o.cp)||String(o.cp||"").trim(),calle:String(o.direccion||"").trim(),numero:String(o.dirNumero||"").trim()||"0",localidad:String(o.localidad||o.ciudad||"").trim(),ciudad:String(o.ciudad||"").trim(),region:String(o.provincia||"").trim()}},
             destinatario:{
               nombreCompleto:String(o.comprador||"").trim(),
               documentoNumero:String(o.dni||"").replace(/\D/g,""),
@@ -15891,7 +15891,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
   const [dom,setDom]=useState({
     codigoPostal:ghLocCp(o.cp)||String(o.cp||"").trim(),
     calle:o.direccion||"",
-    numero:String(o.dirNumero||"").trim(),
+    numero:String(o.dirNumero||"").trim()||"0",
     localidad:o.localidad||o.ciudad||"",
     region:o.provincia||"",
     piso:o.piso||"",
