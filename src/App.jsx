@@ -18164,16 +18164,26 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       url.searchParams.delete("shopify_success"); url.searchParams.delete("shopify_scopes_faltan");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(shError){
+      // 26/oct/2026 (caso tienda COYA: "autorizo y no pasa nada"): la vuelta de Shopify caía en el
+      // inicio y este aviso no se veía. Ahora el callback vuelve a Config → Integraciones y cada error
+      // explica qué hacer, en una ventana que no se pierde.
       const map={
-        token_failed:"Shopify rechazó el intercambio. Verificá que el Client Secret esté correcto en Vercel.",
-        missing_env_vars:"Faltan SHOPIFY_CLIENT_ID o SHOPIFY_CLIENT_SECRET en Vercel.",
-        no_access_token:"Shopify no devolvió access_token.",
-        user_not_found:"Tu usuario no se encontró en Firestore.",
-        tn_already_connected:"Ya tenés Tienda Nube conectada. Desvinculala primero.",
-        save_failed:"No se pudo guardar la conexión en Firestore.",
-        missing_params:"Faltan parámetros en el callback.",
-        server_error:"Error de conexión con Shopify.",
+        bad_hmac:"La clave secreta (Client Secret) que pegaste no es la de esta app de Shopify. En dev.shopify.com → tu app → Configuración, copiá de nuevo el Client Secret (no el Client ID) y volvé a conectar con los 3 datos.",
+        token_failed:"Shopify rechazó la clave secreta (Client Secret). Copiala de nuevo desde dev.shopify.com → tu app → Configuración y volvé a conectar.",
+        no_secret:"Faltó la clave secreta de la app. Volvé a conectar pegando el Client ID y el Client Secret.",
+        state_not_found:"La autorización tardó demasiado o se abrió dos veces. Volvé a tocar Conectar Shopify y autorizá en menos de 10 minutos, en una sola pestaña.",
+        state_read_failed:"No pudimos leer el pedido de conexión. Probá de nuevo en un minuto.",
+        shop_mismatch:"Autorizaste en una tienda distinta a la que escribiste. Poné el dominio .myshopify.com de la misma tienda donde aceptás.",
+        no_access_token:"Shopify no devolvió el acceso. Revisá que la app esté publicada (dev.shopify.com → tu app → Versiones → Publicar) e instalada en tu tienda, y volvé a conectar.",
+        tn_already_connected:"Esta cuenta tiene Tienda Nube conectada, y una cuenta tiene una sola tienda. Creá una tienda nueva en Growith (Configuración → Tiendas) para Shopify, o desvinculá Tienda Nube primero.",
+        save_failed:"Shopify autorizó pero no pudimos guardar la conexión. Probá de nuevo en un minuto.",
+        missing_params:"Shopify volvió sin los datos de la autorización. Volvé a tocar Conectar Shopify.",
+        server_error:"Hubo un error al hablar con Shopify. Probá de nuevo en un minuto.",
+        missing_env_vars:"La app de Shopify de Growith no está configurada en el servidor. Avisale al equipo de Growith.",
+        user_not_found:"No encontramos tu usuario. Cerrá sesión, volvé a entrar y conectá de nuevo.",
       };
+      const st=url.searchParams.get("status");
+      appAlert("No se pudo conectar Shopify\n\n"+(map[shError]||shError)+(st?` (Shopify respondió ${st})`:""));
       setMsg("Error Shopify: "+(map[shError]||shError));
       url.searchParams.delete("shopify_error");
       url.searchParams.delete("status");

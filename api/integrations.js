@@ -313,7 +313,7 @@ async function shopifyOauthStart(req, res, db) {
 async function shopifyOauthCallback(req, res, db) {
   const { code, shop: shopRaw, state } = req.query;
   if (!code || !shopRaw || !state) {
-    return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=missing_params`);
+    return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=missing_params#/config/integraciones`);
   }
   const shop = normalizeShop(shopRaw);
 
@@ -321,28 +321,28 @@ async function shopifyOauthCallback(req, res, db) {
   let pending;
   try {
     const snap = await db.collection("oauth_pending").doc(String(state)).get();
-    if (!snap.exists) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=state_not_found`);
+    if (!snap.exists) return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=state_not_found#/config/integraciones`);
     pending = snap.data();
     // Borrar el state usado (one-time use)
     await snap.ref.delete().catch(() => {});
   } catch (e) {
-    return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=state_read_failed`);
+    return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=state_read_failed#/config/integraciones`);
   }
 
   if (pending.shop !== shop) {
-    return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=shop_mismatch`);
+    return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=shop_mismatch#/config/integraciones`);
   }
 
   const uid = pending.uid;
   const clientId = pending.client_id;
   // App central: el secret vive en el env (no se persistió). App propia: en el state.
   const clientSecret = pending.central ? ((await shopifyCentralApp(db))?.client_secret || "") : pending.client_secret;
-  if (!clientSecret) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=no_secret`);
+  if (!clientSecret) return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=no_secret#/config/integraciones`);
 
   // Verificar el HMAC del callback OAuth (Shopify lo firma con el secret de la app).
   // Protege contra callbacks falsificados — requisito para apps públicas.
   if (!verifyShopifyOauthHmac(req.query, clientSecret)) {
-    return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=bad_hmac`);
+    return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=bad_hmac#/config/integraciones`);
   }
 
   // 2) Intercambiar code por access_token
@@ -357,11 +357,11 @@ async function shopifyOauthCallback(req, res, db) {
     if (!tokenRes.ok) {
       const txt = await tokenRes.text();
       console.error("[shopify-callback] token exchange failed", tokenRes.status, txt.slice(0, 200));
-      return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=token_failed&status=${tokenRes.status}`);
+      return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=token_failed&status=${tokenRes.status}#/config/integraciones`);
     }
     const tokenData = await tokenRes.json();
     accessToken = tokenData.access_token;
-    if (!accessToken) return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=no_access_token`);
+    if (!accessToken) return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=no_access_token#/config/integraciones`);
     var __tokenFields = shopifyTokenFields(tokenData);
     // Permisos que Shopify REALMENTE otorgó. Ojo: en las apps con instalación
     // administrada por Shopify (Dev Dashboard) el parámetro scope de la URL de
@@ -374,7 +374,7 @@ async function shopifyOauthCallback(req, res, db) {
     if (__faltaFulfill) console.error(`[shopify-callback] ${shop}: Shopify NO otorgó ${SHOPIFY_SCOPE_FULFILL} (otorgados: ${__tokenFields.scopes.join(",")}) — falta publicarlo en la app`);
   } catch (e) {
     console.error("[shopify-callback] error:", e.message);
-    return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=server_error`);
+    return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=server_error#/config/integraciones`);
   }
 
   // 3) Obtener nombre de la tienda
@@ -409,7 +409,7 @@ async function shopifyOauthCallback(req, res, db) {
       await db.collection("shopify_pending_installs").doc(claim).set({ shop, clientId, ...__tokenFields, storeName: shopName, storeEmail: shopEmail, createdAt: new Date().toISOString() });
       return res.redirect(`${SHOPIFY_APP_URL}/?shopify_claim=${claim}`);
     } catch (e) {
-      return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=server_error`);
+      return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=server_error#/config/integraciones`);
     }
   }
 
@@ -421,7 +421,7 @@ async function shopifyOauthCallback(req, res, db) {
     // user_not_found ni pisa nada de lo existente).
     const currentStores = (snap.exists ? snap.data().stores : null) || [];
     if (currentStores.find(s => s.type === "tiendanube")) {
-      return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=tn_already_connected`);
+      return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=tn_already_connected#/config/integraciones`);
     }
 
     const stores = currentStores.filter(s => s.type !== "shopify");
@@ -440,10 +440,10 @@ async function shopifyOauthCallback(req, res, db) {
     await db.collection("shopify_shops").doc(shop).set({ uid, updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
   } catch (e) {
     console.error("[shopify-callback] save error:", e.message);
-    return res.redirect(`${SHOPIFY_APP_URL}?shopify_error=save_failed`);
+    return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=save_failed#/config/integraciones`);
   }
 
-  return res.redirect(`${SHOPIFY_APP_URL}?shopify_success=1${__faltaFulfill ? "&shopify_scopes_faltan=1" : ""}`);
+  return res.redirect(`${SHOPIFY_APP_URL}/?shopify_success=1${__faltaFulfill ? "&shopify_scopes_faltan=1" : ""}#/config/integraciones`);
 }
 
 // ─── CarrierService "Growith · Andreani" (tarifas en el checkout) ───────────
