@@ -27103,7 +27103,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",padding:"0 0 64px"}}>
       {/* Topbar */}
-      <AppTopbar T={T} section={view==="equipo"?"Equipo":view==="pagos"?(colabMode?"Mis pagos":"Pagos al equipo"):"Tareas"} sectionId="tareas" onHome={onHome} top={0}
+      <AppTopbar T={T} section={view==="equipo"?"Equipo":view==="pagos"?(colabMode?"Mis facturas":"Facturas del equipo"):"Tareas"} sectionId="tareas" onHome={onHome} top={0}
         onHelp={view==="equipo"
           ? (colabMode?null:()=>setShowGuiaEquipo(s=>!s))
           : view==="referencias"
@@ -27142,9 +27142,9 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             ["todo","Tareas","M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"],
             ["equipo","Equipo","M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M12.5 7a4 4 0 11-8 0 4 4 0 018 0z"],
             ["referencias","Referencias","M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"],
-            ["pagos",colabMode?"Mis pagos":"Pagos","M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"],
+            ["pagos",colabMode?"Mis facturas":"Facturas","M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"],
           ].filter(([id])=>{
-            // Pagos al equipo: el dueño (no los miembros) y el colaborador con pagos activados.
+            // Facturas del equipo: el dueño (no los miembros) y el colaborador con facturas activadas.
             if(id==="pagos") return colabMode?!!colabMode.pagos:!esMiembro;
             if(!colabMode) return true;
             // La pestaña Equipo la habilita SOLO el permiso "Estado del equipo".
@@ -27915,7 +27915,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         </div>
         )}
 
-        {/* ── TAB PAGOS: pagos al equipo (dueño) / Mis pagos (colaborador) ── */}
+        {/* ── TAB FACTURAS: facturas del equipo (dueño) / Mis facturas (colaborador) ── */}
         {!loading&&tab==="pagos"&&(colabMode
           ? <ColabPagosPortal T={T} token={colabMode.token}/>
           : <EquipoPagosView T={T} user={user} onAgregar={()=>{irAVista("equipo");setShowNC(true);}}/>)}
@@ -29502,13 +29502,6 @@ async function ghPagoAbrir(api,adjId){
   try{ const d=await api({adjId}); const bytes=Uint8Array.from(atob(d.data.split(",")[1]),c=>c.charCodeAt(0)); ghDepAbrirBytes(bytes,d.mime,d.nombre,w); }
   catch(e){ if(w&&!w.closed) w.close(); toast("No se pudo abrir: "+e.message,"error"); }
 }
-// Estado de un mes para una persona: qué falta.
-function ghPagoEstado(cfg,reg,detect){
-  const pagado=!!reg?.pagado, factura=!!reg?.factura||!!(detect&&detect.length), mono=!!reg?.mono;
-  const falta=[!pagado&&"pagarle",!factura&&"factura",!mono&&"monotributo"].filter(Boolean);
-  return {pagado,factura,mono,falta,listo:!falta.length};
-}
-
 function PagoChip({T,ok,okTxt,faltaTxt,sub,onVer,onSubir,onQuitar,warn}){
   const c=ok?(warn?T.yellow:T.green):T.textSm;
   return (<div style={{display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
@@ -29549,78 +29542,47 @@ function PagoFacturaModal({T,open,onClose,onSubir,sugerido}){
 function PagoConfigModal({T,persona,onClose,onGuardar}){
   const iS=InputStyle(T); const p=persona?.pago||{};
   const [f,setF]=useState({}); const [busy,setBusy]=useState(false);
-  useEffect(()=>{ if(persona) setF({activo:true,cuit:p.cuit||"",monto:p.monto||"",mono:p.mono||"",dia:p.dia||5,notas:p.notas||""}); },[persona?.colabId]);
+  useEffect(()=>{ if(persona) setF({cuit:p.cuit||"",monto:p.monto||"",notas:p.notas||""}); },[persona?.colabId]);
   const n=v=>Number(String(v).replace(/\./g,"").replace(",","."))||0;
-  const guardar=async(activo=true)=>{ setBusy(true); try{ await onGuardar({...f,activo,monto:n(f.monto),mono:n(f.mono)}); onClose(); }catch(e){ toast(e.message,"error"); } finally{ setBusy(false); } };
-  return (<Modal T={T} open={!!persona} onClose={()=>!busy&&onClose()} title={persona?`Pagos de ${persona.nombre}`:""} width={480}>
+  const guardar=async(activo=true)=>{ setBusy(true); try{ await onGuardar({...f,activo,monto:n(f.monto),mono:0}); onClose(); }catch(e){ toast(e.message,"error"); } finally{ setBusy(false); } };
+  return (<Modal T={T} open={!!persona} onClose={()=>!busy&&onClose()} title={persona?`Facturas de ${persona.nombre}`:""} width={460}>
     <Field T={T} label="CUIT"><input value={f.cuit||""} onChange={e=>setF({...f,cuit:e.target.value.replace(/\D/g,"").slice(0,11)})} inputMode="numeric" placeholder="27123456789" style={iS}/></Field>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      <Field T={T} label="Le pagás por mes"><input value={f.monto??""} onChange={e=>setF({...f,monto:e.target.value})} inputMode="decimal" placeholder="0" style={iS}/></Field>
-      <Field T={T} label="+ Para el monotributo"><input value={f.mono??""} onChange={e=>setF({...f,mono:e.target.value})} inputMode="decimal" placeholder="0" style={iS}/></Field>
-    </div>
-    <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:-6,marginBottom:12}}>Total por mes: <strong style={{color:T.text}}>{fmtMoney(n(f.monto)+n(f.mono))}</strong>. La factura que te hace tiene que ser por ese total.</div>
-    <Field T={T} label="Día del mes en que le pagás"><input type="number" min={1} max={28} value={f.dia||5} onChange={e=>setF({...f,dia:e.target.value})} style={{...iS,maxWidth:120}}/></Field>
-    <Field T={T} label="Notas"><input value={f.notas||""} onChange={e=>setF({...f,notas:e.target.value})} placeholder="Alias, CBU, categoría del monotributo…" style={iS}/></Field>
+    <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:-6,marginBottom:12,lineHeight:1.5}}>Con el CUIT, si importás tus compras de "Mis Comprobantes" en el Facturador, sus facturas aparecen solas como recibidas.</div>
+    <Field T={T} label="Monto que te factura por mes (opcional)"><input value={f.monto??""} onChange={e=>setF({...f,monto:e.target.value})} inputMode="decimal" placeholder="0" style={iS}/></Field>
+    <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:-6,marginBottom:12}}>Si lo cargás, te avisa cuando una factura no coincide.</div>
+    <Field T={T} label="Notas"><input value={f.notas||""} onChange={e=>setF({...f,notas:e.target.value})} placeholder="Opcional" style={iS}/></Field>
     <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:6,flexWrap:"wrap"}}>
-      {p.activo?<Btn T={T} variant="ghost" onClick={()=>guardar(false)} disabled={busy} style={{color:T.red}}>Desactivar pagos</Btn>:<span/>}
+      {p.activo?<Btn T={T} variant="ghost" onClick={()=>guardar(false)} disabled={busy} style={{color:T.red}}>Desactivar</Btn>:<span/>}
       <div style={{display:"flex",gap:8}}>
         <Btn T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancelar</Btn>
-        <Btn T={T} onClick={()=>guardar(true)} disabled={busy}>{busy?"Guardando…":p.activo?"Guardar":"Activar pagos"}</Btn>
+        <Btn T={T} onClick={()=>guardar(true)} disabled={busy}>{busy?"Guardando…":p.activo?"Guardar":"Activar"}</Btn>
       </div>
     </div>
   </Modal>);
 }
 
-function PagoMarcarModal({T,item,onClose,onGuardar}){
-  const iS=InputStyle(T);
-  const [monto,setMonto]=useState(""); const [fecha,setFecha]=useState(""); const [nota,setNota]=useState(""); const [avisar,setAvisar]=useState(true); const [file,setFile]=useState(null); const [busy,setBusy]=useState(false);
-  useEffect(()=>{ if(item){ setMonto(String((item.persona.pago?.monto||0)+(item.persona.pago?.mono||0)||"")); setFecha(new Date(Date.now()-3*3600e3).toISOString().slice(0,10)); setNota(""); setFile(null); setAvisar(!!item.persona.email); } },[item?.persona?.colabId,item?.mes]);
-  const guardar=async()=>{ setBusy(true); try{ await onGuardar({monto:Number(String(monto).replace(/\./g,"").replace(",","."))||0,fecha,nota,avisar,file}); onClose(); }catch(e){ toast(e.message,"error"); } finally{ setBusy(false); } };
-  return (<Modal T={T} open={!!item} onClose={()=>!busy&&onClose()} title={item?`Pago a ${item.persona.nombre} · ${ghPagoMesNombre(item.mes)}`:""} width={460}>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      <Field T={T} label="Monto pagado"><input value={monto} onChange={e=>setMonto(e.target.value)} inputMode="decimal" style={iS}/></Field>
-      <Field T={T} label="Fecha"><input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={iS}/></Field>
-    </div>
-    <Field T={T} label="Comprobante de la transferencia (opcional)">
-      <Btn T={T} variant="secondary" onClick={async()=>{ const f=await ghPagoElegirArchivo(); if(f) setFile(f); }}>{file?file.name:"Elegir archivo"}</Btn>
-    </Field>
-    <Field T={T} label="Nota"><input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Opcional" style={iS}/></Field>
-    {item?.persona.email&&<label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.base,color:T.text,cursor:"pointer",marginBottom:12}}>
-      <input type="checkbox" checked={avisar} onChange={e=>setAvisar(e.target.checked)}/> Avisarle por mail que suba la factura y el monotributo
-    </label>}
-    <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-      <Btn T={T} variant="ghost" onClick={onClose} disabled={busy}>Cancelar</Btn>
-      <Btn T={T} onClick={guardar} disabled={busy}>{busy?"Guardando…":"Marcar como pagado"}</Btn>
-    </div>
-  </Modal>);
-}
-
+// Dueño: facturas que le hace cada persona del equipo, mes por mes.
 function EquipoPagosView({T,user,onAgregar}){
   const [d,setD]=useState(null); const [err,setErr]=useState(""); const [mes,setMes]=useState(ghPagoMesHoy());
-  const [cfgDe,setCfgDe]=useState(null); const [marcar,setMarcar]=useState(null); const [subirFac,setSubirFac]=useState(null);
+  const [cfgDe,setCfgDe]=useState(null); const [subirFac,setSubirFac]=useState(null);
   const api=async body=>{ const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,uid:user.uid})}); const j=await r.json().catch(()=>({error:"Error del servidor"})); if(!r.ok||j.error) throw new Error(j.error||"Error"); return j; };
   const cargar=async()=>{ try{ setErr(""); setD(await api({action:"equipoPagos"})); }catch(e){ setErr(e.message); } };
   useEffect(()=>{ cargar(); },[user.uid]);
   if(err) return <div style={{padding:24,color:T.red,fontSize:DS.font.base}}>{err}</div>;
   if(!d) return <div style={{padding:24,color:T.textSm,fontSize:DS.font.base}}>Cargando…</div>;
   const activos=d.personas.filter(p=>p.pago?.activo), resto=d.personas.filter(p=>!p.pago?.activo);
-  const reg=(c,m)=>d.registros.find(r=>r.colabId===c&&r.mes===m)||null;
-  const det=(p,m)=>p.pago?.cuit?d.detectadas[`${p.pago.cuit}_${m}`]||null:null;
-  const filas=activos.map(p=>({p,r:reg(p.colabId,mes),dt:det(p,mes)}));
-  const est=filas.map(f=>({...f,e:ghPagoEstado(f.p.pago,f.r,f.dt)}));
-  const aPagar=activos.reduce((s,p)=>s+(p.pago.monto||0)+(p.pago.mono||0),0);
-  const pagado=est.reduce((s,f)=>s+(f.r?.pagado?.monto||0),0);
-  const nFac=est.filter(f=>f.e.factura).length, nMono=est.filter(f=>f.e.mono).length;
-  const subir=async(colabId,m,kind)=>{ const f=await ghPagoElegirArchivo(); if(!f) return; try{ const a=await ghPagoLeerArchivo(f); await api({action:"equipoPagoSubir",colabId,mes:m,kind,...a}); toast("Archivo guardado ✓","success"); cargar(); }catch(e){ toast(e.message,"error"); } };
-  const quitar=async(colabId,m,kind)=>{ if(!(await appConfirm("¿Quitar este archivo?",{danger:true,okLabel:"Quitar"}))) return; try{ await api({action:"equipoPagoQuitar",colabId,mes:m,kind}); cargar(); }catch(e){ toast(e.message,"error"); } };
-  const desmarcar=async(colabId,m)=>{ if(!(await appConfirm("¿Marcar este mes como NO pagado?",{okLabel:"Sí, desmarcar"}))) return; try{ await api({action:"equipoPagoMarcar",colabId,mes:m,pagado:false}); cargar(); }catch(e){ toast(e.message,"error"); } };
-  const historial=[1,2,3,4,5].map(i=>ghPagoMesMas(mes,-i)).map(m=>{ const fs=activos.map(p=>({p,r:reg(p.colabId,m),dt:det(p,m)})); const es=fs.map(f=>ghPagoEstado(f.p.pago,f.r,f.dt)); return {m,pagado:fs.reduce((s,f)=>s+(f.r?.pagado?.monto||0),0),pend:es.filter(e=>!e.listo).length,vacio:fs.every(f=>!f.r&&!f.dt),fs}; });
+  const facDe=(p,m)=>{ const r=d.registros.find(x=>x.colabId===p.colabId&&x.mes===m); if(r?.factura) return {...r.factura,origen:"subida"}; const dt=p.pago?.cuit?d.detectadas[`${p.pago.cuit}_${m}`]?.[0]:null; return dt?{...dt,origen:"arca"}:null; };
+  const filas=activos.map(p=>({p,f:facDe(p,mes)}));
+  const nFac=filas.filter(x=>x.f).length, total=filas.reduce((s,x)=>s+(x.f?.monto||0),0);
+  const quitar=async(colabId)=>{ if(!(await appConfirm("¿Quitar esta factura?",{danger:true,okLabel:"Quitar"}))) return; try{ await api({action:"equipoPagoQuitar",colabId,mes,kind:"factura"}); cargar(); }catch(e){ toast(e.message,"error"); } };
+  const abrir=id=>ghPagoAbrir(b=>api({action:"equipoPagoAdj",...b}),id);
+  const historial=[1,2,3,4,5].map(i=>ghPagoMesMas(mes,-i)).map(m=>{ const fs=activos.map(p=>facDe(p,m)); return {m,n:fs.filter(Boolean).length,total:fs.reduce((s,f)=>s+(f?.monto||0),0)}; });
   const hoyMes=ghPagoMesHoy();
-  return (<div style={{maxWidth:1000}}>
+  return (<div style={{maxWidth:900}}>
     <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
       <div style={{flex:1,minWidth:220}}>
-        <div style={{fontSize:DS.font["2xl"],fontWeight:700,color:T.text,letterSpacing:-0.3}}>Pagos al equipo</div>
-        <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Lo que le pagás a cada persona, su factura y el comprobante del monotributo, mes por mes. Ellas suben sus archivos desde su portal.</div>
+        <div style={{fontSize:DS.font["2xl"],fontWeight:700,color:T.text,letterSpacing:-0.3}}>Facturas del equipo</div>
+        <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Las facturas que te hace cada persona, mes por mes. Ellas las suben desde su portal.</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6}}>
         <Btn T={T} variant="secondary" size="sm" onClick={()=>setMes(ghPagoMesMas(mes,-1))}>‹</Btn>
@@ -29629,96 +29591,72 @@ function EquipoPagosView({T,user,onAgregar}){
       </div>
     </div>
     {activos.length>0&&<DepStrip T={T} items={[
-      {l:"A pagar por mes",v:fmtMoney(aPagar),c:T.accent,s:`${activos.length} persona${activos.length!==1?"s":""}`},
-      {l:"Pagado en el mes",v:fmtMoney(pagado),c:pagado>=aPagar&&aPagar>0?T.green:T.yellow,s:`${est.filter(f=>f.e.pagado).length} de ${activos.length}`},
-      {l:"Facturas recibidas",v:`${nFac} de ${activos.length}`,c:nFac===activos.length?T.green:T.red},
-      {l:"Monotributos pagados",v:`${nMono} de ${activos.length}`,c:nMono===activos.length?T.green:T.red},
+      {l:"Facturas recibidas",v:`${nFac} de ${activos.length}`,c:nFac===activos.length?T.green:T.red,s:nFac<activos.length?`Faltan ${activos.length-nFac}`:"Están todas"},
+      {l:"Total facturado",v:fmtMoney(total),c:T.accent,s:ghPagoMesNombre(mes)},
     ]}/>}
     {activos.length===0&&<Card T={T} padding="lg" style={{marginBottom:14}}>
-      <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>Empezá activando los pagos de cada persona</div>
-      <div style={{fontSize:DS.font.base,color:T.textSm,lineHeight:1.6}}>Cada empleada tiene que estar cargada como <strong style={{color:T.textMd}}>colaboradora por link</strong> (pestaña Equipo). Después tocás "Activar pagos", ponés su CUIT y cuánto le pagás, y en su portal le aparece "Mis pagos" para subir la factura y el monotributo.</div>
+      <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>Activá las facturas de cada persona</div>
+      <div style={{fontSize:DS.font.base,color:T.textSm,lineHeight:1.6}}>Cada empleada tiene que estar cargada como <strong style={{color:T.textMd}}>colaboradora por link</strong> (pestaña Equipo). Tocás "Activar", ponés su CUIT y en su portal le aparece "Mis facturas" para subirte la factura de cada mes.</div>
       {d.personas.length===0&&onAgregar&&<div style={{marginTop:12}}><Btn T={T} onClick={onAgregar}>+ Agregar colaboradora</Btn></div>}
     </Card>}
-    {est.length>0&&<DepTable T={T} minWidth={760} cols={[
-      {h:"Persona",w:"1.3fr",render:f=><div style={{minWidth:0}}><div style={{fontSize:DS.font.lg,fontWeight:600,color:T.text}}>{f.p.nombre}</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>{f.p.pago.cuit?`CUIT ${f.p.pago.cuit}`:"Sin CUIT"} · {fmtMoney((f.p.pago.monto||0)+(f.p.pago.mono||0))}/mes · día {f.p.pago.dia}</div><button onClick={()=>setCfgDe(f.p)} style={ghPagoLink(T)}>Configurar</button></div>},
-      {h:"Pago",w:"1fr",render:f=>f.e.pagado
-        ?<PagoChip T={T} ok okTxt={`Pagado ${fmtMoney(f.r.pagado.monto)}`} sub={ghPagoFecha(f.r.pagado.fecha)+(f.r.pagado.nota?` · ${f.r.pagado.nota}`:"")} onVer={f.r.transferencia?()=>ghPagoAbrir(b=>api({action:"equipoPagoAdj",...b}),f.r.transferencia.adjId):null} onQuitar={()=>desmarcar(f.p.colabId,mes)}/>
-        :<div><Btn T={T} size="sm" onClick={()=>setMarcar({persona:f.p,mes})}>Marcar pagado</Btn></div>},
-      {h:"Factura",w:"1.1fr",render:f=>{ const fa=f.r?.factura, dt=f.dt?.[0]; const tot=f.r?.pagado?.monto; const m=fa?.monto||dt?.monto; const warn=!!(tot&&m&&Math.abs(m-tot)>Math.max(1,tot*0.01));
-        if(fa) return <PagoChip T={T} ok warn={warn} okTxt={fa.nro?`N° ${fa.nro}`:"Recibida"} sub={[fa.monto?fmtMoney(fa.monto):"",fa.por==="colab"?"la subió ella":"la subiste vos",warn?`no coincide con lo pagado`:""].filter(Boolean).join(" · ")} onVer={()=>ghPagoAbrir(b=>api({action:"equipoPagoAdj",...b}),fa.adjId)} onQuitar={()=>quitar(f.p.colabId,mes,"factura")}/>;
-        if(dt) return <PagoChip T={T} ok warn={warn} okTxt={`N° ${dt.nro}`} sub={`${fmtMoney(dt.monto)} · encontrada en Mis Comprobantes${warn?" · no coincide con lo pagado":""}`} onSubir={()=>setSubirFac({persona:f.p,mes})}/>;
-        return <PagoChip T={T} faltaTxt="Falta la factura" onSubir={()=>setSubirFac({persona:f.p,mes})}/>; }},
-      {h:"Monotributo",w:"1fr",render:f=>f.r?.mono
-        ?<PagoChip T={T} ok okTxt="Comprobante" sub={ghPagoFecha(String(f.r.mono.at?._seconds?new Date(f.r.mono.at._seconds*1000).toISOString():f.r.mono.at||""))} onVer={()=>ghPagoAbrir(b=>api({action:"equipoPagoAdj",...b}),f.r.mono.adjId)} onQuitar={()=>quitar(f.p.colabId,mes,"mono")}/>
-        :<PagoChip T={T} faltaTxt="Falta el comprobante" onSubir={()=>subir(f.p.colabId,mes,"mono")}/>},
-    ]} rows={est}/>}
+    {filas.length>0&&<DepTable T={T} cols={[
+      {h:"Persona",w:"1.2fr",render:x=><div style={{minWidth:0}}><div style={{fontSize:DS.font.lg,fontWeight:600,color:T.text}}>{x.p.nombre}</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>{x.p.pago.cuit?`CUIT ${x.p.pago.cuit}`:"Sin CUIT"}{x.p.pago.monto?` · ${fmtMoney(x.p.pago.monto)}/mes`:""}</div><button onClick={()=>setCfgDe(x.p)} style={ghPagoLink(T)}>Configurar</button></div>},
+      {h:"Factura del mes",w:"1.4fr",render:x=>{ const f=x.f, esp=x.p.pago.monto; const warn=!!(f&&esp&&f.monto&&Math.abs(f.monto-esp)>Math.max(1,esp*0.01));
+        if(!f) return <PagoChip T={T} faltaTxt="Falta la factura" onSubir={()=>setSubirFac({persona:x.p,mes})}/>;
+        const sub=[f.monto?fmtMoney(f.monto):"",f.fecha?ghPagoFecha(f.fecha):"",f.origen==="arca"?"encontrada en Mis Comprobantes":f.por==="colab"?"la subió ella":"la subiste vos",warn?`esperabas ${fmtMoney(esp)}`:""].filter(Boolean).join(" · ");
+        return <PagoChip T={T} ok warn={warn} okTxt={f.nro?`N° ${f.nro}`:"Recibida"} sub={sub} onVer={f.adjId?()=>abrir(f.adjId):null} onSubir={f.origen==="arca"?()=>setSubirFac({persona:x.p,mes}):null} onQuitar={f.origen==="subida"?()=>quitar(x.p.colabId):null}/>; }},
+    ]} rows={filas}/>}
     {activos.length>0&&<div style={{marginTop:18}}>
       <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:8}}>Meses anteriores</div>
       <DepTable T={T} cols={[
         {h:"Mes",w:"1fr",render:h=><button onClick={()=>setMes(h.m)} style={{...ghPagoLink(T),fontSize:DS.font.base}}>{ghPagoMesNombre(h.m)}</button>},
-        {h:"Pagado",w:"1fr",align:"right",render:h=><span style={{fontSize:DS.font.base,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(h.pagado)}</span>},
-        {h:"Estado",w:"1.4fr",render:h=><span style={{fontSize:DS.font.base,color:h.vacio?T.textSm:h.pend?T.yellow:T.green}}>{h.vacio?"Sin nada cargado":h.pend?`${h.pend} con algo pendiente`:"Todo completo"}</span>},
+        {h:"Facturas",w:"1fr",render:h=><span style={{fontSize:DS.font.base,color:!h.n?T.textSm:h.n<activos.length?T.yellow:T.green}}>{h.n} de {activos.length}</span>},
+        {h:"Total",w:"1fr",align:"right",render:h=><span style={{fontSize:DS.font.base,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(h.total)}</span>},
       ]} rows={historial}/>
-      <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.6}}>Si importás tus compras de "Mis Comprobantes" en el Facturador (pestaña IVA), las facturas de estos CUIT aparecen solas como recibidas.</div>
     </div>}
     {resto.length>0&&<div style={{marginTop:18}}>
       <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:8}}>Otras personas del equipo</div>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {resto.map(p=><div key={p.colabId} style={{display:"flex",alignItems:"center",gap:10,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 14px"}}>
           <div style={{flex:1,minWidth:0}}><div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>{p.nombre}</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>{p.rol||p.email}</div></div>
-          <Btn T={T} variant="secondary" size="sm" onClick={()=>setCfgDe(p)}>Activar pagos</Btn>
+          <Btn T={T} variant="secondary" size="sm" onClick={()=>setCfgDe(p)}>Activar</Btn>
         </div>)}
       </div>
     </div>}
-    <PagoConfigModal T={T} persona={cfgDe} onClose={()=>setCfgDe(null)} onGuardar={async pago=>{ await api({action:"equipoPagoCfg",colabId:cfgDe.colabId,pago}); toast(pago.activo?"Pagos activados ✓ — en su portal ya le aparece \"Mis pagos\"":"Pagos desactivados","success"); cargar(); }}/>
-    <PagoMarcarModal T={T} item={marcar} onClose={()=>setMarcar(null)} onGuardar={async({file,...x})=>{ const {colabId}=marcar.persona, m=marcar.mes; if(file){ const a=await ghPagoLeerArchivo(file); await api({action:"equipoPagoSubir",colabId,mes:m,kind:"transferencia",...a}); } const r=await api({action:"equipoPagoMarcar",colabId,mes:m,pagado:true,...x}); toast(r.avisado?"Pago guardado ✓ — le avisamos por mail":"Pago guardado ✓","success"); cargar(); }}/>
-    <PagoFacturaModal T={T} open={!!subirFac} onClose={()=>setSubirFac(null)} sugerido={subirFac?(subirFac.persona.pago?.monto||0)+(subirFac.persona.pago?.mono||0):0} onSubir={async a=>{ await api({action:"equipoPagoSubir",colabId:subirFac.persona.colabId,mes:subirFac.mes,kind:"factura",...a}); toast("Factura guardada ✓","success"); cargar(); }}/>
+    <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:14,lineHeight:1.6}}>El monotributo o el sueldo de cada una cargalo como gasto fijo en el Calendario de Pagos.</div>
+    <PagoConfigModal T={T} persona={cfgDe} onClose={()=>setCfgDe(null)} onGuardar={async pago=>{ await api({action:"equipoPagoCfg",colabId:cfgDe.colabId,pago}); toast(pago.activo?"Listo ✓ — en su portal ya le aparece \"Mis facturas\"":"Desactivado","success"); cargar(); }}/>
+    <PagoFacturaModal T={T} open={!!subirFac} onClose={()=>setSubirFac(null)} sugerido={subirFac?.persona.pago?.monto||0} onSubir={async a=>{ await api({action:"equipoPagoSubir",colabId:subirFac.persona.colabId,mes:subirFac.mes,kind:"factura",...a}); toast("Factura guardada ✓","success"); cargar(); }}/>
   </div>);
 }
 
-// Portal del colaborador: "Mis pagos".
+// Portal del colaborador: "Mis facturas".
 function ColabPagosPortal({T,token}){
-  const [d,setD]=useState(null); const [err,setErr]=useState(""); const [fac,setFac]=useState(null); const [ver,setVer]=useState(false);
+  const [d,setD]=useState(null); const [err,setErr]=useState(""); const [fac,setFac]=useState(null);
   const api=async body=>{ const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,token})}); const j=await r.json().catch(()=>({error:"Error del servidor"})); if(!r.ok||j.error) throw new Error(j.error||"Error"); return j; };
   const cargar=async()=>{ try{ setErr(""); setD(await api({action:"publicPagos"})); }catch(e){ setErr(e.message); } };
   useEffect(()=>{ cargar(); },[token]);
   if(err) return <div style={{padding:24,color:T.red,fontSize:DS.font.base}}>{err}</div>;
   if(!d) return <div style={{padding:24,color:T.textSm,fontSize:DS.font.base}}>Cargando…</div>;
-  const hoy=ghPagoMesHoy(); const total=(d.pago.monto||0)+(d.pago.mono||0);
-  const reg=m=>d.registros.find(r=>r.mes===m)||null;
-  const subirMono=async m=>{ const f=await ghPagoElegirArchivo(); if(!f) return; try{ const a=await ghPagoLeerArchivo(f); await api({action:"publicPagoSubir",mes:m,kind:"mono",...a}); toast("Comprobante enviado ✓","success"); cargar(); }catch(e){ toast(e.message,"error"); } };
-  const quitar=async(m,kind)=>{ if(!(await appConfirm("¿Quitar este archivo?",{danger:true,okLabel:"Quitar"}))) return; try{ await api({action:"publicPagoQuitar",mes:m,kind}); cargar(); }catch(e){ toast(e.message,"error"); } };
-  const abrir=id=>ghPagoAbrir(b=>api({action:"publicPagoAdj",...b}),id);
-  const Mes=({m,grande})=>{ const r=reg(m); const pasos=[
-      {ok:!!r?.pagado,t:r?.pagado?`Te pagaron ${fmtMoney(r.pagado.monto)}${r.pagado.fecha?` el ${ghPagoFecha(r.pagado.fecha)}`:""}`:"Todavía no figura el pago",acc:r?.transferencia?<button onClick={()=>abrir(r.transferencia.adjId)} style={ghPagoLink(T)}>Ver comprobante</button>:null},
-      {ok:!!r?.factura,t:r?.factura?`Factura subida${r.factura.nro?` · N° ${r.factura.nro}`:""}`:"Subí tu factura",acc:r?.factura?<span style={{display:"flex",gap:10}}><button onClick={()=>abrir(r.factura.adjId)} style={ghPagoLink(T)}>Ver</button>{r.factura.por==="colab"&&<button onClick={()=>quitar(m,"factura")} style={{...ghPagoLink(T),color:T.textSm}}>Quitar</button>}</span>:<Btn T={T} size="sm" onClick={()=>setFac(m)}>Subir factura</Btn>},
-      {ok:!!r?.mono,t:r?.mono?"Comprobante del monotributo subido":"Subí el comprobante de pago del monotributo",acc:r?.mono?<span style={{display:"flex",gap:10}}><button onClick={()=>abrir(r.mono.adjId)} style={ghPagoLink(T)}>Ver</button>{r.mono.por==="colab"&&<button onClick={()=>quitar(m,"mono")} style={{...ghPagoLink(T),color:T.textSm}}>Quitar</button>}</span>:<Btn T={T} size="sm" variant="secondary" onClick={()=>subirMono(m)}>Subir comprobante</Btn>},
-    ];
-    const listo=pasos[1].ok&&pasos[2].ok;
-    return (<Card T={T} padding="lg" style={{marginBottom:10}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-        <div style={{flex:1,fontSize:grande?DS.font.xl:DS.font.lg,fontWeight:700,color:T.text}}>{ghPagoMesNombre(m)}</div>
-        <DSBadge T={T} color={listo?T.green:T.yellow} size="sm">{listo?"Completo":"Falta algo"}</DSBadge>
-      </div>
-      {pasos.map((p,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:i?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
-        <span style={{width:20,height:20,borderRadius:99,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:p.ok?T.green:"transparent",border:p.ok?"none":`1.5px solid ${T.textSm}`,color:"#fff",fontSize:11,fontWeight:700}}>{p.ok?"✓":""}</span>
-        <span style={{flex:1,minWidth:160,fontSize:DS.font.base,color:p.ok?T.text:T.textMd}}>{p.t}</span>
-        {p.acc}
-      </div>)}
-    </Card>);
-  };
-  const anteriores=[1,2,3,4,5,6,7,8,9,10,11,12].map(i=>ghPagoMesMas(hoy,-i)).filter(m=>reg(m));
-  const pendAnt=anteriores.filter(m=>{ const r=reg(m); return !(r?.factura&&r?.mono); });
-  return (<div style={{maxWidth:720}}>
-    <div style={{fontSize:DS.font["2xl"],fontWeight:700,color:T.text,marginBottom:4}}>Mis pagos</div>
-    <div style={{fontSize:DS.font.base,color:T.textSm,lineHeight:1.6,marginBottom:14}}>Cada mes: cuando te llega el pago, hacé la factura por <strong style={{color:T.text}}>{fmtMoney(total)}</strong>{d.pago.mono?<> (incluye {fmtMoney(d.pago.mono)} para tu monotributo)</>:null}, pagá el monotributo y subí acá los dos comprobantes. Se aceptan PDF o fotos.</div>
-    <Mes m={hoy} grande/>
-    {pendAnt.filter(m=>m!==hoy).map(m=><Mes key={m} m={m}/>)}
-    {anteriores.length>pendAnt.length&&<div style={{marginTop:8}}>
-      <Btn T={T} variant="ghost" size="sm" onClick={()=>setVer(v=>!v)}>{ver?"Ocultar meses completos":"Ver meses completos"}</Btn>
-      {ver&&<div style={{marginTop:8}}>{anteriores.filter(m=>!pendAnt.includes(m)).map(m=><Mes key={m} m={m}/>)}</div>}
-    </div>}
-    <PagoFacturaModal T={T} open={!!fac} onClose={()=>setFac(null)} sugerido={total} onSubir={async a=>{ await api({action:"publicPagoSubir",mes:fac,kind:"factura",...a}); toast("Factura enviada ✓","success"); cargar(); }}/>
+  const hoy=ghPagoMesHoy();
+  const facDe=m=>d.registros.find(r=>r.mes===m)?.factura||null;
+  const quitar=async m=>{ if(!(await appConfirm("¿Quitar esta factura?",{danger:true,okLabel:"Quitar"}))) return; try{ await api({action:"publicPagoQuitar",mes:m,kind:"factura"}); cargar(); }catch(e){ toast(e.message,"error"); } };
+  const meses=[0,1,2,3,4,5].map(i=>ghPagoMesMas(hoy,-i));
+  return (<div style={{maxWidth:640}}>
+    <div style={{fontSize:DS.font["2xl"],fontWeight:700,color:T.text,marginBottom:4}}>Mis facturas</div>
+    <div style={{fontSize:DS.font.base,color:T.textSm,lineHeight:1.6,marginBottom:14}}>Subí acá la factura de cada mes{d.pago.monto?<> (por <strong style={{color:T.text}}>{fmtMoney(d.pago.monto)}</strong>)</>:null}. Se acepta el PDF o una foto.</div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {meses.map(m=>{ const f=facDe(m); return (
+        <div key={m} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:T.card,border:`1px solid ${m===hoy&&!f?T.accent+"66":T.border}`,borderRadius:DS.r.xl,padding:"12px 16px"}}>
+          <span style={{width:20,height:20,borderRadius:99,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:f?T.green:"transparent",border:f?"none":`1.5px solid ${T.textSm}`,color:"#fff",fontSize:11,fontWeight:700}}>{f?"✓":""}</span>
+          <div style={{flex:1,minWidth:150}}>
+            <div style={{fontSize:DS.font.lg,fontWeight:600,color:T.text}}>{ghPagoMesNombre(m)}</div>
+            <div style={{fontSize:DS.font.sm,color:T.textSm}}>{f?[f.nro?`N° ${f.nro}`:"Factura subida",f.monto?fmtMoney(f.monto):""].filter(Boolean).join(" · "):"Falta subir la factura"}</div>
+          </div>
+          {f?<span style={{display:"flex",gap:12}}><button onClick={()=>ghPagoAbrir(b=>api({action:"publicPagoAdj",...b}),f.adjId)} style={ghPagoLink(T)}>Ver</button>{f.por==="colab"&&<button onClick={()=>quitar(m)} style={{...ghPagoLink(T),color:T.textSm}}>Quitar</button>}</span>
+            :<Btn T={T} size="sm" variant={m===hoy?"primary":"secondary"} onClick={()=>setFac(m)}>Subir factura</Btn>}
+        </div>); })}
+    </div>
+    <PagoFacturaModal T={T} open={!!fac} onClose={()=>setFac(null)} sugerido={d.pago.monto||0} onSubir={async a=>{ await api({action:"publicPagoSubir",mes:fac,kind:"factura",...a}); toast("Factura enviada ✓","success"); cargar(); }}/>
   </div>);
 }
 
