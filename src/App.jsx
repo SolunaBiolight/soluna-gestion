@@ -17881,6 +17881,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
           <ol style={{margin:"0 0 8px",paddingLeft:18}}>
             <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent}}>dev.shopify.com/dashboard</a>, abrí tu app <strong>Growith</strong> y andá a <strong>Versiones → Crear versión</strong>.</li>
             <li>En <strong>Alcances (scopes)</strong> borrá lo que haya y pegá la lista completa (botón de abajo).</li>
+            <li>Revisá que la <strong>URL de la app</strong> sea <code>https://www.growithapp.com</code> y la de <strong>redireccionamiento</strong> <code>https://www.growithapp.com/api/integrations?platform=shopify</code>.</li>
             <li>Tocá <strong>Publicar / Lanzar</strong> la versión.</li>
             <li>Volvé acá y tocá <strong>Reconectar Shopify</strong>: Shopify te va a pedir aprobar los permisos nuevos.</li>
           </ol>
@@ -19073,7 +19074,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                 <div style={{fontWeight:700,color:T.text,marginBottom:8}}>Crear tu app en Shopify (3 minutos)</div>
                 <ol style={{margin:0,paddingLeft:18,display:"flex",flexDirection:"column",gap:9}}>
                   <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → <strong style={{color:T.text}}>Create app</strong> → nombre <strong style={{color:T.text}}>Growith</strong>.</li>
-                  <li>Entrá a la app → <strong style={{color:T.text}}>Versiones → Crear versión</strong>. Ahí adentro está todo lo de los pasos 3 y 4.</li>
+                  <li>Entrá a la app → <strong style={{color:T.text}}>Versiones → Crear versión</strong>. Ahí adentro van los permisos, la URL de la app y la de redireccionamiento de los pasos que siguen.</li>
                   <li>En <strong style={{color:T.text}}>Alcances (scopes)</strong> pegá TODOS estos de una (van separados por comas):
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
                       <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>{GH_SHOPIFY_SCOPES}</code>
@@ -19081,6 +19082,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                     </div>
                   </li>
                   <li><strong style={{color:T.text}}>Datos protegidos del cliente</strong> (en la app → <strong style={{color:T.text}}>Configuración → Acceso a los datos protegidos del cliente</strong>): pedí acceso y marcá <strong style={{color:T.text}}>Nombre, Email, Teléfono y Dirección</strong>. Sin esto Shopify manda los pedidos SIN el nombre ni la dirección del comprador y no se pueden hacer las etiquetas. (En el plan Basic de Shopify estos datos pueden no estar disponibles por API.)</li>
+                  {/* 27/oct/2026 (caso tienda COYA): sin la URL de la app, Shopify no vuelve a Growith después de autorizar. */}
+                  <li>En <strong style={{color:T.text}}>URL de la app</strong> (App URL) pegá exactamente esta. Si queda vacía o con el ejemplo que trae Shopify, después de autorizar no vuelve a Growith y la tienda no se conecta:
+                    <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
+                      <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>https://www.growithapp.com</code>
+                      <button onClick={()=>{navigator.clipboard.writeText("https://www.growithapp.com");toast("URL copiada ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
+                    </div>
+                  </li>
                   <li>En <strong style={{color:T.text}}>URL de redireccionamiento</strong> pegá exactamente esta:
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
                       <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>https://www.growithapp.com/api/integrations?platform=shopify</code>
