@@ -18174,7 +18174,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
         no_secret:"Faltó la clave secreta de la app. Volvé a conectar pegando el Client ID y el Client Secret.",
         state_not_found:"La autorización tardó demasiado o se abrió dos veces. Volvé a tocar Conectar Shopify y autorizá en menos de 10 minutos, en una sola pestaña.",
         state_read_failed:"No pudimos leer el pedido de conexión. Probá de nuevo en un minuto.",
-        shop_mismatch:"Autorizaste en una tienda distinta a la que escribiste. Poné el dominio .myshopify.com de la misma tienda donde aceptás.",
+        shop_mismatch:"Shopify devolvió un dominio de tienda que no es válido. En tu admin de Shopify → Configuración → Dominios copiá el que termina en .myshopify.com y volvé a conectar con ese.",
         no_access_token:"Shopify no devolvió el acceso. Revisá que la app esté publicada (dev.shopify.com → tu app → Versiones → Publicar) e instalada en tu tienda, y volvé a conectar.",
         tn_already_connected:"Esta cuenta tiene Tienda Nube conectada, y una cuenta tiene una sola tienda. Creá una tienda nueva en Growith (Configuración → Tiendas) para Shopify, o desvinculá Tienda Nube primero.",
         save_failed:"Shopify autorizó pero no pudimos guardar la conexión. Probá de nuevo en un minuto.",

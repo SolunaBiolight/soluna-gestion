@@ -329,9 +329,14 @@ async function shopifyOauthCallback(req, res, db) {
     return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=state_read_failed#/config/integraciones`);
   }
 
-  if (pending.shop !== shop) {
+  // Dominio distinto al que escribió el cliente (27/oct/2026, caso tienda COYA): Shopify asigna dominios
+  // .myshopify.com al azar y el cliente suele escribir el nombre de su marca; Shopify lo lleva igual a su
+  // tienda real y vuelve con ESE dominio. No se corta: el state ata el pedido a esta cuenta y la firma
+  // (HMAC, abajo) prueba que Shopify autorizó esa tienda con la app del cliente. Se conecta la tienda real.
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop)) {
     return res.redirect(`${SHOPIFY_APP_URL}/?shopify_error=shop_mismatch#/config/integraciones`);
   }
+  if (pending.shop !== shop) console.warn(`[shopify-callback] el cliente escribió ${pending.shop} y autorizó ${shop}: se conecta ${shop}`);
 
   const uid = pending.uid;
   const clientId = pending.client_id;
