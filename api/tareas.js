@@ -158,6 +158,90 @@ async function digestManagers(db, uid, titulo, detalle, tareaTitulo) {
     await db.collection("users").doc(uid).collection("tareas_digest").add({ at: new Date(), titulo: String(titulo).slice(0, 160), detalle: String(detalle || "").slice(0, 400), tarea: String(tareaTitulo || "").slice(0, 120) });
   } catch (e) { console.error("[tareas digest]", e.message); }
 }
+// ── Pagos al equipo (26/oct/2026) ─────────────────────────────────────────
+// Para colaboradores que cobran como monotributistas: el dueño les pasa la
+// plata del mes (incluida la cuota del monotributo, que pagan ellos) y ellos le
+// suben desde su portal la factura y el comprobante del monotributo.
+// equipo_pagos/{colabId}_{AAAA-MM} = { uid, colabId, mes, pagado, factura, mono }
+// equipo_pagos_adj/{id} = archivo en base64 (≤ 900.000 caracteres). Server-only.
+// La configuración vive en colaboradores/{id}.pago {activo, cuit, monto, mono, dia, notas}.
+const PAGO_MES_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const PAGO_ADJ_MAX = 900000;
+const PAGO_KINDS = ["factura", "mono", "transferencia"];
+function pagoCfgLimpia(p = {}) {
+  const num = v => Math.max(0, Math.min(1e9, Math.round((Number(v) || 0) * 100) / 100));
+  return {
+    activo: !!p.activo,
+    cuit: String(p.cuit || "").replace(/\D/g, "").slice(0, 11),
+    monto: num(p.monto), mono: num(p.mono),
+    dia: Math.max(1, Math.min(28, parseInt(p.dia, 10) || 5)),
+    notas: String(p.notas || "").slice(0, 300),
+  };
+}
+async function pagoSubir(db, { uid, colabId, mes, kind, nombre, data, nro, monto, fecha, por }) {
+  if (!PAGO_MES_RE.test(String(mes || ""))) throw Object.assign(new Error("Mes inválido"), { code: 400 });
+  if (!PAGO_KINDS.includes(kind)) throw Object.assign(new Error("Tipo de archivo inválido"), { code: 400 });
+  const m = /^data:(application\/pdf|image\/jpeg|image\/png|image\/webp);base64,[A-Za-z0-9+/=]+$/.exec(String(data || ""));
+  if (!m) throw Object.assign(new Error("Subí un PDF o una foto (JPG, PNG)."), { code: 400 });
+  if (data.length > PAGO_ADJ_MAX) throw Object.assign(new Error("El archivo pesa demasiado (máximo ~650 KB). Si es una foto, sacala de nuevo o mandá una captura."), { code: 400 });
+  const ref = db.collection("equipo_pagos").doc(`${colabId}_${mes}`);
+  const prev = await ref.get();
+  const viejo = prev.exists ? prev.data()[kind] : null;
+  const adjRef = db.collection("equipo_pagos_adj").doc();
+  await adjRef.set({ uid, colabId, mes, kind, nombre: String(nombre || kind).slice(0, 120), mime: m[1], data, at: new Date() });
+  const info = { adjId: adjRef.id, nombre: String(nombre || kind).slice(0, 120), mime: m[1], at: new Date(), por };
+  if (kind === "factura") {
+    info.nro = String(nro || "").replace(/[^\d-]/g, "").slice(0, 20);
+    info.monto = Math.max(0, Math.min(1e9, Number(monto) || 0));
+    info.fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha || "")) ? String(fecha) : "";
+  }
+  await ref.set({ uid, colabId, mes, [kind]: info, updatedAt: new Date() }, { merge: true });
+  if (viejo?.adjId) await db.collection("equipo_pagos_adj").doc(viejo.adjId).delete().catch(() => {});
+  return info;
+}
+async function pagoQuitar(db, { uid, colabId, mes, kind, soloPor }) {
+  if (!PAGO_MES_RE.test(String(mes || "")) || !PAGO_KINDS.includes(kind)) throw Object.assign(new Error("Datos inválidos"), { code: 400 });
+  const ref = db.collection("equipo_pagos").doc(`${colabId}_${mes}`);
+  const s = await ref.get();
+  const x = s.exists ? s.data()[kind] : null;
+  if (!x || s.data().uid !== uid) return false;
+  if (soloPor && x.por !== soloPor) throw Object.assign(new Error("Ese archivo lo subió el dueño de la cuenta."), { code: 403 });
+  await ref.set({ [kind]: FieldValue.delete(), updatedAt: new Date() }, { merge: true });
+  if (x.adjId) await db.collection("equipo_pagos_adj").doc(x.adjId).delete().catch(() => {});
+  return true;
+}
+function pagoMesesAtras(n) {
+  const out = [], d = new Date(Date.now() - 3 * 3600e3);
+  for (let i = 0; i < n; i++) { const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1)); out.push(x.toISOString().slice(0, 7)); }
+  return out;
+}
+// Facturas que el dueño ya importó de "Mis Comprobantes" (Facturador → IVA →
+// compras): si una viene del CUIT de un colaborador, cuenta como recibida.
+async function pagoDetectadas(db, uid, cuits) {
+  const out = {};
+  if (!cuits.size) return out;
+  try {
+    const meses = pagoMesesAtras(7);
+    const s = await db.collection("users").doc(uid).collection("arca_iva").where("mes", "in", meses).get();
+    s.forEach(d => {
+      for (const r of (d.data().compras?.rows || [])) {
+        const doc = String(r.doc || "").replace(/\D/g, "");
+        if (!cuits.has(doc) || r.nc) continue;
+        const mes = String(r.f || "").slice(0, 7);
+        (out[`${doc}_${mes}`] || (out[`${doc}_${mes}`] = [])).push({ nro: `${String(r.pv || "").padStart(5, "0")}-${String(r.nro || "").padStart(8, "0")}`, monto: Number(r.tot) || 0, fecha: r.f, tipo: r.tipo || "" });
+      }
+    });
+  } catch (e) { console.error("[pagos detectadas]", e.message); }
+  return out;
+}
+function emailPagoAvisado({ colab, mes, monto, link }) {
+  const mesTxt = new Date(mes + "-15T12:00:00Z").toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  return `<div style="font-family:Inter,Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#111827">
+  <p style="font-size:15px">Hola ${esc(colab.nombre || "")},</p>
+  <p style="font-size:14px;color:#374151;line-height:1.6">Ya te pagaron ${monto ? `<strong>$${Number(monto).toLocaleString("es-AR")}</strong> ` : ""}de <strong>${esc(mesTxt)}</strong>. Cuando puedas, subí desde tu portal la <strong>factura</strong> de este mes y el <strong>comprobante de pago del monotributo</strong>.</p>
+  ${link ? `<div style="text-align:center;margin:20px 0"><a href="${link}" style="background:#6366f1;color:#fff;padding:11px 26px;border-radius:999px;text-decoration:none;font-size:14px;font-weight:700">Abrir mi portal</a></div>` : ""}
+</div>`;
+}
 async function notifyManagers(db, uid, managerEmail, subject, html) {
   // Usamos el email ACTUAL del usuario (userDoc.email, editable en Config) — así
   // si lo cambiás, las notificaciones van al nuevo, no al que quedó guardado en la
@@ -975,7 +1059,7 @@ async function handlerTareas(req, res) {
       const snap = await db.collection("colaboradores").where("token","==",colabToken).limit(1).get();
       if (snap.empty) return res.status(404).json({ error:"Token inválido" });
       const colab = snap.docs[0].data();
-      return res.json({ email:colab.email, nombre:colab.nombre, token:colabToken, uid:colab.uid, permisos:colab.permisos||{}, rol:colab.rol||"" });
+      return res.json({ email:colab.email, nombre:colab.nombre, token:colabToken, uid:colab.uid, permisos:colab.permisos||{}, rol:colab.rol||"", pagos: !!colab.pago?.activo });
     }
 
     // Referencias compartidas para el portal del colaborador (público, vía token)
@@ -1159,7 +1243,7 @@ async function handlerTareas(req, res) {
         if (!d.purgeAt || d.purgeAt > nowIso) continue;
         try {
           const uidP = doc.id;
-          const ROOT = [["reclamos", "ownerId"], ["canjes", "ownerId"], ["tareas", "uid"], ["colaboradores", "uid"], ["pagos", "uid"]];
+          const ROOT = [["reclamos", "ownerId"], ["canjes", "ownerId"], ["tareas", "uid"], ["colaboradores", "uid"], ["pagos", "uid"], ["equipo_pagos", "uid"], ["equipo_pagos_adj", "uid"]];
           for (const [col, campo] of ROOT) {
             let snap;
             do {
@@ -1179,7 +1263,7 @@ async function handlerTareas(req, res) {
         if (!d.tiendaPurgeAt || d.tiendaPurgeAt > nowIso) continue;
         try {
           const uidP = doc.id;
-          const ROOT = [["reclamos", "ownerId"], ["canjes", "ownerId"], ["tareas", "uid"], ["colaboradores", "uid"]];
+          const ROOT = [["reclamos", "ownerId"], ["canjes", "ownerId"], ["tareas", "uid"], ["colaboradores", "uid"], ["equipo_pagos", "uid"], ["equipo_pagos_adj", "uid"]];
           for (const [col, campo] of ROOT) {
             let snap;
             do {
@@ -1196,6 +1280,38 @@ async function handlerTareas(req, res) {
       }
       if (purgadas.length) await logAdmin(db, { adminUid: "cron", action: "cuentas_purgadas", detalle: purgadas.join(",") });
       return res.json({ ok: true, purgadas, errores });
+    }
+
+    // ── Pagos al equipo: portal del colaborador (solo token) ────────────────
+    if (["publicPagos", "publicPagoSubir", "publicPagoAdj", "publicPagoQuitar"].includes(action)) {
+      if (!token) return res.status(400).json({ error: "Token requerido" });
+      const cs = await db.collection("colaboradores").where("token", "==", String(token)).limit(1).get();
+      if (cs.empty) return res.status(403).json({ error: "Link inválido" });
+      const colabId = cs.docs[0].id, colab = cs.docs[0].data();
+      if (!colab.pago?.activo) return res.status(403).json({ error: "Los pagos no están activados para tu portal." });
+      try {
+        if (action === "publicPagos") {
+          const meses = new Set(pagoMesesAtras(13));
+          const ps = await db.collection("equipo_pagos").where("colabId", "==", colabId).get();
+          const registros = ps.docs.map(d => d.data()).filter(x => x.uid === colab.uid && meses.has(x.mes)).map(({ uid: _u, ...x }) => x);
+          const { monto, mono, dia, cuit } = colab.pago;
+          return res.json({ ok: true, pago: { monto, mono, dia, cuit }, registros });
+        }
+        if (action === "publicPagoSubir") {
+          const info = await pagoSubir(db, { uid: colab.uid, colabId, mes: body.mes, kind: body.kind === "mono" ? "mono" : "factura", nombre: body.nombre, data: body.data, nro: body.nro, monto: body.monto, fecha: body.fecha, por: "colab" });
+          digestManagers(db, colab.uid, `${colab.nombre || "Un colaborador"} subió ${body.kind === "mono" ? "el comprobante del monotributo" : "su factura"} de ${body.mes}`, info.nro ? `Factura ${info.nro}${info.monto ? ` por $${info.monto.toLocaleString("es-AR")}` : ""}` : "", "Pagos al equipo");
+          return res.json({ ok: true, info });
+        }
+        if (action === "publicPagoAdj") {
+          const a = await db.collection("equipo_pagos_adj").doc(String(body.adjId || "x")).get();
+          if (!a.exists || a.data().colabId !== colabId || a.data().uid !== colab.uid) return res.status(404).json({ error: "No encontrado" });
+          return res.json({ ok: true, nombre: a.data().nombre, mime: a.data().mime, data: a.data().data });
+        }
+        if (action === "publicPagoQuitar") {
+          await pagoQuitar(db, { uid: colab.uid, colabId, mes: body.mes, kind: body.kind === "mono" ? "mono" : "factura", soloPor: "colab" });
+          return res.json({ ok: true });
+        }
+      } catch (e) { return res.status(e.code || 500).json({ error: e.message }); }
     }
 
     // ── ACCIONES AUTENTICADAS (uid + token de Firebase atado a ese uid) ───────
@@ -1530,6 +1646,70 @@ async function handlerTareas(req, res) {
     // Comprobante de pago del cliente — vía backend con Admin SDK: las reglas
     // de Firestore no dejan a un usuario común escribir en `pagos` desde el
     // navegador (error "Missing or insufficient permissions" al suscribirse).
+    // ── Pagos al equipo: vista del dueño ─────────────────────────────────────
+    if (["equipoPagos", "equipoPagoCfg", "equipoPagoMarcar", "equipoPagoSubir", "equipoPagoAdj", "equipoPagoQuitar"].includes(action)) {
+      if (colabAuth || (typeof soloReclamos !== "undefined" && soloReclamos)) return res.status(403).json({ error: "No autorizado" });
+      if (typeof authViaTeam !== "undefined" && authViaTeam) return res.status(403).json({ error: "Los pagos al equipo los ve solo el dueño de la cuenta." });
+      const colabId = String(body.colabId || "");
+      try {
+        if (action === "equipoPagos") {
+          const [cs, ps] = await Promise.all([
+            db.collection("colaboradores").where("uid", "==", uid).get(),
+            db.collection("equipo_pagos").where("uid", "==", uid).get(),
+          ]);
+          const meses = new Set(pagoMesesAtras(13));
+          const personas = cs.docs.map(d => { const c = d.data(); return { colabId: d.id, nombre: c.nombre || c.email || "", email: c.email || "", rol: c.rol || "", pago: c.pago ? pagoCfgLimpia(c.pago) : null }; })
+            .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+          const registros = ps.docs.map(d => d.data()).filter(x => meses.has(x.mes)).map(({ uid: _u, ...x }) => x);
+          const cuits = new Set(personas.filter(p => p.pago?.activo && p.pago.cuit.length === 11).map(p => p.pago.cuit));
+          const detectadas = await pagoDetectadas(db, uid, cuits);
+          return res.json({ ok: true, personas, registros, detectadas });
+        }
+        if (!colabId) return res.status(400).json({ error: "Falta colabId" });
+        if (action === "equipoPagoCfg") {
+          const pago = pagoCfgLimpia(body.pago || {});
+          if (pago.cuit && pago.cuit.length !== 11) return res.status(400).json({ error: "El CUIT tiene que tener 11 números." });
+          await db.collection("colaboradores").doc(colabId).set({ pago, updatedAt: now }, { merge: true });
+          return res.json({ ok: true, pago });
+        }
+        if (action === "equipoPagoMarcar") {
+          const mes = String(body.mes || "");
+          if (!PAGO_MES_RE.test(mes)) return res.status(400).json({ error: "Mes inválido" });
+          const ref = db.collection("equipo_pagos").doc(`${colabId}_${mes}`);
+          if (!body.pagado) {
+            await ref.set({ uid, colabId, mes, pagado: FieldValue.delete(), updatedAt: now }, { merge: true });
+            return res.json({ ok: true });
+          }
+          const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(body.fecha || "")) ? String(body.fecha) : new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+          const pagado = { monto: Math.max(0, Math.min(1e9, Number(body.monto) || 0)), fecha, nota: String(body.nota || "").slice(0, 300), at: now };
+          await ref.set({ uid, colabId, mes, pagado, updatedAt: now }, { merge: true });
+          let avisado = false;
+          if (body.avisar) {
+            const c = (await db.collection("colaboradores").doc(colabId).get()).data() || {};
+            if (c.email && c.token) {
+              const r = await sendEmail({ to: c.email, subject: `Ya te pagaron ${mes} — subí tu factura`, html: emailPagoAvisado({ colab: c, mes, monto: pagado.monto, link: colabPortalLink(origin, c.token) }) });
+              avisado = !!r?.ok;
+            }
+          }
+          return res.json({ ok: true, pagado, avisado });
+        }
+        if (action === "equipoPagoSubir") {
+          const kind = PAGO_KINDS.includes(body.kind) ? body.kind : "factura";
+          const info = await pagoSubir(db, { uid, colabId, mes: body.mes, kind, nombre: body.nombre, data: body.data, nro: body.nro, monto: body.monto, fecha: body.fecha, por: "dueño" });
+          return res.json({ ok: true, info });
+        }
+        if (action === "equipoPagoAdj") {
+          const a = await db.collection("equipo_pagos_adj").doc(String(body.adjId || "x")).get();
+          if (!a.exists || a.data().uid !== uid) return res.status(404).json({ error: "No encontrado" });
+          return res.json({ ok: true, nombre: a.data().nombre, mime: a.data().mime, data: a.data().data });
+        }
+        if (action === "equipoPagoQuitar") {
+          await pagoQuitar(db, { uid, colabId, mes: body.mes, kind: PAGO_KINDS.includes(body.kind) ? body.kind : "factura" });
+          return res.json({ ok: true });
+        }
+      } catch (e) { return res.status(e.code || 500).json({ error: e.message }); }
+    }
+
     if (action === "crearPago") {
       if (typeof authViaTeam !== "undefined" && authViaTeam) return res.status(403).json({ error: "Solo el dueño de la cuenta puede gestionar pagos." });
       const { plan, method, currency = "", amount, txHash = "", transferRef = "", nota = "", meses = 1, periodo = "mensual", email = "" } = body;
