@@ -452,9 +452,11 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   for (const c of Object.values(campanas)) { if (c.id && meta.metaDice?.[c.id]) c.metaDice = meta.metaDice[c.id];
     c.ventas = c.ventas || 0; c.n = c.n || 0; c.comisiones = c.comisiones || 0; c.ganancia = c.ventas - c.comisiones - c.gasto; c.roas = c.gasto ? c.ventas / c.gasto : null; c.cpa = c.n && c.gasto ? c.gasto / c.n : null; }
   // Meta atribuido a cada venta: el gasto de su tienda ese día, repartido según lo que pesó la venta en la facturación del día.
+  // Meta atribuido a cada venta: el gasto TOTAL del día (todas las cuentas y campañas, aunque no tengan tienda)
+  // repartido según lo que pesó la venta en la facturación del día. Así la suma de Meta de las ventas = gasto del día.
   const td = {};
-  for (const f of Object.values(filas)) { const k = `${f.tienda}|${f.fecha}`; const x = td[k] || (td[k] = { ventas: 0, gasto: 0 }); x.ventas += f.ventas; x.gasto += f.gasto; }
-  for (const v of ventasLista) { const x = td[`${v.tid}|${v.fecha}`]; v.meta = x && x.ventas > 0 ? x.gasto * v.total / x.ventas : 0; v.profit = v.total - v.comision - v.meta; }
+  for (const f of Object.values(filas)) { const x = td[f.fecha] || (td[f.fecha] = { ventas: 0, gasto: 0 }); x.ventas += f.ventas; x.gasto += f.gasto; }
+  for (const v of ventasLista) { const x = td[v.fecha]; v.meta = x && x.ventas > 0 ? x.gasto * v.total / x.ventas : 0; v.profit = v.total - v.comision - v.meta; }
   const lista = Object.values(filas).map(f => ({ ...f, ganancia: f.ventas - f.reembolsos - f.comisiones - f.gasto }));
   lista.sort((a, b) => (a.fecha + String(a.hora).padStart(2, "0")).localeCompare(b.fecha + String(b.hora).padStart(2, "0")) || a.tienda.localeCompare(b.tienda));
   // Gastos fijos mensuales del cliente, repartidos por día (mes de 30/31 días según corresponda).
@@ -670,7 +672,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v9_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v10_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });

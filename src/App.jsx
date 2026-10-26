@@ -19588,19 +19588,20 @@ function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
     </div>
     <Card T={T} padding="sm" style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead><tr><th style={{...th,textAlign:"left"}}>Fecha</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={{...th,textAlign:"left"}}>Orden</th><th style={th}>Total</th><th style={th}>Comisión</th><th style={th}>Meta</th><th style={th}>Profit</th></tr></thead>
+        <thead><tr><th style={{...th,textAlign:"left"}}>Fecha</th><th style={{...th,textAlign:"left"}}>Tienda</th><th style={{...th,textAlign:"left"}}>Cliente</th><th style={{...th,textAlign:"left"}}>Orden</th><th style={th}>Total</th><th style={th}>Comisión</th><th style={th}>Meta</th><th style={th}>Profit</th></tr></thead>
         <tbody>{lista.slice(0,n).map(v=>{ const k=String(v.orden)+v.at; const ab=abierta===k; const [fl,fc]=FUENTE[v.fuente]||FUENTE.estimada; return (
           <React.Fragment key={k}>
-            <tr onClick={()=>setAbierta(ab?null:k)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:"pointer",opacity:v.reembolsada?0.5:1}} className="gh-hover-surface">
+            <tr onClick={()=>setAbierta(ab?null:k)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:"pointer",opacity:v.reembolsada?0.45:1,textDecoration:v.reembolsada?"line-through":"none"}} className="gh-hover-surface">
               <td style={{...td,textAlign:"left",color:T.textMd}}>{v.fecha.slice(5).split("-").reverse().join("/")} {String(v.hora).padStart(2,"0")}:{String(new Date(v.at).getUTCMinutes()).padStart(2,"0")}</td>
               <td style={{...td,textAlign:"left",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{v.tienda}</td>
+              <td style={{...td,textAlign:"left",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",color:T.textMd}} title={v.email||""}>{v.email||"—"}</td>
               <td style={{...td,textAlign:"left"}}>#{v.orden}{v.post_compra && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"1px 7px"}}>POST-COMPRA</span>}{v.reembolsada && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:99,padding:"1px 7px"}}>{v.reembolso?.status==="pending"?"REEMBOLSO EN PROCESO":v.reembolso&&v.reembolso.usd<v.total-0.01?"REEMBOLSO PARCIAL":"REEMBOLSADA"}</span>}</td>
               <td style={td}>{GH_FMT_USD(v.total)}</td>
               <td style={td}>{GH_FMT_USD(v.comision)} <span style={{fontSize:10,fontWeight:700,color:fc,background:fc+"18",borderRadius:99,padding:"1px 7px",marginLeft:4}}>{fl}</span></td>
               <td style={{...td,color:T.textMd}}>{GH_FMT_USD(v.meta||0)}</td>
               <td style={{...td,fontWeight:DS.w.bold,color:(v.profit??0)>=0?T.green:T.red}}>{GH_FMT_USD(v.profit??(v.total-v.comision))}</td>
             </tr>
-            {ab && <tr style={{background:T.bg}}><td colSpan={7} style={{padding:"10px 14px"}}>
+            {ab && <tr style={{background:T.bg}}><td colSpan={8} style={{padding:"10px 14px"}}>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18}}>
                 <div style={{fontSize:DS.font.sm}}>
                   <div style={{fontWeight:700,color:T.text,marginBottom:6}}>De dónde sale el profit</div>
