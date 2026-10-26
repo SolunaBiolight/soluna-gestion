@@ -22114,7 +22114,8 @@ function AdmFicha({ctx, u, onClose, pestana="resumen"}) {
               {u.providers?.length>0&&F("Acceso",u.providers.map(p=>p==="password"?"email y contraseña":p==="google.com"?"Google":p).join(", "))}
               {F("Integraciones",<span style={{display:"inline-flex",gap:5,alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>{(u.stores||[]).length===0&&!u.cuits&&!u.metaAccounts?<span style={{color:T.textSm}}>ninguna</span>:<>{(u.stores||[]).map((s,i)=><span key={i} title={`${s.type}${s.name?" · "+s.name:""}`} style={{display:"inline-flex"}}><BrandIcon name={s.type} size={15}/></span>)}{u.cuits>0&&<span title={`ARCA · ${u.cuits} CUIT`} style={{display:"inline-flex"}}><BrandIcon name="arca" size={15}/></span>}{u.metaAccounts>0&&<span title="Meta Ads" style={{display:"inline-flex"}}><BrandIcon name="meta" size={15}/></span>}</>}</span>)}
               {F("Onboarding",u.onbDone?"completado":u._sinDoc?"nunca entró a la app":"sin completar")}
-              {(u.stores||[]).some(s=>s.type==="shopify")&&F("Shopify",<AdmShopifyPermisos T={T} u={u}/>)}
+              {/* Siempre visible (26/oct/2026): el diagnóstico sirve justo cuando la conexión no quedó hecha. */}
+              {F("Shopify",<AdmShopifyPermisos T={T} u={u}/>)}
               {F("UID",<button onClick={()=>{try{navigator.clipboard.writeText(u._id);toast("UID copiado","success");}catch(_){appAlert(u._id);}}} title={u._id} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,color:T.textSm,cursor:"pointer",padding:"1px 8px",fontSize:10,fontFamily:"'Inter',system-ui,sans-serif"}}>{u._id.slice(0,10)}… copiar</button>)}
             </div>
           </div></Card>
