@@ -19530,11 +19530,35 @@ function GhImpCards({T,cards,editar,setEditar}){
   </>);
 }
 // Ventas una por una (debajo de las tiendas): para controlar la comisión de cada cobro.
-function GhImpVentasLista({T,ventas,prom}){
+function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
+  const [busy,setBusy]=useState(null);
+  const reembolsar=async(v)=>{
+    const m=await appPrompt(`Monto a devolver en ${v.monedaOriginal} (máximo ${v.totalOriginal}). Stripe no devuelve su comisión: se resta todo el monto del profit del día de la venta.`, String(v.totalOriginal), {title:`Reembolsar orden #${v.orden}`});
+    if(m==null) return; const monto=Number(String(m).replace(",","."));
+    if(!(monto>0)) return appAlert("Monto inválido");
+    if(!await appConfirm(`¿Devolver ${monto} ${v.monedaOriginal} de la orden #${v.orden}${v.email?` (${v.email})`:""}? Se hace en Stripe y no se puede deshacer.`,{danger:true,okLabel:"Reembolsar"})) return;
+    setBusy(v.order_id);
+    try{ const j=await authFetch(`/api/impultienda?action=reembolsar&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:v.order_id,monto})}).then(r=>r.json()); if(j.error) throw new Error(j.error); onCambio&&onCambio(); }
+    catch(e){ appAlert("No se pudo reembolsar: "+e.message); } finally{ setBusy(null); }
+  };
+  const estado=async(v)=>{ setBusy(v.order_id); try{ const j=await authFetch(`/api/impultienda?action=reembolso_estado&uid=${uid}&order_id=${encodeURIComponent(v.order_id)}`).then(r=>r.json()); if(j.error) throw new Error(j.error); onCambio&&onCambio(); }catch(e){ appAlert(e.message); } finally{ setBusy(null); } };
+  const comprobante=(v)=>{
+    const r=v.reembolso; const w=window.open("","_blank"); if(!w) return;
+    const esc=(x)=>String(x??"").replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Comprobante de reembolso #${esc(v.orden)}</title><style>body{font-family:Inter,system-ui,sans-serif;max-width:560px;margin:40px auto;padding:0 20px;color:#111}h1{font-size:20px;margin:0 0 4px}.s{color:#666;font-size:13px;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}td{padding:9px 0;border-bottom:1px solid #eee}td:last-child{text-align:right;font-weight:600}.ok{display:inline-block;background:#e7f8ee;color:#137a3d;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:700}.p{background:#fff5e0;color:#9a5b00}.n{color:#888;font-size:12px;margin-top:22px;line-height:1.5}</style></head><body>
+      <h1>Comprobante de reembolso</h1><div class="s">${esc(v.tienda)}</div>
+      <table><tr><td>Orden</td><td>#${esc(v.orden)}</td></tr><tr><td>Fecha de la compra</td><td>${esc(new Date(v.at).toLocaleString("es-AR"))}</td></tr>${v.email?`<tr><td>Comprador</td><td>${esc(v.email)}</td></tr>`:""}
+      <tr><td>Monto reembolsado</td><td>${esc(r.monto)} ${esc(r.moneda)}</td></tr><tr><td>Fecha del reembolso</td><td>${esc(new Date(r.creado).toLocaleString("es-AR"))}</td></tr>
+      <tr><td>Estado</td><td><span class="ok ${r.status==="succeeded"?"":"p"}">${r.status==="succeeded"?"Realizado":r.status==="pending"?"En proceso":esc(r.status)}</span></td></tr>
+      <tr><td>ID de reembolso (Stripe)</td><td>${esc(r.id)}</td></tr><tr><td>ID del cobro</td><td>${esc(r.charge)}</td></tr></table>
+      <div class="n">El dinero vuelve al mismo medio de pago. Según el banco puede tardar entre 5 y 10 días hábiles en verse en el resumen. Con el ID de reembolso el banco puede rastrearlo.</div>
+      <script>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+    w.document.close();
+  };
   const [abierta,setAbierta]=useState(null);
   const [n,setN]=useState(50);
   const [q,setQ]=useState("");
-  const lista=ventas.filter(v=>!q||String(v.orden).includes(q)||String(v.tienda).toLowerCase().includes(q.toLowerCase()));
+  const lista=ventas.filter(v=>!q||String(v.orden).includes(q)||String(v.tienda).toLowerCase().includes(q.toLowerCase())||String(v.email||"").toLowerCase().includes(q.toLowerCase()));
   if(!ventas.length) return null;
   const th={textAlign:"right",padding:"8px 10px",fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.semibold,whiteSpace:"nowrap"};
   const td={textAlign:"right",padding:"9px 10px",fontSize:DS.font.md,color:T.text,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
@@ -19542,7 +19566,7 @@ function GhImpVentasLista({T,ventas,prom}){
   return (<>
     <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"14px 0 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>Ventas · una por una
       <span style={{fontSize:DS.font.sm,fontWeight:500,color:T.textSm}}>{lista.length} {prom?`· estimadas al ${prom.pct.toFixed(1)}%${prom.real?" (promedio real de Stripe)":" (cargado a mano)"}`:""}</span>
-      <input value={q} onChange={e=>{setQ(e.target.value);setN(50);}} placeholder="Buscar orden o tienda…" style={{...InputStyle(T),marginLeft:"auto",width:200,fontSize:DS.font.sm}}/>
+      <input value={q} onChange={e=>{setQ(e.target.value);setN(50);}} placeholder="Buscar orden, email o tienda…" style={{...InputStyle(T),marginLeft:"auto",width:200,fontSize:DS.font.sm}}/>
     </div>
     <Card T={T} padding="sm" style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -19552,7 +19576,7 @@ function GhImpVentasLista({T,ventas,prom}){
             <tr onClick={()=>setAbierta(ab?null:k)} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:"pointer",opacity:v.reembolsada?0.5:1}} className="gh-hover-surface">
               <td style={{...td,textAlign:"left",color:T.textMd}}>{v.fecha.slice(5).split("-").reverse().join("/")} {String(v.hora).padStart(2,"0")}:{String(new Date(v.at).getUTCMinutes()).padStart(2,"0")}</td>
               <td style={{...td,textAlign:"left",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{v.tienda}</td>
-              <td style={{...td,textAlign:"left"}}>#{v.orden}{v.post_compra && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"1px 7px"}}>POST-COMPRA</span>}{v.reembolsada && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:99,padding:"1px 7px"}}>REEMBOLSADA</span>}</td>
+              <td style={{...td,textAlign:"left"}}>#{v.orden}{v.post_compra && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"1px 7px"}}>POST-COMPRA</span>}{v.reembolsada && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:99,padding:"1px 7px"}}>{v.reembolso?.status==="pending"?"REEMBOLSO EN PROCESO":v.reembolso&&v.reembolso.usd<v.total-0.01?"REEMBOLSO PARCIAL":"REEMBOLSADA"}</span>}</td>
               <td style={td}>{GH_FMT_USD(v.total)}</td>
               <td style={td}>{GH_FMT_USD(v.comision)} <span style={{fontSize:10,fontWeight:700,color:fc,background:fc+"18",borderRadius:99,padding:"1px 7px",marginLeft:4}}>{fl}</span></td>
               <td style={{...td,color:T.textMd}}>{GH_FMT_USD(v.meta||0)}</td>
@@ -19562,10 +19586,20 @@ function GhImpVentasLista({T,ventas,prom}){
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18}}>
                 <div style={{fontSize:DS.font.sm}}>
                   <div style={{fontWeight:700,color:T.text,marginBottom:6}}>De dónde sale el profit</div>
-                  {[["Venta",v.total,T.text],...((v.comisionDetalle&&v.comisionDetalle.length)?v.comisionDetalle.map(d=>[`− ${d.desc}`,-d.monto,T.textMd]):[[`− Comisión ${v.fuente==="estimada"?`estimada (${prom?.pct?.toFixed(1)||"?"}%)`:v.fuente==="stripe"?"de Stripe":"de Mercado Pago"}`,-v.comision,T.textMd]]),["− Meta Ads (parte de esta venta)",-(v.meta||0),T.textMd]].map(([l,x,c],ix)=>(
+                  {[["Venta",v.total,T.text],...((v.comisionDetalle&&v.comisionDetalle.length)?v.comisionDetalle.map(d=>[`− ${d.desc}`,-d.monto,T.textMd]):[[`− Comisión ${v.fuente==="estimada"?`estimada (${prom?.pct?.toFixed(1)||"?"}%)`:v.fuente==="stripe"?"de Stripe":"de Mercado Pago"}`,-v.comision,T.textMd]]),["− Meta Ads (parte de esta venta)",-(v.meta||0),T.textMd],...(v.reembolsoUsd?[["− Reembolso (la comisión no se devuelve)",-v.reembolsoUsd,T.red]]:[])].map(([l,x,c],ix)=>(
                     <div key={ix} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"3px 0",color:c}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{GH_FMT_USD(x)}</span></div>))}
-                  <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0 0",marginTop:4,borderTop:`1px solid ${T.border}`,fontWeight:800,color:(v.profit??0)>=0?T.green:T.red}}><span>Profit</span><span>{GH_FMT_USD(v.profit??0)} {v.total?`(${((v.profit??0)/v.total*100).toFixed(0)}%)`:""}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0 0",marginTop:4,borderTop:`1px solid ${T.border}`,fontWeight:800,color:((v.profit??0)-(v.reembolsoUsd||0))>=0?T.green:T.red}}><span>Profit</span><span>{GH_FMT_USD((v.profit??0)-(v.reembolsoUsd||0))} {v.total?`(${(((v.profit??0)-(v.reembolsoUsd||0))/v.total*100).toFixed(0)}%)`:""}</span></div>
                   <div style={{fontSize:10,color:T.textSm,marginTop:6,lineHeight:1.45}}>Meta: gasto de su tienda ese día repartido según cuánto pesó esta venta en la facturación del día.</div>
+                </div>
+                <div style={{gridColumn:"1/-1",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",paddingTop:6,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                  {v.reembolso ? (<>
+                    <span style={{fontSize:DS.font.sm,color:T.textMd}}>Reembolso {v.reembolso.monto} {v.reembolso.moneda} · {v.reembolso.status==="succeeded"?"realizado":v.reembolso.status==="pending"?"en proceso":v.reembolso.status} · {v.reembolso.id}</span>
+                    {v.reembolso.status==="pending" && <Btn T={T} size="sm" variant="ghost" disabled={busy===v.order_id} onClick={()=>estado(v)}>Actualizar estado</Btn>}
+                    <Btn T={T} size="sm" variant="secondary" onClick={()=>comprobante(v)}>Descargar comprobante</Btn>
+                  </>) : v.fuente==="stripe" && !v.reembolsada ? (
+                    <Btn T={T} size="sm" variant="secondary" disabled={busy===v.order_id} onClick={()=>reembolsar(v)} style={{color:T.red}}>{busy===v.order_id?"Reembolsando…":"Reembolsar"}</Btn>
+                  ) : v.reembolsada ? <span style={{fontSize:DS.font.sm,color:T.textSm}}>Reembolsada desde Impultienda o Stripe.</span>
+                    : <span style={{fontSize:DS.font.sm,color:T.textSm}}>Para reembolsar desde Growith, la venta tiene que estar cruzada con su cobro de Stripe.</span>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 14px",fontSize:DS.font.sm,alignContent:"start"}}>
                   {[["Cobrado",`${v.totalOriginal.toLocaleString("es-AR",{maximumFractionDigits:2})} ${v.monedaOriginal}`],["Pasarela",v.pasarela||"—"],["Comisión",v.fuente==="stripe"?"Real, de Stripe":v.fuente==="mercadopago"?"Real, de Mercado Pago":`Estimada${v.importado?" · importada sin email":""}`],["ID de Stripe",v.stripe_id||"—"],["Campaña (UTM)",v.campana||"—"],["Anuncio (UTM)",v.anuncio||"—"]].map(([l,x])=>(
@@ -19880,7 +19914,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
                 </Card>);})}
             </div>
             {tiendas.some(x=>x.id==="SIN_ASIGNAR") && (()=>{ const s=ghImpSumar(filas.filter(f=>f.tienda==="SIN_ASIGNAR")); return s.gasto>0.01 ? <div style={{fontSize:DS.font.sm,color:T.textMd}}>{GH_FMT_USD(s.gasto)} de anuncios no se pudo asignar a una tienda: la campaña no tiene el código de país de ninguna tienda en el nombre. Está en el total principal.</div> : null; })()}
-            <GhImpVentasLista T={T} ventas={data.ventas||[]} prom={data.comisionPromedio} tiendaSel={null}/>
+            <GhImpVentasLista T={T} ventas={data.ventas||[]} prom={data.comisionPromedio} uid={uid} onCambio={()=>cargar(true)}/>
           </>)}
           {vista==="hora" && data && filas.length>0 && (<>
             {kpis(ghImpSumar(filasH),false)}

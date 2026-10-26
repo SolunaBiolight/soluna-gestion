@@ -421,16 +421,17 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       const real = o.stripe?.fee ?? o.mp?.fee;
       const com = real != null ? real : usd * feePct / 100 + feeFijo;
       f.comisiones += com; if (real == null) f.comisionesEstimadas += com;
+      // Reembolso/contracargo: se resta en el DÍA DE LA VENTA (para que el profit de ese día sea el real).
+      // Stripe no devuelve la comisión: la comisión queda y se resta todo lo devuelto.
+      const reemb = o.reembolso?.usd != null ? o.reembolso.usd : (o.ev_refunded || o.ev_chargeback ? usd : 0);
+      f.reembolsos += reemb;
       cv.comisiones += com;
       ventasLista.push({ tid, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
         total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
         comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
         pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: o.utm?.utm_content || null, importado: !!o.importado,
-        reembolsada: !!(o.ev_refunded || o.ev_chargeback) });
-    }
-    // Reembolso y contracargo restan cuando ocurren (solo si la venta se había aprobado).
-    for (const ev of ["ev_refunded", "ev_chargeback"]) {
-      if (o.ev_approved && enRango(o[ev])) { const a = zonaDe(o[ev], tz); fila(a.fecha, a.hora, tid).reembolsos += usd; }
+        reembolsada: !!(o.ev_refunded || o.ev_chargeback || o.reembolso), reembolso: o.reembolso || null, reembolsoUsd: reemb, email: o.email || null,
+        order_id: o.order_id });
     }
   }
 
@@ -540,6 +541,45 @@ export default async function handler(req, res) {
     // a una campaña. Doc id propio (imp_<tienda>_<orden>) y porHora descarta la
     // importada si el webhook ya trajo esa misma orden.
     // Cotizaciones por 1 USD para mostrar montos en otra moneda (ARS = dólar cripto más bajo).
+    // Reembolso por Stripe desde Growith: total o parcial, en la moneda en que pagó el comprador.
+    if (action === "reembolsar" && req.method === "POST") {
+      const b = JSON.parse((await readBody(req)).toString() || "{}");
+      const cfg = (await cfgRef.get()).data() || {};
+      const key = descifrar(cfg.stripeEnc); if (!key) return res.status(400).json({ error: "Conectá Stripe con una clave que permita reembolsos." });
+      const ref = db.collection("users").doc(uid).collection("impultienda_orders").doc(String(b.order_id || ""));
+      const o = (await ref.get()).data(); if (!o) return res.status(404).json({ error: "Venta no encontrada" });
+      if (o.reembolso && o.reembolso.status !== "failed" && o.reembolso.status !== "canceled") return res.status(409).json({ error: "Esta venta ya tiene un reembolso." });
+      if (!o.stripe?.bt) return res.status(400).json({ error: "Esta venta no está cruzada con un cobro de Stripe." });
+      const st = (u, opt) => fetch("https://api.stripe.com/v1/" + u, { ...opt, headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/x-www-form-urlencoded" } }).then(r => r.json());
+      const bt = await st(`balance_transactions/${o.stripe.bt}`); if (bt.error) return res.status(400).json({ error: bt.error.message });
+      const chId = typeof bt.source === "string" ? bt.source : bt.source?.id; if (!chId) return res.status(400).json({ error: "No encontré el cobro en Stripe." });
+      const ch = await st(`charges/${chId}`); if (ch.error) return res.status(400).json({ error: ch.error.message });
+      const restante = (ch.amount - (ch.amount_refunded || 0));
+      let monto = b.monto != null ? Math.round(Number(b.monto) * 100) : restante;
+      if (!(monto > 0) || monto > restante) return res.status(400).json({ error: `Monto inválido (máximo ${(restante / 100).toFixed(2)} ${String(ch.currency).toUpperCase()}).` });
+      const params = new URLSearchParams({ charge: chId, amount: String(monto), reason: "requested_by_customer", "metadata[orden]": String(o.orden || o.order_id), "metadata[origen]": "growith" });
+      const rf = await st("refunds", { method: "POST", body: params.toString() });
+      if (rf.error) return res.status(400).json({ error: rf.error.message });
+      const fx = await fxPorUsd();
+      const usdTotal = aUsd(Number(o.total) || 0, o.moneda, fx) ?? 0;
+      const usd = monto >= ch.amount ? usdTotal : usdTotal * monto / ch.amount;
+      const reembolso = { id: rf.id, status: rf.status, monto: monto / 100, moneda: String(rf.currency).toUpperCase(), usd, charge: chId, creado: new Date(rf.created * 1000).toISOString(), por: "growith" };
+      await ref.set({ reembolso, actualizado: new Date().toISOString() }, { merge: true });
+      const cs = await cfgRef.parent.get(); const bd = db.batch(); let k = 0; for (const x of cs.docs) if (x.id.startsWith("cache_")) { bd.delete(x.ref); k++; } if (k) await bd.commit();
+      return res.json({ ok: true, reembolso });
+    }
+    // Actualiza el estado de un reembolso (pendiente → hecho) consultando a Stripe.
+    if (action === "reembolso_estado") {
+      const cfg = (await cfgRef.get()).data() || {};
+      const key = descifrar(cfg.stripeEnc); if (!key) return res.status(400).json({ error: "Stripe no conectado" });
+      const ref = db.collection("users").doc(uid).collection("impultienda_orders").doc(String(req.query.order_id || ""));
+      const o = (await ref.get()).data(); if (!o?.reembolso?.id) return res.status(404).json({ error: "Sin reembolso" });
+      const rf = await fetch(`https://api.stripe.com/v1/refunds/${o.reembolso.id}`, { headers: { Authorization: `Bearer ${key}` } }).then(r => r.json());
+      if (rf.error) return res.status(400).json({ error: rf.error.message });
+      const reembolso = { ...o.reembolso, status: rf.status };
+      await ref.set({ reembolso }, { merge: true });
+      return res.json({ ok: true, reembolso });
+    }
     if (action === "fx") {
       const fx = await fxPorUsd();
       return res.json({ fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])) });
@@ -630,7 +670,7 @@ export default async function handler(req, res) {
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché de 10 minutos por rango (fresh=1 la saltea).
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v8_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v9_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });
