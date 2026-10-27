@@ -426,12 +426,24 @@ export function atribuirUtm(utm, idx) {
     return null;
   };
   let c = buscar(idx.c || {}, ["utm_id", "campaign_id", "utm_campaign_id", "utm_campaign"]);
-  const a = buscar(idx.a || {}, ["ad_id", "utm_ad_id", "utm_content", "utm_ad"], (id) => idx.a[id]?.[2], c);
+  let a = buscar(idx.a || {}, ["ad_id", "utm_ad_id", "utm_content", "utm_ad"], (id) => idx.a[id]?.[2], c);
   let s = a ? idx.a[a][1] : buscar(idx.s || {}, ["adset_id", "utm_adset_id", "utm_term", "utm_adset"], (id) => idx.s[id]?.[1], c);
   if (!c && a) c = idx.a[a][2];
   if (!c && s) c = idx.s[s]?.[1] || null;
   // Último recurso, como antes: el código de país al final de utm_campaign contra UNA sola campaña con ese país.
-  if (!c) { const pais = paisDeUtm(u); if (pais) c = unico(Object.keys(idx.c || {}).filter(id => norm(idx.c[id]).split(" ").includes(pais.toLowerCase()))); }
+  // Con UTM fija tipo "lumea_ro": entre las campañas de ese país, la que además tiene en el nombre
+  // las otras palabras de la UTM ("lumea") — así "claude_ro" no se mezcla con "lumea_ro".
+  if (!c) {
+    const pais = paisDeUtm(u);
+    if (pais) {
+      const conPais = Object.keys(idx.c || {}).filter(id => norm(idx.c[id]).split(" ").includes(pais.toLowerCase()));
+      const resto = norm(u.utm_campaign).split(" ").filter(t => t.length >= 3);
+      const conTodo = resto.length ? conPais.filter(id => { const ws = norm(idx.c[id]).split(" "); return resto.every(t => ws.some(w => w.startsWith(t))); }) : [];
+      c = unico(conTodo) || unico(conPais);
+      // Ya con la campaña, el anuncio por nombre dentro de ella ("v2", "img1"…).
+      if (c && !a) { a = buscar(idx.a || {}, ["ad_id", "utm_ad_id", "utm_content", "utm_ad"], (id) => idx.a[id]?.[2], c); if (a && idx.a[a][2] !== c) a = null; if (a) s = idx.a[a][1]; }
+    }
+  }
   if (!c && !s && !a) return null;
   return { c: c || null, s: s || null, a: a || null };
 }
