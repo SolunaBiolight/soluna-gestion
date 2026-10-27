@@ -1,7 +1,7 @@
 """Tanda de lanzamiento de Growith (octubre 2026): placas de Meta 1080x1350 e historias 1080x1920.
 
-Uso:  python3 armar_placas.py
-Sale: LISTAS_PARA_SUBIR/ numerada en el orden de subida, html/ con cada pieza y hoja_contacto.jpg.
+Uso:  python3 armar_todo.py (corre esta tanda y la clara, limpia LISTAS_PARA_SUBIR y arma la hoja de contacto)
+Sale: anuncios 01-07, cada uno en FEED-4x5 e HISTORIA-9x16 con el mismo nombre.
 Los números y textos que se repiten viven en comun.DATOS (iguales a la landing).
 Nada de lo que se promete está apagado hoy: no se habla de publicar ni pausar campañas
 (PUBLICADORES_ARCHIVADOS), ni de TikTok, ni del 1 clic de Shopify.
@@ -44,7 +44,7 @@ def ticket(h=1350):
 
 
 # ── 02 · Ocho pestañas → una ───────────────────────────────────────────
-def pestanas():
+def pestanas(h=1350):
     tabs = ["Admin de la tienda", "Mercado Libre", "Portal de Andreani", "ARCA", "Administrador de anuncios",
             "Planilla de stock", "Excel de costos", "Notas con los pagos"]
     chips = "".join(f'<div class="tab" style="margin-left:{(i % 3) * 22}px">{t}</div>' for i, t in enumerate(tabs))
@@ -57,7 +57,7 @@ def pestanas():
   <div class="uno card"><img src="{MARCA}/logo-color.png"><b>Growith</b><span>Tu tienda, Mercado Libre, envíos, ARCA y publicidad en un solo lugar</span></div>
 </div>
 </div>{pie_html()}
-""", css_extra=f"""
+""", h=h, css_extra=f"""
 .fila{{display:flex;align-items:center;gap:28px;margin-top:64px}}
 .tabs{{display:flex;flex-direction:column;gap:13px;flex:1}}
 .tab{{font-size:25px;color:{TEXTO_SM};border:1.5px solid {BORDE};border-radius:999px;padding:13px 24px;white-space:nowrap;text-decoration:line-through;text-decoration-color:{TEXTO_SM}99;width:max-content}}
@@ -96,7 +96,7 @@ def etiquetas(h=1350):
 
 
 # ── 04 · Facturado no es ganado ─────────────────────────────────────────
-def facturado():
+def facturado(h=1350):
     return pagina(f"""
 {marca_html()}<div class="medio">
 <h1 style="margin-top:56px">Facturar no es ganar.</h1>
@@ -107,7 +107,7 @@ def facturado():
 </div>
 <div class="mini">Datos de ejemplo · con Tienda Nube, Shopify y Mercado Libre juntos</div>
 </div>{pie_html()}
-""", css_extra=f"""
+""", h=h, css_extra=f"""
 .cmp{{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:64px}}
 .col{{background:{CARD};border:1.5px solid {BORDE};border-radius:32px;padding:40px 36px;display:flex;flex-direction:column;gap:10px}}
 .col small{{font-size:24px;color:{TEXTO_SM}}} .col b{{font-size:104px;white-space:nowrap;font-weight:700;letter-spacing:-3.5px;line-height:1.05}} .col span{{font-size:24px;color:{TEXTO_MD}}}
@@ -118,7 +118,7 @@ def facturado():
 
 
 # ── 05 · ARCA: 23 de 23 ─────────────────────────────────────────────────
-def arca():
+def arca(h=1350):
     filas = [("Factura B 0004-00001812", "$ 58.900"), ("Factura B 0004-00001811", "$ 23.400"), ("Factura A 0004-00000418", "$ 112.000")]
     fl = "".join(f'<div class="fr"><span>{a}</span><b class="num">{b}</b><em>CAE ✓</em></div>' for a, b in filas)
     return pagina(f"""
@@ -128,7 +128,7 @@ def arca():
 <h1 style="font-size:72px;letter-spacing:-2.5px">ventas de hoy facturadas.<br><span class="gris">Sin copiar un solo dato.</span></h1>
 <div class="card" style="margin-top:44px;padding:8px 34px 18px">{fl}</div>
 </div>{pie_html(f'<b>Monotributo y Responsable Inscripto</b><br>{D["prueba"]} · {D["sin_tarjeta"]}')}
-""", css_extra=f"""
+""", h=h, css_extra=f"""
 .big{{font-size:250px;font-weight:800;letter-spacing:-12px;line-height:.9;margin-top:24px}} .big span{{color:{TEXTO_SM}}}
 .fr{{display:flex;align-items:center;gap:20px;font-size:26px;color:{TEXTO_MD};padding:20px 0;border-top:1.5px solid {BORDE_L}}}
 .fr:first-child{{border-top:none}} .fr span{{flex:1}} .fr b{{color:{TEXTO};font-weight:700}} .fr em{{font-style:normal;color:{VERDE};font-weight:700}}
@@ -136,7 +136,7 @@ def arca():
 
 
 # ── 06 · Preguntale a tu IA ──────────────────────────────────────────────
-def ia():
+def ia(h=1350):
     return pagina(f"""
 {marca_html()}<div class="medio">
 <h1 style="margin-top:56px;font-size:84px">Preguntale por tu negocio<br><span class="gris">a la IA que ya usás.</span></h1>
@@ -146,7 +146,7 @@ def ia():
 </div>
 <div class="ias"><span class="chip">Claude</span><span class="chip">ChatGPT</span><span class="chip">Gemini</span><span class="nota">Solo lee tus datos · datos de ejemplo</span></div>
 </div>{pie_html()}
-""", css_extra=f"""
+""", h=h, css_extra=f"""
 .chat{{display:flex;flex-direction:column;gap:22px;margin-top:56px}}
 .yo{{align-self:flex-end;max-width:80%;background:{CARD};border:1.5px solid {BORDE};border-radius:32px 32px 8px 32px;padding:26px 32px;font-size:32px;line-height:1.4}}
 .ia{{align-self:flex-start;max-width:90%;background:{BG};border:1.5px solid {BORDE};border-radius:32px 32px 32px 8px;padding:30px 34px;font-size:30px;line-height:1.5;color:{TEXTO_MD}}}
@@ -178,39 +178,26 @@ def oferta(h=1350):
 
 
 PIEZAS = [
-    # (archivo, función, alto)  — orden de subida
-    (f"01_TOFU_IMG_ticket_ganancia_{FECHA}", ticket, 1350),
-    (f"02_TOFU_IMG_facturar_no_es_ganar_{FECHA}", facturado, 1350),
-    (f"03_TOFU_IMG_ocho_pestanas_{FECHA}", pestanas, 1350),
-    (f"04_MOFU_IMG_etiquetas_andreani_{FECHA}", etiquetas, 1350),
-    (f"05_MOFU_IMG_arca_23de23_{FECHA}", arca, 1350),
-    (f"06_MOFU_IMG_ia_conectada_{FECHA}", ia, 1350),
-    (f"07_BOFU_IMG_14_dias_gratis_{FECHA}", oferta, 1350),
-    (f"08_TOFU_HISTORIA_ticket_ganancia_{FECHA}", ticket, 1920),
-    (f"09_MOFU_HISTORIA_etiquetas_andreani_{FECHA}", etiquetas, 1920),
-    (f"10_BOFU_HISTORIA_14_dias_gratis_{FECHA}", oferta, 1920),
+    # (nº de anuncio, etapa, concepto, función) — cada uno sale en feed 4:5 e historia 9:16
+    (1, "TOFU", "ticket-ganancia", ticket),
+    (2, "TOFU", "facturar-no-es-ganar", facturado),
+    (3, "TOFU", "ocho-pestanas", pestanas),
+    (4, "MOFU", "etiquetas-andreani", etiquetas),
+    (5, "MOFU", "arca-23de23", arca),
+    (6, "MOFU", "ia-conectada", ia),
+    (7, "BOFU", "14-dias-gratis", oferta),
 ]
 
 
 def main():
     os.makedirs(SALIDA, exist_ok=True)
-    for f in os.listdir(SALIDA):  # limpia SOLO sus piezas (01-10); las claras (11+) son de armar_placas_claras.py
-        if f.endswith(".png") and f[:2].isdigit() and int(f[:2]) <= 10:
-            os.remove(os.path.join(SALIDA, f))
     hechos = []
-    for nombre, fn, h in PIEZAS:
-        html = fn(h) if fn in (ticket, etiquetas, oferta) else fn()
-        png = exportar(html, os.path.join(SALIDA, nombre + ".png"), h=h)
-        hechos.append(png); print("ok", nombre)
-    # Hoja de contacto para revisar todo de un vistazo
-    ins = sum([["-i", p] for p in hechos], [])
-    n = len(hechos)
-    esc = "".join(f"[{i}]scale=360:480:force_original_aspect_ratio=decrease,pad=360:640:0:0:color=0x05070a[v{i}];" for i in range(n))
-    fila1 = "".join(f"[v{i}]" for i in range(5)); fila2 = "".join(f"[v{i}]" for i in range(5, n))
-    flt = esc + f"{fila1}hstack=5[a];{fila2}hstack={n-5}[b];[a][b]vstack=2"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", flt, os.path.join(AQUI, "hoja_contacto.jpg")], check=True)
-    print("hoja_contacto.jpg")
-
+    for n, etapa, slug, fn in PIEZAS:
+        for h, _ in FORMATOS:
+            nombre = nombre_par(n, etapa, slug, FECHA, h)
+            hechos.append(exportar(fn(h), os.path.join(SALIDA, nombre + ".png"), h=h))
+            print("ok", nombre)
+    return hechos
 
 if __name__ == "__main__":
     main()

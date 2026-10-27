@@ -2,10 +2,10 @@
 (blanco, violeta, gris claro, lavanda). Misma familia que la tanda oscura: logo arriba,
 la flecha en zigzag del logo como firma, una tarjeta con la app y el pie con el botón.
 
-Uso:  python3 armar_placas_claras.py   → LISTAS_PARA_SUBIR/11…15 + hoja_contacto_claras.jpg
+Uso:  python3 armar_todo.py  → anuncios 08-12, cada uno en FEED-4x5 e HISTORIA-9x16
 """
 import os, subprocess
-from comun import AQUI, MARCA, DATOS, VIOLETA, VIOLETA_SOLIDO, zig, check, exportar
+from comun import AQUI, MARCA, DATOS, VIOLETA, VIOLETA_SOLIDO, zig, check, exportar, FORMATOS, nombre_par, HIST
 
 FECHA = "271026"
 SALIDA = os.path.join(AQUI, "LISTAS_PARA_SUBIR")
@@ -28,11 +28,11 @@ FONDOS = {
 }
 
 
-def pagina_clara(cuerpo, f, css_extra=""):
+def pagina_clara(cuerpo, f, css_extra="", h=1350):
     p = FONDOS[f]
     css = f"""
 *{{box-sizing:border-box;margin:0;padding:0}}
-html,body{{width:1080px;height:1350px;background:{p["bg"]};overflow:hidden}}
+html,body{{width:1080px;height:{h}px;background:{p["bg"]};overflow:hidden}}
 body{{font-family:'Inter',system-ui,sans-serif;color:{p["txt"]};-webkit-font-smoothing:antialiased;position:relative}}
 .glow{{position:absolute;inset:0;background:{p["glow"]};pointer-events:none}}
 .lienzo{{position:absolute;inset:0;padding:76px 80px;display:flex;flex-direction:column}}
@@ -56,7 +56,7 @@ h1 .gris{{color:{p["md"]};}}
 """
     return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block">
-<style>{css}{css_extra}</style></head><body><div class="glow"></div><div class="lienzo">
+<style>{css}{HIST if h > 1400 else ""}{css_extra}</style></head><body><div class="glow"></div><div class="lienzo">
 <div class="marca"><img src="{MARCA}/{p["logo"]}" alt="">Growith</div>
 <div class="medio">{cuerpo}</div>
 {pie()}
@@ -69,7 +69,7 @@ def pie(texto=None, cta="Probar gratis"):
 
 
 # ── 11 · Blanco · Calendario de pagos: "el alquiler vence mañana" ─────────
-def pagos():
+def pagos(h=1350):
     filas = [("Mañana", "Alquiler del depósito", "$ 850.000", NARANJA_C), ("Jueves", "Proveedor de packaging", "$ 320.000", "#52525b"),
              ("Viernes", "Cuota del préstamo · 4/12", "$ 410.000", "#52525b"), ("Vencido", "Tarjeta corporativa", "$ 1.240.000", ROJO_C)]
     fl = "".join(f'<div class="fr"><em style="color:{c}">{d}</em><span>{n}</span><b class="num">{m}</b></div>' for d, n, m, c in filas)
@@ -80,7 +80,7 @@ def pagos():
   <div class="barra"><span class="p"></span><span class="p"></span><span class="p"></span>&nbsp;Esta semana<span class="tag">Datos de ejemplo</span></div>
   <div style="padding:6px 34px 14px">{fl}</div>
 </div>
-""", "blanco", f"""
+""", "blanco", h=h, css_extra=f"""
 .noti{{display:flex;align-items:center;gap:20px;background:#f4f4f5;border:1.5px solid #e4e4e7;border-radius:28px;padding:22px 26px}}
 .noti img{{width:56px;height:56px;border-radius:14px;background:#fff;padding:6px;border:1.5px solid #e4e4e7}}
 .noti b{{display:block;font-size:22px;margin-bottom:4px}} .noti span{{font-size:24px;color:#3f3f46}} .noti div{{flex:1}} .noti small{{font-size:20px;color:#a1a1aa;align-self:flex-start}}
@@ -90,7 +90,7 @@ def pagos():
 
 
 # ── 12 · Violeta · Comisión real de Mercado Pago ────────────────────────
-def comision():
+def comision(h=1350):
     filas = [("#1482 · 1 pago", "$ 58.900", "$ 3.590", "6,1 %"), ("#1479 · 3 cuotas sin interés", "$ 41.200", "$ 4.980", "12,1 %"),
              ("#1476 · Promo sin comisión", "$ 23.400", "$ 0", "0 %")]
     fl = "".join(f'<div class="fr"><span>{a}<small class="num">{b}</small></span><b class="num">− {c}</b><em class="num">{d}</em></div>' for a, b, c, d in filas)
@@ -102,7 +102,7 @@ def comision():
   <div style="padding:6px 34px 16px">{fl}</div>
 </div>
 <div style="margin-top:40px">{zig(200, 36, "#ffffff", 6)}</div>
-""", "violeta", f"""
+""", "violeta", h=h, css_extra=f"""
 .fr{{display:flex;align-items:center;gap:20px;font-size:26px;padding:20px 0;border-top:1.5px solid #f0f0f2;color:#3f3f46}} .fr:first-child{{border-top:none}}
 .fr span{{flex:1}} .fr small{{display:block;font-size:21px;color:#a1a1aa;margin-top:4px}}
 .fr b{{color:#09090b;font-weight:700}} .fr em{{font-style:normal;font-weight:700;color:{VIOLETA_SOLIDO};background:#f3effe;border-radius:999px;padding:6px 16px;font-size:22px;min-width:100px;text-align:center}}
@@ -110,7 +110,7 @@ def comision():
 
 
 # ── 13 · Gris · Stock: "le quedan 4 días" ───────────────────────────────
-def stock():
+def stock(h=1350):
     filas = [("Producto A · Negro", "12 u.", "4 días", ROJO_C, 15), ("Producto A · Blanco", "48 u.", "16 días", NARANJA_C, 45),
              ("Producto B · Único", "130 u.", "41 días", VERDE_C, 85)]
     fl = "".join(f'<div class="fr"><div class="top"><span>{n}</span><b class="num">{u}</b><em style="color:{c}">{d}</em></div><div class="bar"><i style="width:{w}%;background:{c}"></i></div></div>' for n, u, d, c, w in filas)
@@ -121,7 +121,7 @@ def stock():
   <div class="barra"><span class="p"></span><span class="p"></span><span class="p"></span>&nbsp;Stock · Tienda Nube + Mercado Libre<span class="tag">Ejemplo</span></div>
   <div style="padding:8px 34px 20px">{fl}</div>
 </div>
-""", "gris", f"""
+""", "gris", h=h, css_extra=f"""
 .dias{{font-size:230px;font-weight:800;letter-spacing:-11px;line-height:.9;color:{ROJO_C}}} .dias span{{font-size:80px;letter-spacing:-2px;color:#09090b}}
 .fr{{padding:16px 0;border-top:1.5px solid #f0f0f2}} .fr:first-child{{border-top:none}}
 .top{{display:flex;align-items:center;gap:18px;font-size:25px;margin-bottom:10px}} .top span{{flex:1;color:#3f3f46}} .top b{{font-weight:700}} .top em{{font-style:normal;font-weight:700;width:120px;text-align:right}}
@@ -130,7 +130,7 @@ def stock():
 
 
 # ── 14 · Blanco · Reclamos: el mensaje ya escrito ───────────────────────
-def reclamos():
+def reclamos(h=1350):
     return pagina_clara(f"""
 <div class="kicker"><i style="background:{ROJO_C}"></i>Reclamos y cambios</div>
 <h1 style="margin-top:22px">Un cambio de talle.<br><span class="gris">El mensaje ya escrito.</span></h1>
@@ -143,7 +143,7 @@ def reclamos():
   </div>
 </div>
 <div class="etapas">{"".join(f'<span class="{c}">{t}</span>' for t, c in [("Nuevo","ok"),("Contactado","on"),("Producto recibido",""),("Resuelto","")])}</div>
-""", "blanco", f"""
+""", "blanco", h=h, css_extra=f"""
 .paso{{display:flex;align-items:center;gap:14px;font-size:26px;color:#52525b;margin-bottom:20px}} .paso b{{color:#09090b}}
 .dot{{width:14px;height:14px;border-radius:7px;background:{ROJO_C}}}
 .msg{{background:#f4f4f5;border-radius:24px 24px 24px 8px;padding:24px 28px;font-size:27px;line-height:1.5;color:#27272a}}
@@ -155,7 +155,7 @@ def reclamos():
 
 
 # ── 15 · Lavanda · Un día con Growith ───────────────────────────────────
-def dia():
+def dia(h=1350):
     filas = [("08:30", "Abrís el Inicio y ves todo lo pendiente"), ("09:00", "Mirás la ganancia de ayer"), ("10:00", "Emitís las etiquetas de Andreani"),
              ("13:00", "Las ventas ya están facturadas en ARCA"), ("18:00", "Reponés el producto que se agota")]
     fl = "".join(f'<div class="fr"><em class="num">{h}</em><span class="d"></span><span>{t}</span></div>' for h, t in filas)
@@ -163,7 +163,7 @@ def dia():
 <h1>Todo tu día de trabajo,<br><span class="gris">desde una sola pantalla.</span></h1>
 <div class="card linea" style="margin-top:52px">{fl}</div>
 <div class="sub" style="margin-top:36px;font-size:28px">Tienda Nube, Shopify y Mercado Libre conectados.</div>
-""", "lavanda", f"""
+""", "lavanda", h=h, css_extra=f"""
 .linea{{padding:20px 40px;position:relative}}
 .linea:before{{content:"";position:absolute;left:170px;top:50px;bottom:50px;width:3px;background:#e2d9fb}}
 .fr{{display:flex;align-items:center;gap:26px;font-size:29px;padding:20px 0;color:#1a1033;position:relative}}
@@ -173,26 +173,23 @@ def dia():
 
 
 PIEZAS = [
-    (f"11_MOFU_IMG_pagos_vence_manana_{FECHA}", pagos),
-    (f"12_TOFU_IMG_comision_real_mp_{FECHA}", comision),
-    (f"13_MOFU_IMG_stock_4_dias_{FECHA}", stock),
-    (f"14_MOFU_IMG_reclamos_mensaje_{FECHA}", reclamos),
-    (f"15_TOFU_IMG_un_dia_{FECHA}", dia),
+    (8, "MOFU", "pagos-vence-manana", pagos),
+    (9, "TOFU", "comision-real-mp", comision),
+    (10, "MOFU", "stock-4-dias", stock),
+    (11, "MOFU", "reclamos-mensaje", reclamos),
+    (12, "TOFU", "un-dia", dia),
 ]
 
 
 def main():
     os.makedirs(SALIDA, exist_ok=True)
     hechos = []
-    for nombre, fn in PIEZAS:
-        hechos.append(exportar(fn(), os.path.join(SALIDA, nombre + ".png")))
-        print("ok", nombre)
-    ins = sum([["-i", p] for p in hechos], [])
-    esc = "".join(f"[{i}]scale=432:540[v{i}];" for i in range(len(hechos)))
-    flt = esc + "".join(f"[v{i}]" for i in range(len(hechos))) + f"hstack={len(hechos)}"
-    subprocess.run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", flt, os.path.join(AQUI, "hoja_contacto_claras.jpg")], check=True)
-    print("hoja_contacto_claras.jpg")
-
+    for n, etapa, slug, fn in PIEZAS:
+        for h, _ in FORMATOS:
+            nombre = nombre_par(n, etapa, slug, FECHA, h)
+            hechos.append(exportar(fn(h), os.path.join(SALIDA, nombre + ".png"), h=h))
+            print("ok", nombre)
+    return hechos
 
 if __name__ == "__main__":
     main()

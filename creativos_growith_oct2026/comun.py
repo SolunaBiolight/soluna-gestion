@@ -81,7 +81,7 @@ h1 .gris{{color:{TEXTO_MD}}}
 """
 
 # Historias 9:16: zona segura (Instagram tapa ~250 px arriba y abajo) y todo un poco más grande.
-HIST = ".lienzo{padding:150px 80px 230px}.medio{zoom:1.14}.medio h1{font-size:80px!important;letter-spacing:-3px!important}"
+HIST = ".lienzo{padding:150px 80px 230px}.medio{zoom:1.1}.medio h1{zoom:.88}"
 
 
 def pagina(cuerpo, w=1080, h=1350, css_extra=""):
@@ -98,6 +98,16 @@ def marca_html():
 def pie_html(texto=None, cta="Probar gratis"):
     t = texto or f'<b>{DATOS["prueba"]}</b> · {DATOS["sin_tarjeta"]}<br>{DATOS["web"]}'
     return f'<div class="pie"><span class="cta">{cta}</span><span class="txt">{t}</span></div>'
+
+
+FORMATOS = [(1350, "FEED-4x5"), (1920, "HISTORIA-9x16")]
+
+
+def nombre_par(n, etapa, slug, fecha, h):
+    """Mismo nombre para el feed y la historia de un anuncio; solo cambia el final.
+    Ordenados por nombre quedan uno al lado del otro: 01_…_FEED-4x5 / 01_…_HISTORIA-9x16."""
+    fmt = dict(FORMATOS)[h]
+    return f"{n:02d}_{etapa}_{slug}_{fecha}_{fmt}"
 
 
 def exportar(html, salida_png, w=1080, h=1350, escala=1):
