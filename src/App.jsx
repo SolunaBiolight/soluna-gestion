@@ -18090,10 +18090,11 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   const [shopifyShop,setShopifyShop]=useState("");
   const [shopifyClientId,setShopifyClientId]=useState("");
   const [shopifySecret,setShopifySecret]=useState("");
-  // Shopify a un clic por defecto (app pública de Growith): solo el dominio + Autorizar.
-  // La revisión del App Store rechaza apps que dependan de apps personalizadas (2.2.1,
-  // oct/2026). La app propia del cliente queda como opción avanzada.
-  const [shopifyAdvanced,setShopifyAdvanced]=useState(false);
+  // Dos tarjetas (oct/2026, revisión del App Store ref. 130112): "Shopify" abre el flujo de
+  // siempre (video + app propia del cliente, el que anda para todas las tiendas hoy) y
+  // "Shopify a un clic" abre el OAuth de la app pública (dominio + Autorizar), que hasta
+  // la aprobación solo instala en tiendas de desarrollo. Cada tarjeta fija el modo al abrir.
+  const [shopifyAdvanced,setShopifyAdvanced]=useState(true);
   const [connectingShopify,setConnectingShopify]=useState(false);
   const [showMLModal,setShowMLModal]=useState(false);
   const [connectingML,setConnectingML]=useState(false);
@@ -18276,7 +18277,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   // ¿Hay app central de Growith configurada? → el cliente solo pone el dominio.
   const [shopifyCentral,setShopifyCentral]=useState(null); // null = consultando
   useEffect(()=>{ if(!showShopifyModal) return; let ok=true; (async()=>{ try{ const r=await authFetch(`/api/integrations?platform=shopify&action=app_status&uid=${user.uid}`); const j=await r.json(); if(ok) setShopifyCentral(!!j.central); }catch(e){ if(ok) setShopifyCentral(false); } })(); return ()=>{ ok=false; }; },[showShopifyModal, user?.uid]);
-  const shopifyUnClic = shopifyCentral!==false && !shopifyAdvanced; // mientras consulta, ya muestra el un clic
+  const shopifyUnClic = shopifyCentral!==false && !shopifyAdvanced; // mientras consulta, ya muestra el un clic (solo desde su tarjeta)
   async function connectShopify() {
     if(!shopifyShop.trim()) { setMsg("Poné tu dominio .myshopify.com"); return; }
     if(!shopifyUnClic && (!shopifyClientId.trim() || !shopifySecret.trim())) {
@@ -18654,7 +18655,15 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               key:"sh", group:"Tienda", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : impStore ? "Esta tienda es de productos digitales (Impultienda). Para conectar Shopify, creá otra tienda desde el selector de abajo: cada tienda es física o digital." : "Ventas, productos y el checkout con Andreani",
               connected:!!shStore, disabled:(!!tnStore||!!impStore) && !shStore, brand:"#95BF47", iconBg:"#fff",
               icon:<BrandIcon name="shopify" size={30}/>,
-              onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
+              onConnect:()=>{ setShopifyAdvanced(true); setShowShopifyModal(true); }, onDisconnect:()=>disconnectStore("shopify"),
+            },
+            {
+              // App pública de Growith (la del App Store). Activa a propósito: el revisor de Shopify la prueba desde acá.
+              key:"sh1", group:"Tienda", label:"Shopify a un clic", tag:"PRÓXIMAMENTE",
+              sub: impStore ? "Esta tienda es de productos digitales (Impultienda)." : "Próximamente vas a poder conectar Shopify con un clic, sin crear tu app. Por ahora usá la opción de arriba.",
+              connected:false, disabled:(!!tnStore||!!impStore), brand:"#95BF47", iconBg:"#fff",
+              icon:<BrandIcon name="shopify" size={30}/>,
+              onConnect:()=>{ setShopifyAdvanced(false); setShowShopifyModal(true); },
             },
             {
               // Productos digitales: una tienda de Growith con Impultienda es SOLO
@@ -18839,7 +18848,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               onConnect: ()=>onNavigate&&onNavigate("chatgpt"),
               onDisconnect: ()=>iaDesconectar("ChatGPT"),
             },
-          ].filter(p=>!(p.key==="sh"&&tnStore)&&!(p.key==="tn"&&shStore)).map((p,idx,arr)=>{
+          ].filter(p=>!(p.key==="sh"&&tnStore)&&!(p.key==="sh1"&&(tnStore||shStore))&&!(p.key==="tn"&&shStore)).map((p,idx,arr)=>{
             const showGroup=idx===0||arr[idx-1].group!==p.group;
             return (
               <React.Fragment key={p.key}>
@@ -18852,7 +18861,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                     <div style={{fontSize:13.5,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                       {p.label}
                       {p.connected&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,color:T.green,background:T.green+"14",borderRadius:99,padding:"2px 8px"}}><span style={{width:6,height:6,borderRadius:"50%",background:T.green,boxShadow:"0 0 6px "+T.green}}/>Conectado</span>}
-                      {p.soon&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 7px"}}>PRÓXIMAMENTE</span>}
+                      {(p.soon||p.tag)&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 7px"}}>{p.tag||"PRÓXIMAMENTE"}</span>}
                     </div>
                     <div style={{fontSize:11.5,color:T.textSm,marginTop:3,lineHeight:1.45}}>{p.sub}</div>
                   </div>
@@ -19060,7 +19069,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                 <ModalCloseBtn T={T} onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify}/>
               </div>
 
-              {shopifyCentral===true&&(
+              {false&&shopifyCentral===true&&(
                 <div style={{marginBottom:14,fontSize:11,color:T.textSm}}>
                   <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={shopifyAdvanced} onChange={e=>setShopifyAdvanced(e.target.checked)}/> Usar mi propia app de Shopify (avanzado)</label>
                 </div>
