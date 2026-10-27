@@ -516,7 +516,7 @@ function DriveBtn({ T, onPick, size = "sm" }) {
   if (step === "authed") return (
     <button title="Hacé click para elegir el archivo" onClick={openPicker}
       style={{...base, background:T.green+"22", borderColor:T.green+"66", color:T.green, fontWeight:600}}>
-      ✓ Elegir archivo
+      Elegir archivo
     </button>
   );
 
@@ -860,7 +860,7 @@ function ManageOrgModal({T, org, totalOrgs, onClose, onSave, onDelete}) {
             ) : (
               <div style={{background:T.red+"10",border:`1px solid ${T.red}33`,borderRadius:10,padding:"12px 14px",boxShadow:`0 0 0 1px ${T.red}18, 0 4px 12px ${T.red}14`}}>
                 <div style={{fontSize:12,color:T.text,fontWeight:700,marginBottom:4}}>¿Eliminar la tienda "{org.name}"?</div>
-                <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.5,marginBottom:8}}>⚠️ Junto con la tienda se borra <strong style={{color:T.text}}>todo su historial</strong> (pedidos, reclamos, canjes, tareas, facturación, márgenes) y <strong style={{color:T.text}}>todas sus vinculaciones</strong> (Tienda Nube/Shopify, Mercado Libre, Meta Ads, Google, ARCA, Andreani). Deja de facturarse al instante. Queda oculta 30 días por si te arrepentís; después se borra definitivamente.{org.esSelf?" Tu perfil, tu login y tu plan siguen igual; pasás a otra de tus tiendas.":""}</div>
+                <div style={{fontSize:11.5,color:T.textMd,lineHeight:1.5,marginBottom:8}}>Junto con la tienda se borra <strong style={{color:T.text}}>todo su historial</strong> (pedidos, reclamos, canjes, tareas, facturación, márgenes) y <strong style={{color:T.text}}>todas sus vinculaciones</strong> (Tienda Nube/Shopify, Mercado Libre, Meta Ads, Google, ARCA, Andreani). Deja de facturarse al instante. Queda oculta 30 días por si te arrepentís; después se borra definitivamente.{org.esSelf?" Tu perfil, tu login y tu plan siguen igual; pasás a otra de tus tiendas.":""}</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>setConfirmDel(false)} disabled={saving} style={{...BtnSecondary(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center"}}>Cancelar</button>
                   <button onClick={handleDelete} disabled={saving} style={{...BtnDanger(T),flex:1,padding:"7px",fontSize:11,borderRadius:8,justifyContent:"center",background:T.red,color:"#fff",boxShadow:`0 2px 12px ${T.red}55`}}>{saving?"Borrando...":"Sí, borrar"}</button>
@@ -1414,7 +1414,7 @@ function RastrearPedidosModal({T,uid,onClose,puedeDeposito=false,onDescargar,onD
             {ab&&(<div style={{padding:"0 16px 14px 67px",display:"flex",flexDirection:"column",gap:8}}>
               <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>{x.detalle}</div>
               <div style={{display:"flex",flexDirection:"column",gap:5,borderLeft:`2px solid ${T.border}`,paddingLeft:12}}>
-                {x.pasos.map((p,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"baseline",fontSize:DS.font.md,color:T.text}}><span style={{color:p.ok?T.green:T.red,fontWeight:700,width:14,flexShrink:0}}>{p.ok?"✓":"✕"}</span><span style={{flex:1,minWidth:0}}>{p.txt}{p.at?<span style={{color:T.textSm}}> · {fh(p.at)}</span>:null}</span></div>)}
+                {x.pasos.map((p,i)=><div key={i} style={{display:"flex",gap:8,alignItems:"baseline",fontSize:DS.font.md,color:T.text}}><span style={{color:p.ok?T.green:T.red,fontWeight:700,width:14,flexShrink:0}}>{p.ok?<GhI n="check" size={12}/>:"✕"}</span><span style={{flex:1,minWidth:0}}>{p.txt}{p.at?<span style={{color:T.textSm}}> · {fh(p.at)}</span>:null}</span></div>)}
                 {(x.productos?.length||x.skus?.length)?<div style={{fontSize:DS.font.md,color:T.textMd}}>Productos: {ghSkuLinesDe(x).join(", ")}</div>:null}
               </div>
               {x.tracking&&<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -1478,7 +1478,7 @@ function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,i
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
             <span style={{fontSize:DS.font.lg,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</span>
-            {exportedOn&&<span title="Ya salió en un Excel" style={{fontSize:DS.font.xs,fontWeight:700,color:T.green,whiteSpace:"nowrap",flexShrink:0}}>✓ {exportedOn}</span>}
+            {exportedOn&&<span title="Ya salió en un Excel" style={{fontSize:DS.font.xs,fontWeight:700,color:T.green,whiteSpace:"nowrap",flexShrink:0,display:"inline-flex",alignItems:"center",gap:4}}><GhI n="check" size={11}/>{exportedOn}</span>}
           </div>
           <div style={sub}>{[o.localidad||o.ciudad,o.provincia].filter(Boolean).join(", ")||"—"}{verEstado&&<span> · <span style={{color:ec.dot,fontWeight:600}}>{o.estadoEnvio}</span></span>}</div>
         </div>
@@ -2013,7 +2013,7 @@ function MiembrosCuentaCard({T,user}){
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             <input readOnly value={ultimo.link} onFocus={e=>e.target.select()} style={{...iS,marginBottom:0,flex:1,minWidth:240,fontSize:12,color:T.textMd}}/>
-            <button onClick={()=>copiarInvit(ultimo.email)} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",flexShrink:0}}>{copiado===ultimo.email?"✓ Copiado":"Copiar link"}</button>
+            <button onClick={()=>copiarInvit(ultimo.email)} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",flexShrink:0}}>{copiado===ultimo.email?"Copiado":"Copiar link"}</button>
             <button onClick={()=>setUltimo(null)} style={{background:"transparent",border:"none",color:T.textSm,fontSize:12,padding:"8px 10px",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>Listo</button>
           </div>
           <div style={{fontSize:11,color:T.textSm,marginTop:6,lineHeight:1.5}}>El link no da acceso por sí solo: le precarga el mail. Para entrar tiene que crear la cuenta con <strong>{ultimo.email}</strong>.</div>
@@ -2038,7 +2038,7 @@ function MiembrosCuentaCard({T,user}){
                     {!enEdicion&&<div style={{fontSize:11,color:T.textSm,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{secsTexto(m.secciones)}</div>}
                   </div>
                   {m._estado==="pendiente"&&(
-                    <button onClick={()=>copiarInvit(m.email)} title="Copiar el link de invitación para mandárselo por WhatsApp" style={{background:"transparent",border:`1px solid ${copiado===m.email?T.green:T.border}`,color:copiado===m.email?T.green:T.accent,borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>{copiado===m.email?"✓ Copiado":"Copiar link"}</button>
+                    <button onClick={()=>copiarInvit(m.email)} title="Copiar el link de invitación para mandárselo por WhatsApp" style={{background:"transparent",border:`1px solid ${copiado===m.email?T.green:T.border}`,color:copiado===m.email?T.green:T.accent,borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,whiteSpace:"nowrap"}}>{copiado===m.email?"Copiado":"Copiar link"}</button>
                   )}
                   {m._estado==="activo"&&(
                     <button onClick={()=>setEditando(enEdicion?null:key)} style={{background:"transparent",border:`1px solid ${T.border}`,color:enEdicion?T.accent:T.textMd,borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>{enEdicion?"Listo":"Editar"}</button>
@@ -2729,7 +2729,7 @@ function GadsPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}
       <GadsPaso T={T} n="5" title="Revisar y crear">
         <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
           <div style={{display:"flex",flexWrap:"wrap",gap:DS.sp.sm}}>
-            {checks.map(c=><DSBadge key={c.l} T={T} color={c.ok?T.green:T.orange} size="md">{c.ok?"✓":"•"} {c.l}</DSBadge>)}
+            {checks.map(c=><DSBadge key={c.l} T={T} color={c.ok?T.green:T.orange} size="md">{c.ok?<GhI n="check" size={12}/>:"•"} {c.l}</DSBadge>)}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"12px 14px",borderRadius:DS.r.lg,border:`1px solid ${activar?T.orange+"66":T.borderL}`,background:activar?T.orange+"0d":"transparent"}}>
             <DSToggle T={T} active={activar} onToggle={()=>!busy&&setActivar(a=>!a)}/>
@@ -3293,7 +3293,7 @@ function TtPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}) 
       <GadsPaso T={T} n="5" title="Revisar y crear">
         <div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
           <div style={{display:"flex",flexWrap:"wrap",gap:DS.sp.sm}}>
-            {checks.map(c=><DSBadge key={c.l} T={T} color={c.ok?T.green:T.orange} size="md">{c.ok?"✓":"•"} {c.l}</DSBadge>)}
+            {checks.map(c=><DSBadge key={c.l} T={T} color={c.ok?T.green:T.orange} size="md">{c.ok?<GhI n="check" size={12}/>:"•"} {c.l}</DSBadge>)}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"12px 14px",borderRadius:DS.r.lg,border:`1px solid ${activar?T.orange+"66":T.borderL}`,background:activar?T.orange+"0d":"transparent"}}>
             <DSToggle T={T} active={activar} onToggle={()=>!busy&&setActivar(a=>!a)}/>
@@ -3373,7 +3373,7 @@ function AutorizarIAView({T, user, rid, onSalir}) {
             <div style={{fontSize:DS.font.xl,fontWeight:DS.w.black,color:T.text,textAlign:"center",lineHeight:1.35}}>{app} quiere leer los datos de <span style={{color:T.accent}}>todas tus tiendas</span></div>
             <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>Vas a poder preguntarle a {app} por tu negocio. Va a poder <strong style={{color:T.text}}>ver</strong>:</div>
             <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
-              {PUEDE.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.green,fontWeight:DS.w.bold}}>✓</span>{t}</div>)}
+              {PUEDE.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.green,fontWeight:DS.w.bold}}><GhI n="check" size={12}/></span>{t}</div>)}
             </div>
             <div style={{fontSize:DS.font.md,color:T.textSm,lineHeight:1.55,padding:"10px 12px",borderRadius:DS.r.lg,background:T.surface,border:`1px solid ${T.borderL}`}}>
               Es <strong style={{color:T.text}}>solo lectura</strong>: no puede cambiar nada, publicar, pausar campañas ni ver contraseñas. Se conecta tu cuenta entera: desde {app} vas a poder elegir sobre cuál de tus tiendas preguntar en cada chat. Lo desconectás cuando quieras desde Configuración → Integraciones.
@@ -3520,7 +3520,7 @@ function AppConectorIA({T, user, app, onHome}) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:DS.sp.lg}}>
             <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
               <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Puede ver</div>
-              {IA_VE.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.green,fontWeight:DS.w.bold}}>✓</span>{t}</div>)}
+              {IA_VE.map(t=><div key={t} style={{display:"flex",gap:DS.sp.sm,fontSize:DS.font.base,color:T.text}}><span style={{color:T.green,fontWeight:DS.w.bold}}><GhI n="check" size={12}/></span>{t}</div>)}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
               <div style={{fontSize:DS.font.sm,fontWeight:DS.w.bold,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>No puede</div>
@@ -3626,7 +3626,7 @@ function AppDemo({T, user, authUid, onSwitchOrg, onHome}) {
       const r=await demoApi("seed",{dias:120});
       ghLimpiarCachesDemo(r.tiendaUid);
       try{ localStorage.setItem(`growith_tienda_activa_${authUid}`, r.tiendaUid); }catch(_){}
-      toast(`Entorno demo listo ✓ — ${r.ventas} ventas y ${r.productos} productos. Entrando…`,"success",4000);
+      toast(`Entorno demo listo: ${r.ventas} ventas y ${r.productos} productos. Entrando…`,"success",4000);
       setTimeout(()=>window.location.reload(),900);
     }catch(e){ appAlert("No se pudo generar el entorno demo: "+e.message); setBusy(""); }
   }
@@ -3636,7 +3636,7 @@ function AppDemo({T, user, authUid, onSwitchOrg, onHome}) {
     try{
       const r=await demoApi("add_order",{tiendaUid:st.tiendaUid,canal:v.canal,prodId:pSel.id,varId:vSel?.id,qty,precio:v.precio,medio:medioKey,pct:v.pct,fecha:v.fecha,estadoEnvio:v.estadoEnvio});
       ghLimpiarCachesDemo(user.uid);
-      toast(`Venta #${r.venta?.numero} agregada ✓ — ya cuenta en el Dashboard, Envíos y el Facturador`,"success",4000);
+      toast(`Venta #${r.venta?.numero} agregada: ya cuenta en el Dashboard, Envíos y el Facturador`,"success",4000);
       setV(p=>({...p,precio:"",pct:"",qty:1}));
       setData(await demoApi("list",{tiendaUid:st.tiendaUid}));
     }catch(e){ appAlert("No se pudo agregar la venta: "+e.message); }
@@ -3648,7 +3648,7 @@ function AppDemo({T, user, authUid, onSwitchOrg, onHome}) {
     try{
       await demoApi("add_product",{tiendaUid:st.tiendaUid,nombre:np.nombre,sku:np.sku,precio:np.precio,costo:np.costo,canal:np.canal,variantes:variantes.length?variantes:undefined,stock:np.stock});
       ghLimpiarCachesDemo(user.uid);
-      toast("Producto creado ✓ — ya aparece en Stock"+(np.canal!=="tienda"?" y en Mercado Libre":""),"success",4000);
+      toast("Producto creado: ya aparece en Stock"+(np.canal!=="tienda"?" y en Mercado Libre":""),"success",4000);
       setNp(p=>({nombre:"",sku:"",precio:"",costo:"",canal:p.canal,variantes:"",stock:""}));
       setData(await demoApi("list",{tiendaUid:st.tiendaUid}));
     }catch(e){ appAlert("No se pudo crear el producto: "+e.message); }
@@ -6517,7 +6517,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     if(!cat&&!estado) return null;
     const LBL={
       cambio:{pendiente:["Pendiente de ingreso",T.textSm],en_camino:["En camino al cliente",T.blue],en_sucursal:["Listo para retirar (cliente)",T.yellow],entregado:["Entregado al cliente",T.green],devolucion:["Volviendo a nosotros",T.red],visita_fallida:["Visita fallida",T.red]},
-      devolucion:{pendiente:["Cliente aún no lo despachó",T.textSm],en_camino:["En camino a nosotros",T.blue],en_sucursal:["Lista para retirar (nosotros)",T.yellow],entregado:["Recibida ✓",T.green],devolucion:["Volvió al cliente",T.red],visita_fallida:["Visita fallida",T.red]},
+      devolucion:{pendiente:["Cliente aún no lo despachó",T.textSm],en_camino:["En camino a nosotros",T.blue],en_sucursal:["Lista para retirar (nosotros)",T.yellow],entregado:["Recibida",T.green],devolucion:["Volvió al cliente",T.red],visita_fallida:["Visita fallida",T.red]},
     };
     const m=(LBL[tipo]||LBL.cambio)[cat];
     const [txt,color]=m||[estado||"Sin datos",T.textSm];
@@ -6624,7 +6624,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     if(refrescandoTrk) return;
     if(!checkAndreaniRef.current){ toast("No hay reclamos con tracking para actualizar","info"); return; }
     setRefrescandoTrk(true);
-    try { await checkAndreaniRef.current(); toast("Envíos actualizados con Andreani ✓","success"); }
+    try { await checkAndreaniRef.current(); toast("Envíos actualizados con Andreani","success"); }
     catch(_) { toast("No se pudo actualizar el tracking","error"); }
     setRefrescandoTrk(false);
   }
@@ -6731,7 +6731,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
       const d=await r.json().catch(()=>({}));
       localStorage.setItem(KEY,String(Date.now()));
       if(manual){
-        if(d.ok){ const n=(d.report?.creados||0); toast(n>0?`${n} nuevo(s) importado(s) de MP/ML ✓`:"Sincronizado, sin novedades","success"); }
+        if(d.ok){ const n=(d.report?.creados||0); toast(n>0?`${n} nuevo(s) importado(s) de MP/ML`:"Sincronizado, sin novedades","success"); }
         else toast("No se pudo sincronizar"+(d.error?": "+d.error:""),"error");
       }
     }catch(e){ if(manual) toast("Error al sincronizar","error"); }
@@ -6757,7 +6757,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
     try{
       const r=await authFetch(`/api/integrations?platform=mercadolibre&action=reclamo_reply&uid=${user.uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({docId,message:msg})});
       const d=await r.json().catch(()=>({}));
-      if(d.ok){ toast("Respuesta enviada al comprador ✓","success"); setMpReplyText(""); loadMpThread(docId); }
+      if(d.ok){ toast("Respuesta enviada al comprador","success"); setMpReplyText(""); loadMpThread(docId); }
       else toast("No se pudo enviar"+(d.error?": "+String(d.error).slice(0,90):""),"error");
     }catch(e){ toast("Error al enviar","error"); }
     setMpReplying(false);
@@ -6840,7 +6840,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           const rows=reclamosManual.map(r=>{const dias=r.createdAt?.seconds?Math.floor((Date.now()-r.createdAt.seconds*1000)/86400000):"";return[r.orderNum,r.clienteNombre||"",r.clienteEmail||"",r.tipo,r.estado,r.asignadoNombre||r.asignadoEmail||"",dias,r.trackingCambio||"",r.trackingDevolucion||"",r.devolEmpresa||"",r.devolFecha||"",r.devolLink||"",(r.incidente||"").replace(/\n/g," "),(r.motivo||"").replace(/\n/g," "),(r.notasInternas||"").replace(/\n/g," ")];});
           const csv=[headers,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
           const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}));a.download=`reclamos_${hoyAR()}.csv`;a.click();
-          toast("CSV exportado ✓","success");
+          toast("CSV exportado","success");
         }},
           {label:"Días para marcar urgente",onClick:()=>setView("config")},
         ]}/>
@@ -7066,7 +7066,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               <button onClick={()=>syncReclamosMP(true)} disabled={syncingMP} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",display:"inline-flex",alignItems:"center",gap:6,opacity:syncingMP?0.6:1}}>{syncingMP?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}Sincronizar</button>
             </div>
             {reclamosMp.length===0?(
-              <DSEmpty T={T} icon="📥" title="Sin reclamos de MP/ML" subtitle="Cuando entre un contracargo o disputa de Mercado Pago/Libre, aparece acá solo. Tocá Sincronizar para traer los últimos." action={<Btn T={T} variant="secondary" onClick={()=>syncReclamosMP(true)}>Sincronizar ahora</Btn>}/>
+              <DSEmpty T={T} icon="" title="Sin reclamos de MP/ML" subtitle="Cuando entre un contracargo o disputa de Mercado Pago/Libre, aparece acá solo. Tocá Sincronizar para traer los últimos." action={<Btn T={T} variant="secondary" onClick={()=>syncReclamosMP(true)}>Sincronizar ahora</Btn>}/>
             ):(
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
                 {[...reclamosMp].sort((a,b)=>{const ra=["Resuelto","Rechazado"].includes(a.estado)?1:0,rb=["Resuelto","Rechazado"].includes(b.estado)?1:0;return ra-rb||((b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));}).map(r=>{
@@ -7605,7 +7605,7 @@ function CopyEditField({label, value, onSave, placeholder, icon, T, iS, readOnly
               ) : <span style={{color:T.textSm,fontStyle:"italic"}}>{onSave&&!readOnly?"Click 2× para agregar...":"--"}</span>}
             </span>
             {hasValue&&<span style={{fontSize:10,color:copied?T.green:T.textSm,fontWeight:copied?700:400,flexShrink:0,transition:"color 0.2s"}}>
-              {copied?"✓ copiado":"⎘"}
+              {copied?"copiado":"⎘"}
             </span>}
           </div>
       }
@@ -8075,7 +8075,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     setComisionesPagadas(updated);
     try{localStorage.setItem(ghKey("growith_compaid"),JSON.stringify(updated));}catch(_){}
     if(user?.uid){try{await ghUserPatch(user.uid,{comisionesPagadas:updated});}catch(_){}}
-    toast(`Comisión de ${code} marcada como pagada ✓`,"success");
+    toast(`Comisión de ${code} marcada como pagada`,"success");
   }
   // Comisiones UGC - overrides guardados en localStorage + Firestore
   const [comisionOverrides,setComisionOverrides]=useState(()=>{
@@ -8244,7 +8244,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`);
       await updateDoc(doc(db,"canjes",c._docId),{guionTareaId:d._id,guionTareaNum:d.tareaNumStr||String(d.tareaNum||"")});
-      toast(`Tarea de guion creada y asignada a ${colab.nombre||colab.email} ✓`,"success");
+      toast(`Tarea de guion creada y asignada a ${colab.nombre||colab.email}`,"success");
       setPedirGuion(null);
     }catch(e){ toast("No se pudo crear la tarea: "+e.message,"error"); }
   }
@@ -8283,7 +8283,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const d=await r.json().catch(()=>({}));
       if(manual){
         if(!r.ok||d.error) toast("No se pudo actualizar: "+(d.error||`HTTP ${r.status}`),"error");
-        else toast(`${d.actualizados||0} envío${(d.actualizados||0)!==1?"s":""} actualizado${(d.actualizados||0)!==1?"s":""} ✓`,"success");
+        else toast(`${d.actualizados||0} envío${(d.actualizados||0)!==1?"s":""} actualizado${(d.actualizados||0)!==1?"s":""}`,"success");
       }
     }catch(e){ if(manual) toast("Error al actualizar: "+e.message,"error"); }
     if(manual) setRefrescando(false);
@@ -9195,13 +9195,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         return(
                         <div key={r.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 18px",borderBottom:i<conComision.length-1?`1px solid ${T.borderL}`:"none",opacity:paid?0.6:1,background:paid?T.greenBg:"transparent"}}>
                           <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"monospace",fontSize:12,color:T.accent}}>({r.code})</span>{paid&&<span style={{fontSize:10,color:T.green,marginLeft:8,fontWeight:700}}>✓ Pagado {new Date(paid.fecha).toLocaleDateString("es-AR")}</span>}</div>
+                            <div style={{fontSize:13,fontWeight:600,color:T.text}}>{r.influencer} <span style={{fontFamily:"monospace",fontSize:12,color:T.accent}}>({r.code})</span>{paid&&<span style={{fontSize:10,color:T.green,marginLeft:8,fontWeight:700}}>Pagado {new Date(paid.fecha).toLocaleDateString("es-AR")}</span>}</div>
                             <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{r.usosPeriodo} uso{r.usosPeriodo!==1?"s":""} · neto {fmtARS(r.netoRecibido||0)} · {r.comisionPct}% sobre neto</div>
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
                             <div style={{fontSize:18,fontWeight:800,color:paid?T.textSm:T.orange}}>{fmtARS(r.comisionPagar)}</div>
                             {!paid
-                              ?<button onClick={()=>markComisionPagada(r.code)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,border:`1px solid ${T.green}55`,borderRadius:6,background:T.greenBg,color:T.green,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>✓ Pagar</button>
+                              ?<button onClick={()=>markComisionPagada(r.code)} style={{padding:"5px 12px",fontSize:11,fontWeight:700,border:`1px solid ${T.green}55`,borderRadius:6,background:T.greenBg,color:T.green,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>Pagar</button>
                               :<button onClick={()=>{const u={...comisionesPagadas};delete u[r.code];setComisionesPagadas(u);try{localStorage.setItem(ghKey("growith_compaid"),JSON.stringify(u));}catch(_){} if(user?.uid){ghUserPatch(user.uid,{comisionesPagadas:u}).catch(()=>{});}}} style={{padding:"5px 10px",fontSize:10,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Deshacer</button>}
                           </div>
                         </div>
@@ -9335,7 +9335,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,background:T.accentSolid+"10",borderRadius:8,padding:"7px 12px"}}>
                         <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>CÓDIGO:</span>
                         <span style={{fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",fontSize:14,fontWeight:800,color:T.accentSolid,letterSpacing:1,flex:1}}>{inf.codigoDescuento.toUpperCase()}</span>
-                        <button onClick={()=>{navigator.clipboard?.writeText(inf.codigoDescuento.toUpperCase());toast("Código copiado ✓","success");}} style={{padding:"2px 7px",borderRadius:5,border:`1px solid ${T.border}`,background:"transparent",cursor:"pointer",fontSize:10,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
+                        <button onClick={()=>{navigator.clipboard?.writeText(inf.codigoDescuento.toUpperCase());toast("Código copiado","success");}} style={{padding:"2px 7px",borderRadius:5,border:`1px solid ${T.border}`,background:"transparent",cursor:"pointer",fontSize:10,color:T.textMd,fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
                       </div>
                     )}
                     {/* Datos de contacto */}
@@ -9466,10 +9466,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   const data={nombre:infForm.nombre.trim(),usuario:(infForm.usuario||"").replace("@","").trim(),red:infForm.red,codigoDescuento:(infForm.codigoDescuento||"").toUpperCase().trim(),descuentoPct:infForm.descuentoPct?Number(infForm.descuentoPct):null,comisionPct:infForm.comisionPct?Number(infForm.comisionPct):null,email:infForm.email.trim(),telefono:infForm.telefono.trim(),notas:infForm.notas.trim(),driveFolder:(infForm.driveFolder||"").trim(),ownerId:user.uid};
                   if(editInfluencer) {
                     await updateDoc(doc(db,"influencers",editInfluencer._docId),{...data,updatedAt:serverTimestamp()});
-                    toast("Perfil actualizado ✓","success");
+                    toast("Perfil actualizado","success");
                   } else {
                     await addDoc(collection(db,"influencers"),{...data,createdAt:serverTimestamp()});
-                    toast("Perfil creado ✓","success");
+                    toast("Perfil creado","success");
                   }
                   setShowInfluencerForm(false);
                 } catch(e){appAlert("Error al guardar: "+e.message);}
@@ -9530,7 +9530,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         : <input autoFocus type={type} value={val} onChange={e=>setVal(e.target.value)}
                         onKeyDown={e=>{if(e.key==="Enter"){onSave(val);setEditing(false);}if(e.key==="Escape")setEditing(false);}}
                         style={{...iS,fontSize:12,padding:"6px 10px",flex:1}}/>}
-                      {type!=="date"&&<button onClick={()=>{onSave(val);setEditing(false);}} style={{...bS,background:T.accentSolid,border:"none",color:"#fff"}}>✓</button>}
+                      {type!=="date"&&<button onClick={()=>{onSave(val);setEditing(false);}} style={{...bS,background:T.accentSolid,border:"none",color:"#fff"}}><GhI n="check" size={12}/></button>}
                     </div>
                   : <div onClick={()=>setEditing(true)} style={{fontSize:13,color:value?T.text:T.textSm,padding:"7px 10px",borderRadius:8,border:"1px solid "+T.borderL,background:T.bg,cursor:"text",minHeight:34,display:"flex",alignItems:"center",gap:6,transition:"border-color 0.15s"}}
                       onMouseEnter={e=>e.currentTarget.style.borderColor=T.border}
@@ -10182,7 +10182,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo:a,acordados:1,entregados:0}];
                       setForm(f=>({...f,contenido:upd}));
                     }} style={{fontSize:11,padding:"5px 12px",borderRadius:99,border:`1.5px solid ${item?T.accentSolid:T.border}`,background:item?T.accentSolid+"18":"transparent",color:item?T.accent:T.textMd,cursor:"pointer",fontWeight:item?700:400,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {item?`✓ ${a} (${item.acordados})`:`+ ${a}`}
+                      {item?`${a} (${item.acordados})`:`+ ${a}`}
                     </button>
                   );
                 })}
@@ -10194,7 +10194,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     const upd=lista.map((x,i)=>i===ex?{...x,acordados:x.acordados+1}:x);
                     setForm(f=>({...f,contenido:upd}));
                   }} style={{fontSize:11,padding:"5px 12px",borderRadius:99,border:`1.5px solid ${T.accentSolid}`,background:T.accentSolid+"18",color:T.accent,cursor:"pointer",fontWeight:700,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    ✓ {item.tipo} ({item.acordados})
+                    {item.tipo} ({item.acordados})
                   </button>
                 ))}
                 {/* Input contenido personalizado */}
@@ -10393,7 +10393,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             setAndreani(a=>({...a,saldo:s,saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:a.etiquetasEstimadas}));
             if(prev!=null&&s>prev){
               clearInterval(iv);
-              toast(`Saldo acreditado: $${s.toLocaleString("es-AR")} ✓`,"success",6000);
+              toast(`Saldo acreditado: $${s.toLocaleString("es-AR")}`,"success",6000);
             }
             prev=s;
           }catch(_){}
@@ -10647,7 +10647,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       });
     }finally{ setSegApiProg(null); }
     const mal=lista.length-ok;
-    if(mal===0) toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} a tu tienda ✓`,"success");
+    if(mal===0) toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} a tu tienda`,"success");
     else toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} · ${mal} no se pudo${mal!==1?"ieron":""} subir ahora: quedan en cola y se reintentan solos`,"warning",8000);
     refrescarEnviosFs();
     try{ tabCacheRef.current={}; fetchTabOrders(tabEnvioRef.current||tabEnvio,{background:true,fresh:true}); fetchTabCounts(user.uid,true); }catch(_){}
@@ -11906,7 +11906,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // esquina afuera del Excel, se abre directo su modal informativo.
       toast(verifRowsRef.current.length
         ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado (${verifRowsRef.current.length} destino${verifRowsRef.current.length!==1?"s":""} sin verificar)`
-        :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado ✓ destinos verificados con tu tienda`,"success");
+        :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado destinos verificados con tu tienda`,"success");
       if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
       setExportDone({count:finalOrders.length, ts:Date.now()}); // ya no abre modal: refresca el mapa "ya exportado"
       logUsage("etiquetas", finalOrders.length);
@@ -12318,7 +12318,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     r.cot=null; r.cotError=""; r.incluido=true;
     recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
     pushBulk("revision");
-    toast("Sucursal corregida — la nueva elección quedó guardada para este punto ✓","success");
+    toast("Sucursal corregida — la nueva elección quedó guardada para este punto","success");
     cotizarBulk({silencioso:true});
   }
   async function emitirBulk(){
@@ -12575,7 +12575,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         try{ ghDescargarPdfBytes(await ghPdfTermica10x15([res.pdf]),`Andreani_${numeroDeEnvio}_10x15.pdf`); }
         catch(e){ toast("No se pudo convertir a 10x15: "+e.message,"error"); return; }
       } else ghDescargarPdfB64(res.pdf,`Andreani_${numeroDeEnvio}.pdf`);
-      toast("Etiqueta descargada ✓","success");
+      toast("Etiqueta descargada","success");
     }
     else if(res.pending) toast(`La etiqueta ${numeroDeEnvio} todavía se está generando — reintentá en unos segundos`,"warning");
     else toast(`No se pudo descargar la etiqueta ${numeroDeEnvio}: ${res.error}`,"error");
@@ -12806,7 +12806,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       } else { try{ ventana&&ventana.close(); }catch(_){} }
       const verbo=ventana?"lista":"descargada";
       if(pendientes.length) toast(`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} ${verbo}${pdfs.length!==1?"s":""} · ${pendientes.length} todavía en proceso (${pendientes.join(", ")}) — reintentá en unos segundos`,"warning");
-      else toast(ventana?`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} lista${pdfs.length!==1?"s":""} para imprimir ✓`:`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} descargada${pdfs.length!==1?"s":""} ✓`,"success");
+      else toast(ventana?`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} lista${pdfs.length!==1?"s":""} para imprimir`:`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} descargada${pdfs.length!==1?"s":""}`,"success");
     }catch(e){
       console.error("descargarTodasBulk:",e);
       try{ ventana&&ventana.close(); }catch(_){}
@@ -13069,7 +13069,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     // Éxito total → toast y a otra cosa: un "salió todo bien" no interrumpe con
     // un modal que pide click. El modal de resultado queda SOLO para errores.
     if(fail===0){
-      toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} a la tienda ✓`,"success");
+      toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} a la tienda`,"success");
       setSeguimientoProgress({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0,errors:[]});
     } else {
       // El toast también, por si está en otra sección con el modal desmontado
@@ -13186,7 +13186,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:24}}>
                   <div style={{width:44,height:44,borderRadius:12,background:T.blue+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                     {exportProgress.pct>=90
-                      ? <span style={{fontSize:22,color:T.green}}>✓</span>
+                      ? <span style={{fontSize:22,color:T.green}}><GhI n="check" size={12}/></span>
                       : <div style={{width:22,height:22,border:`3px solid ${T.blue}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>}
                   </div>
                   <div>
@@ -13225,7 +13225,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           <div style={{position:"fixed",bottom:28,right:28,zIndex:9998,width:300,background:T.card,border:`1px solid ${accent}44`,borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",padding:"16px 18px"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
               <div style={{width:28,height:28,borderRadius:8,background:accent+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                {isDone?<span style={{fontSize:14,color:T.green}}>✓</span>:<div style={{width:14,height:14,border:`2px solid ${accent}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>}
+                {isDone?<span style={{fontSize:14,color:T.green}}><GhI n="check" size={12}/></span>:<div style={{width:14,height:14,border:`2px solid ${accent}`,borderTopColor:"transparent",borderRadius:"50%",animation:"growith-spin 0.7s linear infinite"}}/>}
               </div>
               <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:T.text}}>{step}</div></div>
               <span style={{fontSize:12,fontWeight:700,color:accent}}>{pct}%</span>
@@ -13395,7 +13395,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                         onMouseEnter={e=>{if(!allPageSelected)e.currentTarget.style.background=T.surface;}}
                         onMouseLeave={e=>{if(!allPageSelected)e.currentTarget.style.background="transparent";}}>
                         <div style={{width:15,height:15,borderRadius:3,border:`1.5px solid ${allPageSelected?T.accentSolid:T.border}`,background:allPageSelected?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                          {allPageSelected&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+                          {allPageSelected&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}><GhI n="check" size={12}/></span>}
                         </div>
                         <span style={{flex:1,fontWeight:allPageSelected?600:400}}>Esta página</span>
                         <span style={{fontSize:11,color:T.textSm}}>{pageOrders.length} pedidos</span>
@@ -13416,7 +13416,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                                 onMouseEnter={e=>{if(!full)e.currentTarget.style.background=T.surface;}}
                                 onMouseLeave={e=>{if(!full)e.currentTarget.style.background="transparent";}}>
                                 <div style={{width:15,height:15,borderRadius:3,border:`1.5px solid ${full?T.accentSolid:cnt>0?T.accent:T.border}`,background:full?T.accentSolid:cnt>0?T.accent+"25":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                                  {full&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+                                  {full&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}><GhI n="check" size={12}/></span>}
                                   {!full&&cnt>0&&<span style={{color:T.accent,fontSize:10,lineHeight:1}}>–</span>}
                                 </div>
                                 <span style={{flex:1,fontWeight:full?600:400}}>Página {pi+1}</span>
@@ -13733,7 +13733,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       {opcion(skuSegAuto,toggleSkuSegAuto,"Enviar seguimientos a la tienda",segPendN>0?`Avisa a ${segPendN} comprador${segPendN!==1?"es":""} y activa el seguimiento.`:segOk>0?`Ya se enviaron (${segOk}). Estado en la pestaña Seguimientos.`:"No hay seguimientos para enviar.",segPendN===0)}
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12,color:depAt?T.green:T.textMd,fontWeight:depAt?600:400}}>{off?"Preparando el PDF con los productos…":depAt?`✓ Ya está en el depósito (enviado el ${depHora}). No hace falta mandarlo de nuevo.`:resumen}</div>
+                      <div style={{flex:"1 1 220px",minWidth:0,fontSize:12,color:depAt?T.green:T.textMd,fontWeight:depAt?600:400}}>{off?"Preparando el PDF con los productos…":depAt?`Ya está en el depósito (enviado el ${depHora}). No hace falta mandarlo de nuevo.`:resumen}</div>
                       {segPendN>0&&<AsyncButton onClick={sendAllTracking} disabled={off} title="Sube los seguimientos a tu tienda sin descargar ni mandar nada al depósito" style={btnS}>Solo enviar seguimientos</AsyncButton>}
                       {depositoCliente&&<AsyncButton onClick={descargar} disabled={off} style={btnS}>{icoBajar}Descargar PDF</AsyncButton>}
                       {depositoCliente
@@ -13924,7 +13924,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <input autoFocus value={scanValue} onChange={e=>setScanValue(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")procesarScan();}} placeholder="Escaneá el código del rótulo (o tipeá tracking / N° pedido) y Enter" style={{...iS,flex:1,minWidth:220,fontSize:13,marginBottom:0}}/>
                   <span style={{fontSize:10,color:T.textSm}}>Verifica que el paquete escaneado corresponde a un envío registrado</span>
                 </div>
-                {scanLog.length>0&&<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3,maxHeight:120,overflowY:"auto"}}>{scanLog.map((s,i)=><div key={i} style={{fontSize:11,color:s.ok?T.green:T.red,fontWeight:600}}>{s.ok?`✓ #${s.numero} verificado`:`✕ ${s.tracking}: no corresponde a ningún envío registrado`}</div>)}</div>}
+                {scanLog.length>0&&<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:3,maxHeight:120,overflowY:"auto"}}>{scanLog.map((s,i)=><div key={i} style={{fontSize:11,color:s.ok?T.green:T.red,fontWeight:600}}>{s.ok?`#${s.numero} verificado`:`${s.tracking}: no corresponde a ningún envío registrado`}</div>)}</div>}
               </Card>
             )}
 
@@ -14007,11 +14007,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       <div key={e.numero||i} onClick={()=>setSegFicha(e)} title="Abrir la ficha del envío" style={{display:"grid",gridTemplateColumns:"28px 80px minmax(180px,1.6fr) 120px minmax(160px,1.4fr) 90px 150px",gap:8,padding:"9px 12px",borderBottom:i<Math.min(lista.length,segLimite)-1?`1px solid ${T.borderL}`:"none",alignItems:"center",opacity:final?0.7:1,fontSize:12,cursor:"pointer",background:tild?T.accentSolid+"0a":"transparent"}}
                         onMouseEnter={ev=>{if(!tild)ev.currentTarget.style.background=T.surface;}} onMouseLeave={ev=>{if(!tild)ev.currentTarget.style.background="transparent";}}>
                         <span onClick={ev=>{ev.stopPropagation(); if(!tildable) return; setSegSel(s=>{ const n=new Set(s); const key=String(e.numero); if(n.has(key)) n.delete(key); else n.add(key); return n; });}} title={tildable?"Tildar para reimprimir":"Solo etiquetas emitidas por API"} style={{display:"flex",alignItems:"center",justifyContent:"center",width:24,height:24,cursor:tildable?"pointer":"default"}}>
-                          <span style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${tild?T.accentSolid:tildable?T.border:T.borderL}`,background:tild?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",opacity:tildable?1:0.4}}>{tild&&<span style={{color:"#fff",fontSize:11,lineHeight:1}}>✓</span>}</span>
+                          <span style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${tild?T.accentSolid:tildable?T.border:T.borderL}`,background:tild?T.accentSolid:"transparent",display:"flex",alignItems:"center",justifyContent:"center",opacity:tildable?1:0.4}}>{tild&&<span style={{color:"#fff",fontSize:11,lineHeight:1}}><GhI n="check" size={12}/></span>}</span>
                         </span>
                         <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{e.numero}</span>
                         <div style={{minWidth:0}}>
-                          <div style={{fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}>✓</span>}</div>
+                          <div style={{fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.cliente||"—"}{e.verificado&&<span title="Verificado por escaneo" style={{marginLeft:6,fontSize:10,color:T.green}}><GhI n="check" size={12}/></span>}</div>
                           <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{[e.localidad,e.provincia].filter(Boolean).join(", ")||""}{e.esSucursal?" · sucursal":""}{esApi(e)?" · API":""}{e.creado?` · ${new Date(e.creado).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}`:""}</div>
                         </div>
                         <span><DSBadge T={T} color={col} size="sm">{lbl}</DSBadge></span>
@@ -14164,7 +14164,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <button onClick={()=>{setAndreaniOrder(o);setOrderDetail(null);}}
                     style={{...BtnPurple(T),fontSize:13,display:"flex",alignItems:"center",gap:6,marginLeft:"auto"}}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-                    {andreaniNumeroDe(o)?"Etiqueta Andreani ✓":"Etiqueta Andreani"}
+                    {andreaniNumeroDe(o)?"Etiqueta Andreani":"Etiqueta Andreani"}
                   </button>
                 )}
                 <button onClick={()=>abrirGeneracion(o)} style={{...BtnPrimary(T),fontSize:13,display:"flex",alignItems:"center",gap:6}}>
@@ -14660,7 +14660,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               {pasos.map(([n],i)=>{ const hecho=i<idx, activo=i===idx; const c=hecho?T.green:activo?T.accent:T.textSm; return (
                 <div key={n} style={{display:"flex",alignItems:"center",flex:i<pasos.length-1?1:"none"}}>
                   <div style={{display:"flex",alignItems:"center",gap:7}}>
-                    <span style={{width:22,height:22,borderRadius:"50%",border:`2px solid ${c}`,background:hecho?T.green:activo?T.accent+"22":"transparent",color:hecho?"#fff":c,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{hecho?"✓":i+1}</span>
+                    <span style={{width:22,height:22,borderRadius:"50%",border:`2px solid ${c}`,background:hecho?T.green:activo?T.accent+"22":"transparent",color:hecho?"#fff":c,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{hecho?<GhI n="check" size={12}/>:i+1}</span>
                     <span style={{fontSize:12,fontWeight:activo||hecho?700:500,color:activo?T.text:hecho?T.textMd:T.textSm,whiteSpace:"nowrap"}}>{n}</span>
                   </div>
                   {i<pasos.length-1&&<div style={{flex:1,height:2,background:hecho?T.green:T.borderL,margin:"0 10px",minWidth:16}}/>}
@@ -14730,7 +14730,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                             <td style={{padding:"5px 10px",fontWeight:700,color:T.text,whiteSpace:"nowrap"}}>#{r.numero}</td>
                             <td style={{padding:"5px 10px",color:T.text,maxWidth:170,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={o.comprador}>{o.comprador}</td>
                             <td style={{padding:"5px 10px",color:T.textMd}}>
-                              <span>{destino}{r.tipo==="sucursal"&&r.verif==="ok"&&<span title="Es el punto que eligió el cliente en tu tienda" style={{color:T.green,fontWeight:700,marginLeft:6}}>✓</span>}</span>
+                              <span>{destino}{r.tipo==="sucursal"&&r.verif==="ok"&&<span title="Es el punto que eligió el cliente en tu tienda" style={{color:T.green,fontWeight:700,marginLeft:6}}><GhI n="check" size={12}/></span>}</span>
                               {dirSuc&&r.verif!=="ok"&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{dirSuc}</div>}
                               {(()=>{ const cf=r.tipo==="sucursal"&&r.oficial&&!r.esquina?conflictoSucursal(r.order,r.oficial):null; return cf&&(
                                 <div style={{color:cf.grave&&!r.conflictoOk?T.red:T.yellow,fontSize:11,marginTop:2,fontWeight:700}}>{cf.grave&&!r.conflictoOk?`No es el punto que eligió el cliente: ${cf.msg}. No se va a emitir hasta que la cambies o la confirmes.`:cf.grave?`Confirmaste esta sucursal aunque ${cf.msg}.`:`Ojo: ${cf.msg}.`}</div>
@@ -15469,7 +15469,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
                 <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
                   {estadoChip(c)}
                   {["pendiente","revision"].includes(c.estado)&&c.metodo!=="mp"&&(
-                    <label title="Adjuntar el comprobante de la transferencia" style={{fontSize:10,fontWeight:600,color:T.accent,cursor:"pointer",whiteSpace:"nowrap"}}>{c.tieneComprobante?"Comprobante ✓":"Adjuntar comprobante"}<input type="file" accept="image/*,application/pdf" style={{display:"none"}} onChange={ev=>{ const f=ev.target.files?.[0]; if(f) adjuntarComprobante(c,f); ev.target.value=""; }}/></label>
+                    <label title="Adjuntar el comprobante de la transferencia" style={{fontSize:10,fontWeight:600,color:T.accent,cursor:"pointer",whiteSpace:"nowrap"}}>{c.tieneComprobante?"Comprobante":"Adjuntar comprobante"}<input type="file" accept="image/*,application/pdf" style={{display:"none"}} onChange={ev=>{ const f=ev.target.files?.[0]; if(f) adjuntarComprobante(c,f); ev.target.value=""; }}/></label>
                   )}
                   {c.estado==="pendiente"&&(
                     <button title="Cancelar esta carga" onClick={async()=>{
@@ -15584,7 +15584,7 @@ function AndreaniSucOrigenCard({T, sucOrigen, onChange}){
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error||!d.sucursal){ setErr(typeof d.error==="string"?d.error:`No se pudo confirmar (HTTP ${r.status})`); return; }
-    toast("Sucursal de despacho confirmada ✓","success");
+    toast("Sucursal de despacho confirmada","success");
     onChange&&onChange(d.sucursal);
   }
   async function elegir(s){
@@ -15596,7 +15596,7 @@ function AndreaniSucOrigenCard({T, sucOrigen, onChange}){
       const d=await r.json().catch(()=>({}));
       if(!r.ok||d.error||!d.sucursal){ setErr(typeof d.error==="string"?d.error:`No se pudo guardar la sucursal (HTTP ${r.status})`); }
       else{
-        toast("Sucursal de despacho confirmada ✓","success");
+        toast("Sucursal de despacho confirmada","success");
         setBuscando(false); setQ(""); setRes(null);
         onChange&&onChange(d.sucursal);
       }
@@ -15737,7 +15737,7 @@ function AndreaniOrigenForm({T, user, onSaved, onCancel, onSucOrigen, skipSucSte
     });
     const d=await r.json().catch(()=>({}));
     if(!r.ok||d.error){ toast("No se pudo guardar: "+(d.error||`HTTP ${r.status}`),"error"); return; }
-    toast("Datos del remitente guardados ✓","success");
+    toast("Datos del remitente guardados","success");
     if("sucOrigen" in d) onSucOrigen&&onSucOrigen(d.sucOrigen||null);
     // Si el backend sugirió una sucursal de despacho sin confirmar (o no encontró
     // ninguna para el CP), mostramos la card acá mismo antes de cerrar.
@@ -15937,7 +15937,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
     setEmitido(d);
     if(typeof d.saldoRestante==="number") onSaldo&&onSaldo(d.saldoRestante);
     onEmitido&&onEmitido(o.numero,d);
-    toast(`Etiqueta ${d.numeroDeEnvio} emitida ✓`,"success");
+    toast(`Etiqueta ${d.numeroDeEnvio} emitida`,"success");
   }
 
   async function descargarEtiqueta(){
@@ -15953,7 +15953,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
         try{ ghDescargarPdfBytes(await ghPdfTermica10x15([pdf]),`Andreani_${numero}_10x15.pdf`); }
         catch(e){ toast("No se pudo convertir a 10x15: "+e.message,"error"); return; }
       } else ghDescargarPdfB64(pdf,`Andreani_${numero}.pdf`);
-      toast("Etiqueta descargada ✓","success");
+      toast("Etiqueta descargada","success");
     }
     else if(d&&d.pending){ setPdfPending(true); toast("Andreani todavía está generando el PDF — probá en unos segundos","warning"); }
     else { toast("No se pudo descargar la etiqueta"+(d?.error?`: ${d.error}`:""),"error"); }
@@ -16403,7 +16403,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
             {pasosInicio.map(p=>{ const primero=!p.hecho&&pasosInicio.find(x=>!x.hecho)===p; return (
               <div key={p.n} style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,opacity:p.hecho?0.7:1}}>
-                <span style={{width:22,height:22,borderRadius:DS.r.full,background:p.hecho?T.green:T.bg,border:p.hecho?"none":`1px solid ${T.border}`,color:p.hecho?"#fff":T.textSm,fontSize:DS.font.sm,fontWeight:DS.w.bold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{p.hecho?"✓":p.n}</span>
+                <span style={{width:22,height:22,borderRadius:DS.r.full,background:p.hecho?T.green:T.bg,border:p.hecho?"none":`1px solid ${T.border}`,color:p.hecho?"#fff":T.textSm,fontSize:DS.font.sm,fontWeight:DS.w.bold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{p.hecho?<GhI n="check" size={12}/>:p.n}</span>
                 <span style={{flex:1,fontSize:DS.font.base,color:T.text,textDecoration:p.hecho?"line-through":"none"}}>{p.txt}</span>
                 {!p.hecho&&<Btn T={T} variant={primero?"primary":"secondary"} size="sm" onClick={()=>{ if(p.costos&&tieneTienda){ try{ sessionStorage.setItem("growith_costos_importar","1"); }catch(_){} onNavigate("margenes_costos"); } else onNavigate(p.go); }}>{p.cta}</Btn>}
               </div>); })}
@@ -16730,7 +16730,7 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 {esAndroid&&<a href="intent://growithapp.com/#Intent;scheme=https;package=com.android.chrome;end" style={{...BtnPrimary(T),textDecoration:"none",fontSize:13,padding:"9px 14px"}}>Abrir en Chrome</a>}
-                <button onClick={copiarLink} style={{...BtnSecondary(T),fontSize:13,padding:"9px 14px"}}>{linkCopiado?"Link copiado ✓":"Copiar link"}</button>
+                <button onClick={copiarLink} style={{...BtnSecondary(T),fontSize:13,padding:"9px 14px"}}>{linkCopiado?"Link copiado":"Copiar link"}</button>
               </div>
             </div>
           ) : (
@@ -16893,7 +16893,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
   };
   const activar = async () => {
     setBusy(true); setErr("");
-    try{ await post("carrier_enable"); toast("Andreani activado en el checkout ✓ — falta agregarlo a la zona de envío en Shopify (paso 2)","success"); await load(); setOpen(true); }
+    try{ await post("carrier_enable"); toast("Andreani activado en el checkout: falta agregarlo a la zona de envío en Shopify (paso 2)","success"); await load(); setOpen(true); }
     catch(e){ setErr(e.message); if(e.code==="scope") toast("Reconectá Shopify para dar el permiso de envíos","warning"); }
     setBusy(false);
   };
@@ -16907,7 +16907,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
     setSaving(true); setErr("");
     try{
       await post("carrier_config",{config:{gratisDesde:Number(cfg.gratisDesde)||0,sucursalesMax:Number(cfg.sucursalesMax)||5,recargoPct:Number(cfg.recargoPct)||0,recargoFijo:Number(cfg.recargoFijo)||0,domicilio:!!cfg.domicilio,sucursal:!!cfg.sucursal,bulto:{kilos:Number(cfg.kilos)||1,largoCm:Number(cfg.largoCm)||20,altoCm:Number(cfg.altoCm)||10,anchoCm:Number(cfg.anchoCm)||15,valorDeclaradoMax:Number(cfg.valorDeclaradoMax)||0}}});
-      toast("Configuración del checkout guardada ✓","success");
+      toast("Configuración del checkout guardada","success");
     }catch(e){ setErr(e.message); }
     setSaving(false);
   };
@@ -17060,7 +17060,7 @@ function PerfilTiendasCard({T, user, userDoc, setMsg}) {
   async function guardarNombre(){
     if(!nombre.trim()) return;
     setSavingNombre(true);
-    try{ await api("tiendaRenombrar",{tiendaUid:user.uid,nombre:nombre.trim()}); toast("Nombre de la tienda guardado ✓","success"); setTimeout(()=>window.location.reload(),600); }
+    try{ await api("tiendaRenombrar",{tiendaUid:user.uid,nombre:nombre.trim()}); toast("Nombre de la tienda guardado","success"); setTimeout(()=>window.location.reload(),600); }
     catch(e){ appAlert("No se pudo guardar: "+e.message); }
     setSavingNombre(false);
   }
@@ -17211,14 +17211,14 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
             const j = await r.json();
             if (!r.ok || j.error) throw new Error(j.error || "HTTP "+r.status);
             setUserDoc(d=>({ ...(d||{}), recurrentes: { ...(j.recurrentes||{}), connected:true } }));
-            setMsg(`Recurrentes vinculado ✓${j.recurrentes?.store_name ? " — "+j.recurrentes.store_name : ""}: las comisiones reales de cada cobro de suscripción ya entran a Márgenes`);
+            setMsg(`Recurrentes vinculado${j.recurrentes?.store_name ? " — "+j.recurrentes.store_name : ""}: las comisiones reales de cada cobro de suscripción ya entran a Márgenes`);
           } catch(e) { appAlert("No se pudo vincular Recurrentes: "+e.message+"\n\nVolvé a tocar Vincular: el código dura 10 minutos."); }
         })();
       }
     } catch(_) {}
     if(shSuccess){
       const faltan=url.searchParams.get("shopify_scopes_faltan");
-      setMsg(faltan?"Shopify conectado, pero a tu app de Shopify le falta el permiso para marcar envíos. En Config → Andreani en el checkout tenés los pasos: sumar los permisos a la app, publicarla y reconectar.":"Shopify conectado ✓");
+      setMsg(faltan?"Shopify conectado, pero a tu app de Shopify le falta el permiso para marcar envíos. En Config → Andreani en el checkout tenés los pasos: sumar los permisos a la app, publicarla y reconectar.":"Shopify conectado");
       url.searchParams.delete("shopify_success"); url.searchParams.delete("shopify_scopes_faltan");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(shError){
@@ -17247,11 +17247,11 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       url.searchParams.delete("status");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("mp_success")){
-      setMsg("Mercado Pago conectado ✓ — ya se leen las comisiones reales de cada cobro");
+      setMsg("Mercado Pago conectado: ya se leen las comisiones reales de cada cobro");
       url.searchParams.delete("mp_success");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(mlSuccess){
-      setMsg("Mercado Libre conectado ✓");
+      setMsg("Mercado Libre conectado");
       url.searchParams.delete("ml_success");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(mlError){
@@ -17272,23 +17272,23 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
     } else if(url.searchParams.get("gads")){
       const g=url.searchParams.get("gads");
       const map={cancelled:"Cancelaste la conexión con Google.",bad_state:"El proceso OAuth expiró. Probá conectar de nuevo.",bad_request:"Faltan parámetros en el callback.",token_failed:"Google rechazó el intercambio. Revisá GOOGLE_ADS_CLIENT_ID/SECRET en Vercel.",server_error:"Error de conexión con Google."};
-      setMsg(g==="ok" ? "Google Ads conectado ✓ — el gasto real entra solo al Dashboard" : "Error Google Ads: "+(map[g]||g));
+      setMsg(g==="ok" ? "Google Ads conectado: el gasto real entra solo al Dashboard" : "Error Google Ads: "+(map[g]||g));
       url.searchParams.delete("gads");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("tiktok")){
       const g=url.searchParams.get("tiktok");
       const map={cancelled:"Cancelaste la conexión con TikTok.",bad_state:"El proceso de conexión expiró. Probá conectar de nuevo.",bad_request:"Faltan parámetros en el callback.",token_failed:"TikTok rechazó el intercambio. Revisá TIKTOK_APP_ID/SECRET en Vercel.",error:"Error inesperado conectando TikTok."};
-      setMsg(g==="ok" ? "TikTok Ads conectado ✓ — el gasto real entra solo al Dashboard" : "Error TikTok Ads: "+(map[g]||g));
+      setMsg(g==="ok" ? "TikTok Ads conectado: el gasto real entra solo al Dashboard" : "Error TikTok Ads: "+(map[g]||g));
       url.searchParams.delete("tiktok");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("gdrive")){
       const g=url.searchParams.get("gdrive");
       const map={sin_permiso:"Falta el permiso de Google Drive: tocá Conectar otra vez y, en la pantalla de Google, tildá la casilla de Google Drive (\"ver, editar, crear y borrar solo los archivos de Drive que uses con esta app\").",cancelled:"Cancelaste la conexión con Google Drive.",bad_state:"El proceso de conexión expiró. Probá conectar de nuevo.",bad_request:"Faltan parámetros en el callback.",token_failed:"Google rechazó el intercambio. Probá conectar de nuevo.",no_refresh:"Google no devolvió acceso permanente. Desvinculá y volvé a conectar Google Drive."};
-      setMsg(g==="ok" ? "Google Drive conectado ✓ — ya podés elegir videos y docs desde Meta → Publicar" : "Google Drive: "+(map[g]||g));
+      setMsg(g==="ok" ? "Google Drive conectado: ya podés elegir videos y docs desde Meta → Publicar" : "Google Drive: "+(map[g]||g));
       url.searchParams.delete("gdrive");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("tn_success")){
-      setMsg("Tienda Nube conectada ✓");
+      setMsg("Tienda Nube conectada");
       url.searchParams.delete("tn_success");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("tn_error")){
@@ -17304,7 +17304,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       url.searchParams.delete("tn_error");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("meta_success")){
-      setMsg("Meta conectada ✓");
+      setMsg("Meta conectada");
       url.searchParams.delete("meta_success");
       window.history.replaceState({},"",url.pathname+url.search);
     } else if(url.searchParams.get("meta_error")){
@@ -17408,7 +17408,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
       // barra lateral). El email de LOGIN no se toca (seguís entrando con el mismo).
       try { if (nombre && auth.currentUser) await updateProfile(auth.currentUser, { displayName: nombre }); } catch(_) {}
       setEditProfile(false);
-      toast("Datos actualizados ✓","success");
+      toast("Datos actualizados","success");
     } catch(e){ toast("Error: "+(e.message||"no se pudo guardar"),"error"); }
     setPSaving(false);
   }
@@ -17532,7 +17532,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
         body: JSON.stringify({id: cr.id}),
       });
 
-      setMsg(`Meta conectada ✓ (${aa.name || aa.id})${adAccounts.length>1?" — tenés "+adAccounts.length+" cuentas publicitarias, elegimos la primera. Cambiala desde Meta Ads → Cuenta si querés otra.":""}`);
+      setMsg(`Meta conectada (${aa.name || aa.id})${adAccounts.length>1?" — tenés "+adAccounts.length+" cuentas publicitarias, elegimos la primera. Cambiala desde Meta Ads → Cuenta si querés otra.":""}`);
       setShowMetaModal(false);
       setMetaToken("");
     } catch(e) {
@@ -18006,7 +18006,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               <button onClick={startEditProfile} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140}}>Editar nombre y mail</button>
               <label style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",flex:1,minWidth:140,cursor:"pointer"}}>
                 Cambiar foto
-                <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{ const f=e.target.files?.[0]; e.target.value=""; if(!f) return; try{ const d=await ghResizeImage(f,160); await updateDoc(doc(db,"users",auth.currentUser.uid),{fotoPerfil:d}); toast("Foto de perfil actualizada ✓","success"); setTimeout(()=>window.location.reload(),500); }catch(err){ toast(err.message||"No pude guardar la foto","error"); } }}/>
+                <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{ const f=e.target.files?.[0]; e.target.value=""; if(!f) return; try{ const d=await ghResizeImage(f,160); await updateDoc(doc(db,"users",auth.currentUser.uid),{fotoPerfil:d}); toast("Foto de perfil actualizada","success"); setTimeout(()=>window.location.reload(),500); }catch(err){ toast(err.message||"No pude guardar la foto","error"); } }}/>
               </label>
               <button onClick={handleSignOut} style={{...BtnSecondary(T),fontSize:12,color:T.red,border:`1px solid ${T.red}33`,justifyContent:"center",flex:1,minWidth:140}}>Cerrar sesión</button>
             </div>
@@ -18093,9 +18093,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
           <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Cuando un colaborador entrega trabajo, el botón "Avisar por WA" te escribe directo a este número.</div>
           <div style={{display:"flex",gap:8}}>
             <input value={adminWaPhone} onChange={e=>setAdminWaPhone(e.target.value)} placeholder="Ej: 5491112345678 (con código de país, sin +)" style={{...InputStyle(T),fontSize:13,flex:1}}/>
-            <button onClick={saveAdminWaPhone} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",flexShrink:0}}>{waPhoneSaved?"✓ Guardado":"Guardar"}</button>
+            <button onClick={saveAdminWaPhone} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px",flexShrink:0}}>{waPhoneSaved?"Guardado":"Guardar"}</button>
           </div>
-          {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>✓ Los colaboradores van a escribirte a <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
+          {adminWaPhone&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>Los colaboradores van a escribirte a <strong>wa.me/{adminWaPhone.replace(/\D/g,"")}</strong></div>}
         </div>
 
         </>)}
@@ -18135,7 +18135,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <li>En <strong style={{color:T.text}}>Alcances (scopes)</strong> pegá TODOS estos de una (van separados por comas):
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
                       <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>{GH_SHOPIFY_SCOPES}</code>
-                      <button onClick={()=>{navigator.clipboard.writeText(GH_SHOPIFY_SCOPES);toast("Scopes copiados ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
+                      <button onClick={()=>{navigator.clipboard.writeText(GH_SHOPIFY_SCOPES);toast("Scopes copiados","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
                   <li><strong style={{color:T.text}}>Datos protegidos del cliente</strong> (en la app → <strong style={{color:T.text}}>Configuración → Acceso a los datos protegidos del cliente</strong>): pedí acceso y marcá <strong style={{color:T.text}}>Nombre, Email, Teléfono y Dirección</strong>. Sin esto Shopify manda los pedidos SIN el nombre ni la dirección del comprador y no se pueden hacer las etiquetas. (En el plan Basic de Shopify estos datos pueden no estar disponibles por API.)</li>
@@ -18143,13 +18143,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <li>En <strong style={{color:T.text}}>URL de la app</strong> (App URL) pegá exactamente esta. Si queda vacía o con el ejemplo que trae Shopify, después de autorizar no vuelve a Growith y la tienda no se conecta:
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
                       <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>https://www.growithapp.com</code>
-                      <button onClick={()=>{navigator.clipboard.writeText("https://www.growithapp.com");toast("URL copiada ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
+                      <button onClick={()=>{navigator.clipboard.writeText("https://www.growithapp.com");toast("URL copiada","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
                   <li>En <strong style={{color:T.text}}>URL de redireccionamiento</strong> pegá exactamente esta:
                     <div style={{marginTop:5,display:"flex",alignItems:"center",gap:6}}>
                       <code style={{flex:1,minWidth:0,background:T.bg,padding:"6px 8px",borderRadius:5,fontSize:9.5,color:T.accent,wordBreak:"break-all"}}>https://www.growithapp.com/api/integrations?platform=shopify</code>
-                      <button onClick={()=>{navigator.clipboard.writeText("https://www.growithapp.com/api/integrations?platform=shopify");toast("URL copiada ✓","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
+                      <button onClick={()=>{navigator.clipboard.writeText("https://www.growithapp.com/api/integrations?platform=shopify");toast("URL copiada","success");}} style={{...BtnSecondary(T),fontSize:10,padding:"5px 9px",flexShrink:0}}>Copiar</button>
                     </div>
                   </li>
                   <li><strong style={{color:T.text}}>Lanzá la versión:</strong> tocá <strong style={{color:T.text}}>"Publicar" / "Lanzar"</strong> (arriba a la derecha). Aparece un cartel pidiendo el <strong style={{color:T.text}}>nombre de la versión</strong> → dejalo <strong style={{color:T.text}}>en blanco</strong> y tocá de nuevo <strong style={{color:T.text}}>"Lanzar" / "Avanzar"</strong>. Con eso la versión interna de tu app queda lista.</li>
@@ -18316,7 +18316,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <li>Al terminar de asignar los permisos <strong style={{color:T.text}}>el token se genera solo</strong>: en la pantalla final <strong style={{color:T.text}}>"Se creó el token"</strong> tocá <strong style={{color:T.text}}>"Copiar"</strong> (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) → pegalo abajo. <strong style={{color:T.red}}>Copialo ahora</strong>: no se vuelve a mostrar.</li>
                 </ol>
                 <div style={{marginTop:10,padding:"8px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,fontSize:11,color:T.green}}>
-                  ✓ El token "Nunca vence" — no vas a tener que renovarlo.
+                  El token "Nunca vence" — no vas a tener que renovarlo.
                 </div>
               </div>
               <div style={{marginBottom:14}}>
@@ -18534,7 +18534,7 @@ function CalPagosPedidoModal({T,user,open,onClose,monedaInicial,fechaInicial,onC
 const ghImpMon = { cod:"USD", r:1 };
 const GH_FMT_USD = (n)=>{ if(n==null||!isFinite(n)) return "—"; const v=n*ghImpMon.r; const dec=Math.abs(v)>=100000?0:2;
   try{ return (v<0?"-":"")+new Intl.NumberFormat("es-AR",{style:"currency",currency:ghImpMon.cod,minimumFractionDigits:dec,maximumFractionDigits:dec}).format(Math.abs(v)); }catch(_){ return (v<0?"-":"")+ghImpMon.cod+" "+Math.abs(v).toFixed(dec); } };
-const GH_IMP_MONEDAS = [["USD","🇺🇸 Dólar"],["ARS","🇦🇷 Peso argentino (cripto)"],["EUR","🇪🇺 Euro"],["GBP","🇬🇧 Libra"],["RON","🇷🇴 Leu rumano"],["MDL","🇲🇩 Leu moldavo"],["PLN","🇵🇱 Złoty"],["TRY","🇹🇷 Lira turca"],["ZAR","🇿🇦 Rand"],["BRL","🇧🇷 Real"],["MXN","🇲🇽 Peso mexicano"],["CLP","🇨🇱 Peso chileno"],["COP","🇨🇴 Peso colombiano"],["UYU","🇺🇾 Peso uruguayo"],["PEN","🇵🇪 Sol"],["PYG","🇵🇾 Guaraní"],["BOB","🇧🇴 Boliviano"],["CAD","🇨🇦 Dólar canadiense"],["AUD","🇦🇺 Dólar australiano"],["CHF","🇨🇭 Franco suizo"],["JPY","🇯🇵 Yen"],["CNY","🇨🇳 Yuan"],["INR","🇮🇳 Rupia"],["HUF","🇭🇺 Forinto"],["CZK","🇨🇿 Corona checa"],["SEK","🇸🇪 Corona sueca"],["NOK","🇳🇴 Corona noruega"],["DKK","🇩🇰 Corona danesa"],["AED","🇦🇪 Dírham"],["ILS","🇮🇱 Séquel"]];
+const GH_IMP_MONEDAS = [["USD","Dólar"],["ARS","Peso argentino (cripto)"],["EUR","Euro"],["GBP","Libra"],["RON","Leu rumano"],["MDL","Leu moldavo"],["PLN","Złoty"],["TRY","Lira turca"],["ZAR","Rand"],["BRL","Real"],["MXN","Peso mexicano"],["CLP","Peso chileno"],["COP","Peso colombiano"],["UYU","Peso uruguayo"],["PEN","Sol"],["PYG","Guaraní"],["BOB","Boliviano"],["CAD","Dólar canadiense"],["AUD","Dólar australiano"],["CHF","Franco suizo"],["JPY","Yen"],["CNY","Yuan"],["INR","Rupia"],["HUF","Forinto"],["CZK","Corona checa"],["SEK","Corona sueca"],["NOK","Corona noruega"],["DKK","Corona danesa"],["AED","Dírham"],["ILS","Séquel"]];
 // Tarjetas con el MISMO diseño que "Métricas Principales" del Dashboard de
 // productos físicos (gh-mcard: punto de color, valor grande, sparkline a lo ancho).
 const GH_MC = { green:"#16c784", red:"#f6465d", blue:"#3861fb", violet:"#7c3aed", gold:"#f0b90b" };
@@ -18779,7 +18779,7 @@ function ImpultiendaConexion({T,uid,onCambio}){
           <input type="password" value={secret} onChange={e=>setSecret(e.target.value)} placeholder={cfg?.tieneFirma?"Clave de firma guardada (pegá otra para cambiarla)":"Clave de firma del endpoint"} style={{...inp,flex:1,minWidth:240}}/>
           <Btn T={T} onClick={()=>guardar()} disabled={guardando||!secret.trim()}>Guardar clave</Btn>
         </div>
-        <div style={{fontSize:DS.font.sm,color:cfg?.tieneFirma?T.green:T.textSm,marginTop:DS.sp.sm}}>{cfg?.tieneFirma?"✓ Clave de firma cargada":"Falta la clave de firma"} · {cfg?.ordenes||0} ventas recibidas{cfg?.ultimaPrueba?` · última prueba ${new Date(cfg.ultimaPrueba).toLocaleString("es-AR")}`:""}</div>
+        <div style={{fontSize:DS.font.sm,color:cfg?.tieneFirma?T.green:T.textSm,marginTop:DS.sp.sm}}>{cfg?.tieneFirma?"Clave de firma cargada":"Falta la clave de firma"} · {cfg?.ordenes||0} ventas recibidas{cfg?.ultimaPrueba?` · última prueba ${new Date(cfg.ultimaPrueba).toLocaleString("es-AR")}`:""}</div>
       </Card>
       <Card T={T}>
         <div style={tit}>2. Comisiones de cobro</div>
@@ -18790,7 +18790,7 @@ function ImpultiendaConexion({T,uid,onCambio}){
           {cfg?.tieneStripe && <Btn T={T} variant="ghost" onClick={()=>guardar({stripe_key:null})} disabled={guardando}>Quitar</Btn>}
         </div>
         {cfg?.tieneStripe ? (
-          <div style={{marginTop:DS.sp.md,fontSize:DS.font.sm,color:T.green,lineHeight:1.55}}>✓ Stripe conectado: Growith toma la comisión real de cada venta. Las pocas que no se pueden cruzar con su cobro (por ejemplo, ventas importadas sin email) usan el promedio real de tus comisiones de Stripe, no un % cargado a mano.</div>
+          <div style={{marginTop:DS.sp.md,fontSize:DS.font.sm,color:T.green,lineHeight:1.55}}>Stripe conectado: Growith toma la comisión real de cada venta. Las pocas que no se pueden cruzar con su cobro (por ejemplo, ventas importadas sin email) usan el promedio real de tus comisiones de Stripe, no un % cargado a mano.</div>
         ) : (
         <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.md,flexWrap:"wrap"}}>
           <span style={{fontSize:DS.font.sm,color:T.textMd}}>Comisión estimada:</span>
@@ -18844,13 +18844,13 @@ function ImpultiendaConexion({T,uid,onCambio}){
 }
 // Zonas para elegir en el Dashboard de productos digitales (más la del navegador).
 const GH_IMP_ZONAS = [
-  ["America/Argentina/Buenos_Aires","🇦🇷 Argentina"],["America/Montevideo","🇺🇾 Uruguay"],["America/Santiago","🇨🇱 Chile"],["America/Sao_Paulo","🇧🇷 Brasil"],["America/Asuncion","🇵🇾 Paraguay"],
-  ["America/La_Paz","🇧🇴 Bolivia"],["America/Lima","🇵🇪 Perú"],["America/Bogota","🇨🇴 Colombia"],["America/Guayaquil","🇪🇨 Ecuador"],["America/Caracas","🇻🇪 Venezuela"],
-  ["America/Panama","🇵🇦 Panamá"],["America/Costa_Rica","🇨🇷 Costa Rica"],["America/Mexico_City","🇲🇽 México"],["America/Santo_Domingo","🇩🇴 Rep. Dominicana"],
-  ["America/New_York","🇺🇸 EE.UU. Este"],["America/Chicago","🇺🇸 EE.UU. Centro"],["America/Denver","🇺🇸 EE.UU. Montaña"],["America/Los_Angeles","🇺🇸 EE.UU. Pacífico"],["America/Toronto","🇨🇦 Canadá"],
-  ["Europe/Madrid","🇪🇸 España"],["Europe/Lisbon","🇵🇹 Portugal"],["Europe/London","🇬🇧 Reino Unido"],["Europe/Paris","🇫🇷 Francia"],["Europe/Berlin","🇩🇪 Alemania"],["Europe/Rome","🇮🇹 Italia"],
-  ["Europe/Warsaw","🇵🇱 Polonia"],["Europe/Prague","🇨🇿 Chequia"],["Europe/Bucharest","🇷🇴 Rumania"],["Europe/Chisinau","🇲🇩 Moldavia"],["Europe/Athens","🇬🇷 Grecia"],["Europe/Istanbul","🇹🇷 Turquía"],
-  ["Africa/Johannesburg","🇿🇦 Sudáfrica"],["Asia/Dubai","🇦🇪 Emiratos"],["Asia/Kolkata","🇮🇳 India"],["Asia/Tokyo","🇯🇵 Japón"],["Australia/Sydney","🇦🇺 Australia"],["UTC","🌐 UTC"],
+  ["America/Argentina/Buenos_Aires","Argentina"],["America/Montevideo","Uruguay"],["America/Santiago","Chile"],["America/Sao_Paulo","Brasil"],["America/Asuncion","Paraguay"],
+  ["America/La_Paz","Bolivia"],["America/Lima","Perú"],["America/Bogota","Colombia"],["America/Guayaquil","Ecuador"],["America/Caracas","Venezuela"],
+  ["America/Panama","Panamá"],["America/Costa_Rica","Costa Rica"],["America/Mexico_City","México"],["America/Santo_Domingo","Rep. Dominicana"],
+  ["America/New_York","EE.UU. Este"],["America/Chicago","EE.UU. Centro"],["America/Denver","EE.UU. Montaña"],["America/Los_Angeles","EE.UU. Pacífico"],["America/Toronto","Canadá"],
+  ["Europe/Madrid","España"],["Europe/Lisbon","Portugal"],["Europe/London","Reino Unido"],["Europe/Paris","Francia"],["Europe/Berlin","Alemania"],["Europe/Rome","Italia"],
+  ["Europe/Warsaw","Polonia"],["Europe/Prague","Chequia"],["Europe/Bucharest","Rumania"],["Europe/Chisinau","Moldavia"],["Europe/Athens","Grecia"],["Europe/Istanbul","Turquía"],
+  ["Africa/Johannesburg","Sudáfrica"],["Asia/Dubai","Emiratos"],["Asia/Kolkata","India"],["Asia/Tokyo","Japón"],["Australia/Sydney","Australia"],["UTC","UTC"],
 ];
 // Algunos navegadores dan nombres viejos (America/Buenos_Aires, America/Cordoba): se llevan a la zona de la lista para mostrar el país.
 const ghImpTzCanon = (z)=> /^America\/(Argentina\/.+|Buenos_Aires|Cordoba|Mendoza|Catamarca|Jujuy|Rosario)$/.test(z||"") ? "America/Argentina/Buenos_Aires" : z;
@@ -18869,12 +18869,12 @@ function GhFiltroPill({T,icon,label,children}){
 const ghFiltroSel=(T)=>({background:"transparent",border:"none",outline:"none",color:T.text,fontSize:DS.font.md,fontWeight:DS.w.semibold,fontFamily:"'Inter',system-ui,sans-serif",cursor:"pointer",maxWidth:150,padding:"0 4px"});
 function GhTzSelect({T,value,onChange}){
   const nav=(()=>{ try{ return ghImpTzCanon(Intl.DateTimeFormat().resolvedOptions().timeZone); }catch(_){ return null; } })();
-  const ciudad=(z)=>"🌐 "+String(z).split("/").pop().replace(/_/g," ");
+  const ciudad=(z)=>""+String(z).split("/").pop().replace(/_/g," ");
   const l=[...GH_IMP_ZONAS]; if(nav&&!l.some(z=>z[0]===nav)) l.unshift([nav,ciudad(nav)]); if(value&&!l.some(z=>z[0]===value)) l.unshift([value,ciudad(value)]);
-  return <GhFiltroPill T={T} icon="🕐" label="Horario"><select value={value} onChange={e=>onChange(e.target.value)} title="Define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={ghFiltroSel(T)}>{l.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></GhFiltroPill>;
+  return <GhFiltroPill T={T} icon={<GhI n="clock" size={14}/>} label="Horario"><select value={value} onChange={e=>onChange(e.target.value)} title="Define cuándo empieza el día y a qué hora cae cada venta y cada gasto" style={ghFiltroSel(T)}>{l.map(([v,n])=><option key={v} value={v}>{n}</option>)}</select></GhFiltroPill>;
 }
 function GhMonSelect({T,value,onChange,extra}){
-  return <GhFiltroPill T={T} icon="💱" label="Moneda"><select value={value} onChange={e=>onChange(e.target.value)} title="Peso argentino con dólar cripto; el resto con el dólar oficial" style={ghFiltroSel(T)}>{extra}{GH_IMP_MONEDAS.map(([c,n])=><option key={c} value={c}>{n} ({c})</option>)}</select></GhFiltroPill>;
+  return <GhFiltroPill T={T} icon={<GhI n="chart" size={14}/>} label="Moneda"><select value={value} onChange={e=>onChange(e.target.value)} title="Peso argentino con dólar cripto; el resto con el dólar oficial" style={ghFiltroSel(T)}>{extra}{GH_IMP_MONEDAS.map(([c,n])=><option key={c} value={c}>{n} ({c})</option>)}</select></GhFiltroPill>;
 }
 const ghHoyEn = (tz)=>{ try{ return new Intl.DateTimeFormat("en-CA",{timeZone:tz,year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()); }catch(_){ return new Date().toISOString().slice(0,10); } };
 function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
@@ -18950,7 +18950,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
       <div style={{padding:"16px clamp(10px,4vw,24px) 80px",display:"flex",flexDirection:"column",gap:DS.sp.lg,width:"100%",maxWidth:1280,margin:"0 auto",boxSizing:"border-box"}}>
         {vista==="conexion" ? <ImpultiendaConexion T={T} uid={uid} onCambio={()=>cargar(true)}/> : (<>
           <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap",alignItems:"center",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
-            <GhFiltroPill T={T} icon="📅" label="Período"><DateRangePicker T={T} since={desde} until={hasta} onChange={(a,b)=>{ setDesde(a); setHasta(b); }}
+            <GhFiltroPill T={T} icon={<GhI n="calendar" size={14}/>} label="Período"><DateRangePicker T={T} since={desde} until={hasta} onChange={(a,b)=>{ setDesde(a); setHasta(b); }}
               presets={(()=>{ const d=(n)=>new Date(Date.parse(hoy)-n*86400000).toISOString().slice(0,10); const [y,m]=hoy.split("-").map(Number); const ini=(yy,mm)=>`${yy}-${String(mm).padStart(2,"0")}-01`; const finMesAnt=new Date(Date.UTC(y,m-1,0)).toISOString().slice(0,10);
                 return [{id:"today",label:"Hoy",range:()=>[hoy,hoy]},{id:"yest",label:"Ayer",range:()=>[d(1),d(1)]},{id:"7d",label:"Últimos 7 días",range:()=>[d(6),hoy]},{id:"14d",label:"Últimos 14 días",range:()=>[d(13),hoy]},{id:"30d",label:"Últimos 30 días",range:()=>[d(29),hoy]},
                   {id:"mes",label:"Este mes",range:()=>[ini(y,m),hoy]},{id:"mes-1",label:"Mes pasado",range:()=>[m===1?ini(y-1,12):ini(y,m-1),finMesAnt]}]; })()}/></GhFiltroPill>
@@ -23995,7 +23995,7 @@ function AdmMailsCfg({ctx}){
   const [d,setD]=useState(null); const [busy,setBusy]=useState(false); const [tope,setTope]=useState("");
   const cargar=()=>adminApi({action:"adminMailCfg"}).then(r=>{ setD(r); setTope(String(r.topeDia||90)); }).catch(e=>setD({err:e.message}));
   useEffect(()=>{ cargar(); },[]);
-  const guardar=async patch=>{ setBusy(true); try{ const r=await adminApi({action:"adminMailCfg",set:true,...patch}); setD(r); toast("Guardado ✓","success"); }catch(e){ toast(e.message,"error"); } finally{ setBusy(false); } };
+  const guardar=async patch=>{ setBusy(true); try{ const r=await adminApi({action:"adminMailCfg",set:true,...patch}); setD(r); toast("Guardado","success"); }catch(e){ toast(e.message,"error"); } finally{ setBusy(false); } };
   const dias=d?.dias||[], hoy=dias[0]||{};
   const de=(x,k,campo)=>Number(x?.porOrigen?.[k]?.[campo])||0;
   const semana=k=>dias.reduce((s,x)=>s+de(x,k,"enviados"),0);
@@ -24232,7 +24232,7 @@ function AdmShopifyApps({T}){
   const api=async(action,body)=>{ const r=await authFetch(`/api/integrations?platform=shopify&action=${action}`, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:undefined); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||`HTTP ${r.status}`); return d; };
   const load=async()=>{ try{ const d=await api("apps_list"); setApps(d.apps||[]); }catch(e){ setErr(e.message); setApps([]); } };
   useEffect(()=>{ load(); },[]);
-  const guardar=async()=>{ setBusy(true); setErr(""); try{ await api("app_set",f); toast("App guardada ✓","success"); setF({shop:"",client_id:"",client_secret:"",nota:""}); await load(); }catch(e){ setErr(e.message); } setBusy(false); };
+  const guardar=async()=>{ setBusy(true); setErr(""); try{ await api("app_set",f); toast("App guardada","success"); setF({shop:"",client_id:"",client_secret:"",nota:""}); await load(); }catch(e){ setErr(e.message); } setBusy(false); };
   const borrar=async(shop)=>{ if(!(await appConfirm(`¿Borrar la app de ${shop}? La tienda va a tener que reconectar.`,{danger:true,okLabel:"Borrar"}))) return; try{ await api("app_delete",{shop}); await load(); }catch(e){ toast(e.message,"error"); } };
   const iS={...InputStyle(T),fontSize:12,padding:"7px 10px"};
   return (
@@ -24251,7 +24251,7 @@ function AdmShopifyApps({T}){
       <summary style={{cursor:"pointer",fontSize:11,color:T.textSm,marginBottom:8}}>Plan B: apps por tienda (solo si Shopify rechaza la app central en la tienda de un cliente)</summary>
       {apps===null?<AdmSkeleton T={T} filas={2}/>:apps.filter(a=>a.shop!=="_central").length===0?<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin apps por tienda (solo hacen falta si Shopify no deja instalar la app central en la tienda de un cliente).</div>:apps.filter(a=>a.shop!=="_central").map((a,i)=>(
         <div key={a.shop} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${T.borderL}`,fontSize:12}}>
-          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.text}}>{a.shop}</div><div style={{fontSize:10.5,color:T.textSm,fontFamily:"monospace"}}>{a.client_id.slice(0,10)}… · {a.has_secret?"secret ✓":"sin secret"}{a.nota?` · ${a.nota}`:""}</div></div>
+          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.text}}>{a.shop}</div><div style={{fontSize:10.5,color:T.textSm,fontFamily:"monospace"}}>{a.client_id.slice(0,10)}… · {a.has_secret?"secret":"sin secret"}{a.nota?` · ${a.nota}`:""}</div></div>
           <button onClick={()=>setF({shop:a.shop,client_id:a.client_id,client_secret:"",nota:a.nota||""})} style={{...BtnSecondary(T),fontSize:11,padding:"4px 9px"}}>Editar</button>
           <button onClick={()=>borrar(a.shop)} style={{fontSize:11,padding:"4px 9px",borderRadius:7,border:`1px solid ${T.red}44`,background:"transparent",color:T.red,cursor:"pointer"}}>Borrar</button>
         </div>
@@ -24760,7 +24760,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     if(!ntColabTitulo.trim()) return toast("Ingresá un título","error");
     try{
       await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicProponerTarea",token:colabMode?.token,titulo:ntColabTitulo.trim(),descripcion:ntColabDesc.trim(),link:ntColabLink.trim()})});
-      toast("Propuesta enviada ✓","success");
+      toast("Propuesta enviada","success");
       setShowNTColab(false); setNtColabTitulo(""); setNtColabDesc(""); setNtColabLink("");
       loadData(true);
     }catch(e){toast("Error: "+e.message,"error");}
@@ -24876,12 +24876,12 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     return `${ghShareOrigin()}/#/colaborador/${token}`;
   }
   async function saveNotifEmailsFn(emails) {
-    try { await tareasApi({action:"saveNotifEmails",emails}); setNotifEmails(emails); toast("Emails guardados ✓","success"); }
+    try { await tareasApi({action:"saveNotifEmails",emails}); setNotifEmails(emails); toast("Emails guardados","success"); }
     catch(e){ toast("Error al guardar: "+e.message,"error"); }
   }
 
   async function copyLink(token) {
-    try { await navigator.clipboard.writeText(colabLink(token)); toast("Link copiado ✓","success"); }
+    try { await navigator.clipboard.writeText(colabLink(token)); toast("Link copiado","success"); }
     catch(e){ appAlert("Link: "+colabLink(token)); }
   }
   function whatsappLink(t, colab) {
@@ -24983,7 +24983,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const sent = emailResults.filter(r=>r.ok);
     const failed = emailResults.filter(r=>!r.ok);
     if(failed.length>0) toast(`${failed.length} email(s) no enviados: ${failed.map(r=>r.error||"error").join(" / ")}`,"warning");
-    else if(sent.length>0) toast("Notificaciones enviadas ✓","success");
+    else if(sent.length>0) toast("Notificaciones enviadas","success");
     if(colab) setNotifPanel({tarea:d,colab});
   }
 
@@ -25010,7 +25010,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
     setEditTarea(null);
     setEditModeDetalle(false);
-    toast("Tarea actualizada ✓","success");
+    toast("Tarea actualizada","success");
   }
 
   async function agregarMiembro() {
@@ -25023,14 +25023,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         if(!d||!d._id) throw new Error("Respuesta inválida del servidor");
         setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(c=>c._id!==d._id),d]}));
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
-        toast("Miembro agregado ✓","success");
-        try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado ✓","success"); } catch(_){}
+        toast("Miembro agregado","success");
+        try { await navigator.clipboard.writeText(colabLink(d.token)); toast("Link copiado","success"); } catch(_){}
       } else {
         if((produccion?.editores||[]).includes(nombre)) { toast("Ya existe un miembro con ese nombre","error"); return; }
         const newProd = {...produccion, editores:[...(produccion?.editores||[]), nombre]};
         setProduccion(newProd);
         setShowNC(false); setNcNombre(""); setNcEmail(""); setNcRol(""); setNcTelefono("");
-        toast("Miembro agregado ✓","success");
+        toast("Miembro agregado","success");
         try { await tareasApi({action:"saveProduccion",data:newProd}); } catch(e){ toast("Error al guardar en servidor","error"); }
       }
     } catch(e) {
@@ -25049,7 +25049,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
       await tareasApi({action:"updateColaborador",colabId,nombre:editData.nombre.trim(),rol:editData.rol.trim(),telefono:editData.wa.trim(),email:editData.email.trim()});
       setDatos(prev=>({...prev,colaboradores:prev.colaboradores.map(c=>c._id===colabId?{...c,nombre:editData.nombre.trim(),rol:editData.rol.trim(),telefono:editData.wa.trim(),email:editData.email.trim().toLowerCase()}:c)}));
       setEditingMember(null);
-      toast("Datos guardados ✓","success");
+      toast("Datos guardados","success");
     } catch(e){ appAlert("Error: "+e.message); }
   }
 
@@ -25067,7 +25067,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     await tareasApi({action:"updateTarea",tareaId,...upd});
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
-    toast("Tarea reasignada ✓","success");
+    toast("Tarea reasignada","success");
   }
   async function addAssignee(tareaId, email) {
     const tarea=tareas.find(t=>t._id===tareaId); if(!tarea) return;
@@ -25077,7 +25077,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     await tareasApi({action:"updateTarea",tareaId,asignadosEmails:newEmails});
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,asignadosEmails:newEmails}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,asignadosEmails:newEmails}));
-    toast("Colaborador agregado ✓","success");
+    toast("Colaborador agregado","success");
   }
   async function removeAssignee(tareaId, email) {
     const tarea=tareas.find(t=>t._id===tareaId); if(!tarea) return;
@@ -25124,7 +25124,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
         dl.setDate(dl.getDate()+dias);
         await tareasApi({action:"createTarea",titulo:tarea.titulo,descripcion:tarea.descripcion||"",brief:tarea.brief||"",links:tarea.links||[],checklist:[],asignadoEmail:tarea.asignadoEmail,asignadoNombre:tarea.asignadoNombre||"",deadline:dl.toISOString().slice(0,10),managerEmail:user?.email||"",recurrente:true,frecuenciaRecurrente:tarea.frecuenciaRecurrente});
         await loadData();
-        toast(`Tarea recurrente creada automáticamente (${tarea.frecuenciaRecurrente}) ✓`,"success");
+        toast(`Tarea recurrente creada automáticamente (${tarea.frecuenciaRecurrente})`,"success");
       }catch(e){console.error("Error creando recurrente:",e);}
     }
     setShowFeedback(prev=>({...prev,[tareaId]:false}));
@@ -25136,14 +25136,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     const upd={publicado};
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,...upd}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,...upd}));
-    toast(publicado?"Marcado como publicado ✓":"Quitado de publicados","success");
+    toast(publicado?"Marcado como publicado":"Quitado de publicados","success");
   }
   async function crearEvento() {
     if(!nEventoData.nombre.trim()||!nEventoData.fecha) return appAlert("Completá nombre y fecha");
     const ev={id:mkProdId(),nombre:nEventoData.nombre.trim(),fecha:nEventoData.fecha,tipo:nEventoData.tipo,notas:nEventoData.notas.trim()};
     await saveProd({...produccion,eventos:[...(produccion.eventos||[]),ev]});
     setShowNEvento(false); setNEventoData({nombre:"",fecha:"",tipo:"lanzamiento",notas:""});
-    toast("Evento creado ✓","success");
+    toast("Evento creado","success");
   }
   async function eliminarEvento(id) {
     await saveProd({...produccion,eventos:(produccion.eventos||[]).filter(e=>e.id!==id)});
@@ -25152,7 +25152,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     if(!saveTemplateName.trim()) return;
     const tmpl={id:mkProdId(),nombre:saveTemplateName.trim(),titulo:ntTitulo,brief:ntBrief};
     await saveProd({...produccion,taskTemplates:[...(produccion.taskTemplates||[]),tmpl]});
-    setShowSaveTemplate(false); setSaveTemplateName(""); toast("Plantilla guardada ✓","success");
+    setShowSaveTemplate(false); setSaveTemplateName(""); toast("Plantilla guardada","success");
   }
   async function eliminarTemplate(id) {
     await saveProd({...produccion,taskTemplates:(produccion.taskTemplates||[]).filter(t=>t.id!==id)});
@@ -25197,7 +25197,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   async function duplicateTarea(tareaId) {
     const d = await tareasApi({action:"duplicateTarea",tareaId});
     setDatos(prev=>({...prev,tareas:[d,...prev.tareas]}));
-    toast("Tarea duplicada ✓","success");
+    toast("Tarea duplicada","success");
   }
 
   async function regenerateToken(colabId) {
@@ -25216,26 +25216,26 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
   }
   // Tanda
   function openTanda(t=null){ setEditTanda(t); setTNombre(t?.nombre||""); setTFecha(t?.fecha_brief||""); setTEstado2(t?.estado||"activa"); setTDesc(t?.descripcion||""); setTRecursos((t?.recursos||[]).map(r=>({...r}))); setShowNT2(true); }
-  async function guardarTanda(){ if(!tNombre.trim()) return appAlert("El nombre es requerido"); const tanda={id:editTanda?.id||mkProdId(),nombre:tNombre.trim(),fecha_brief:tFecha,estado:tEstado2,descripcion:tDesc.trim(),recursos:tRecursos.filter(r=>r.nombre&&r.url)}; const nt=editTanda?produccion.tandas.map(t=>t.id===editTanda.id?tanda:t):[...produccion.tandas,tanda]; await saveProd({...produccion,tandas:nt}); setShowNT2(false); toast(editTanda?"Tanda actualizada ✓":"Tanda creada ✓","success"); }
+  async function guardarTanda(){ if(!tNombre.trim()) return appAlert("El nombre es requerido"); const tanda={id:editTanda?.id||mkProdId(),nombre:tNombre.trim(),fecha_brief:tFecha,estado:tEstado2,descripcion:tDesc.trim(),recursos:tRecursos.filter(r=>r.nombre&&r.url)}; const nt=editTanda?produccion.tandas.map(t=>t.id===editTanda.id?tanda:t):[...produccion.tandas,tanda]; await saveProd({...produccion,tandas:nt}); setShowNT2(false); toast(editTanda?"Tanda actualizada":"Tanda creada","success"); }
   async function deleteTandaProd(id){ if(!await appConfirm("¿Eliminar esta tanda?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,tandas:produccion.tandas.filter(t=>t.id!==id)}); toast("Tanda eliminada","warning"); }
   // Creativo
   function openCreativo(c=null,tandaId=""){ setEditCreativo2(c); setCCodigo(c?.codigo||""); setCTanda(c?.tanda_id||tandaId||""); setCTipo(c?.tipo||"estatico"); setCPersona(c?.persona||"General"); setCEtapa(c?.etapa||"TOF"); setCAngulo(c?.angulo||""); setCEditor(c?.editor||(produccion.editores[0]||"")); setCEstado2(c?.estado||"idea"); setCNotas(c?.notas||""); setCCampana(c?.campana||""); setCRoas(c?.roas!=null?String(c.roas):""); setCCpa(c?.cpa!=null?String(c.cpa):""); setCPerformance(c?.performance||"pendiente"); setShowNC2(true); }
-  async function guardarCreativo(){ const tipoStr={estatico:"EST","video-ugc":"UGC","video-normal":"VN"}[cTipo]||"CR"; const tanda=produccion.tandas.find(t=>t.id===cTanda); const pfx=tanda?tanda.nombre.replace(/[^A-Za-z0-9]/g,"").slice(0,3).toUpperCase()+"-":""; const baseCount=produccion.creativos.filter(c=>!editCreativo2||c.id!==editCreativo2.id).length; const auto=pfx+tipoStr+String(baseCount+1).padStart(2,"0"); const creativo={id:editCreativo2?.id||mkProdId(),codigo:cCodigo.trim()||auto,tanda_id:cTanda,tipo:cTipo,persona:cPersona,etapa:cEtapa,angulo:cAngulo.trim(),editor:cEditor,estado:cEstado2,pagado:editCreativo2?.pagado||false,campana:cCampana.trim(),roas:cRoas?parseFloat(cRoas):null,cpa:cCpa?parseFloat(cCpa):null,performance:cPerformance,notas:cNotas.trim()}; const nc=editCreativo2?produccion.creativos.map(c=>c.id===editCreativo2.id?creativo:c):[...produccion.creativos,creativo]; await saveProd({...produccion,creativos:nc}); setShowNC2(false); toast(editCreativo2?"Creativo actualizado ✓":"Creativo creado ✓","success"); }
+  async function guardarCreativo(){ const tipoStr={estatico:"EST","video-ugc":"UGC","video-normal":"VN"}[cTipo]||"CR"; const tanda=produccion.tandas.find(t=>t.id===cTanda); const pfx=tanda?tanda.nombre.replace(/[^A-Za-z0-9]/g,"").slice(0,3).toUpperCase()+"-":""; const baseCount=produccion.creativos.filter(c=>!editCreativo2||c.id!==editCreativo2.id).length; const auto=pfx+tipoStr+String(baseCount+1).padStart(2,"0"); const creativo={id:editCreativo2?.id||mkProdId(),codigo:cCodigo.trim()||auto,tanda_id:cTanda,tipo:cTipo,persona:cPersona,etapa:cEtapa,angulo:cAngulo.trim(),editor:cEditor,estado:cEstado2,pagado:editCreativo2?.pagado||false,campana:cCampana.trim(),roas:cRoas?parseFloat(cRoas):null,cpa:cCpa?parseFloat(cCpa):null,performance:cPerformance,notas:cNotas.trim()}; const nc=editCreativo2?produccion.creativos.map(c=>c.id===editCreativo2.id?creativo:c):[...produccion.creativos,creativo]; await saveProd({...produccion,creativos:nc}); setShowNC2(false); toast(editCreativo2?"Creativo actualizado":"Creativo creado","success"); }
   async function deleteCreativoProd(id){ if(!await appConfirm("¿Eliminar este creativo?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,creativos:produccion.creativos.filter(c=>c.id!==id)}); toast("Eliminado","warning"); }
   async function updateCEstado(id,estado){ const nc=produccion.creativos.map(c=>c.id===id?{...c,estado}:c); await saveProd({...produccion,creativos:nc}); }
   async function togglePagado(id){ const nc=produccion.creativos.map(c=>c.id===id?{...c,pagado:!c.pagado}:c); await saveProd({...produccion,creativos:nc}); }
   // Idea
   function openIdea(i=null){ setEditIdea(i); setIConcepto(i?.concepto||""); setIPersona(i?.persona||"General"); setIEtapa(i?.etapa||"TOF"); setIPrioridad(i?.prioridad||"media"); setIEditor(i?.editor_sugerido||""); setINotas(i?.notas||""); setShowNI(true); }
-  async function guardarIdea(){ if(!iConcepto.trim()) return appAlert("El concepto es requerido"); const idea={id:editIdea?.id||mkProdId(),concepto:iConcepto.trim(),persona:iPersona,etapa:iEtapa,prioridad:iPrioridad,editor_sugerido:iEditor.trim(),notas:iNotas.trim()}; const ni=editIdea?produccion.ideas.map(i=>i.id===editIdea.id?idea:i):[...produccion.ideas,idea]; await saveProd({...produccion,ideas:ni}); setShowNI(false); toast(editIdea?"Idea actualizada ✓":"Idea guardada ✓","success"); }
+  async function guardarIdea(){ if(!iConcepto.trim()) return appAlert("El concepto es requerido"); const idea={id:editIdea?.id||mkProdId(),concepto:iConcepto.trim(),persona:iPersona,etapa:iEtapa,prioridad:iPrioridad,editor_sugerido:iEditor.trim(),notas:iNotas.trim()}; const ni=editIdea?produccion.ideas.map(i=>i.id===editIdea.id?idea:i):[...produccion.ideas,idea]; await saveProd({...produccion,ideas:ni}); setShowNI(false); toast(editIdea?"Idea actualizada":"Idea guardada","success"); }
   async function deleteIdeaProd(id){ if(!await appConfirm("¿Eliminar?",{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,ideas:produccion.ideas.filter(i=>i.id!==id)}); toast("Idea eliminada","warning"); }
   async function promoverIdea(idea){ setEditCreativo2(null); setCCodigo(""); setCTanda(""); setCTipo("estatico"); setCPersona(idea.persona); setCEtapa(idea.etapa); setCAngulo(idea.concepto); setCEditor(idea.editor_sugerido||(produccion.editores[0]||"")); setCEstado2("idea"); setCNotas(idea.notas||""); setCCampana(""); setCRoas(""); setCCpa(""); setCPerformance("pendiente"); await saveProd({...produccion,ideas:produccion.ideas.filter(i=>i.id!==idea.id)}); setShowNC2(true); }
   // Editor
-  async function agregarEditor(){ if(!nuevoEditor.trim()) return; if(produccion.editores.includes(nuevoEditor.trim())) return appAlert("Ya existe ese editor"); await saveProd({...produccion,editores:[...produccion.editores,nuevoEditor.trim()]}); setNuevoEditor(""); toast("Editor agregado ✓","success"); }
+  async function agregarEditor(){ if(!nuevoEditor.trim()) return; if(produccion.editores.includes(nuevoEditor.trim())) return appAlert("Ya existe ese editor"); await saveProd({...produccion,editores:[...produccion.editores,nuevoEditor.trim()]}); setNuevoEditor(""); toast("Editor agregado","success"); }
   async function eliminarEditor(nombre){ if(!await appConfirm(`¿Eliminar editor "${nombre}"?`,{danger:true,okLabel:"Eliminar"})) return; await saveProd({...produccion,editores:produccion.editores.filter(e=>e!==nombre)}); toast("Editor eliminado","warning"); }
-  async function generarLinkEditor(editorNombre){ const d=await tareasApi({action:"generateEditorToken",editorNombre}); const newToks={...(produccion.editorTokens||{}),[editorNombre]:d.token}; setProduccion(prev=>({...prev,editorTokens:newToks})); const link=`${ghShareOrigin()}/#/editor-produccion/${d.token}`; try{await navigator.clipboard.writeText(link); toast("Link generado y copiado ✓","success");}catch(e){toast("Link: "+link,"success");} return d.token; }
+  async function generarLinkEditor(editorNombre){ const d=await tareasApi({action:"generateEditorToken",editorNombre}); const newToks={...(produccion.editorTokens||{}),[editorNombre]:d.token}; setProduccion(prev=>({...prev,editorTokens:newToks})); const link=`${ghShareOrigin()}/#/editor-produccion/${d.token}`; try{await navigator.clipboard.writeText(link); toast("Link generado y copiado","success");}catch(e){toast("Link: "+link,"success");} return d.token; }
   function editorPortalLink(editorNombre){ const tok=produccion.editorTokens?.[editorNombre]; return tok?`${ghShareOrigin()}/#/editor-produccion/${tok}`:null; }
   // Export CSV
-  function exportCreativosCSV(creativos){ const LABELS={idea:"Idea","brief-enviado":"Brief enviado","en-produccion":"En producción",entregado:"Entregado",publicado:"Publicado",archivado:"Archivado"}; const headers=["Código","Tanda","Ángulo","Tipo","Persona","Etapa","Editor","Estado","Pagado","ROAS","CPA","Performance","Notas"]; const rows=[headers,...creativos.map(c=>{const tanda=produccion.tandas.find(t=>t.id===c.tanda_id)?.nombre||"";return[c.codigo,tanda,c.angulo,c.tipo,c.persona,c.etapa,c.editor||"",LABELS[c.estado]||c.estado,c.pagado?"Sí":"No",c.roas!=null?c.roas:"",c.cpa!=null?c.cpa:"",c.performance||"",c.notas||""];})]; const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n"); const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");a.href=url;a.download=`creativos-${hoyAR()}.csv`;a.click();URL.revokeObjectURL(url); toast("CSV exportado ✓","success"); }
+  function exportCreativosCSV(creativos){ const LABELS={idea:"Idea","brief-enviado":"Brief enviado","en-produccion":"En producción",entregado:"Entregado",publicado:"Publicado",archivado:"Archivado"}; const headers=["Código","Tanda","Ángulo","Tipo","Persona","Etapa","Editor","Estado","Pagado","ROAS","CPA","Performance","Notas"]; const rows=[headers,...creativos.map(c=>{const tanda=produccion.tandas.find(t=>t.id===c.tanda_id)?.nombre||"";return[c.codigo,tanda,c.angulo,c.tipo,c.persona,c.etapa,c.editor||"",LABELS[c.estado]||c.estado,c.pagado?"Sí":"No",c.roas!=null?c.roas:"",c.cpa!=null?c.cpa:"",c.performance||"",c.notas||""];})]; const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n"); const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a");a.href=url;a.download=`creativos-${hoyAR()}.csv`;a.click();URL.revokeObjectURL(url); toast("CSV exportado","success"); }
 
   // ── FUNCIONES WORKSPACE ──
   async function quickUpdateTareaEstado(tareaId, estado) {
@@ -25701,7 +25701,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             <button onClick={()=>togglePublicado(t._id,!t.publicado)}
               style={{display:"inline-flex",alignItems:"center",gap:7,padding:"8px 16px",borderRadius:8,border:`1.5px solid ${t.publicado?"#06b6d4":"#06b6d440"}`,background:t.publicado?"#06b6d415":"transparent",color:t.publicado?"#06b6d4":T.textMd,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.15s"}}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-              {t.publicado?"✓ Publicado":"Marcar como publicado"}
+              {t.publicado?"Publicado":"Marcar como publicado"}
             </button>
           </div>
         )}
@@ -25827,7 +25827,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 {checklist.map((item,i)=>(
                   <div key={item.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:i<checklist.length-1?`1px solid ${T.border}`:"none"}}>
                     <div style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${item.done?T.green:T.border}`,background:item.done?T.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      {item.done&&<span style={{fontSize:9,color:"#fff",fontWeight:700}}>✓</span>}
+                      {item.done&&<span style={{fontSize:9,color:"#fff",fontWeight:700}}><GhI n="check" size={12}/></span>}
                     </div>
                     <span style={{fontSize:13,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none",lineHeight:1.4}}>{item.text}</span>
                   </div>
@@ -25867,7 +25867,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         <span style={{fontSize:11,color:T.textMd}}>{slot.asignadoNombre||"Sin asignar"}</span>
                       </div>
                       {slotFinal
-                        ? <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.green+"18",color:T.green}}>✓ Entregado</span>
+                        ? <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.green+"18",color:T.green}}>Entregado</span>
                         : <span style={{fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:20,background:T.textSm+"15",color:T.textSm}}>Pendiente</span>}
                     </div>
                     {slotDels.length>0&&(
@@ -25888,7 +25888,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         if(!link?.trim()) return;
                         const nota=(await appPrompt("Nota opcional:"))||"";
                         tareasApi({action:"addSlotEntrega",tareaId:t._id,slotId:slot.id,link:link.trim(),nota,esFinal:true})
-                          .then(()=>{toast("Entrega enviada ✓","success");loadData(true);})
+                          .then(()=>{toast("Entrega enviada","success");loadData(true);})
                           .catch(e=>toast("Error: "+e.message,"error"));
                       }} style={{...BtnPrimary(T),fontSize:11,padding:"5px 12px",marginTop:8}}>Entregar</button>
                     )}
@@ -25937,7 +25937,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         setDatos(prev=>({...prev,tareas:prev.tareas.map(x=>x._id===t._id?{...x,deliverables:d.deliverables}:x)}));
                         if(kanbanSelected?._id===t._id) setKanbanSelected(prev=>({...prev,deliverables:d.deliverables}));
                         setEditDeliverable(p=>{const n={...p};delete n[edKey];return n;});
-                        toast("Entrega actualizada ✓","success");
+                        toast("Entrega actualizada","success");
                       }} style={{...BtnPrimary(T),fontSize:11,padding:"5px 14px"}}>Guardar cambios</AsyncButton>
                       <button onClick={()=>setEditDeliverable(p=>{const n={...p};delete n[edKey];return n;})}
                         style={{...BtnSecondary(T),fontSize:11,padding:"5px 12px"}}>Cancelar</button>
@@ -26028,7 +26028,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
             const nota=(colabEntregaNota[t._id]||"").trim();
             try{
               await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicAddEntrega",token:colabMode.token,tareaId:t._id,link,label,nota,esFinal:true})});
-              toast(hasFinal?"Documento agregado ✓":"Entrega enviada ✓","success");
+              toast(hasFinal?"Documento agregado":"Entrega enviada","success");
               setColabEntregaLink(p=>({...p,[t._id]:""}));
               setColabEntregaNombre(p=>({...p,[t._id]:""}));
               setColabEntregaNota(p=>({...p,[t._id]:""}));
@@ -26097,7 +26097,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         const motivo=(bloqueoMotivoColab[t._id]||"").trim();
                         if(!motivo) return toast("Contanos qué te está frenando","error");
                         await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"bloqueada",progresoLabel:"",motivo})});
-                        toast("Equipo notificado ✓","success");
+                        toast("Equipo notificado","success");
                         setShowBloqueoColab(p=>({...p,[t._id]:false}));
                         loadData(true);
                       }} style={{fontSize:12,padding:"7px 16px",borderRadius:8,background:T.red,color:"#fff",border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontWeight:600}}>
@@ -26522,7 +26522,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               {/* Entregas para revisar — tira compacta (mismo patrón que "Hoy en
                   Canjes"): una card con tile + pills por entrega, en vez de una
                   pila de filas naranjas con botones gigantes. Click en la pill =
-                  ver la entrega; el ✓ verde aprueba directo. */}
+                  ver la entrega; el verde aprueba directo. */}
               {(!colabMode||colabMode.permisos?.verTareas)&&paraRevisar.length>0&&(
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 16px",marginBottom:20,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
                   <div style={{display:"flex",alignItems:"center",gap:11,flexShrink:0}}>
@@ -26718,7 +26718,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                 {/* Derecha: entregó + deadline */}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
                                   {hasDelivery&&t.estado!=="aprobado"&&(
-                                    <span style={{fontSize:9,fontWeight:700,color:T.green,background:T.green+"12",borderRadius:4,padding:"2px 7px",border:"1px solid "+T.green+"30"+"",letterSpacing:"0.02em"}}>✓ Entregó</span>
+                                    <span style={{fontSize:9,fontWeight:700,color:T.green,background:T.green+"12",borderRadius:4,padding:"2px 7px",border:"1px solid "+T.green+"30"+"",letterSpacing:"0.02em"}}>Entregó</span>
                                   )}
                                   {deadlineLabel&&(
                                     <span style={{fontSize:11,fontWeight:600,color:dlColor,background:dlBg,borderRadius:5,padding:dlPad}}>
@@ -26971,7 +26971,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                     {c.editor&&<span style={{fontSize:10,color:T.textSm,background:T.surface,borderRadius:4,padding:"1px 5px"}}>{c.editor}</span>}
                                     {tanda2&&<span style={{fontSize:9,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80}}>{tanda2.nombre}</span>}
                                     {(c.comentarios||[]).length>0&&<span style={{fontSize:10,color:T.textSm,marginLeft:"auto"}}><GhI n="chat" size={9}/>{(c.comentarios||[]).length}</span>}
-                                    {c.pagado&&<span style={{fontSize:9,color:T.green,fontWeight:600}}>✓</span>}
+                                    {c.pagado&&<span style={{fontSize:9,color:T.green,fontWeight:600}}><GhI n="check" size={12}/></span>}
                                   </div>
                                 </div>
                               );
@@ -27220,7 +27220,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                         </div>
                         <div style={{fontSize:12,color:T.textSm,display:"flex",gap:10,flexWrap:"wrap"}}>
                           {c&&pending>0&&<span style={{color:T.textMd}}>{pending} activa{pending!==1?"s":""}</span>}
-                          {c&&pending===0&&userTareas.length>0&&<span style={{color:T.green}}>{userTareas.length} tarea{userTareas.length!==1?"s":""} ✓</span>}
+                          {c&&pending===0&&userTareas.length>0&&<span style={{color:T.green}}>{userTareas.length} tarea{userTareas.length!==1?"s":""}</span>}
                           {c&&userTareas.length===0&&<span>Sin tareas</span>}
                           {tieneEditor&&creativos.length>0&&<span style={{color:T.textMd}}>{creativos.length} creativo{creativos.length!==1?"s":""}</span>}
                         </div>
@@ -27337,7 +27337,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                                     setDatos(prev=>({...prev,colaboradores:[...prev.colaboradores.filter(cc=>cc._id!==d._id),d]}));
                                     await saveProd({...produccion,editores:(produccion?.editores||[]).filter(e=>e!==nombre)});
                                     setEditingMember(null);
-                                    toast("Email agregado ✓","success");
+                                    toast("Email agregado","success");
                                   }catch(e){appAlert("Error: "+e.message);}
                                 }} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px",width:"100%",justifyContent:"flex-start"}}>
                                   Agregar email para habilitar tareas y portal
@@ -28407,14 +28407,14 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   <div style={{display:"flex",gap:8,alignItems:"center",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 12px"}}>
                     <div style={{flex:1,fontSize:12,color:T.text,wordBreak:"break-all",lineHeight:1.4}}>{boardLink}</div>
-                    <button onClick={async()=>{try{await navigator.clipboard.writeText(boardLink);toast("Link copiado ✓","success");}catch(e){toast("Link: "+boardLink,"info");}}} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px",whiteSpace:"nowrap",flexShrink:0}}>Copiar</button>
+                    <button onClick={async()=>{try{await navigator.clipboard.writeText(boardLink);toast("Link copiado","success");}catch(e){toast("Link: "+boardLink,"info");}}} style={{...BtnPrimary(T),fontSize:12,padding:"5px 12px",whiteSpace:"nowrap",flexShrink:0}}>Copiar</button>
                   </div>
                   <div style={{display:"flex",gap:8}}>
                     <a href={boardLink} target="_blank" rel="noopener noreferrer" style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,...BtnSecondary(T),fontSize:12,textDecoration:"none"}}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                       Vista previa
                     </a>
-                    <button onClick={async()=>{if(!await appConfirm("¿Regenerar el link? El link anterior dejará de funcionar.",{danger:true,okLabel:"Regenerar"})) return; setBoardLinkLoading(true); try{const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"generateBoardToken",uid:user?.uid,_forceNew:true})}); const d=await r.json(); if(d.token) setBoardTokenAdmin(d.token); toast("Link regenerado ✓","success");}catch(e){toast("Error","error");} setBoardLinkLoading(false);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
+                    <button onClick={async()=>{if(!await appConfirm("¿Regenerar el link? El link anterior dejará de funcionar.",{danger:true,okLabel:"Regenerar"})) return; setBoardLinkLoading(true); try{const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"generateBoardToken",uid:user?.uid,_forceNew:true})}); const d=await r.json(); if(d.token) setBoardTokenAdmin(d.token); toast("Link regenerado","success");}catch(e){toast("Error","error");} setBoardLinkLoading(false);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 10px"}}>
                       <GhI n="refresh" size={12}/> Regenerar
                     </button>
                   </div>
@@ -28465,7 +28465,7 @@ function EditorProduccionView({T, token}) {
       const d=await r.json();
       if(!r.ok||d.error) throw new Error(d.error||"Error");
       setData(prev=>({...prev,creativos:prev.creativos.map(c=>c.id===creativoId?{...c,estado}:c)}));
-      toast("Estado actualizado ✓","success");
+      toast("Estado actualizado","success");
     } catch(e){ toast("Error: "+e.message,"error"); }
   }
 
@@ -28742,8 +28742,8 @@ function EquipoPagosView({T,user,onAgregar}){
       </div>
     </div>}
     <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:14,lineHeight:1.6}}>El monotributo o el sueldo de cada una cargalo como gasto fijo en el Calendario de Pagos.</div>
-    <PagoConfigModal T={T} persona={cfgDe} onClose={()=>setCfgDe(null)} onGuardar={async pago=>{ await api({action:"equipoPagoCfg",colabId:cfgDe.colabId,pago}); toast(pago.activo?"Listo ✓ — en su portal ya le aparece \"Mis facturas\"":"Desactivado","success"); cargar(); }}/>
-    <PagoFacturaModal T={T} open={!!subirFac} onClose={()=>setSubirFac(null)} sugerido={subirFac?.persona.pago?.monto||0} onSubir={async a=>{ await api({action:"equipoPagoSubir",colabId:subirFac.persona.colabId,mes:subirFac.mes,kind:"factura",...a}); toast("Factura guardada ✓","success"); cargar(); }}/>
+    <PagoConfigModal T={T} persona={cfgDe} onClose={()=>setCfgDe(null)} onGuardar={async pago=>{ await api({action:"equipoPagoCfg",colabId:cfgDe.colabId,pago}); toast(pago.activo?"Listo: en su portal ya le aparece \"Mis facturas\"":"Desactivado","success"); cargar(); }}/>
+    <PagoFacturaModal T={T} open={!!subirFac} onClose={()=>setSubirFac(null)} sugerido={subirFac?.persona.pago?.monto||0} onSubir={async a=>{ await api({action:"equipoPagoSubir",colabId:subirFac.persona.colabId,mes:subirFac.mes,kind:"factura",...a}); toast("Factura guardada","success"); cargar(); }}/>
   </div>);
 }
 
@@ -28765,7 +28765,7 @@ function ColabPagosPortal({T,token}){
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       {meses.map(m=>{ const f=facDe(m); return (
         <div key={m} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:T.card,border:`1px solid ${m===hoy&&!f?T.accent+"66":T.border}`,borderRadius:DS.r.xl,padding:"12px 16px"}}>
-          <span style={{width:20,height:20,borderRadius:99,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:f?T.green:"transparent",border:f?"none":`1.5px solid ${T.textSm}`,color:"#fff",fontSize:11,fontWeight:700}}>{f?"✓":""}</span>
+          <span style={{width:20,height:20,borderRadius:99,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:f?T.green:"transparent",border:f?"none":`1.5px solid ${T.textSm}`,color:"#fff",fontSize:11,fontWeight:700}}>{f?<GhI n="check" size={12}/>:""}</span>
           <div style={{flex:1,minWidth:150}}>
             <div style={{fontSize:DS.font.lg,fontWeight:600,color:T.text}}>{ghPagoMesNombre(m)}</div>
             <div style={{fontSize:DS.font.sm,color:T.textSm}}>{f?[f.nro?`N° ${f.nro}`:"Factura subida",f.monto?fmtMoney(f.monto):""].filter(Boolean).join(" · "):"Falta subir la factura"}</div>
@@ -28774,7 +28774,7 @@ function ColabPagosPortal({T,token}){
             :<Btn T={T} size="sm" variant={m===hoy?"primary":"secondary"} onClick={()=>setFac(m)}>Subir factura</Btn>}
         </div>); })}
     </div>
-    <PagoFacturaModal T={T} open={!!fac} onClose={()=>setFac(null)} sugerido={d.pago.monto||0} onSubir={async a=>{ await api({action:"publicPagoSubir",mes:fac,kind:"factura",...a}); toast("Factura enviada ✓","success"); cargar(); }}/>
+    <PagoFacturaModal T={T} open={!!fac} onClose={()=>setFac(null)} sugerido={d.pago.monto||0} onSubir={async a=>{ await api({action:"publicPagoSubir",mes:fac,kind:"factura",...a}); toast("Factura enviada","success"); cargar(); }}/>
   </div>);
 }
 
@@ -29046,14 +29046,14 @@ function ColaboradorBoardView({T, boardToken}) {
         async function addComment(){
           if(!commentText.trim()||!identity) return;
           setSaving(true);
-          try{await boardApi({action:"boardAddComment",colabEmail:identity.email,tareaId:t._id,texto:commentText});setCommentText("");await loadBoard(true);showToast("Comentario enviado ✓");}
+          try{await boardApi({action:"boardAddComment",colabEmail:identity.email,tareaId:t._id,texto:commentText});setCommentText("");await loadBoard(true);showToast("Comentario enviado");}
           catch(e){showToast(e.message,"error");}
           finally{setSaving(false);}
         }
         async function addEntrega(){
           if(!entregaLink.trim()||!identity) return;
           setSaving(true);
-          try{await boardApi({action:"boardAddEntrega",colabEmail:identity.email,tareaId:t._id,link:entregaLink,label:entregaLabel,nota:entregaNota});setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);await loadBoard(true);showToast("Entrega enviada ✓");}
+          try{await boardApi({action:"boardAddEntrega",colabEmail:identity.email,tareaId:t._id,link:entregaLink,label:entregaLabel,nota:entregaNota});setEntregaLink("");setEntregaLabel("");setEntregaNota("");setShowEntregaForm(false);await loadBoard(true);showToast("Entrega enviada");}
           catch(e){showToast(e.message,"error");}
           finally{setSaving(false);}
         }
@@ -29117,7 +29117,7 @@ function ColaboradorBoardView({T, boardToken}) {
                     <div style={{fontSize:10,fontWeight:700,color:T.textSm,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>Checklist</div>
                     {t.checklist.map(item=>(
                       <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                        <span style={{fontSize:14,flexShrink:0}}>{item.done?"✓":"○"}</span>
+                        <span style={{fontSize:14,flexShrink:0}}>{item.done?<GhI n="check" size={12}/>:"○"}</span>
                         <span style={{fontSize:12,color:item.done?T.textSm:T.text,textDecoration:item.done?"line-through":"none"}}>{item.text}</span>
                       </div>
                     ))}
@@ -29490,7 +29490,7 @@ function ArcaIvaTab({T, cuit, api, mono}){
       const blob=await zip.generateAsync({type:"blob"});
       const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`Libro_IVA_${String(cuit).replace(/\D/g,"")}_${per}.zip`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
       setLibro({mes,n:d.n,avisos:d.avisos||[]});
-      toast(`Libro IVA de ${mesLabel} descargado ✓`,"success");
+      toast(`Libro IVA de ${mesLabel} descargado`,"success");
     }catch(e){ toast(e.message||"No se pudo armar el Libro IVA","error"); }
     finally{ setLibroBusy(false); }
   }
@@ -29593,7 +29593,7 @@ function ArcaIvaTab({T, cuit, api, mono}){
           <div style={{fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:0.8,textTransform:"uppercase"}}>IVA de ventas</div>
           <div style={{fontSize:26,fontWeight:800,color:T.red,margin:"6px 0 2px",fontVariantNumeric:"tabular-nums"}}>{fmtMoney(r.ivaVentas)}</div>
           <div style={{fontSize:12,color:T.textSm}}>facturaste {fmtMoney(r.totVentas)} · {r.nVentas} comprobante{r.nVentas===1?"":"s"}{r.nNcVentas?` · ${r.nNcVentas} NC`:""}</div>
-          <div style={{fontSize:11,color:T.green,marginTop:8}}>✓ de tus comprobantes emitidos en Growith{d.ventasExt?<span style={{color:T.textSm}}> + {d.ventasExt.n} del import de Mis Comprobantes</span>:null}</div>
+          <div style={{fontSize:11,color:T.green,marginTop:8}}>de tus comprobantes emitidos en Growith{d.ventasExt?<span style={{color:T.textSm}}> + {d.ventasExt.n} del import de Mis Comprobantes</span>:null}</div>
           <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             <input ref={fileVentasRef} type="file" accept=".csv,.xlsx,.xls,text/csv" style={{display:"none"}} onChange={e=>importar(e.target.files?.[0],"ventas")}/>
             <Btn T={T} variant="ghost" size="sm" onClick={()=>fileVentasRef.current?.click()} disabled={!!importing}>{importing==="ventas"?"Importando…":"Importar emitidos"}</Btn>
@@ -29606,7 +29606,7 @@ function ArcaIvaTab({T, cuit, api, mono}){
           <div style={{fontSize:10,fontWeight:700,color:T.textSm,letterSpacing:0.8,textTransform:"uppercase"}}>IVA de compras</div>
           <div style={{fontSize:26,fontWeight:800,color:T.green,margin:"6px 0 2px",fontVariantNumeric:"tabular-nums"}}>{d.compras?fmtMoney(r.ivaCompras):"—"}</div>
           <div style={{fontSize:12,color:T.textSm}}>{d.compras?<>compraste {fmtMoney(r.totCompras)} · {r.nCompras} comprobante{r.nCompras===1?"":"s"}{r.nNcCompras?` · ${r.nNcCompras} NC`:""}</>:"Todavía no importaste las compras de este mes."}</div>
-          <div style={{fontSize:11,color:d.compras?T.green:T.textSm,marginTop:8}}>{d.compras?<>✓ de ARCA (Mis Comprobantes) · {ghFmtTs(d.compras.importadoAt)}{d.compras.archivo?` · ${d.compras.archivo}`:""}</>:"Arrastrá acá el CSV o XLSX de Mis Comprobantes → Comprobantes recibidos."}</div>
+          <div style={{fontSize:11,color:d.compras?T.green:T.textSm,marginTop:8}}>{d.compras?<>de ARCA (Mis Comprobantes) · {ghFmtTs(d.compras.importadoAt)}{d.compras.archivo?` · ${d.compras.archivo}`:""}</>:"Arrastrá acá el CSV o XLSX de Mis Comprobantes → Comprobantes recibidos."}</div>
           <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,text/csv" style={{display:"none"}} onChange={e=>importar(e.target.files?.[0],"compras")}/>
             <Btn T={T} variant={d.compras?"secondary":"primary"} size="sm" onClick={()=>fileRef.current?.click()} disabled={!!importing}>{importing==="compras"?"Importando…":d.compras?"Reimportar compras":"Importar compras"}</Btn>
@@ -29716,7 +29716,7 @@ function ArcaIvaTab({T, cuit, api, mono}){
         </div>
         {libro&&libro.mes===mes&&(
           <div style={{marginTop:12,fontSize:12,color:T.textMd,lineHeight:1.6}}>
-            <div>✓ {libro.n?.ventas||0} comprobante{libro.n?.ventas===1?"":"s"} de venta y {libro.n?.compras||0} de compra.</div>
+            <div>{libro.n?.ventas||0} comprobante{libro.n?.ventas===1?"":"s"} de venta y {libro.n?.compras||0} de compra.</div>
             {libro.avisos.map((t,i)=><div key={i} style={{color:T.yellow,marginTop:4}}>• {t}</div>)}
           </div>
         )}
@@ -30215,7 +30215,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       const d = await fetch(`/api/arca?action=save_cuit&uid=${uid}`,{method:"POST",body:fd}).then(r=>r.json());
       if(d.error){toast(d.error,"error");return;}
-      toast("CUIT guardado ✓","success");
+      toast("CUIT guardado","success");
       const updated = await api("list_cuits");
       if(updated.cuits){ setCuits(updated.cuits); setCuitSel(wizCuit); }
       resetWizard();
@@ -30287,7 +30287,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(d.error){toast(d.error,"error");return;}
       const updated = await api("list_cuits");
       if(updated.cuits) setCuits(updated.cuits);
-      toast("CUIT actualizado ✓","success");
+      toast("CUIT actualizado","success");
       setShowEditCuit(false); setEditCuit(null);
     } catch(e) {
       toast("No se pudieron guardar los cambios — revisá tu conexión","error");
@@ -30325,7 +30325,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setSavingMail(true);
     try {
       await saveCuitExtras(cuitActivo, {envio_mail:{enabled:mailEnabled, reply_to:rt}});
-      toast(mailEnabled?"Envío automático al cliente activado ✓":"Envío automático guardado ✓","success");
+      toast(mailEnabled?"Envío automático al cliente activado":"Envío automático guardado","success");
     } catch(e) {
       toast("No se pudo guardar: "+(e?.message||"error de conexión"),"error");
     } finally { setSavingMail(false); }
@@ -30343,7 +30343,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setSavingAlic(true);
     try {
       await saveCuitExtras(cuitActivo, {alic_map: map});
-      toast("Alícuotas guardadas ✓","success");
+      toast("Alícuotas guardadas","success");
     } catch(e) {
       toast("No se pudo guardar: "+(e?.message||"error de conexión"),"error");
     } finally { setSavingAlic(false); }
@@ -30402,7 +30402,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       const d = await api("save_autopilot","POST",{cuit:cuitSel, config:cfg});
       if(d.error){ toast("Error: "+d.error,"error"); return; }
-      toast(cfg.enabled?"Piloto automático activado ✓":"Reglas del piloto guardadas ✓","success");
+      toast(cfg.enabled?"Piloto automático activado":"Reglas del piloto guardadas","success");
     } catch(e) {
       toast("No se pudieron guardar las reglas: "+(e?.message||"error de conexión"),"error");
     } finally { setApSaving(false); }
@@ -30667,7 +30667,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       }
       const mlFailed = d.nc.ml_detached === false && resumen.orden_id?.startsWith?.("ML-");
       const mlMsg = mlFailed ? " · borrá la factura en ML a mano (botón Ver en ML)" : "";
-      toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida ✓${mlMsg}`, mlFailed ? "warning" : "success");
+      toast(`NC ${d.nc.letra} N° ${String(d.nc.comprobante).padStart(8,"0")} emitida${mlMsg}`, mlFailed ? "warning" : "success");
       if (d.nc.pdf_b64) {
         const a = document.createElement("a");
         a.href = "data:application/pdf;base64," + d.nc.pdf_b64;
@@ -30677,9 +30677,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if (mlFailed) {
         const link = `https://www.mercadolibre.com.ar/ventas/${String(resumen.orden_id).replace("ML-","")}/detalle`;
         window.open(link, "_blank", "noopener");
-        await appAlert(`La NC se emitió bien ✓, pero Mercado Libre no permitió desadjuntar la factura automáticamente.\n\nTe abrí la venta en una pestaña nueva. Para borrarla a mano:\n1. Andá a "Ver más detalles" de la venta\n2. Buscá la factura adjunta\n3. 3 puntitos del documento → Eliminar\n\nSi no se abrió la pestaña, usá el botón Ver en ML de la factura.`);
+        await appAlert(`La NC se emitió bien, pero Mercado Libre no permitió desadjuntar la factura automáticamente.\n\nTe abrí la venta en una pestaña nueva. Para borrarla a mano:\n1. Andá a "Ver más detalles" de la venta\n2. Buscá la factura adjunta\n3. 3 puntitos del documento → Eliminar\n\nSi no se abrió la pestaña, usá el botón Ver en ML de la factura.`);
       }
-      setNotaOp({ titulo:"Actualizando registros…", sub:"La NC ya salió ✓ — refrescando la lista" });
+      setNotaOp({ titulo:"Actualizando registros…", sub:"La NC ya salió: refrescando la lista" });
       refreshDashboard();
       // Recargar pendientes para que la venta vuelva a aparecer + pierda el verde
       await loadPendingOrders();
@@ -30726,7 +30726,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         return;
       }
       if (nc.nc?.pdf_b64) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+nc.nc.pdf_b64; a.download=nc.nc.nombre_pdf; a.click(); }
-      setNotaOp({ titulo:"Paso 2 de 2 — Factura A en ARCA…", sub:`NC ${nc.nc?.letra||"B"} N° ${String(nc.nc?.comprobante||"").padStart(8,"0")} emitida ✓ — facturando a ${razon}` });
+      setNotaOp({ titulo:"Paso 2 de 2 — Factura A en ARCA…", sub:`NC ${nc.nc?.letra||"B"} N° ${String(nc.nc?.comprobante||"").padStart(8,"0")} emitida: facturando a ${razon}` });
       const orden = {
         _platform: String(resumen.orden_id).startsWith("ML-") ? "mercadolibre" : String(resumen.orden_id).startsWith("SH-") ? "shopify" : String(resumen.orden_id).startsWith("IT-") ? "impultienda" : "tiendanube",
         nombre: razon.trim(),
@@ -30748,9 +30748,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       }
       const pdf = (d.pdfs || [])[0];
       if (pdf) downloadPDF(pdf);
-      toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`, "success");
+      toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida`, "success");
       if (r.letra !== "A") await appAlert(`ARCA no aceptó la Factura A para ese CUIT y emitió Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")}.\n\n${r.obs || "Verificá que el CUIT esté inscripto en IVA (padrón ARCA)."}`);
-      setNotaOp({ titulo:"Actualizando registros…", sub:"Listo ✓ — refrescando la lista" });
+      setNotaOp({ titulo:"Actualizando registros…", sub:"Listo: refrescando la lista" });
       refreshDashboard();
       await loadPendingOrders();
     } catch(e) {
@@ -30933,7 +30933,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         const d = await api("emit_nc", "POST", { cuit: cuitSel, factura, monto, motivo: ndConcepto.trim() });
         if (d.error) { toast("Error ARCA: " + (d.detalle || d.error), "error"); return; }
         if (d.nc?.pdf_b64) { const a = document.createElement("a"); a.href = "data:application/pdf;base64," + d.nc.pdf_b64; a.download = d.nc.nombre_pdf || "nota-de-credito.pdf"; a.click(); }
-        toast(d.parcial?`Nota de crédito ${d.nc?.letra||""} N° ${String(d.nc?.comprobante||"").padStart(8,"0")} por $${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} emitida ✓ — la factura sigue vigente`:"Nota de crédito emitida: con esta se acreditó el total y la factura quedó anulada","success",7000);
+        toast(d.parcial?`Nota de crédito ${d.nc?.letra||""} N° ${String(d.nc?.comprobante||"").padStart(8,"0")} por $${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} emitida: la factura sigue vigente`:"Nota de crédito emitida: con esta se acreditó el total y la factura quedó anulada","success",7000);
         setNdModal(null); refreshDashboard();
       } catch (e) { toast("No se pudo emitir la NC — revisá tu conexión y verificá en Registros si salió", "error"); }
       finally { setNdEmitting(false); setNotaOp(null); }
@@ -30962,7 +30962,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         a.download = `growith-nd-${d.nd?.letra || ""}-${String(d.nd?.nro || "").padStart(8, "0")}.pdf`;
         a.click();
       }
-      toast(`Nota de débito ${d.nd?.letra || ""} N° ${String(d.nd?.nro || "").padStart(8, "0")} emitida ✓`, "success");
+      toast(`Nota de débito ${d.nd?.letra || ""} N° ${String(d.nd?.nro || "").padStart(8, "0")} emitida`, "success");
       setNdModal(null);
       refreshDashboard();
     } catch (e) {
@@ -31009,7 +31009,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(total>0){
         const pvList = [...new Set(Object.keys(porPv).map(k=>parseInt(k.split("_")[0])))].sort((a,b)=>a-b);
         const desg = pvList.length ? ` (PV ${pvList.join(", ")})` : "";
-        toast(`${total} comprobante${total===1?"":"s"} recuperado${total===1?"":"s"} desde AFIP${desg} ✓`,"success");
+        toast(`${total} comprobante${total===1?"":"s"} recuperado${total===1?"":"s"} desde AFIP${desg}`,"success");
         // El backend no informa en qué meses cayeron — avisar que pueden no estar en el mes navegado
         toast("Revisá otros meses con el selector de Registros — los comprobantes se guardan en su mes original","info");
         refreshDashboard();
@@ -31104,7 +31104,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       const d = await api("test_cuit","POST",null,{cuit});
       if(d.error) toast("Error de conexión: "+d.error,"error");
-      else toast(`Conexión con ARCA OK ✓ · Último comprobante B: ${d.ultimo_b}`,"success");
+      else toast(`Conexión con ARCA OK · Último comprobante B: ${d.ultimo_b}`,"success");
     } catch(e) {
       toast("No se pudo probar la conexión: "+(e?.message||"revisá tu internet"),"error");
     } finally {
@@ -31162,7 +31162,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       const r = (d.resultados||[])[0];
       const pdf = (d.pdfs||[])[0];
       setManualResult({r, pdf});
-      if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida ✓`,"success"); refreshDashboard(); itemsValid.forEach(it=>saveConcepto(it.nombre.trim())); }
+      if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida`,"success"); refreshDashboard(); itemsValid.forEach(it=>saveConcepto(it.nombre.trim())); }
       else toast("Error: "+(r?.obs||"falló la emisión"),"error");
     } catch(e) {
       toast("No se pudo emitir — revisá tu conexión y verificá en Registros si salió antes de reintentar","error");
@@ -31365,7 +31365,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <div style={{fontSize:13,fontWeight:600,color:T.text}}>{c.nombre_fantasia||c.razon_social}</div>
                       <div style={{fontSize:11,color:T.textSm}}>{formatCuit(c.cuit)} · vinculado</div>
                     </div>
-                    {cuitSel===c.cuit && <span style={{color:T.accent,fontSize:14}}>✓</span>}
+                    {cuitSel===c.cuit && <span style={{color:T.accent,fontSize:14}}><GhI n="check" size={12}/></span>}
                   </button>
                   <button onClick={(e)=>{e.stopPropagation();openEditCuit(c);}} title="Editar datos" style={{background:"transparent",border:"none",cursor:"pointer",padding:"6px",borderRadius:6,fontSize:13,color:T.textMd,display:"flex",alignItems:"center"}}
                     onMouseEnter={e=>e.currentTarget.style.background=T.bg}
@@ -31480,7 +31480,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
                       {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá — descargá y guardá tu clave con el botón Descargar clave) y verificación.",color:T.accent},
-                      {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Facturar' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el ✓ verde marca las que ya están emitidas.",color:T.blue},
+                      {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Facturar' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el verde marca las que ya están emitidas.",color:T.blue},
                       {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar cómo aparece el nombre de los productos en el PDF, elegir el punto de venta y la fecha de la factura (hasta 5 días atrás en productos y 10 en servicios). Growith elige solo si va A, B o C según el comprador. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes a ML' en Configuración).",color:T.yellow},
                       {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Cada PDF sale con el número de CAE, su fecha de vencimiento y el QR oficial de ARCA — el cliente lo escanea con la cámara y ve en la web de ARCA que la factura está aprobada y es real. Descarga uno por uno o en zip; todo queda en Registros para descargar de nuevo cuando quieras.",color:T.green},
                       {step:"5",title:"Adjunto automático en Mercado Libre",desc:"Apenas se emite una factura de una venta de ML, Growith sube el PDF como documento fiscal de esa orden directo a Mercado Libre — el comprador ya lo ve en su detalle de compra y vos cumplís la obligación sin tocar nada. Si fallara la subida (token vencido o ML caído), podés reintentar desde 'Adjuntar pendientes a ML' en Configuración.",color:T.orange||T.yellow},
@@ -31911,7 +31911,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             return (
                               <div key={id} onClick={()=>{ if(!billed) setTnSelected(prev=>({...prev,[id]:!prev[id]})); }} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderRadius:8,cursor:billed?"default":"pointer",background:bg,borderBottom:bord,opacity:billed?0.85:1}}>
                                 {billed
-                                  ? <span title="Ya facturada" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+                                  ? <span title="Ya facturada" style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}><GhI n="check" size={12}/></span>
                                   : <input type="checkbox" checked={sel} readOnly style={{cursor:"pointer"}}/>
                                 }
                                 <span style={{fontSize:10,color:T.textSm,minWidth:68}}>{fechaHora}</span>
@@ -31924,7 +31924,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                   <div style={{fontSize:12,fontWeight:600,color:billed?T.green:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
                                   <div style={{fontSize:10,color:T.textSm}}>
                                     {billed
-                                      ? `✓ Facturada F${o._billed_info?.letra||""} N°${String(o._billed_info?.nro||"").padStart(8,"0")}`
+                                      ? `Facturada F${o._billed_info?.letra||""} N°${String(o._billed_info?.nro||"").padStart(8,"0")}`
                                       : wasAnulada ? "Fue facturada y anulada — podés re-facturar"
                                       : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}${condLbl}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
                                   </div>
@@ -31945,7 +31945,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         {/* Ya facturadas del período: el detalle vive en Registros */}
                         {itemsBilled.length>0&&(
                           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,padding:"8px 12px",background:T.green+"0d",border:`1px solid ${T.green}33`,borderRadius:8,fontSize:12}}>
-                            <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+                            <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:14,height:14,borderRadius:4,background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}><GhI n="check" size={12}/></span>
                             <span style={{color:T.green,fontWeight:600}}>{itemsBilled.length} ya facturadas en el período · $ {itemsBilledMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span>
                             <button onClick={()=>setSidebarTab&&setSidebarTab("registros")} style={{marginLeft:"auto",background:"transparent",border:"none",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",padding:0,whiteSpace:"nowrap"}}>
                               Ver las {itemsBilled.length} facturadas en Registros →
@@ -32565,12 +32565,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const r = x.r, b = r._b;
                     const it = [];
                     it.push({ l:"Descargar PDF", fn:()=>descargarPdfDe(r) });
-                    if (r.doc_id&&!r.nd) it.push({ l:"Copiar link de la factura", fn:async()=>{ const d=await api("factura_link","POST",{cuit:cuitSel, comprobante_id:r.doc_id}); if(d.error||!d.link) return toast(d.error||"No se pudo armar el link","error"); try{ await navigator.clipboard.writeText(d.link); toast("Link copiado ✓ — cualquiera con el link ve el PDF","success"); }catch(_){ await appPrompt("Copiá el link de la factura:", d.link); } }, hint:"Para mandarlo por WhatsApp o pegarlo donde quieras" });
-                    if (r.doc_id&&!r.nd&&/^(TN|SH)-/.test(String(r.orden_id||""))) it.push({ l:"Dejar el link en el pedido de la tienda", fn:async()=>{ const d=await api("factura_link","POST",{cuit:cuitSel, comprobante_id:r.doc_id, enPedido:true}); if(d.error) toast(d.error,"error"); else toast(d.yaEstaba?"El pedido ya tenía el link":"Listo: el link quedó en la nota interna del pedido ✓","success"); }, hint:"Se agrega al final de la nota interna, sin borrar lo que había" });
+                    if (r.doc_id&&!r.nd) it.push({ l:"Copiar link de la factura", fn:async()=>{ const d=await api("factura_link","POST",{cuit:cuitSel, comprobante_id:r.doc_id}); if(d.error||!d.link) return toast(d.error||"No se pudo armar el link","error"); try{ await navigator.clipboard.writeText(d.link); toast("Link copiado: cualquiera con el link ve el PDF","success"); }catch(_){ await appPrompt("Copiá el link de la factura:", d.link); } }, hint:"Para mandarlo por WhatsApp o pegarlo donde quieras" });
+                    if (r.doc_id&&!r.nd&&/^(TN|SH)-/.test(String(r.orden_id||""))) it.push({ l:"Dejar el link en el pedido de la tienda", fn:async()=>{ const d=await api("factura_link","POST",{cuit:cuitSel, comprobante_id:r.doc_id, enPedido:true}); if(d.error) toast(d.error,"error"); else toast(d.yaEstaba?"El pedido ya tenía el link":"Listo: el link quedó en la nota interna del pedido","success"); }, hint:"Se agrega al final de la nota interna, sin borrar lo que había" });
                     if (String(r.orden_id||"").startsWith("ML-")) it.push({ l:"Ver la venta en Mercado Libre", href:`https://www.mercadolibre.com.ar/ventas/${String(r.orden_id).replace("ML-","")}/detalle` });
                     if (!r.anulada&&!r.nd) it.push({ l:"Emitir nota de débito", fn:()=>abrirNd(r,b), hint:"Cobra un adicional asociado a esta factura" });
                     if (!r.anulada&&!r.nd) it.push({ l:"Nota de crédito parcial", fn:()=>abrirNd(r,b,"nc"), hint:"Devolución de una parte (un producto, un descuento): la factura sigue vigente" });
-                    if (r.doc_id&&!r.nd) it.push({ l:r.mail_enviado?"Reenviar por mail":"Enviar por mail", fn:async()=>{ const to=await appPrompt(`Mail al que mandamos la factura ${r.letra} ${String(r.comprobante||"").padStart(8,"0")}:`, r.email||""); if(!to) return; const d=await api("reenviar_mail","POST",{cuit:cuitSel, comprobante_id:r.doc_id, email:to.trim()}); if(d.error) toast(d.error,"error"); else toast(`Factura enviada a ${d.to} ✓`,"success"); }, hint:r.email?`Se manda con el PDF a ${r.email} (o al que escribas)`:"Se manda con el PDF al mail que escribas" });
+                    if (r.doc_id&&!r.nd) it.push({ l:r.mail_enviado?"Reenviar por mail":"Enviar por mail", fn:async()=>{ const to=await appPrompt(`Mail al que mandamos la factura ${r.letra} ${String(r.comprobante||"").padStart(8,"0")}:`, r.email||""); if(!to) return; const d=await api("reenviar_mail","POST",{cuit:cuitSel, comprobante_id:r.doc_id, email:to.trim()}); if(d.error) toast(d.error,"error"); else toast(`Factura enviada a ${d.to}`,"success"); }, hint:r.email?`Se manda con el PDF a ${r.email} (o al que escribas)`:"Se manda con el PDF al mail que escribas" });
                     if (!r.anulada&&!r.nd&&!r.recuperado_afip&&r.letra==="B"&&r.orden_id&&!(Number(r.nc_parciales_total)>0)) it.push({ l:"Re-emitir como Factura A", fn:()=>reemitirComoA(r,b), color:T.blue, hint:"NC de la B + Factura A al CUIT, en un paso" });
                     if (!r.anulada) it.push({ l:"Anular con nota de crédito", fn:()=>anularUnaFactura(r,b), color:T.red, disabled:!!r.recuperado_afip||!!r.nd,
                       hint: r.nd ? "Las ND se revierten con una NC manual" : r.recuperado_afip ? "Recuperada de AFIP sin items: anulala desde una factura manual" : "Emite una NC por el total" });
@@ -32845,10 +32845,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {cancLoading && !cRows.length ? (
                         <div style={{fontSize:12,color:T.textSm,padding:"12px 0"}}>Buscando ventas canceladas…</div>
                       ) : cCount===0 ? (
-                        <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}>No hay ventas canceladas con factura activa en {cancData?.amplio?"el histórico":"este período"}. 🎉</div>
+                        <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}>No hay ventas canceladas con factura activa en {cancData?.amplio?"el histórico":"este período"}. </div>
                       ) : (
                         <>
-                          {cancData?.truncated && <div style={{fontSize:11,color:T.orange,marginBottom:8}}>⚠ Hay muchas canceladas: puede faltar alguna. Reprocesá por períodos más cortos para cubrir todo.</div>}
+                          {cancData?.truncated && <div style={{fontSize:11,color:T.orange,marginBottom:8}}>Hay muchas canceladas: puede faltar alguna. Reprocesá por períodos más cortos para cubrir todo.</div>}
                           <div style={{border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,overflow:"hidden",marginBottom:12}}>
                             {cRows.slice(0,RENDER_CAP).map((r,i)=>(
                               <div key={r.order_id+"_"+i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:i<Math.min(cRows.length,RENDER_CAP)-1?`1px solid ${T.borderL}`:"none",minWidth:0}}>
@@ -33409,7 +33409,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     {csrPem && (
                       <div style={{background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:18}}>
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                          <div style={{width:26,height:26,borderRadius:7,background:certText?T.green+"22":T.accentSolid+"22",border:"1px solid "+(certText?T.green:T.accent)+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:certText?T.green:T.accent}}>{certText?"✓":"3"}</div>
+                          <div style={{width:26,height:26,borderRadius:7,background:certText?T.green+"22":T.accentSolid+"22",border:"1px solid "+(certText?T.green:T.accent)+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:certText?T.green:T.accent}}>{certText?<GhI n="check" size={12}/>:"3"}</div>
                           <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subí el certificado (.crt) que te devolvió ARCA</div>
                         </div>
                         <div
@@ -33423,7 +33423,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                               <div style={{textAlign:"left"}}>
                                 <div style={{fontSize:13,fontWeight:600,color:T.text}}>{certFileName||"certificado.crt"}</div>
-                                <div style={{fontSize:11,color:T.green}}>✓ Certificado válido cargado · Click para cambiar</div>
+                                <div style={{fontSize:11,color:T.green}}>Certificado válido cargado · Click para cambiar</div>
                               </div>
                               <button onClick={e=>{e.stopPropagation();setCertText("");setCertFileName("");setCertFileError("");}} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:16,padding:4,marginLeft:8}}>✕</button>
                             </div>
@@ -34007,7 +34007,7 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
                   const sel = productIds.includes(p.id);
                   return (
                     <button key={p.id} onClick={()=>setProductIds(prev => sel ? prev.filter(x=>x!==p.id) : [...prev, p.id])} style={{padding:"5px 12px",fontSize:11,fontWeight:600,borderRadius:6,border:`1px solid ${sel?T.accent+"99":T.border}`,background:sel?T.accent+"18":"transparent",color:sel?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {sel?"✓ ":""}{p.name}{p.roas_be>0?` · BE ${p.roas_be}x`:""}
+                      {sel?"· ":""}{p.name}{p.roas_be>0?` · BE ${p.roas_be}x`:""}
                     </button>
                   );
                 })}
@@ -34641,7 +34641,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           if(!text) throw new Error("el documento está vacío");
           setCreatives(prev=>prev.map(x=>x.id===c.id?{...x,copy:text}:x));
           handlePatch(c,{copy:text});
-          toast(`Copy cargado desde "${f.name}" ✓`,"success");
+          toast(`Copy cargado desde "${f.name}"`,"success");
         }catch(e){ toast("No pude leer el doc: "+e.message,"error"); }
         setStudioDriveBusy(false);
       }, ()=>{}, {docsOnly:true, title:"Elegí el Google Doc con el copy"});
@@ -34758,7 +34758,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const d = await metaApi("analyze_ad","POST",{ad},{acc_id:activeAccId});
       if(d.error) { toast("Error IA: "+d.error,"error"); return; }
       setLibAds(prev => prev.map(a => a.id === ad.id ? {...a, analysis: d.analysis, analyzed_at: new Date().toISOString()} : a));
-      toast("Análisis listo ✓","success");
+      toast("Análisis listo","success");
     } finally { setAnalyzingId(null); }
   }
 
@@ -34786,7 +34786,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   async function saveProduct(product) {
     const d = await metaApi("product_save","POST",{product:{...product, acc_id: activeAccId}});
     if (d.error) { toast("Error: "+d.error,"error"); return false; }
-    toast("Producto guardado ✓","success");
+    toast("Producto guardado","success");
     await loadProducts();
     setEditingProduct(null);
     return true;
@@ -34837,7 +34837,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const isNew = !rule.id;
     const d = await metaApi("rule_save","POST",{rule:{...rule, acc_id:activeAccId}});
     if(d.error) { toast("Error: "+d.error,"error"); return false; }
-    toast("Regla guardada ✓","success");
+    toast("Regla guardada","success");
     await loadRules();
     setEditingRule(null);
     // Si es regla nueva y está activa, ofrecer reprocesar últimos 30 días al instante
@@ -34984,7 +34984,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const d = await metaApi("set_status","POST",{node_id:row.id,status:targetStatus},{acc_id:activeAccId});
       if(d.error) toast("Error: "+d.error,"error");
       else {
-        toast(`${targetStatus==="PAUSED"?"Pausado":"Activado"} ✓`,"success");
+        toast(`${targetStatus==="PAUSED"?"Pausado":"Activado"}`,"success");
         // Actualizar el row local sin recargar todo
         setARows(prev => prev.map(r => r.id === row.id ? {...r, effective_status: targetStatus, status: targetStatus} : r));
       }
@@ -35017,7 +35017,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       setActiveAccId(d.id);
       await metaApi("set_active","POST",{id:d.id});
       setTokenInput("");
-      toast("Cuenta conectada ✓","success");
+      toast("Cuenta conectada","success");
     } else {
       // Tiene múltiples — mostrar selector
       setConnectData(d);
@@ -35045,7 +35045,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     setActiveAccId(connectData.id);
     await metaApi("set_active","POST",{id:connectData.id});
     setConnectData(null); setTokenInput("");
-    toast("Cuenta configurada ✓","success");
+    toast("Cuenta configurada","success");
     setSavingSetup(false);
   }
 
@@ -35425,7 +35425,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const updated = d.creative || { ...c, analysis: d.analysis, ia_status: d.auto_copy ? "ok" : "analyzed", ...(d.auto_copy ? { copy: d.auto_copy.copy, title: d.auto_copy.title, description: d.auto_copy.description } : {}) };
       setCreatives(prev=>prev.map(x=>x.id===c.id?updated:x));
       if(selCreative?.id === c.id) setSelCreative(updated);
-      toast(d.auto_copy ? "Análisis + copy ✓" : "Análisis listo ✓","success");
+      toast(d.auto_copy ? "Análisis + copy" : "Análisis listo","success");
     } finally { setAnalyzingCreative(null); }
   }
 
@@ -35483,7 +35483,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       // Refrescar la cuenta activa en memoria
       const newAcc = { ...activeAcc, ...(d.account||{}) };
       setAccounts(prev => prev.map(a => a.id === activeAccId ? newAcc : a));
-      toast("Recursos guardados ✓","success");
+      toast("Recursos guardados","success");
       setShowResourcesModal(false);
     } finally { setResSaving(false); }
   }
@@ -35554,7 +35554,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       ...Array.from({ length: Math.min(IMAGE_CONCURRENT, imageIndices.length) }, () => imageWorker()),
     ]);
     setUploadingFile(false);
-    toast(`${files.length} archivo${files.length===1?"":"s"} subido${files.length===1?"":"s"} ✓`,"success");
+    toast(`${files.length} archivo${files.length===1?"":"s"} subido${files.length===1?"":"s"}`,"success");
   }
 
   // ── Studio: crear campaña + N adsets (con bulk endpoint create_full) ──
@@ -35584,7 +35584,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const d = await metaApi("create_full","POST",body,{acc_id:activeAccId});
       if (d.error) { toast("Error: "+d.error,"error"); setCreatingMulti(false); return; }
       const adsetCount = d.adsets?.length || 0;
-      toast(`Campaña "${d.campaign_name}" + ${adsetCount} AdSet${adsetCount===1?"":"s"} ✓`,"success");
+      toast(`Campaña "${d.campaign_name}" + ${adsetCount} AdSet${adsetCount===1?"":"s"}`,"success");
       if (d.errors?.length) toast(d.errors.join(" · "),"warning");
       // Update optimista del state local — los dropdowns ven los nuevos al toque
       // sin esperar a que loadCampaigns sincronice con Meta (que tiene un delay
@@ -35638,7 +35638,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         active: !!newAdsetForm.active,
       },{acc_id:activeAccId});
       if (d.error) { toast(d.error,"error"); setSavingAdset(false); return; }
-      toast(`AdSet "${d.name}" creado ✓`,"success");
+      toast(`AdSet "${d.name}" creado`,"success");
       // Update optimista del state local — el adset nuevo aparece al toque
       const adsetStatus = newAdsetForm.active ? "ACTIVE" : "PAUSED";
       const newAdsetObj = {
@@ -35725,7 +35725,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       loadPublishBatches();
     } catch (_) {}
     setBulkPublishing(false);
-    if (errs.length === 0) toast(`${queue.length} ad${queue.length===1?"":"s"} publicado${queue.length===1?"":"s"} ✓`,"success");
+    if (errs.length === 0) toast(`${queue.length} ad${queue.length===1?"":"s"} publicado${queue.length===1?"":"s"}`,"success");
     else toast(`${queue.length-errs.length}/${queue.length} ok, ${errs.length} con error`,"warning");
   }
 
@@ -35791,7 +35791,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       loadPublishBatches();
     } catch (_) {}
     setRetryingBatchId(null);
-    if (newErrs.length === 0) toast(`${found.length} ad${found.length===1?"":"s"} re-publicado${found.length===1?"":"s"} ✓`,"success");
+    if (newErrs.length === 0) toast(`${found.length} ad${found.length===1?"":"s"} re-publicado${found.length===1?"":"s"}`,"success");
     else toast(`${found.length-newErrs.length}/${found.length} ok, ${newErrs.length} con error`,"warning");
   }
 
@@ -35818,13 +35818,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   async function handleSaveBrand() {
     setBrandSaving(true);
     await metaApi("save_brand","POST",{text:brand});
-    toast("Brand context guardado ✓","success");
+    toast("Brand context guardado","success");
     setBrandSaving(false);
   }
   async function handleSaveCopyAgent() {
     setCopyAgentSaving(true);
     await metaApi("save_copy_agent","POST",{text:copyAgent});
-    toast("Estilo del agente guardado ✓","success");
+    toast("Estilo del agente guardado","success");
     setCopyAgentSaving(false);
   }
 
@@ -35867,7 +35867,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         </div>
       ))}
       <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:11,color:T.green}}>
-        ✓ El token "Nunca vence" — no vas a tener que renovarlo ni reconectar la cuenta
+        El token "Nunca vence" — no vas a tener que renovarlo ni reconectar la cuenta
       </div>
       <div style={{background:T.yellowBg||(T.yellow+"15"),border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:11,color:T.textMd,lineHeight:1.55}}>
         <div style={{fontWeight:700,color:T.text,marginBottom:4}}>¿Estás conectando una <em>nueva</em> cuenta publicitaria y ya tenés una app de Meta creada?</div>
@@ -35928,7 +35928,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       {activeAcc && activeAcc.ad_account_id && tab==="analisis" && (
         <div style={{maxWidth:"100%",padding:"12px 24px 0",boxSizing:"border-box"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
-            <GhFiltroPill T={T} icon="📅" label="Período"><DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/></GhFiltroPill>
+            <GhFiltroPill T={T} icon={<GhI n="calendar" size={14}/>} label="Período"><DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/></GhFiltroPill>
             <GhTzSelect T={T} value={mtz} onChange={setMtz}/>
             <GhMonSelect T={T} value={mmon} onChange={setMmon} extra={<option value="">{`Moneda de la cuenta${activeAcc?.currency?` (${activeAcc.currency})`:""}`}</option>}/>
           </div>
@@ -36843,7 +36843,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Estado del auto-eval — ya no hay setup externo, corre en la nube via la integracion Meta */}
                 <div style={{marginTop:14,padding:"10px 14px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,fontSize:11,color:T.textMd,display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{color:T.green,fontWeight:700}}>✓</span>
+                  <span style={{color:T.green,fontWeight:700}}><GhI n="check" size={12}/></span>
                   Las reglas activas se evalúan <strong style={{color:T.green}}>cada 30 minutos mientras tengas Growith abierto</strong>, y <strong style={{color:T.green}}>1 vez por día en la nube</strong> aunque esté cerrado. Para evaluación en la nube cada 30 min hace falta el plan Pro de Vercel.
                 </div>
 
@@ -36892,8 +36892,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         {a.token_invalid
                           ? <div style={{fontSize:10,color:T.red,marginTop:2,fontWeight:700}}>✕ Token vencido — reconectá esta cuenta</div>
                           : a.oauth
-                            ? <div style={{fontSize:10,color:T.green,marginTop:2}}>✓ Conectada vía Facebook{a.token_expires_at?` · renueva sola (vence ${new Date(a.token_expires_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})})`:" · se renueva sola"}</div>
-                            : <div style={{fontSize:10,color:T.green,marginTop:2}}>✓ System User Token</div>}
+                            ? <div style={{fontSize:10,color:T.green,marginTop:2}}>Conectada vía Facebook{a.token_expires_at?` · renueva sola (vence ${new Date(a.token_expires_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})})`:" · se renueva sola"}</div>
+                            : <div style={{fontSize:10,color:T.green,marginTop:2}}>System User Token</div>}
                       </div>
                       {activeAccId===a.id&&<span style={{fontSize:10,background:T.accentSolid,color:"#fff",borderRadius:4,padding:"2px 7px",fontWeight:600,flexShrink:0}}>ACTIVA</span>}
                       <button onClick={e=>{e.stopPropagation();handleDisconnect(a.id);}} style={{...BtnSec,padding:"4px 8px",fontSize:11,color:T.red,borderColor:T.red+"44",flexShrink:0}}>✕</button>
@@ -36905,7 +36905,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               {/* Selector post-conexión si tiene múltiples */}
               {connectData&&(
                 <div style={{...Card,border:`1px solid ${T.accentSolid}55`}}>
-                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>✓ Token válido — {connectData.user_name} · Elegí tu ad account y página</div>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>Token válido — {connectData.user_name} · Elegí tu ad account y página</div>
                   <label style={Label}>Ad Account</label>
                   <select value={selAdAcc} onChange={e=>setSelAdAcc(e.target.value)} style={{...iS,marginBottom:12}}>
                     <option value="">— Seleccioná —</option>
@@ -37196,7 +37196,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   : c._error || c.video_error
                                     ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.red+"22",color:T.red,fontWeight:700,letterSpacing:0.3}}>✗ ERROR</span>
                                     : c.copy?.trim()
-                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>✓ CON COPY</span>
+                                      ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.greenBg,color:T.green,fontWeight:700,letterSpacing:0.3}}>CON COPY</span>
                                       : c.ia_status === "analyzed"
                                         ? <span style={{fontSize:10,padding:"3px 8px",borderRadius:5,background:T.accent+"22",color:T.accent,fontWeight:700,letterSpacing:0.3}}>Analizado · generando copy…</span>
                                         : analyzingCreative===c.id
@@ -37340,7 +37340,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6,paddingLeft:6}}>
                             {(b.items||[]).map((it,i) => (
                               <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:T.textMd,padding:"4px 0"}}>
-                                <span style={{fontSize:12,fontWeight:700,color:it.ok?T.green:T.red}}>{it.ok?`✓ ${it.kind==="video"?"VID":"IMG"}`:"✕"}</span>
+                                <span style={{fontSize:12,fontWeight:700,color:it.ok?T.green:T.red}}>{it.ok?`${it.kind==="video"?"VID":"IMG"}`:"✕"}</span>
                                 <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.filename}</span>
                                 {it.ok ? (
                                   <>
@@ -37512,7 +37512,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 return (
                                   <button key={a.id} onClick={()=>setResSel(p=>({...p, ad_account_id: a.id, pixel_id: ""}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                                     <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}><GhI n="check" size={12}/></span>}</span>
                                       <div style={{flex:1,minWidth:0}}>
                                         <div style={{fontSize:13,fontWeight:600,color:T.text}}>{a.name||"(sin nombre)"} <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:T.bg,color:T.textSm,fontWeight:500,marginLeft:6}}>{a.currency||"USD"}</span></div>
                                         <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2}}>{a.id} · {a.account_status===1?"activa":"inactiva"} · {pixCount} píxel{pixCount===1?"":"es"}</div>
@@ -37542,7 +37542,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   return (
                                     <button key={p.id} onClick={()=>setResSel(s=>({...s, pixel_id: p.id}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                                       <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                        <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                        <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}><GhI n="check" size={12}/></span>}</span>
                                         <div style={{flex:1,minWidth:0}}>
                                           <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {p.last_fired_time && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:T.green+"22",color:T.green,fontWeight:600,marginLeft:6}}>Activo</span>}</div>
                                           <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2}}>{p.id}{p.last_fired_time?` · último evento: ${new Date(p.last_fired_time).toLocaleDateString("es-AR")}`:""}</div>
@@ -37569,7 +37569,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 return (
                                   <button key={p.id} onClick={()=>setResSel(s=>({...s, page_id: p.id, ig_account_id: ig?.id || ""}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                                     <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}><GhI n="check" size={12}/></span>}</span>
                                       <div style={{flex:1,minWidth:0}}>
                                         <div style={{fontSize:13,fontWeight:600,color:T.text}}>{p.name||"(sin nombre)"} {ig&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"#dd2a7b22",color:"#dd2a7b",fontWeight:600,marginLeft:6}}>@{ig.username}</span>}</div>
                                         <div style={{fontSize:10,color:T.textSm,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace",marginTop:2}}>{p.id}{p.category?` · ${p.category}`:""}</div>
@@ -37592,7 +37592,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 return (
                                   <button key={i.id} onClick={()=>setResSel(s=>({...s, ig_account_id: i.id, page_id: i.page_id}))} style={{textAlign:"left",padding:"10px 12px",border:`1px solid ${sel?T.green+"99":T.borderL}`,background:sel?T.green+"10":T.surface,borderRadius:8,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                                     <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}>✓</span>}</span>
+                                      <span style={{width:14,height:14,borderRadius:"50%",border:`2px solid ${sel?T.green:T.border}`,background:sel?T.green:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{sel&&<span style={{color:"#fff",fontSize:9,fontWeight:900}}><GhI n="check" size={12}/></span>}</span>
                                       <div style={{flex:1,minWidth:0}}>
                                         <div style={{fontSize:13,fontWeight:600,color:T.text}}>@{i.username}</div>
                                         <div style={{fontSize:10,color:T.textSm,marginTop:2}}>vinculado a {i.page_name}</div>
@@ -38092,7 +38092,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                     try {
                       const r = await authFetch(`/api/meta?action=set_status&uid=${uid}&acc_id=${encodeURIComponent(acc)}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({node_id: camp, status})}).then(x=>x.json());
                       if (r.error) throw new Error(r.error);
-                      setMsgs(p=>[...p,{role:"assistant",text:`✓ Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
+                      setMsgs(p=>[...p,{role:"assistant",text:`Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
                     } catch(e) {
                       setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude ${verbo} la campaña: ${e.message}`}]);
                     }
@@ -38122,7 +38122,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                           try{
                             const r=await authFetch(`/api/meta?action=set_budget&uid=${uid}&acc_id=${encodeURIComponent(mBudget[1])}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({node_id:mBudget[2],daily_budget:parseInt(mBudget[3])})}).then(x=>x.json());
                             if(r.error) throw new Error(r.error);
-                            setMsgs(p=>[...p,{role:"assistant",text:`✓ Listo — **${mBudget[4]}** quedó con presupuesto de $${parseInt(mBudget[3]).toLocaleString("es-AR")}/día.`}]);
+                            setMsgs(p=>[...p,{role:"assistant",text:`Listo — **${mBudget[4]}** quedó con presupuesto de $${parseInt(mBudget[3]).toLocaleString("es-AR")}/día.`}]);
                           }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude cambiar el presupuesto: ${e.message}`}]); }
                         }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Cambiar presupuesto</button>
                       </div>
@@ -38136,7 +38136,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                           try{
                             const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"createTarea",uid,titulo:mTarea[2].trim(),descripcion:mTarea[3].trim(),asignadoEmail:mTarea[1].trim().toLowerCase(),asignadoNombre:"",managerEmail:user?.email||""})}).then(x=>x.json());
                             if(r.error) throw new Error(r.error);
-                            setMsgs(p=>[...p,{role:"assistant",text:`✓ Tarea **#${r.tareaNumStr||""} ${mTarea[2].trim()}** creada y asignada a ${mTarea[1].trim()}.`}]);
+                            setMsgs(p=>[...p,{role:"assistant",text:`Tarea **#${r.tareaNumStr||""} ${mTarea[2].trim()}** creada y asignada a ${mTarea[1].trim()}.`}]);
                           }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude crear la tarea: ${e.message}`}]); }
                         }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Crear tarea</button>
                       </div>
@@ -38150,7 +38150,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                           try{
                             const r=await fetch(`/api/inventory?action=adjust_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_id:mStock[1].trim(),new_stock:parseInt(mStock[2]),source:"manual",event:"ajuste_copilot"})}).then(x=>x.json());
                             if(r.error) throw new Error(r.error);
-                            setMsgs(p=>[...p,{role:"assistant",text:`✓ Stock de **${mStock[3].trim()}** actualizado: ${r.old_stock} → ${r.new_stock} unidades.${(r.sync_results||[]).some(s=>s.ok&&!s.skipped)?" Propagado a tus tiendas.":""}`}]);
+                            setMsgs(p=>[...p,{role:"assistant",text:`Stock de **${mStock[3].trim()}** actualizado: ${r.old_stock} → ${r.new_stock} unidades.${(r.sync_results||[]).some(s=>s.ok&&!s.skipped)?" Propagado a tus tiendas.":""}`}]);
                           }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude ajustar el stock: ${e.message}`}]); }
                         }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Ajustar stock</button>
                       </div>
@@ -38382,7 +38382,7 @@ function MLVentas({ T, uid, onOpenMessages, refreshKey }) {
           </div>
           <div style={{ textAlign: "right", display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.text }}>{o.currency === "ARS" ? "$" : ""}{(o.total || 0).toLocaleString("es-AR")}</div>
-            {onOpenMessages && <button onClick={() => onOpenMessages(o)} style={{ ...BtnSecondary(T), fontSize: 11, padding: "5px 10px" }}>💬 Mensajes</button>}
+            {onOpenMessages && <button onClick={() => onOpenMessages(o)} style={{ ...BtnSecondary(T), fontSize: 11, padding: "5px 10px" }}>Mensajes</button>}
           </div>
         </div>
       ); })}
@@ -38403,7 +38403,7 @@ function MLPreguntas({ T, uid, refreshKey }) {
   const load = async (st) => { setLoading(true); setErr(null); try { const j = await ghMlApi(uid, "ml_questions", { status: st }); setQs(j.questions || []); } catch (e) { setErr(e.message); } finally { setLoading(false); } };
   useEffect(() => { load(status); /* eslint-disable-next-line */ }, [uid, status]);
   useEffect(() => { if (refreshKey) load(status); /* eslint-disable-next-line */ }, [refreshKey]);
-  const responder = async (q) => { const text = (answers[q.id] || "").trim(); if (!text) { toast("Escribí una respuesta", "warning"); return; } setSending(q.id); try { await ghMlApi(uid, "ml_answer", {}, { data: { question_id: q.id, text } }); toast("Respondida ✓", "success"); try { window.dispatchEvent(new Event("gh-ml-preguntas-refresh")); } catch(_) {} setQs(prev => prev.filter(x => x.id !== q.id)); setAnswers(a => { const n = { ...a }; delete n[q.id]; return n; }); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(null); } };
+  const responder = async (q) => { const text = (answers[q.id] || "").trim(); if (!text) { toast("Escribí una respuesta", "warning"); return; } setSending(q.id); try { await ghMlApi(uid, "ml_answer", {}, { data: { question_id: q.id, text } }); toast("Respondida", "success"); try { window.dispatchEvent(new Event("gh-ml-preguntas-refresh")); } catch(_) {} setQs(prev => prev.filter(x => x.id !== q.id)); setAnswers(a => { const n = { ...a }; delete n[q.id]; return n; }); } catch (e) { toast("Error: " + e.message, "error"); } finally { setSending(null); } };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -38416,7 +38416,7 @@ function MLPreguntas({ T, uid, refreshKey }) {
       </div>
       {loading && !qs.length ? <div style={{ padding: 40, textAlign: "center" }}><Spinner size={20} color={T.accent} /></div> :
         err ? <div style={{ background: T.card, border: `1px solid ${T.red}44`, borderRadius: 12, padding: 20, color: T.red, fontSize: 13 }}>{err}</div> :
-          !qs.length ? <div style={{ background: T.card, border: `1px dashed ${T.borderL}`, borderRadius: 12, padding: "40px 20px", textAlign: "center", color: T.textSm, fontSize: 13 }}>{status === "UNANSWERED" ? "No tenés preguntas sin responder 🎉" : "Sin preguntas respondidas en el listado."}</div> :
+          !qs.length ? <div style={{ background: T.card, border: `1px dashed ${T.borderL}`, borderRadius: 12, padding: "40px 20px", textAlign: "center", color: T.textSm, fontSize: 13 }}>{status === "UNANSWERED" ? "No tenés preguntas sin responder " : "Sin preguntas respondidas en el listado."}</div> :
             qs.map(q => (
               <div key={q.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px", display: "flex", gap: 12 }}>
                 {q.item?.thumbnail && <img src={q.item.thumbnail.replace(/^http:/, "https:")} alt="" style={{ width: 46, height: 46, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: `1px solid ${T.border}` }} />}
@@ -38504,7 +38504,7 @@ function MLMensajes({ T, uid, initialOrder, onBackToInbox, refreshKey }) {
           !thread.length ? <div style={{ margin: "auto", color: T.textSm, fontSize: 12 }}>Sin mensajes todavía. Escribí el primero.</div> :
             [...thread].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)).map(m => (
               <div key={m.id} style={{ alignSelf: m.mine ? "flex-end" : "flex-start", maxWidth: "78%", background: m.mine ? T.accent + "22" : T.card, border: `1px solid ${m.mine ? T.accent + "44" : T.border}`, borderRadius: 12, padding: "8px 12px" }}>
-                <div style={{ fontSize: 12, color: m.text ? T.text : T.textSm, whiteSpace: "pre-wrap", lineHeight: 1.45, fontStyle: m.text ? "normal" : "italic" }}>{m.text || "📎 Adjunto (se ve en Mercado Libre)"}</div>
+                <div style={{ fontSize: 12, color: m.text ? T.text : T.textSm, whiteSpace: "pre-wrap", lineHeight: 1.45, fontStyle: m.text ? "normal" : "italic" }}>{m.text || "Adjunto (se ve en Mercado Libre)"}</div>
                 <div style={{ fontSize: 9, color: T.textSm, marginTop: 3, textAlign: "right" }}>{m.date ? new Date(m.date).toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</div>
               </div>
             ))}
@@ -38648,7 +38648,7 @@ function MLPublicar({ T, uid }) {
         {!category ? (
           <>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <button onClick={predecir} disabled={predicting} style={{ ...BtnPrimary(T), fontSize: 12, padding: "8px 14px" }}>{predicting ? <Spinner size={12} color="#fff" /> : "🔎"} Detectar categoría</button>
+              <button onClick={predecir} disabled={predicting} style={{ ...BtnPrimary(T), fontSize: 12, padding: "8px 14px" }}>{predicting ? <Spinner size={12} color="#fff" /> : ""} Detectar categoría</button>
               <span style={{ fontSize: 11, color: T.textSm }}>o cargá el ID a mano:</span>
               <input value={manualCat} onChange={e => setManualCat(e.target.value)} placeholder="MLAxxxxx" style={{ ...inp, width: 140, padding: "7px 10px", fontSize: 12 }} />
               <button onClick={() => manualCat.trim() && elegirCategoria(manualCat.trim())} style={{ ...BtnSecondary(T), fontSize: 12, padding: "7px 12px" }}>Usar</button>
@@ -38733,7 +38733,7 @@ function MLPublicar({ T, uid }) {
           )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <label style={{ ...BtnSecondary(T), fontSize: 12, padding: "8px 14px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
-              {uploading ? <Spinner size={12} color={T.text} /> : "📷"} Subir del equipo
+              {uploading ? <Spinner size={12} color={T.text} /> : ""} Subir del equipo
               <input type="file" accept="image/*" multiple onChange={e => { if (e.target.files?.length) uploadFiles(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
             </label>
           </div>
@@ -38788,7 +38788,7 @@ function MLPublicar({ T, uid }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {results.map((r, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: T.bg, border: `1px solid ${r.ok ? T.green + "44" : T.red + "44"}`, borderRadius: 8 }}>
-                  <span style={{ color: r.ok ? T.green : T.red, fontWeight: 700 }}>{r.ok ? "✓" : "✗"}</span>
+                  <span style={{ color: r.ok ? T.green : T.red, fontWeight: 700 }}>{r.ok ? <GhI n="check" size={12}/> : <GhI n="ban" size={12}/>}</span>
                   <span style={{ flex: 1, fontSize: 12, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</span>
                   {r.ok && r.permalink ? <a href={r.permalink} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: T.accent, flexShrink: 0 }}>Ver publicación →</a> : !r.ok && <span style={{ fontSize: 11, color: T.red, flexShrink: 0, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.error}>{r.error}</span>}
                 </div>
@@ -38859,7 +38859,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
     try {
       const r = await fetch(`/api/inventory?action=ml_diagnose&uid=${uid}`);
       const j = await r.json();
-      const msg = j.steps.map(s => `${s.ok?"✓":"✗"} ${s.name}${s.error?": "+s.error:s.results_count!=null?": "+s.results_count+" results (total: "+s.total+")":""}`).join("\n");
+      const msg = j.steps.map(s => `${s.ok?<GhI n="check" size={12}/>:"✗"} ${s.name}${s.error?": "+s.error:s.results_count!=null?": "+s.results_count+" results (total: "+s.total+")":""}`).join("\n");
       await appAlert(`Diagnóstico Mercado Libre:\n\n${msg}\n\n${j.suggestion || ""}`);
     } catch (e) { toast(e.message, "error"); }
     finally { setDiagnosing(false); }
@@ -38965,7 +38965,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
         const j = await r.json();
         if (j.error) toast("Imágenes: "+j.error,"warning");
       }
-      toast("Publicación actualizada ✓","success");
+      toast("Publicación actualizada","success");
       setEditingItem(null);
       loadItems();
     } finally { setSavingEdit(false); }
@@ -39299,7 +39299,7 @@ function ComisionesPanel({ T, uid }) {
 
   async function save() {
     setSaving(true);
-    try { await setDoc(doc(db,"users",uid), { margenesComisionesCfg: cfg }, { merge:true }); toast("Comisiones guardadas ✓","success"); }
+    try { await setDoc(doc(db,"users",uid), { margenesComisionesCfg: cfg }, { merge:true }); toast("Comisiones guardadas","success"); }
     catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
@@ -39320,7 +39320,7 @@ function ComisionesPanel({ T, uid }) {
 
       {/* Lo automático — una sola línea, no compite con lo configurable */}
       <div style={{display:"flex",alignItems:"center",gap:10,background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:10,padding:"11px 14px",flexWrap:"wrap"}}>
-        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:"50%",background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}>✓</span>
+        <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:16,height:16,borderRadius:"50%",background:T.green,color:"#fff",fontSize:10,fontWeight:900,flexShrink:0}}><GhI n="check" size={12}/></span>
         <span style={{fontSize:12,color:T.text,lineHeight:1.4}}><strong>Mercado Libre ya está cubierto:</strong> su comisión se lee automática de cada venta. <strong>Comisiones de pago:</strong> en Tienda Nube se lee el cargo real de cada venta desde la tienda (Mercado Pago, Pago Nube, costo por transacción, IVA); en Shopify, con MP conectado, el cargo real de cada pago. El % de abajo solo se usa en las ventas donde la tienda no informa el cargo.</span>
       </div>
 
@@ -39561,7 +39561,7 @@ function CostosPanel({ T, uid }) {
       }
       setCostos(costosClean);
       await setDoc(doc(db,"users",uid), { margenesEnvioProm: parseFloat(envio)||0, margenesEnvioCfg: { modoTienda: envioModo, mlFlex: mlFlex===""?"":(parseFloat(mlFlex)||0), fulfillment: parseFloat(fulfillment)||0 }, margenesCogs: costosClean, margenesMetaAdAccounts: (metaSel||[]).map(String), margenesMetaAdAccount: "", margenesMetaAdFees: feesClean }, { merge: true });
-      toast("Costos guardados ✓", "success");
+      toast("Costos guardados", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
@@ -39833,7 +39833,7 @@ function CostosPanel({ T, uid }) {
               <div style={{fontSize:10,color:T.textSm}}>{r.sku?`SKU ${r.sku} · `:""}{fmtARSm(r.price)}</div>
             </div>
             {hasH ? (
-              <button onClick={()=>setHistKey(abierto?null:r.key)} style={{display:"flex",alignItems:"center",gap:6,background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,padding:"7px 11px",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>📅 {costos[r.key].hist.length} precios por fecha</button>
+              <button onClick={()=>setHistKey(abierto?null:r.key)} style={{display:"flex",alignItems:"center",gap:6,background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,padding:"7px 11px",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>{costos[r.key].hist.length} precios por fecha</button>
             ) : (<>
               <select value={costoEsPct(costos[r.key])?"pct":"fijo"} onChange={e=>setCostoTipo(r.key,e.target.value)} title="$ fijo o % del precio de venta" style={{...InputStyle(T),width:64,fontSize:12,padding:"7px 6px",flexShrink:0}}>
                 <option value="fijo">$</option>
@@ -39862,7 +39862,7 @@ function CostosPanel({ T, uid }) {
                 <div style={{fontSize:13,color:T.text,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>{p.nombre}</div>
               </div>
               {hasH ? (
-                <button onClick={()=>setHistKey(abierto?null:key)} style={{display:"flex",alignItems:"center",gap:6,background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,padding:"7px 11px",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>📅 {costos[key].hist.length} precios por fecha</button>
+                <button onClick={()=>setHistKey(abierto?null:key)} style={{display:"flex",alignItems:"center",gap:6,background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,padding:"7px 11px",cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>{costos[key].hist.length} precios por fecha</button>
               ) : (<>
                 <span style={{fontSize:12,color:T.textSm}}>costo $</span>
                 <input type="number" min="0" value={costoVal(costos[key])} onChange={e=>setCosto(key,e.target.value)} placeholder="0" style={{...InputStyle(T),width:110,fontSize:13,textAlign:"right",flexShrink:0}}/>
@@ -39936,7 +39936,7 @@ function CostosAdicionalesPanel({ T, uid }) {
       // Al guardar acá los legacy quedan vacíos: el motor suma ambos, así no se duplica.
       await setDoc(doc(db,"users",uid), { margenesCostosAdic: clean, margenesCostosFijos: [], margenesCostosVar: [] }, { merge:true });
       setItems(clean); setMigrado(false);
-      toast("Costos adicionales guardados ✓","success");
+      toast("Costos adicionales guardados","success");
     } catch (e) { toast("Error: "+e.message,"error"); }
     setSaving(false);
   }
@@ -40120,7 +40120,7 @@ function DolarPanel({ T, uid }) {
         margenesDolarAds: { tipo: adsTipo, ajuste: parseFloat(adsAjuste)||0, valor: parseFloat(adsValorManual)||0 },
       }, { merge: true });
       setActualizado(now);
-      toast("Guardado ✓", "success");
+      toast("Guardado", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
@@ -40249,7 +40249,7 @@ function FacturacionExternaPanel({ T, uid }) {
         .sort((a,b)=>a.fecha.localeCompare(b.fecha));
       await setDoc(doc(db,"users",uid), { margenesFactExterna: rows }, { merge: true });
       setDirty(false);
-      toast("Facturación externa guardada ✓", "success");
+      toast("Facturación externa guardada", "success");
     } catch (e) { toast("Error: "+e.message, "error"); }
     setSaving(false);
   }
@@ -40325,7 +40325,7 @@ function FacturacionExternaPanel({ T, uid }) {
           <span style={{fontSize:13,fontWeight:800,color:T.green}}>Revenue: {fmtARSm(totalMes.monto)}</span>
         </div>
       </div>
-      <div style={{fontSize:11,color:T.textSm}}>✓ Conectada al Dashboard: estos montos suman a la Facturación, la Ganancia y las Órdenes del período.</div>
+      <div style={{fontSize:11,color:T.textSm}}>Conectada al Dashboard: estos montos suman a la Facturación, la Ganancia y las Órdenes del período.</div>
     </div>
   );
 }
@@ -40671,7 +40671,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if(!await appConfirm("Vas a ACTIVAR el stock cruzado: a partir de ahora Growith va a escribir el stock del inventario central en tu tienda (Tienda Nube / Shopify) y Mercado Libre cada vez que cambie (venta, edición manual, sincronización).\n\nRecomendado: usá primero el modo Simulación y revisá los resultados.\n\n¿Activar la escritura real?",{danger:true,okLabel:"Activar escritura"})) return;
     }
     setSyncMode(m); pushSettings({sync_mode:m});
-    toast(m==="off"?"Stock cruzado apagado":m==="simulacion"?"Modo simulación activado — nada se escribe todavía":"Stock cruzado ACTIVADO ✓","success");
+    toast(m==="off"?"Stock cruzado apagado":m==="simulacion"?"Modo simulación activado — nada se escribe todavía":"Stock cruzado ACTIVADO","success");
   }
   async function sincronizarAhora(){
     setSyncPushing(true); setSyncResults(null);
@@ -40680,7 +40680,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const j=await r.json();
       if(j.error) return toast(j.error,"error");
       setSyncResults(j);
-      toast(j.mode==="simulacion"?`Simulación lista · ${j.resumen.simulados} cambios detectados · ${j.resumen.errores} errores`:`Sincronizado ✓ · ${j.resumen.escritos} escritos · ${j.resumen.errores} errores`, j.resumen.errores>0?"warning":"success");
+      toast(j.mode==="simulacion"?`Simulación lista · ${j.resumen.simulados} cambios detectados · ${j.resumen.errores} errores`:`Sincronizado · ${j.resumen.escritos} escritos · ${j.resumen.errores} errores`, j.resumen.errores>0?"warning":"success");
     }catch(e){ toast(e.message,"error"); }
     finally{ setSyncPushing(false); }
   }
@@ -40708,7 +40708,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const a = document.createElement("a");
     a.href=url; a.download=`growith-stock-${hoyAR()}.csv`; a.click();
     URL.revokeObjectURL(url);
-    toast("CSV exportado ✓","success");
+    toast("CSV exportado","success");
   }
 
   async function loadStock(d=days, from="", to="") {
@@ -40844,7 +40844,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       });
       const j = await r.json();
       if (j.error) return toast(j.error,"error");
-      toast("Depósito guardado ✓","success");
+      toast("Depósito guardado","success");
       setEditingWarehouse(null);
       loadWarehouses();
     } finally { setWhSaving(false); }
@@ -40982,7 +40982,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       });
       const j = await r.json();
       if (j.error) return toast(j.error,"error");
-      toast(editingItem.id?"Item actualizado ✓":"Item creado ✓","success");
+      toast(editingItem.id?"Item actualizado":"Item creado","success");
       setEditingItem(null);
       loadInvItems();
     } finally { setItemSaving(false); }
@@ -41037,7 +41037,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       const j = await r.json();
       if (j.error) return toast(j.error,"error");
       if (!j.catalog) return toast("No se encontraron publicaciones. Verificá que tengas TN/Shopify/ML conectados en Configuración.","warning");
-      toast(`Catálogo vinculado ✓ · ${j.created} items nuevos · ${j.linked} actualizados · ${j.catalog} publicaciones leídas`,"success");
+      toast(`Catálogo vinculado · ${j.created} items nuevos · ${j.linked} actualizados · ${j.catalog} publicaciones leídas`,"success");
       loadInvItems();
     } finally { setImportingCatalog(false); }
   }
@@ -42086,7 +42086,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{background:T.card,border:`1px solid ${T.accent}55`,borderRadius:12,padding:"16px 18px"}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,gap:12}}>
                         <div>
-                          <div style={{fontSize:14,fontWeight:800,color:T.text}}>🎯 Cómo dejar tu inventario andando</div>
+                          <div style={{fontSize:14,fontWeight:800,color:T.text}}>Cómo dejar tu inventario andando</div>
                           <div style={{fontSize:11.5,color:T.textSm,marginTop:3}}>4 pasos y listo — después el stock se descuenta solo con cada venta.</div>
                         </div>
                         <button onClick={()=>{ setInvGuideDismissed(true); try{ localStorage.setItem(`growith_inv_guide_${uid}`,"1"); }catch(_){} }}
@@ -42099,7 +42099,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               background: s.done===true ? T.green : (s.done===false ? T.accent+"22" : T.surface),
                               color: s.done===true ? "#fff" : (s.done===false ? T.accent : T.textSm),
                               border: s.done===null ? `1px solid ${T.border}` : "none"}}>
-                              {s.done===true ? "✓" : s.n}
+                              {s.done===true ? <GhI n="check" size={12}/> : s.n}
                             </div>
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:12.5,fontWeight:700,color: s.done===true?T.textSm:T.text, textDecoration: s.done===true?"line-through":"none"}}>{s.title}</div>
@@ -42392,7 +42392,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       setTransferSaving(true);
                       const r=await fetch(`/api/inventory?action=transfer_stock&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({item_id:transferItemId,from_id:transferFrom,to_id:transferTo,qty:transferQty})});
                       const j=await r.json();
-                      if(j.error){toast(j.error,"error");}else{toast(`${transferQty} unidades transferidas ✓`,"success");setTransferModal(null);loadInvItems();loadMovements();}
+                      if(j.error){toast(j.error,"error");}else{toast(`${transferQty} unidades transferidas`,"success");setTransferModal(null);loadInvItems();loadMovements();}
                       setTransferSaving(false);
                     }} style={{padding:"9px 20px",fontSize:13,fontWeight:700,border:"none",borderRadius:8,background:T.accentSolid,color:"#fff",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(!transferFrom||!transferTo||!transferItemId||transferSaving)?0.5:1}}>
                       {transferSaving?<Spinner size={13} color="#fff"/>:"Transferir"}
@@ -42729,7 +42729,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                               {v.sku && <div style={{fontSize:9,color:T.textSm,fontFamily:"monospace"}}>SKU: {v.sku}</div>}
                                             </div>
                                             {already
-                                              ? <span style={{fontSize:9,color:T.green,fontWeight:700,flexShrink:0}}>✓ vinculado</span>
+                                              ? <span style={{fontSize:9,color:T.green,fontWeight:700,flexShrink:0}}>vinculado</span>
                                               : <button style={plusBtn}>+</button>}
                                           </div>
                                         );
@@ -43151,7 +43151,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   async function saveMetas() {
     const v = { roas:parseFloat(metasDraft.roas)||METAS_DEF.roas, trueRoas:parseFloat(metasDraft.trueRoas)||METAS_DEF.trueRoas, margen:parseFloat(metasDraft.margen)||METAS_DEF.margen, revenueMes:parseFloat(metasDraft.revenueMes)||0, profitMes:parseFloat(metasDraft.profitMes)||0 };
     setMetas(v); setEditMetas(false);
-    try { await setDoc(doc(db,"users",uid), { margenesMetas: v }, { merge:true }); toast("Metas guardadas ✓","success"); }
+    try { await setDoc(doc(db,"users",uid), { margenesMetas: v }, { merge:true }); toast("Metas guardadas","success"); }
     catch(_) { toast("No se pudieron guardar las metas","error"); }
   }
   // Drill-down: id de la venta expandida en la tabla venta-por-venta.
@@ -45871,13 +45871,13 @@ export default function App() {
 
   const onCreateOrg = React.useCallback(async ({name, color}) => {
     if (!name?.trim()) return false;
-    try { await tiendaApi("tiendaCrear",{nombre:name.trim(),color:color||"#7c3aed"}); try { localStorage.removeItem(`growith_tienda_activa_${authUser?.uid}`); } catch(_) {} toast("Tienda creada ✓ — entrando…","success"); setTimeout(()=>window.location.reload(),500); return true; }
+    try { await tiendaApi("tiendaCrear",{nombre:name.trim(),color:color||"#7c3aed"}); try { localStorage.removeItem(`growith_tienda_activa_${authUser?.uid}`); } catch(_) {} toast("Tienda creada: entrando…","success"); setTimeout(()=>window.location.reload(),500); return true; }
     catch (e) { appAlert("No se pudo crear la tienda: " + e.message); return false; }
   },[tiendaApi]);
 
   const onSaveOrg = React.useCallback(async (orgPatch) => {
     if (!orgPatch?.id) return false;
-    try { await tiendaApi("tiendaRenombrar",{tiendaUid:orgPatch.id,nombre:orgPatch.name,color:orgPatch.color,...(orgPatch.foto!==undefined?{foto:orgPatch.foto}:{})}); toast("Guardado ✓","success"); setTimeout(()=>window.location.reload(),400); return true; }
+    try { await tiendaApi("tiendaRenombrar",{tiendaUid:orgPatch.id,nombre:orgPatch.name,color:orgPatch.color,...(orgPatch.foto!==undefined?{foto:orgPatch.foto}:{})}); toast("Guardado","success"); setTimeout(()=>window.location.reload(),400); return true; }
     catch (e) { appAlert("No se pudo guardar: " + e.message); return false; }
   },[tiendaApi]);
 
@@ -45911,7 +45911,7 @@ export default function App() {
         const r=await authFetch("/api/integrations?platform=shopify&action=claim",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,claim})});
         const j=await r.json();
         try{ localStorage.removeItem("growith_shopify_claim"); }catch(e){}
-        if(j.ok){ toast(`Shopify conectado ✓ (${j.storeName||j.shop})`,"success"); setTimeout(()=>window.location.reload(),1200); }
+        if(j.ok){ toast(`Shopify conectado (${j.storeName||j.shop})`,"success"); setTimeout(()=>window.location.reload(),1200); }
         else appAlert(j.error||"No se pudo vincular la tienda de Shopify.");
       }catch(e){ appAlert("No se pudo vincular la tienda de Shopify: "+e.message); }
     })();
