@@ -17779,10 +17779,33 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
 
 // Error Boundary global: un crash de render en una sección muestra el error y
 // un botón de recarga en vez de dejar la pantalla negra (imposible de diagnosticar).
+// Errores de la app (27/oct/2026): los crashes de pantalla, los errores sueltos y las promesas
+// rechazadas sin atrapar se mandan a api/tareas?action=logClientError (Admin → Sistema →
+// Errores en la app). Máx. 20 por sesión, sin repetir el mismo mensaje, y la URL solo con
+// la sección (los links por token —portal, depósito, Andreani— nunca viajan enteros).
+const _ghErrVistos=new Set();
+function ghReportarError(kind,err,extra){
+  try{
+    const msg=String(err?.message||err||"").slice(0,400); if(!msg) return;
+    if(/Failed to fetch|Load failed|NetworkError|network error|AbortError|The user aborted|cancelad/i.test(msg)) return; // red del usuario, no un bug
+    if(_ghErrVistos.has(msg)||_ghErrVistos.size>=20) return; _ghErrVistos.add(msg);
+    const seccion=String(window.location.hash||"").split("/").slice(0,2).join("/");
+    const body={action:"logClientError",kind,msg,stack:String((err?.stack||"")+(extra?"\n--\n"+extra:"")).slice(0,3000),url:window.location.origin+window.location.pathname+seccion,uid:(typeof auth!=="undefined"&&auth?.currentUser?.uid)||window.__ghTiendaUid||""};
+    const txt=JSON.stringify(body);
+    if(navigator.sendBeacon&&navigator.sendBeacon("/api/tareas",new Blob([txt],{type:"application/json"}))) return;
+    fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:txt,keepalive:true}).catch(()=>{});
+  }catch(_){}
+}
+if(typeof window!=="undefined"&&!window.__ghErrHook){
+  window.__ghErrHook=true;
+  window.addEventListener("error",e=>{ if(e?.target&&e.target!==window) return; /* recursos (img/script) que no cargan */ ghReportarError("error",e?.error||e?.message); });
+  window.addEventListener("unhandledrejection",e=>ghReportarError("promesa",e?.reason));
+}
+
 class GhErrorBoundary extends React.Component {
   constructor(props){ super(props); this.state={err:null}; }
   static getDerivedStateFromError(err){ return {err}; }
-  componentDidCatch(err, info){ try{ console.error("[growith crash]", err, info?.componentStack); }catch(_){} }
+  componentDidCatch(err, info){ try{ console.error("[growith crash]", err, info?.componentStack); }catch(_){} ghReportarError("crash", err, String(info?.componentStack||"").slice(0,1200)); }
   render(){
     if(!this.state.err) return this.props.children;
     const T=this.props.T||{};
@@ -22280,6 +22303,56 @@ function AdmFicha({ctx, u, onClose, pestana="resumen"}) {
 
 
 // ── Ingresos ─────────────────────────────────────────────────────────────────
+// Embudo de altas (27/oct/2026, pre-lanzamiento con pauta): de los perfiles que se registraron en el
+// período, cuántos conectaron una tienda, cargaron costos y pagaron. Las tiendas adicionales cuentan
+// para su dueño; la demo, los admins y los miembros invitados (soloMiembro) no son altas.
+function AdmEmbudo({ctx}){
+  const {T, usuarios, pagosReales, activaPaga, setCuenta} = ctx;
+  const [dias,setDias]=useState(30);
+  const ahora=Date.now(), desde=ahora-dias*86400000;
+  const tiendasDe={}; usuarios.forEach(t=>{ if(t.esTienda&&t.ownerUid) (tiendasDe[t.ownerUid]||(tiendasDe[t.ownerUid]=[])).push(t); });
+  const pagaron=new Set(pagosReales.map(p=>p.uid));
+  const altas=usuarios.filter(u=>!u.esTienda&&!u.demo&&!u.isAdmin&&!u.soloMiembro&&u.createdAt&&u.createdAt>=desde).map(u=>{
+    const ts=[u,...(tiendasDe[u._id]||[])];
+    const conecto=ts.some(t=>(t.stores||[]).some(s=>s.type&&s.type!=="mercadopago"));
+    const costos=ts.some(t=>(t.costosN||0)>0);
+    const pago=activaPaga(u)||pagaron.has(u._id)||ts.some(t=>pagaron.has(t._id));
+    const volvio=!!(u.ultimoLogin&&u.createdAt&&u.ultimoLogin-u.createdAt>86400000);
+    return {u,conecto,costos,pago,volvio};
+  }).sort((a,b)=>(b.u.createdAt||0)-(a.u.createdAt||0));
+  const n=altas.length, pct=x=>n?Math.round(x/n*100):0;
+  const pasos=[
+    {l:"Se registraron",v:n,c:T.accent},
+    {l:"Conectaron una tienda",v:altas.filter(a=>a.conecto).length,c:T.blue},
+    {l:"Cargaron costos",v:altas.filter(a=>a.costos).length,c:T.yellow},
+    {l:"Pagaron",v:altas.filter(a=>a.pago).length,c:T.green},
+  ];
+  const trabados=altas.filter(a=>!a.conecto&&ahora-(a.u.createdAt||0)>86400000).slice(0,12);
+  return (<Card T={T} padding="lg">
+    <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:12}}>
+      <div style={{flex:1,minWidth:200}}><AdmTitulo T={T} t="Embudo de nuevas cuentas" sub="De las que se registraron en el período: cuántas conectaron una tienda, cargaron costos y pagaron."/></div>
+      <DepSeg T={T} value={String(dias)} onChange={v=>setDias(Number(v))} items={[["7","7 días"],["30","30 días"],["90","90 días"]]}/>
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {pasos.map((p,i)=>(<div key={i} style={{display:"grid",gridTemplateColumns:"170px 1fr 70px",gap:10,alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:7,fontSize:DS.font.base,color:T.textMd}}><span style={{width:8,height:8,borderRadius:99,background:p.c,flexShrink:0}}/>{p.l}</div>
+        <div style={{height:10,background:T.surface,borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${i===0?(n?100:0):pct(p.v)}%`,background:p.c,borderRadius:99}}/></div>
+        <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{p.v}{i>0&&n?<span style={{fontWeight:500,color:T.textSm}}> · {pct(p.v)}%</span>:null}</div>
+      </div>))}
+    </div>
+    {n>0&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:10}}>{altas.filter(a=>a.volvio).length} de {n} volvieron a entrar al día siguiente o después.</div>}
+    {trabados.length>0&&<div style={{marginTop:14}}>
+      <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text,marginBottom:6}}>Se registraron y no conectaron nada</div>
+      <div style={{display:"flex",flexDirection:"column"}}>
+        {trabados.map(a=>(<div key={a.u._id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:`1px solid ${T.borderL}`}}>
+          <button onClick={()=>setCuenta(a.u._id)} style={{flex:1,minWidth:0,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif",fontSize:DS.font.base,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.u.email||a.u.nombre}</button>
+          <span style={{fontSize:DS.font.sm,color:T.textSm,whiteSpace:"nowrap"}}>{admRel(a.u.createdAt)}</span>
+        </div>))}
+      </div>
+    </div>}
+  </Card>);
+}
+
 function AdmIngresos({ctx, stats}) {
   const {T, usuarios, usuariosPorUid, pagosReales, esNueva, esUsd, activaPaga, setCuenta} = ctx;
   const ahora=Date.now();
@@ -22308,6 +22381,7 @@ function AdmIngresos({ctx, stats}) {
       </div>
       <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1.6fr) minmax(280px,1fr)",gap:16,alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+          <AdmEmbudo ctx={ctx}/>
           <Card T={T} padding="lg">
             <AdmTitulo T={T} t="Evolución del MRR" sub="Ingreso mensual reconocido: cada pago se reparte entre los meses que cubre (anual en 12). Debajo, nuevas suscripciones por mes."/>
             <div style={{display:"grid",gridTemplateColumns:`repeat(${meses.length},1fr)`,gap:6,alignItems:"end",height:150,padding:"0 2px"}}>
@@ -25235,6 +25309,7 @@ function AdmSistema({ctx}) {
         </Card>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+        <AdmErroresApp ctx={ctx}/>
         <Card T={T} padding="lg">
           <AdmTitulo T={T} t="Servicios" sub="Qué integración tiene sus credenciales cargadas. Nunca se muestran valores."/>
           {sys.loading?<AdmSkeleton T={T} filas={6}/>:(sys.servicios||[]).filter(x=>!/usdt|tron/i.test(`${x.id} ${x.label}`)).map((s,i)=><div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:true?`1px solid ${T.borderL}`:"none",fontSize:12}}><span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/><span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span><span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span></div>)}
@@ -25249,6 +25324,37 @@ function AdmSistema({ctx}) {
       {mant&&<div style={{marginTop:16}}><AdmMantenimiento T={T}/></div>}
     </div>
   </>);
+}
+
+// Errores en la app de los clientes (últimos 7 días), agrupados por mensaje y día (logClientError).
+function AdmErroresApp({ctx}){
+  const {T, adminApi, usuariosPorUid, setCuenta} = ctx;
+  const [d,setD]=useState(null); const [abierto,setAbierto]=useState(null);
+  const cargar=()=>adminApi({action:"adminClientErrors"}).then(r=>setD(r.errores||[])).catch(e=>setD({err:e.message}));
+  useEffect(()=>{ cargar(); },[]);
+  const KIND={crash:["Se rompió la pantalla",T.red],error:["Error",T.yellow],promesa:["Error en segundo plano",T.textSm]};
+  return (<Card T={T} padding="lg">
+    <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+      <div style={{flex:1}}><AdmTitulo T={T} t="Errores en la app" sub="Lo que le falló a los clientes en los últimos 7 días, agrupado. Si una pantalla se rompe por primera vez en el día te llega un mail."/></div>
+      <DepBtn T={T} size="sm" onClick={()=>{setD(null);cargar();}}>Actualizar</DepBtn>
+    </div>
+    {d===null?<AdmSkeleton T={T} filas={4}/>:d.err?<div style={{fontSize:DS.font.base,color:T.red}}>{d.err}</div>:!d.length?<div style={{fontSize:DS.font.base,color:T.textSm,padding:"8px 0"}}>Sin errores en los últimos 7 días.</div>:
+      <div style={{display:"flex",flexDirection:"column"}}>{d.map(e=>{ const [kl,kc]=KIND[e.kind]||KIND.error; const op=abierto===e.id; return (
+        <div key={e.id} style={{borderTop:`1px solid ${T.borderL}`,padding:"9px 0"}}>
+          <button onClick={()=>setAbierto(op?null:e.id)} style={{display:"flex",gap:10,alignItems:"flex-start",width:"100%",background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
+            <span style={{width:8,height:8,borderRadius:99,background:kc,flexShrink:0,marginTop:5}}/>
+            <span style={{flex:1,minWidth:0}}>
+              <span style={{display:"block",fontSize:DS.font.base,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:op?"normal":"nowrap",wordBreak:"break-word"}}>{e.msg}</span>
+              <span style={{display:"block",fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>{kl} · {e.veces} vez{e.veces!==1?"es":""} · {e.cuentas} cuenta{e.cuentas!==1?"s":""} · {admRel(e.ultima)}{e.url?` · ${e.url.replace(/^https?:\/\/[^/]+/,"")||"/"}`:""}</span>
+            </span>
+          </button>
+          {op&&<div style={{marginTop:8,marginLeft:18}}>
+            {e.uids.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>{e.uids.map(u=><button key={u} onClick={()=>usuariosPorUid[u]&&setCuenta(u)} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.full,padding:"3px 10px",fontSize:DS.font.sm,color:T.text,cursor:usuariosPorUid[u]?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif"}}>{usuariosPorUid[u]?.email||u.slice(0,8)}</button>)}</div>}
+            <pre style={{margin:0,whiteSpace:"pre-wrap",wordBreak:"break-word",fontSize:11,lineHeight:1.45,color:T.textMd,background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"10px 12px",maxHeight:260,overflow:"auto"}}>{e.stack||"(sin detalle)"}</pre>
+            <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:6}}>{e.ua}</div>
+          </div>}
+        </div>); })}</div>}
+  </Card>);
 }
 
 // Banner flotante: sesión de administrador operando la cuenta de un cliente.

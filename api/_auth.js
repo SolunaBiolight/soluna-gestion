@@ -29,7 +29,7 @@ function initApp() {
 
 // Fundadores de la plataforma: los únicos que pueden dar o quitar el flag de
 // admin a otras cuentas. Comparar contra el uid del TOKEN es seguro.
-const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
+export const FOUNDERS = ["WJH3ArqDPQcNLha9lOinvkVi9uJ2"];
 export function isFounder(uid) { return FOUNDERS.includes(String(uid || "")); }
 
 // ── Modo "Ver como cliente" (Admin) ─────────────────────────────────

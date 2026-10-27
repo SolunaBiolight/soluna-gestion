@@ -8,7 +8,8 @@
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
-import { guardUid, requireUid, requireAdmin, guardCron, verifyAuth, clearTeamCache, isFounder } from "./_auth.js";
+import { guardUid, requireUid, requireAdmin, guardCron, verifyAuth, clearTeamCache, isFounder, FOUNDERS } from "./_auth.js";
+import { createHash } from "node:crypto";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { esDemo } from "./_demo.js";
@@ -464,6 +465,7 @@ export default function handler(req, res) {
   return _mailCtx.run({ uid: null, demo: undefined }, () => handlerTareas(req, res));
 }
 
+const _errRate = new Map(); // límite por IP de logClientError (por instancia)
 async function handlerTareas(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -1280,6 +1282,51 @@ async function handlerTareas(req, res) {
       }
       if (purgadas.length) await logAdmin(db, { adminUid: "cron", action: "cuentas_purgadas", detalle: purgadas.join(",") });
       return res.json({ ok: true, purgadas, errores });
+    }
+
+    // ── Errores de la app de los clientes (27/oct/2026, pre-lanzamiento) ─────
+    // Público (un crash puede pasar antes del login). Se agrupan por mensaje +
+    // primera línea del stack y por día: client_errors/{AAAA-MM-DD}_{hash}
+    // {msg, stack, kind, veces, uids[], url, ua, primera, ultima}. Un crash NUEVO
+    // del día avisa al fundador por mail (máx. 1 por hora). Admin → Sistema los lista.
+    if (action === "logClientError") {
+      const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "x";
+      const t = Date.now(), b = (_errRate.get(ip) || []).filter(x => t - x < 60000);
+      if (b.length >= 15) return res.json({ ok: true, limitado: true });
+      b.push(t); _errRate.set(ip, b); if (_errRate.size > 2000) _errRate.clear();
+      const msg = String(body.msg || "").slice(0, 400).trim();
+      const stack = String(body.stack || "").slice(0, 3000);
+      if (!msg) return res.json({ ok: true });
+      // Ruido que no es nuestro: extensiones del navegador, ResizeObserver, scripts de otros dominios.
+      if (/ResizeObserver loop|^Script error\.?$|chrome-extension:|moz-extension:|safari-extension:/i.test(msg + " " + stack.slice(0, 300))) return res.json({ ok: true, ignorado: true });
+      const kind = ["crash", "error", "promesa"].includes(body.kind) ? body.kind : "error";
+      const linea = (stack.split("\n").find(l => /\bat\b|@/.test(l)) || "").replace(/\?v=\w+|:\d+:\d+/g, "").trim();
+      const hash = createHash("sha1").update(msg.replace(/\d+/g, "#") + "|" + linea).digest("hex").slice(0, 16);
+      const dia = new Date(t - 3 * 3600e3).toISOString().slice(0, 10);
+      const ref = db.collection("client_errors").doc(`${dia}_${hash}`);
+      const quien = String(body.uid || "").slice(0, 64);
+      const nuevo = await db.runTransaction(async tx => {
+        const s0 = await tx.get(ref);
+        const d0 = s0.exists ? s0.data() : null;
+        const uids = Array.isArray(d0?.uids) ? d0.uids : [];
+        if (quien && !uids.includes(quien) && uids.length < 50) uids.push(quien);
+        tx.set(ref, { dia, hash, msg, stack: d0?.stack || stack, kind: d0?.kind === "crash" ? "crash" : kind, veces: (d0?.veces || 0) + 1, uids,
+          url: String(body.url || "").slice(0, 300), ua: String(req.headers["user-agent"] || "").slice(0, 300), version: String(body.version || "").slice(0, 40),
+          primera: d0?.primera || new Date(t), ultima: new Date(t) }, { merge: true });
+        return !d0;
+      });
+      if (nuevo && kind === "crash") {
+        try {
+          const ref2 = db.collection("system").doc("mail_tope").collection("temas").doc("client_crash");
+          const ok = await db.runTransaction(async tx => { const s1 = await tx.get(ref2); const last = Number(s1.data()?.lastAt) || 0; if (t - last < 3600000) { tx.set(ref2, { suprimidos: (Number(s1.data()?.suprimidos) || 0) + 1 }, { merge: true }); return false; } tx.set(ref2, { lastAt: t, suprimidos: 0 }, { merge: true }); return true; });
+          if (ok) {
+            const f = await db.collection("users").doc(FOUNDERS[0]).get();
+            const to = f.exists ? String(f.data().email || "").trim() : "";
+            if (to) await sendEmail({ to, subject: "Growith: a un cliente se le rompió una pantalla", html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111;max-width:560px"><p>A ${quien ? "una cuenta" : "alguien sin sesión"} se le rompió una sección de la app.</p><p style="background:#f3f4f6;border-radius:8px;padding:10px 12px;font-family:monospace;font-size:12px">${esc(msg)}</p><p style="color:#6b7280;font-size:12px">${esc(String(body.url || ""))}</p><p>Lo ves con el detalle en Admin → Sistema → Errores en la app. Se manda un aviso por hora como máximo.</p></div>` });
+          }
+        } catch (e) { console.error("[client error mail]", e.message); }
+      }
+      return res.json({ ok: true });
     }
 
     // ── Pagos al equipo: portal del colaborador (solo token) ────────────────
@@ -2542,7 +2589,7 @@ async function handlerTareas(req, res) {
     }
 
     // Acciones solo-admin
-    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta"];
+    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta","adminClientErrors"];
     if (adminActions.includes(action)) {
       // La identidad del admin sale del TOKEN verificado, no del uid del body.
       const adm = await requireAdmin(req);
@@ -2554,6 +2601,17 @@ async function handlerTareas(req, res) {
         try { const s = await db.collection("users").doc(String(targetUid)).get(); return s.exists ? (s.data().email || "") : ""; } catch (_) { return ""; }
       };
       const log = async (accion, targetUid, detalle, data) => logAdmin(db, { adminUid, action: accion, targetUid, targetEmail: targetUid ? await emailDe(targetUid) : null, detalle, data });
+
+      if (action === "adminClientErrors") {
+        const desde = new Date(Date.now() - 3 * 3600e3 - 7 * 86400e3).toISOString().slice(0, 10);
+        const s = await db.collection("client_errors").where("dia", ">=", desde).get();
+        const ms = v => v?.toMillis ? v.toMillis() : (v?._seconds ? v._seconds * 1000 : null);
+        const errores = s.docs.map(d => { const x = d.data(); return { id: d.id, dia: x.dia, msg: x.msg, stack: x.stack, kind: x.kind, veces: x.veces || 1, cuentas: (x.uids || []).length, uids: (x.uids || []).slice(0, 10), url: x.url, ua: x.ua, version: x.version || "", primera: ms(x.primera), ultima: ms(x.ultima) }; })
+          .sort((a, b) => (b.ultima || 0) - (a.ultima || 0)).slice(0, 300);
+        // Limpieza: lo de más de 30 días se borra (de a 200 por consulta).
+        try { const viejo = new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10); const v = await db.collection("client_errors").where("dia", "<", viejo).limit(200).get(); if (!v.empty) { const bt = db.batch(); v.docs.forEach(d => bt.delete(d.ref)); await bt.commit(); } } catch (_) {}
+        return res.json({ ok: true, errores });
+      }
 
       if (action === "setSectionsConfig") {
         const { adminOnlySections } = body;
@@ -2628,6 +2686,9 @@ async function handlerTareas(req, res) {
           teamUids: (Array.isArray(d.teamUids) ? d.teamUids : []).length,
           refCode: d.refCode || null, refBy: d.refBy || null, refCreditUsd: Number(d.refCreditUsd) || 0, refGanadoUsd: Number(d.refGanadoUsd) || 0,
           andreaniSaldo: Math.round(Number(d.andreaniSaldo) || 0), onbDone: d.onbDone === true,
+          // Embudo de registros (Admin → Ingresos): tiendas adicionales, demo y miembros invitados no cuentan como altas.
+          esTienda: d.esTienda === true, ownerUid: d.ownerUid || null, soloMiembro: d.soloMiembro === true, demo: !!d.demo?.activo,
+          costosN: (d.margenesCogs && typeof d.margenesCogs === "object") ? Object.keys(d.margenesCogs).length : 0,
           notifEmails: (Array.isArray(d.notifEmails) ? d.notifEmails : []).length,
         });
         const usuarios = usSnap.docs.map(d => slim(d.id, d.data()));
