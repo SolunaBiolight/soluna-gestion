@@ -16275,13 +16275,23 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
 
   // Feed por categoría
   const CAT_META = {
+    plata:    {label:"Plata que se va", nav:"margenes", color:T.red, icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>},
     ml:       {label:"Preguntas ML", nav:"ml", color:T.orange, icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>},
     reclamos: {label:"Reclamos", icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, color:T.red, nav:"reclamos"},
     stock:    {label:"Stock",    icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>, color:T.red, nav:"stock"},
     envios:   {label:"Envíos",  nav:"envios", color:T.orange, icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>},
     canjes:   {label:"Canjes",  icon:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>, color:T.orange, nav:"canjes"},
   };
+  // Plata que se va: lo publica el Dashboard (growith_perdida_{uid}) con el último período que se miró;
+  // se muestra solo si es de los últimos 3 días.
+  const perdida=(()=>{ try{ const x=JSON.parse(localStorage.getItem(`growith_perdida_${user?.uid}`)||"null"); return x&&Date.now()-x.ts<3*86400000?x:null; }catch(_){ return null; } })();
   const grouped = {
+    plata:[
+      ...(perdida?.nProductos?[{icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>,
+        titulo:`${perdida.nProductos} producto${perdida.nProductos!==1?"s":""} vendiéndose a pérdida`,sub:perdida.productos.map(p=>p.n).slice(0,3).join(", ")+(perdida.nProductos>3?"…":""),badge:"Pérdida",badgeColor:T.red,accion:()=>onNavigate("margenes")}]:[]),
+      ...(perdida?.roas?[{icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
+        titulo:"La publicidad está vendiendo a pérdida",sub:`ROAS ${Number(perdida.roas.v).toFixed(2).replace(".",",")}x contra un break-even de ${Number(perdida.roas.be).toFixed(2).replace(".",",")}x`,badge:"ROAS bajo",badgeColor:T.red,accion:()=>onNavigate("margenes")}]:[]),
+    ],
     ml: mlPreguntas>0?[{
       icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.orange} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01"/></svg>,
       titulo:`${mlPreguntas} pregunta${mlPreguntas!==1?"s":""} de Mercado Libre sin responder`,
@@ -16444,7 +16454,7 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           </div>
         ):(
           <div style={{display:"flex",flexDirection:"column",gap:DS.sp.xl}}>
-            {["reclamos","envios","stock","canjes"].map(cat=>{
+            {["plata","reclamos","envios","stock","canjes"].map(cat=>{
               const items=grouped[cat];
               if(!items||items.length===0) return null;
               const meta=CAT_META[cat];
@@ -43456,6 +43466,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       const n = rendData?.quality?.productosSinCogs||0;
       const k = `growith_costos_alert_${uid}`;
       if(localStorage.getItem(k)!==String(n)){ localStorage.setItem(k,String(n)); window.dispatchEvent(new Event("gh-costos-alert")); }
+      // Avisos de plata perdida para el Inicio (27/oct/2026): productos que se venden a pérdida
+      // (con costo cargado) y pauta por debajo del break-even, del último período que se miró acá.
+      const t0=rendData?.totals||{};
+      const perd=(rendData?.byProduct||[]).filter(p=>(p.profit||0)<0&&!p.sinCogs&&(p.revenue||0)>0).sort((a,b)=>(a.profit||0)-(b.profit||0));
+      const roasBajo=(t0.adSpend||0)>0&&(t0.roas||0)>0&&(t0.breakEvenRoas||0)>0&&(t0.roas||0)<(t0.breakEvenRoas||0);
+      localStorage.setItem(`growith_perdida_${uid}`,JSON.stringify({ts:Date.now(),productos:perd.slice(0,5).map(p=>({n:p.nombre,v:Math.round(p.profit||0)})),nProductos:perd.length,roas:roasBajo?{v:t0.roas,be:t0.breakEvenRoas}:null}));
     }catch(_){}
   },[rendData,uid]);
   const usdOn = usdMode && usdRate>0;
