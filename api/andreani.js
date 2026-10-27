@@ -3157,12 +3157,20 @@ export default async function handler(req, res) {
         if (esReintegro && (monto <= 0 || !nota)) return res.status(400).json({ error: "Un reintegro necesita monto positivo y motivo." });
         const tRef = db.collection("users").doc(targetUid);
         const tMov = tRef.collection("andreani_mov").doc();
+        // Plata que entró por fuera (USDT, efectivo, transferencia directa): con `facturable` queda también
+        // como carga acreditada en andreani_cargas, así aparece en Admin → Envíos → Facturación (27/oct/2026).
+        const MEDIOS_MANUAL = ["usdt", "efectivo", "transferencia", "otro"];
+        const facturable = body.facturable === true && monto > 0 && !esReintegro;
+        const medio = MEDIOS_MANUAL.includes(body.medio) ? body.medio : "otro";
+        const cRef = facturable ? db.collection("andreani_cargas").doc() : null;
         const nuevoSaldo = await db.runTransaction(async (tx) => {
           const s = await tx.get(tRef);
           if (!s.exists) throw new Error("El usuario no existe.");
           const saldo = Math.round(Number(s.data()?.andreaniSaldo) || 0);
           const nuevo = saldo + monto;
           tx.set(tRef, { andreaniSaldo: nuevo }, { merge: true });
+          if (cRef) tx.set(cRef, { uid: targetUid, email: s.data()?.email || "", monto, metodo: medio === "transferencia" ? "transferencia" : medio, manual: true, estado: "acreditada",
+            ref: `MAN-${cRef.id.slice(0, 6).toUpperCase()}`, nota: nota || "Carga manual", movId: tMov.id, adminUid: adm.user.uid, ts: FieldValue.serverTimestamp(), resueltaTs: FieldValue.serverTimestamp() });
           tx.set(tMov, {
             tipo: esReintegro ? "reverso" : "credito",
             monto,
@@ -3175,7 +3183,7 @@ export default async function handler(req, res) {
           return nuevo;
         });
         await logAdminAndreani(db, adm.user.uid, esReintegro ? "reintegrar_saldo" : (monto > 0 ? "acreditar_saldo" : "ajustar_saldo"), targetUid, `${monto > 0 ? "+" : ""}$${monto.toLocaleString("es-AR")} · saldo ${nuevoSaldo.toLocaleString("es-AR")}${nota ? " · " + nota : ""}`);
-        return res.json({ ok: true, uid: targetUid, saldo: nuevoSaldo });
+        return res.json({ ok: true, uid: targetUid, saldo: nuevoSaldo, cargaId: cRef?.id || null });
       }
 
       // Cargas de saldo pendientes o en revisión (monto de MP distinto) de

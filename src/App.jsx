@@ -20614,7 +20614,10 @@ function AdmMovsModal({T, cuenta, onClose}) {
 // Acreditar (o ajustar) saldo a una cuenta.
 function AdmAcreditarModal({T, cuenta, onClose, onDone}) {
   const [monto,setMonto]=useState(""); const [nota,setNota]=useState(""); const [tipo,setTipo]=useState("credito"); const [numEnvio,setNumEnvio]=useState("");
-  useEffect(()=>{ setMonto(""); setNota(""); setTipo("credito"); setNumEnvio(""); },[cuenta?.uid]);
+  // Plata que entró por fuera (USDT, efectivo…): queda como carga para facturarla en Admin → Envíos → Facturación.
+  const [facturable,setFacturable]=useState(true); const [medio,setMedio]=useState("usdt");
+  useEffect(()=>{ setMonto(""); setNota(""); setTipo("credito"); setNumEnvio(""); setFacturable(true); setMedio("usdt"); },[cuenta?.uid]);
+  const esCarga=tipo==="credito"&&Math.round(parseFloat(monto))>0;
   return (
     <Modal T={T} open={!!cuenta} onClose={onClose} title={`Acreditar saldo · ${cuenta?.email||""}`} width={440} zIndex={1300}>
       {cuenta&&(
@@ -20623,10 +20626,15 @@ function AdmAcreditarModal({T, cuenta, onClose, onDone}) {
           <Field T={T} label="Tipo"><AdmSelect T={T} value={tipo} onChange={e=>setTipo(e.target.value)} style={{width:"100%"}}><option value="credito">Acreditación o ajuste</option><option value="reintegro">Reintegro (etiqueta anulada, cobro de más)</option></AdmSelect></Field>
           <Field T={T} label="Monto ($)"><AdmInput T={T} type="number" value={monto} onChange={e=>setMonto(e.target.value)} placeholder="Ej: 20000" autoFocus/></Field>
           <Field T={T} label={tipo==="reintegro"?"Motivo (obligatorio)":"Nota"}><AdmInput T={T} value={nota} onChange={e=>setNota(e.target.value)} placeholder={tipo==="reintegro"?"Ej: etiqueta anulada por Andreani":"Ej: transferencia del 5/9"}/></Field>
+          {esCarga&&<label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:12.5,color:T.text,cursor:"pointer",lineHeight:1.45}}>
+            <input type="checkbox" checked={facturable} onChange={e=>setFacturable(e.target.checked)} style={{marginTop:2}}/>
+            <span>Es plata que me pagó el cliente <span style={{color:T.textSm}}>— queda como carga en Envíos → Facturación para facturarla. Destildalo si es una bonificación o un ajuste.</span></span>
+          </label>}
+          {esCarga&&facturable&&<Field T={T} label="¿Cómo te pagó?"><AdmSelect T={T} value={medio} onChange={e=>setMedio(e.target.value)} style={{width:"100%"}}><option value="usdt">USDT</option><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="otro">Otro</option></AdmSelect></Field>}
           {tipo==="reintegro"&&<Field T={T} label="Nº de envío (opcional)"><AdmInput T={T} value={numEnvio} onChange={e=>setNumEnvio(e.target.value)} placeholder="36000..."/></Field>}
           <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
             <Btn T={T} variant="secondary" size="sm" onClick={onClose}>Cancelar</Btn>
-            <AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ const m=Math.round(parseFloat(monto)); if(!m) throw new Error("Ingresá un monto válido"); const d=await admAndreani("admin_acreditar",{uid:cuenta.uid,monto:m,nota,tipo,numeroDeEnvio:numEnvio.trim()}); toast(`${fmtMoney(m)} ${m>0?"acreditados":"descontados"} · saldo ${fmtMoney(d.saldo)}`,"success"); onDone&&onDone(d.saldo); onClose(); }}>Acreditar</AdmBtn>
+            <AdmBtn T={T} variant="primary" size="sm" onClick={async()=>{ const m=Math.round(parseFloat(monto)); if(!m) throw new Error("Ingresá un monto válido"); const d=await admAndreani("admin_acreditar",{uid:cuenta.uid,monto:m,nota,tipo,numeroDeEnvio:numEnvio.trim(),facturable:esCarga&&facturable,medio}); toast(`${fmtMoney(m)} ${m>0?"acreditados":"descontados"} · saldo ${fmtMoney(d.saldo)}`,"success"); onDone&&onDone(d.saldo); onClose(); }}>Acreditar</AdmBtn>
           </div>
         </div>
       )}
@@ -23919,7 +23927,7 @@ function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
       <div style={{border:`1px solid ${T.border}`,borderRadius:14,overflow:"hidden"}}>
         {lista.map((c,i)=>{ const dd=datos[c.id]; return (<div key={c.id} style={{display:"grid",gridTemplateColumns:"28px minmax(0,1.6fr) 110px 120px minmax(0,1.4fr)",gap:10,alignItems:"center",padding:"10px 14px",borderBottom:i<lista.length-1?`1px solid ${T.borderL}`:"none",fontSize:12}}>
           <span>{!c.factura&&<input type="checkbox" checked={!!sel[c.id]} onChange={e=>setSel(p=>({...p,[c.id]:e.target.checked}))}/>}</span>
-          <span style={{minWidth:0}}><button onClick={()=>usuariosPorUid[c.uid]&&setCuenta(c.uid)} style={{background:"transparent",border:"none",padding:0,color:T.text,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{c.email||String(c.uid||"").slice(0,10)}</button><span style={{display:"block",fontSize:11,color:T.textSm}}>{new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",...(mes==="pendientes"?{year:"2-digit"}:{})})} · {c.metodo==="mp"?"Mercado Pago":"Transferencia"}{c.ref?` · ${c.ref}`:""}</span></span>
+          <span style={{minWidth:0}}><button onClick={()=>usuariosPorUid[c.uid]&&setCuenta(c.uid)} style={{background:"transparent",border:"none",padding:0,color:T.text,fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{c.email||String(c.uid||"").slice(0,10)}</button><span style={{display:"block",fontSize:11,color:T.textSm}}>{new Date(c.ts).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",...(mes==="pendientes"?{year:"2-digit"}:{})})} · {({mp:"Mercado Pago",usdt:"USDT (a mano)",efectivo:"Efectivo (a mano)",otro:"Carga a mano"})[c.metodo]||"Transferencia"}{c.ref?` · ${c.ref}`:""}</span></span>
           <span style={{textAlign:"right",fontWeight:700,color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(c.monto)}</span>
           <span>{c.factura?<DSBadge T={T} color={T.green} size="sm">Factura {c.factura.letra} {String(c.factura.pv||"").padStart(4,"0")}-{String(c.factura.comprobante||"").padStart(8,"0")}</DSBadge>:<DSBadge T={T} color={T.yellow} size="sm">Sin facturar</DSBadge>}</span>
           <span style={{minWidth:0,color:T.textMd,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>{c.factura?<span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.factura.receptor}</span>:<span style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,minWidth:0}}>
