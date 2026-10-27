@@ -361,6 +361,107 @@ export function campanaDeVenta(utm, campanas) {
   return null;
 }
 
+// ── Índice de anuncios para la atribución por UTM ──
+// Todos los anuncios con entrega en los últimos N días de las cuentas elegidas, con su
+// conjunto y campaña: id → nombre. Así una venta cruza aunque la UTM traiga el id o el
+// nombre, y aunque la campaña no haya gastado en el rango que se está mirando.
+// Doc users/{uid}/impultienda_cfg/utm_idx = {ts, dias, c:{id:nombre}, s:{id:[nombre,campId]}, a:{id:[nombre,setId,campId]}}.
+export async function construirIndiceUtm(db, uid, dias = 60) {
+  const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
+  const elegidas = cfg.metaCuentas || [];
+  const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
+  const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
+  const idx = { ts: Date.now(), dias, c: {}, s: {}, a: {}, errores: [] };
+  const hoy = new Date().toISOString().slice(0, 10);
+  const vistas = new Set();
+  for (const tk of tokens) {
+    let cuentas = [];
+    try { cuentas = (await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id&limit=200&access_token=${encodeURIComponent(tk)}`)).json()).data || []; }
+    catch (e) { idx.errores.push(e.message); }
+    for (const c of cuentas) {
+      const id = "act_" + c.account_id;
+      if (vistas.has(id) || (elegidas.length && !elegidas.includes(id))) continue;
+      vistas.add(id);
+      let url = `https://graph.facebook.com/v23.0/${id}/insights?level=ad&fields=ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name&time_range=${encodeURIComponent(JSON.stringify({ since: addDias(hoy, -dias), until: hoy }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
+      try {
+        for (let i = 0; url && i < 30; i++) {
+          const r = await (await fetch(url)).json();
+          if (r.error) { idx.errores.push(`${id}: ${r.error.message}`); break; }
+          for (const x of r.data || []) {
+            if (x.campaign_id) idx.c[x.campaign_id] = x.campaign_name || "";
+            if (x.adset_id) idx.s[x.adset_id] = [x.adset_name || "", x.campaign_id || null];
+            if (x.ad_id && Object.keys(idx.a).length < 8000) idx.a[x.ad_id] = [x.ad_name || "", x.adset_id || null, x.campaign_id || null];
+          }
+          url = r.paging?.next || null;
+        }
+      } catch (e) { idx.errores.push(`${id}: ${e.message}`); }
+    }
+  }
+  idx.cuentas = vistas.size;
+  await db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").set(idx);
+  return idx;
+}
+async function leerIndiceUtm(db, uid) {
+  const d = await db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").get();
+  return d.exists ? d.data() : null;
+}
+
+// Venta → {c, s, a} (ids de campaña, conjunto y anuncio). Acepta las UTM recomendadas
+// (utm_id={{campaign.id}}, utm_term={{adset.id}}, utm_content={{ad.id}}) y también nombres
+// ({{campaign.name}}, {{adset.name}}, {{ad.name}}) o los campos sueltos campaign_id/adset_id/ad_id.
+// Un nombre solo cuenta si es único (dentro de la campaña cuando ya se sabe cuál es).
+export function atribuirUtm(utm, idx) {
+  if (!utm || !idx) return null;
+  const u = {}; for (const [k, v] of Object.entries(utm)) if (v != null && v !== "") u[String(k).toLowerCase()] = String(v).trim();
+  const unico = (lista) => lista.length === 1 ? lista[0] : null;
+  const porNombre = (mapa, val, campDe, camp) => {
+    const n = norm(val); if (!n) return null;
+    let hits = Object.keys(mapa).filter(id => norm(Array.isArray(mapa[id]) ? mapa[id][0] : mapa[id]) === n);
+    if (camp && campDe) { const enCamp = hits.filter(id => campDe(id) === camp); if (enCamp.length) hits = enCamp; }
+    return unico(hits);
+  };
+  const buscar = (mapa, claves, campDe, camp) => {
+    for (const k of claves) { const v = u[k]; if (!v) continue; if (mapa[v] !== undefined) return v; }
+    for (const k of claves) { const v = u[k]; if (!v || /^\d{6,}$/.test(v)) continue; const id = porNombre(mapa, v, campDe, camp); if (id) return id; }
+    return null;
+  };
+  let c = buscar(idx.c || {}, ["utm_id", "campaign_id", "utm_campaign_id", "utm_campaign"]);
+  const a = buscar(idx.a || {}, ["ad_id", "utm_ad_id", "utm_content", "utm_ad"], (id) => idx.a[id]?.[2], c);
+  let s = a ? idx.a[a][1] : buscar(idx.s || {}, ["adset_id", "utm_adset_id", "utm_term", "utm_adset"], (id) => idx.s[id]?.[1], c);
+  if (!c && a) c = idx.a[a][2];
+  if (!c && s) c = idx.s[s]?.[1] || null;
+  // Último recurso, como antes: el código de país al final de utm_campaign contra UNA sola campaña con ese país.
+  if (!c) { const pais = paisDeUtm(u); if (pais) c = unico(Object.keys(idx.c || {}).filter(id => norm(idx.c[id]).split(" ").includes(pais.toLowerCase()))); }
+  if (!c && !s && !a) return null;
+  return { c: c || null, s: s || null, a: a || null };
+}
+
+// Ventas reales por campaña / conjunto / anuncio en el rango (USD). Una venta = la compra
+// principal; el post-compra suma facturación a la campaña de su orden original.
+export async function utmAtribucion(db, uid, desde, hasta, tz, idx) {
+  const desdeMs = utcDeLocal(desde, 0, tz), hastaMs = utcDeLocal(addDias(hasta, 1), 0, tz);
+  const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 2 * 86400000).toISOString()).get();
+  const todas = snap.docs.map(d => d.data());
+  const delWebhook = new Set(todas.filter(o => !o.importado && o.orden != null).map(o => String(o.orden)));
+  const ordenes = todas.filter(o => !o.importado || !delWebhook.has(String(o.orden)));
+  const fx = await fxPorUsd();
+  const out = { c: {}, s: {}, a: {}, total: { n: 0, rev: 0 }, sinAtribuir: { n: 0, rev: 0 }, sinUtm: 0, importadas: 0 };
+  const atr = {};
+  for (const o of ordenes) if (!o.post_compra) atr[o.order_id] = atribuirUtm(o.utm, idx);
+  for (const o of ordenes) {
+    const t = Date.parse(o.ev_approved || "");
+    if (!isFinite(t) || t < desdeMs || t >= hastaMs) continue;
+    const usd = aUsd(Number(o.total) || 0, o.moneda, fx) ?? 0;
+    const n = o.post_compra ? 0 : 1;
+    const x = o.post_compra ? (atr[o.orden_original] || atribuirUtm(o.utm, idx)) : atr[o.order_id];
+    out.total.n += n; out.total.rev += usd;
+    if (!o.post_compra) { if (o.importado) out.importadas++; else if (!o.utm) out.sinUtm++; }
+    if (!x) { out.sinAtribuir.n += n; out.sinAtribuir.rev += usd; continue; }
+    for (const nivel of ["c", "s", "a"]) if (x[nivel]) { const m = out[nivel][x[nivel]] || (out[nivel][x[nivel]] = { n: 0, rev: 0 }); m.n += n; m.rev += usd; }
+  }
+  return out;
+}
+
 // ── Reporte por hora ──
 export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Buenos_Aires") {
   if (!tzValida(tz)) tz = "America/Argentina/Buenos_Aires";
@@ -405,6 +506,8 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const campIdx = {};
   for (const k of Object.keys(meta.porHora)) { const [, , nombre, id] = k.split("|"); if (nombre) campIdx[id || nombre] = { key: id || nombre, id: id || null, nombre }; }
   const campLista = Object.values(campIdx);
+  const idxUtm = await leerIndiceUtm(db, uid).catch(() => null);
+  const campDeIdx = (utm) => { const x = atribuirUtm(utm, idxUtm); return x?.c && campIdx[x.c] ? x.c : null; };
   for (const o of ordenes) {
     const tid = o.store_id || "SIN_TIENDA";
     const usd = aUsd(o.total, o.moneda, fx) ?? 0;
@@ -413,10 +516,11 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       // Una venta = la compra principal; el post-compra suma facturación pero NO es otra venta (igual que Impultienda).
       f.ventas += usd; if (!o.post_compra) f.n += 1;
       if (o.post_compra) { f.upsell += usd; f.nUpsell += 1; } else { f.front += usd; f.nFront += 1; }
-      const ck = campanaDeVenta(o.utm, campLista) || "SIN_CAMPANA";
+      const ck = campanaDeVenta(o.utm, campLista) || campDeIdx(o.utm) || "SIN_CAMPANA";
       const cv = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {} });
       cv.ventas += usd; if (!o.post_compra) cv.n += 1;
-      const ad = String(o.utm?.utm_content || "sin anuncio").slice(0, 80);
+      // Con utm_content={{ad.id}} se muestra el nombre del anuncio (índice de 60 días).
+      const adRaw = String(o.utm?.utm_content || ""); const ad = String(idxUtm?.a?.[adRaw]?.[0] || adRaw || "sin anuncio").slice(0, 80);
       const av = cv.anuncios[ad] || (cv.anuncios[ad] = { anuncio: ad, ventas: 0, n: 0 }); av.ventas += usd; if (!o.post_compra) av.n += 1;
       const real = o.stripe?.fee ?? o.mp?.fee;
       const com = real != null ? real : usd * feePct / 100 + feeFijo;
@@ -429,7 +533,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       ventasLista.push({ tid, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
         total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
         comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
-        pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: o.utm?.utm_content || null, importado: !!o.importado,
+        pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: (o.utm?.utm_content && idxUtm?.a?.[o.utm.utm_content]?.[0]) || o.utm?.utm_content || null, importado: !!o.importado,
         reembolsada: !!(o.ev_refunded || o.ev_chargeback || o.reembolso), reembolso: o.reembolso || null, reembolsoUsd: reemb, email: o.email || null,
         order_id: o.order_id });
     }
@@ -664,6 +768,34 @@ export default async function handler(req, res) {
       await cfgRef.set(patch, { merge: true });
       { const cs = await cfgRef.parent.get(); const bd = db.batch(); let k = 0; for (const x of cs.docs) if (x.id.startsWith("cache_")) { bd.delete(x.ref); k++; } if (k) await bd.commit(); }
       return res.json({ ok: true });
+    }
+    // Ventas reales por UTM para el administrador de Meta (campaña / conjunto / anuncio).
+    if (action === "utm_atribucion") {
+      const tz = tzValida(String(req.query.tz || "")) ? String(req.query.tz) : "America/Argentina/Buenos_Aires";
+      const hoy = zonaDe(new Date().toISOString(), tz).fecha;
+      const desde = /^\d{4}-\d{2}-\d{2}$/.test(req.query.desde || "") ? req.query.desde : hoy;
+      const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
+      if (Date.parse(hasta) - Date.parse(desde) > 92 * 86400000) return res.status(400).json({ error: "Máximo 92 días." });
+      const cfgMain = (await cfgRef.get()).data() || {};
+      const hayVentas = !(await db.collection("users").doc(uid).collection("impultienda_orders").limit(1).get()).empty;
+      if (!cfgMain.secretEnc && !hayVentas) return res.json({ activo: false });
+      // El índice se rehace solo cada 3 h (o con "Reprocesar 60 días").
+      let idx = await leerIndiceUtm(db, uid);
+      if (!idx || Date.now() - (idx.ts || 0) > 3 * 3600000) idx = await construirIndiceUtm(db, uid, Math.max(60, idx?.dias || 0));
+      const out = await utmAtribucion(db, uid, desde, hasta, tz, idx);
+      return res.json({ activo: true, moneda: "USD", desde, hasta, ...out, indice: { ts: idx.ts, dias: idx.dias, cuentas: idx.cuentas || 0, campanas: Object.keys(idx.c || {}).length, anuncios: Object.keys(idx.a || {}).length, errores: idx.errores || [] } });
+    }
+    // Reprocesar 60 días: rehace el índice de anuncios y vuelve a cruzar todas las ventas.
+    if (action === "utm_reprocesar" && req.method === "POST") {
+      const tz = "America/Argentina/Buenos_Aires";
+      const idx = await construirIndiceUtm(db, uid, 60);
+      const hoy = zonaDe(new Date().toISOString(), tz).fecha;
+      const out = await utmAtribucion(db, uid, addDias(hoy, -60), hoy, tz, idx);
+      const cs = await cfgRef.parent.get(); const bd = db.batch(); let k = 0;
+      for (const d of cs.docs) if (d.id.startsWith("cache_")) { bd.delete(d.ref); k++; }
+      if (k) await bd.commit();
+      return res.json({ ok: true, ventas: out.total.n, atribuidas: out.total.n - out.sinAtribuir.n, sinUtm: out.sinUtm, importadas: out.importadas,
+        campanas: Object.keys(idx.c).length, anuncios: Object.keys(idx.a).length, cuentas: idx.cuentas || 0, errores: idx.errores });
     }
     if (action === "por_hora") {
       const tz = tzValida(String(req.query.tz || "")) ? String(req.query.tz) : "America/Argentina/Buenos_Aires";
