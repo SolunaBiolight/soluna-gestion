@@ -24290,6 +24290,7 @@ function AdmSistema({ctx}) {
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
         <AdmErroresApp ctx={ctx}/>
+        <AdmUsoSecciones ctx={ctx}/>
         <Card T={T} padding="lg">
           <AdmTitulo T={T} t="Servicios" sub="Qué integración tiene sus credenciales cargadas. Nunca se muestran valores."/>
           {sys.loading?<AdmSkeleton T={T} filas={6}/>:(sys.servicios||[]).filter(x=>!/usdt|tron/i.test(`${x.id} ${x.label}`)).map((s,i)=><div key={s.id} style={{display:"flex",gap:8,alignItems:"center",padding:"7px 0",borderBottom:true?`1px solid ${T.borderL}`:"none",fontSize:12}}><span style={{width:7,height:7,borderRadius:"50%",background:s.ok?T.green:T.red,flexShrink:0}}/><span style={{flex:1,color:T.text,fontWeight:600}}>{s.label}</span><span style={{color:T.textSm,fontSize:11,textAlign:"right"}}>{s.detalle||(s.ok?"Configurado":"Falta")}</span></div>)}
@@ -24304,6 +24305,30 @@ function AdmSistema({ctx}) {
       {mant&&<div style={{marginTop:16}}><AdmMantenimiento T={T}/></div>}
     </div>
   </>);
+}
+
+// Uso de secciones (27/oct/2026): cuántas cuentas abrieron cada sección en el período, para decidir
+// con datos qué sacar o mejorar (logSeccion / adminUsoSecciones en api/tareas.js).
+function AdmUsoSecciones({ctx}){
+  const {T, adminApi} = ctx;
+  const [dias,setDias]=useState(30); const [d,setD]=useState(null);
+  useEffect(()=>{ setD(null); adminApi({action:"adminUsoSecciones",dias}).then(setD).catch(e=>setD({err:e.message})); },[dias]);
+  const NOMBRE=Object.fromEntries(SIDEBAR_GROUPS_BASE.filter(x=>x.id&&x.label).map(x=>[x.id,x.label]));
+  const max=Math.max(1,...((d?.secciones)||[]).map(x=>x.cuentas));
+  return (<Card T={T} padding="lg">
+    <div style={{display:"flex",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:200}}><AdmTitulo T={T} t="Uso de las secciones" sub="Cuántas cuentas abrieron cada sección. Lo que casi nadie usa es candidato a simplificar o sacar."/></div>
+      <DepSeg T={T} value={String(dias)} onChange={v=>setDias(Number(v))} items={[["7","7 días"],["30","30 días"],["90","90 días"]]}/>
+    </div>
+    {!d?<AdmSkeleton T={T} filas={5}/>:d.err?<div style={{color:T.red,fontSize:DS.font.base}}>{d.err}</div>:!d.secciones.length?<div style={{fontSize:DS.font.base,color:T.textSm}}>Todavía no hay datos: se empieza a medir desde hoy.</div>:<>
+      <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:8}}>{d.cuentasActivas} cuenta{d.cuentasActivas!==1?"s":""} entraron en el período.</div>
+      {d.secciones.map(x=>(<div key={x.seccion} style={{display:"grid",gridTemplateColumns:"150px 1fr 110px",gap:10,alignItems:"center",padding:"5px 0"}}>
+        <span style={{fontSize:DS.font.base,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{NOMBRE[x.seccion]||x.seccion}</span>
+        <div style={{height:8,background:T.surface,borderRadius:99,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(x.cuentas/max*100)}%`,background:T.accentSolid,borderRadius:99}}/></div>
+        <span style={{fontSize:DS.font.sm,color:T.textMd,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{x.cuentas} cuenta{x.cuentas!==1?"s":""} · {d.cuentasActivas?Math.round(x.cuentas/d.cuentasActivas*100):0}%</span>
+      </div>))}
+    </>}
+  </Card>);
 }
 
 // Errores en la app de los clientes (últimos 7 días), agrupados por mensaje y día (logClientError).
@@ -45507,6 +45532,14 @@ export default function App() {
     window.addEventListener("gh-costos-alert",leer);
     return ()=>window.removeEventListener("gh-costos-alert",leer);
   },[user?.uid]);
+
+  // Uso de secciones (Admin → Sistema): una marca por sección, por día y por pestaña del navegador.
+  useEffect(()=>{
+    if(!user?.uid||!page||window.__ghImpersonando) return;
+    const k=`growith_sec_${new Date(Date.now()-3*3600e3).toISOString().slice(0,10)}_${page}`;
+    try{ if(sessionStorage.getItem(k)) return; sessionStorage.setItem(k,"1"); }catch(_){ return; }
+    fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"logSeccion",seccion:page})}).catch(()=>{});
+  },[page,user?.uid]);
 
   // Persist sidebar collapsed
   useEffect(()=>{try{localStorage.setItem("growith_sidebar", sidebarCollapsed?"1":"0");}catch(e){}}, [sidebarCollapsed]);

@@ -1261,6 +1261,18 @@ async function handlerTareas(req, res) {
       return res.json({ ok: true, purgadas, errores });
     }
 
+    // ── Uso de secciones (27/oct/2026): qué secciones abre la gente, para decidir qué sacar ─────
+    // section_usage/{AAAA-MM-DD}_{seccion} {dia, seccion, visitas, cuentas[] (hasta 500)}. El front
+    // manda una sola vez por sección, por día y por pestaña del navegador. Cuenta el login (token).
+    if (action === "logSeccion") {
+      const u = await verifyAuth(req);
+      const sec = String(body.seccion || "").toLowerCase().replace(/[^a-z_]/g, "").slice(0, 30);
+      if (!u?.uid || !sec || u.impersonatedBy) return res.json({ ok: true });
+      const dia = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+      await db.collection("section_usage").doc(`${dia}_${sec}`).set({ dia, seccion: sec, visitas: FieldValue.increment(1), cuentas: FieldValue.arrayUnion(u.uid) }, { merge: true }).catch(() => {});
+      return res.json({ ok: true });
+    }
+
     // ── Errores de la app de los clientes (27/oct/2026, pre-lanzamiento) ─────
     // Público (un crash puede pasar antes del login). Se agrupan por mensaje +
     // primera línea del stack y por día: client_errors/{AAAA-MM-DD}_{hash}
@@ -2566,7 +2578,7 @@ async function handlerTareas(req, res) {
     }
 
     // Acciones solo-admin
-    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta","adminClientErrors","adminMailCfg"];
+    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta","adminClientErrors","adminMailCfg","adminUsoSecciones"];
     if (adminActions.includes(action)) {
       // La identidad del admin sale del TOKEN verificado, no del uid del body.
       const adm = await requireAdmin(req);
@@ -2590,6 +2602,17 @@ async function handlerTareas(req, res) {
           await log("mails", null, body.origen ? `Mails "${body.origen}": ${body.apagado ? "apagados" : "prendidos"}` : `Tope de mails: ${patch.topeDia}/día`);
         }
         return res.json({ ok: true, ...(await mailResumen(db)) });
+      }
+
+      if (action === "adminUsoSecciones") {
+        const dias = Math.min(90, Math.max(7, Number(body.dias) || 30));
+        const desde = new Date(Date.now() - 3 * 3600e3 - dias * 86400e3).toISOString().slice(0, 10);
+        const s = await db.collection("section_usage").where("dia", ">=", desde).get();
+        const por = {};
+        s.forEach(d => { const x = d.data(); const p = por[x.seccion] || (por[x.seccion] = { seccion: x.seccion, visitas: 0, cuentas: new Set(), diasConUso: 0 }); p.visitas += Number(x.visitas) || 0; (x.cuentas || []).forEach(c => p.cuentas.add(c)); p.diasConUso++; });
+        const todas = new Set(); Object.values(por).forEach(p => p.cuentas.forEach(c => todas.add(c)));
+        const secciones = Object.values(por).map(p => ({ seccion: p.seccion, visitas: p.visitas, cuentas: p.cuentas.size, diasConUso: p.diasConUso })).sort((a, b) => b.cuentas - a.cuentas || b.visitas - a.visitas);
+        return res.json({ ok: true, dias, cuentasActivas: todas.size, secciones });
       }
 
       if (action === "adminClientErrors") {
