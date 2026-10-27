@@ -1981,7 +1981,7 @@ function CuponPublicoView({token}){
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
               <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Los números salen de las ventas reales de la tienda, en tiempo real.</div>
-              <button onClick={()=>load(mes)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Actualizar</button>
+              <button onClick={()=>load(rango)} style={{...BtnSecondary(T),fontSize:12,padding:"7px 14px",flexShrink:0}}>Actualizar</button>
             </div>
           </>
         )}
@@ -16633,10 +16633,10 @@ function PublicSite({T, darkMode, onToggleDark}) {
 // ── GH_LANDING_MOTION_BEGIN ──────────────────────────────────────────────
 // Sistema de movimiento de la landing (27-sept-2026): portado del de Recurrentes,
 // con el contenido de Growith. Todo CSS/SVG/DOM, cero dependencias nuevas:
-//   · reveal al entrar en pantalla → IntersectionObserver (ghUseReveal), con
+//   · reveal al entrar en pantalla → IntersectionObserver (useGhReveal), con
 //     MutationObserver para lo que se monta después y un barrido de seguridad
 //     por rAF (saltos de scroll, celular, pestaña oculta).
-//   · progreso de scroll 0..1 en la CSS var --p (ghUseScrollProgress).
+//   · progreso de scroll 0..1 en la CSS var --p (useGhScrollProgress).
 //   · el hero rota tres facetas (Inicio → Pendientes → Dashboard) con flip 3D,
 //     zoom con desenfoque y cortina (GhHeroLoop).
 // prefers-reduced-motion: todo queda quieto, visible y en su lugar.
@@ -16718,7 +16718,7 @@ function GhMotionStyle({T}) {
 }
 
 // Marca .is-in cuando cada [data-reveal] entra en pantalla. Una sola vez.
-function ghUseReveal(rootRef) {
+function useGhReveal(rootRef) {
   useEffect(() => {
     // Raíz SIEMPRE document: el efecto corre antes de que exista el <div ref>
     // (el hook se llama arriba del return), así que rootRef.current es null en
@@ -16781,7 +16781,7 @@ function ghUseReveal(rootRef) {
 
 // Progreso 0..1 del scroll dentro del elemento: 0 arriba, 1 abajo. Se escribe en
 // la CSS var --p del propio nodo (sin re-render de React).
-function ghUseScrollProgress(ref, {enabled = true} = {}) {
+function useGhScrollProgress(ref, {enabled = true} = {}) {
   useEffect(() => {
     const el = ref.current;
     if (!el || !enabled) return;
@@ -16802,7 +16802,7 @@ function ghUseScrollProgress(ref, {enabled = true} = {}) {
   }, [ref, enabled]);
 }
 
-function ghUseMedia(query) {
+function useGhMedia(query) {
   const [m, setM] = useState(() => typeof window !== "undefined" && window.matchMedia ? window.matchMedia(query).matches : false);
   useEffect(() => {
     if (!window.matchMedia) return;
@@ -16814,7 +16814,7 @@ function ghUseMedia(query) {
   }, [query]);
   return m;
 }
-const ghUseReduced = () => ghUseMedia("(prefers-reduced-motion: reduce)");
+const ghUseReduced = () => useGhMedia("(prefers-reduced-motion: reduce)");
 
 // Hero: tres facetas de la app real (Inicio, Pendientes, Dashboard) que van
 // pasando, cada pasaje con una transición distinta (flip 3D · zoom con
@@ -16855,8 +16855,8 @@ function LandingPage({T, onLogin}) {
   // Movimiento de la landing (ver GH_LANDING_MOTION): el reveal por sección y el
   // progreso del scroll de la página entera en la CSS var --p de la raíz.
   const landRef = useRef(null);
-  ghUseReveal(landRef);
-  ghUseScrollProgress(landRef);
+  useGhReveal(landRef);
+  useGhScrollProgress(landRef);
   // ── Sistema visual de la landing: una sola familia tipográfica, un solo
   // acento, bordes finos, sin brillos ni degradados. Cada sección respira lo
   // mismo (104 px) y se separa con una línea, no con fondos de colores.
@@ -17554,6 +17554,9 @@ function LandingPage({T, onLogin}) {
     </div>
   );
 }
+// Token de Google del último login (lo guarda handleGoogle). Antes se asignaba sin declarar y, como
+// los módulos van en modo estricto, el login con Google tiraba ReferenceError antes de ensureUserDoc.
+let _driveAccessToken = null;
 function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
   const [mode,setMode]=useState("login"); // login | register
   const [email,setEmail]=useState("");
@@ -22976,7 +22979,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     const items=[...new Set(peds.filter(p=>!p.cancelado).flatMap(p=>p.items||[]))];
     return (<div key={t.id} style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${c}${pendiente?"1c":"12"} 0%, transparent 42%)`,border:`1px solid ${c}${open?"77":"33"}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
       <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:c+"1a",border:`1px solid ${c}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 200px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{esp?(t.especial?.titulo||"Envío especial"):(GH_DEP_CANAL[t.canal]||t.canal)}</span>
@@ -23699,7 +23702,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
     return (
     <div style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"1c"} 0%, transparent 42%)`,border:`1px solid ${urg(t)||atras?T.red+"66":cCanal+(open?"77":"33")}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
       <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
-        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:(typeof cCanal!=="undefined"?cCanal:c)+"1a",border:`1px solid ${(typeof cCanal!=="undefined"?cCanal:c)}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
+        <span style={{width:44,height:44,borderRadius:DS.r.xl,background:cCanal+"1a",border:`1px solid ${cCanal}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 220px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
@@ -25006,34 +25009,38 @@ function AdmMonoTopes({T}){
   </Card>);
 }
 // ── Configuración (17/oct/2026): todo lo que se configura, una tarjeta por tema ──
-// Mails (27/oct/2026): la cuota diaria de Resend se superaba todos los días. Los automáticos a
-// clientes y compradores están APAGADOS por defecto (api/_mail.js); acá se ve lo frenado y se prenden.
+// Mails (27/oct/2026): la cuota diaria de Resend se superaba todos los días. Nada está apagado por
+// defecto (api/_mail.js): se mide cuánto manda cada tipo, se reserva el último 30 % del tope para los
+// importantes y desde acá se puede apagar un tipo puntual.
+const GH_MAIL_TIPOS=[["facturas","Facturas al comprador","Cuando el Facturador manda la factura por mail a quien compró",true],["seguimientos","Avisos de envíos","Al comprador (en sucursal, visita fallida) y resúmenes de envíos al dueño",true],["calendario","Calendario de pagos","Recordatorios de vencimientos",true],["tareas","Tareas y equipo","Tareas asignadas, comentarios, resúmenes diarios",false],["plan","Prueba y plan","Bienvenida, avisos de fin de prueba y vencimiento",false],["envios","Envíos con saldo","Cargas acreditadas, saldo bajo, gestiones",false],["stripe","Cobros con tarjeta","Plan activo, renovación, cobro rechazado",false],["deposito","Depósito","Resumen diario y urgentes del depósito",false],["usdt","Pagos USDT","Plan activado por USDT",false]];
 function AdmMailsCfg({ctx}){
   const {T, adminApi} = ctx;
   const [d,setD]=useState(null); const [busy,setBusy]=useState(false); const [tope,setTope]=useState("");
   const cargar=()=>adminApi({action:"adminMailCfg"}).then(r=>{ setD(r); setTope(String(r.topeDia||90)); }).catch(e=>setD({err:e.message}));
   useEffect(()=>{ cargar(); },[]);
   const guardar=async patch=>{ setBusy(true); try{ const r=await adminApi({action:"adminMailCfg",set:true,...patch}); setD(r); toast("Guardado ✓","success"); }catch(e){ toast(e.message,"error"); } finally{ setBusy(false); } };
-  const hoy=d?.dias?.[0]; const ORIG={plan:"Prueba y plan",facturas:"Facturas al comprador",seguimientos:"Avisos de envíos",envios:"Envíos con saldo",tareas:"Tareas y equipo",calendario:"Calendario de pagos",stripe:"Cobros con tarjeta",deposito:"Depósito",usdt:"Pagos USDT"};
+  const dias=d?.dias||[], hoy=dias[0]||{};
+  const de=(x,k,campo)=>Number(x?.porOrigen?.[k]?.[campo])||0;
+  const semana=k=>dias.reduce((s,x)=>s+de(x,k,"enviados"),0);
+  const filas=GH_MAIL_TIPOS.map(([k,l,sub,baja])=>({k,l,sub,baja,hoy:de(hoy,k,"enviados"),fren:de(hoy,k,"suprimidos"),sem:semana(k),off:!!d?.apagados?.[k]})).sort((a,b)=>b.sem-a.sem);
+  const totSem=filas.reduce((s,f)=>s+f.sem,0);
   return (<Card T={T} padding="lg">
-    <AdmTitulo T={T} t="Mails" sub="Los mails automáticos a tus clientes y a sus compradores están apagados para no pasar la cuota diaria de Resend. Siguen saliendo los que te llegan a vos y los que alguien manda a mano (invitar a un miembro, reenviar una factura, recordatorio)."/>
+    <AdmTitulo T={T} t="Mails" sub="Cuánto manda cada tipo de mail, para ver qué llena la cuota de Resend. Cuando el día pasa el 70 % del tope se frenan primero los de prioridad baja; los que te llegan a vos y los que alguien manda a mano salen siempre."/>
     {!d?<AdmSkeleton T={T}/>:d.err?<div style={{color:T.red,fontSize:DS.font.base}}>{d.err}</div>:<>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
-        <div style={{flex:1}}><div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>Mails automáticos a clientes</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>{d.clientes?"Prendidos: salen todos, hasta el tope diario.":"Apagados: no se manda ninguno."}</div></div>
-        <DSToggle T={T} active={!!d.clientes} onToggle={()=>!busy&&guardar({clientes:!d.clientes})}/>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
-        <div style={{flex:1}}><div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>Tope por día</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>Pasado este número solo salen los mails internos (el plan gratis de Resend da 100 por día).</div></div>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"4px 0 10px",borderBottom:`1px solid ${T.borderL}`}}>
+        <div style={{flex:1}}><div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>Hoy: {hoy.enviados||0} enviados de {d.topeDia}{hoy.suprimidos?` · ${hoy.suprimidos} frenados`:""}</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>Tope por día (el plan gratis de Resend da 100).</div></div>
         <input type="number" min={1} value={tope} onChange={e=>setTope(e.target.value)} style={{...InputStyle(T),width:90,textAlign:"right"}}/>
         <DepBtn T={T} size="sm" disabled={busy||!(Number(tope)>0)||Number(tope)===d.topeDia} onClick={()=>guardar({topeDia:Number(tope)})}>Guardar</DepBtn>
       </div>
-      <div style={{fontSize:DS.font.base,fontWeight:600,color:T.text,margin:"12px 0 6px"}}>Últimos días</div>
-      {!d.dias?.length?<div style={{fontSize:DS.font.sm,color:T.textSm}}>Todavía no hay datos.</div>:d.dias.map(x=>(<div key={x.dia} style={{display:"flex",gap:10,fontSize:DS.font.sm,padding:"4px 0",color:T.textMd}}>
-        <span style={{width:90,color:T.text}}>{x.dia.split("-").reverse().slice(0,2).join("/")}</span>
-        <span style={{width:110}}>{x.enviados||0} enviados</span>
-        <span style={{color:(x.suprimidos||0)>0?T.yellow:T.textSm}}>{x.suprimidos||0} frenados</span>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 56px 56px 70px 52px",gap:8,fontSize:DS.font.xs,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,padding:"10px 0 4px"}}><span>Tipo</span><span style={{textAlign:"right"}}>Hoy</span><span style={{textAlign:"right"}}>Frenados</span><span style={{textAlign:"right"}}>7 días</span><span style={{textAlign:"right"}}>Activo</span></div>
+      {filas.map(f=>(<div key={f.k} style={{display:"grid",gridTemplateColumns:"1fr 56px 56px 70px 52px",gap:8,alignItems:"center",padding:"7px 0",borderTop:`1px solid ${T.borderL}`}}>
+        <div style={{minWidth:0}}><div style={{fontSize:DS.font.base,fontWeight:600,color:f.off?T.textSm:T.text}}>{f.l}{f.baja&&<span style={{fontSize:DS.font.xs,fontWeight:600,color:T.textSm,marginLeft:6}}>prioridad baja</span>}</div><div style={{fontSize:DS.font.sm,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.sub}</div></div>
+        <span style={{textAlign:"right",fontSize:DS.font.base,color:T.text,fontVariantNumeric:"tabular-nums"}}>{f.hoy}</span>
+        <span style={{textAlign:"right",fontSize:DS.font.base,color:f.fren?T.yellow:T.textSm,fontVariantNumeric:"tabular-nums"}}>{f.fren}</span>
+        <span style={{textAlign:"right",fontSize:DS.font.base,color:T.text,fontVariantNumeric:"tabular-nums"}}>{f.sem}{totSem&&f.sem?<span style={{color:T.textSm,fontSize:DS.font.sm}}> · {Math.round(f.sem/totSem*100)}%</span>:null}</span>
+        <span style={{display:"flex",justifyContent:"flex-end"}}><DSToggle T={T} active={!f.off} onToggle={()=>!busy&&guardar({origen:f.k,apagado:!f.off})}/></span>
       </div>))}
-      {hoy?.porOrigen&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.6}}>Hoy frenados por tipo: {Object.entries(hoy.porOrigen).filter(([,v])=>v?.suprimidos).map(([k,v])=>`${ORIG[k]||k.replace(/_tope$/," (tope)")} ${v.suprimidos}`).join(" · ")||"ninguno"}</div>}
+      <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:10,lineHeight:1.5}}>El conteo arranca hoy: en uno o dos días vas a ver qué tipo es el que satura.</div>
     </>}
   </Card>);
 }
@@ -25959,12 +25966,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     background:active?T.accent:T.surface,color:active?"#fff":T.textMd,
     fontWeight:active?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
   });
-  const prodTabSty = id => ({
-    padding:"6px 14px",borderRadius:7,fontSize:12,border:"none",
-    background:prodTab===id?T.card:"transparent",color:prodTab===id?T.text:T.textMd,
-    fontWeight:prodTab===id?600:400,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",
-    boxShadow:prodTab===id?"0 1px 3px rgba(0,0,0,0.15)":"none",whiteSpace:"nowrap",
-  });
 
   // Todos los canjes de la cuenta, para adjuntar su material al brief de una
   // tarea. Solo dueño (colabMode no tiene Firestore).
@@ -26039,7 +26040,6 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     setEtDeadlineHora(t.deadlineHora||"");
     setEtRecordarMail(!!t.recordarMail);
     setEtAsignado(t.asignadoEmail||"");
-    setEtLabels(t.labels||[]);
   }
   async function guardarEdicion() {
     const colab = colaboradores.find(c=>c.email===etAsignado);
@@ -36243,7 +36243,7 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
     } catch (e) { setDriveProg({ pct: 0, txt: "❌ " + e.message }); }
     setDriveWorking(false);
   }
-  async function useDriveVideo() {
+  async function usarVideoDrive() {
     const u = driveUrl.trim(); if (!u || driveBusy) return;
     setDriveBusy(true); setDriveMsg("⏫ Subiendo a Meta desde Drive…");
     try {
@@ -36411,9 +36411,9 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
               <details style={{ marginTop: 10 }}>
                 <summary style={{ fontSize: 10.5, color: T.textSm, cursor: "pointer" }}>¿Preferís pegar un link público del video?</summary>
                 <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                  <input value={driveUrl} onChange={e => setDriveUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") useDriveVideo(); }} placeholder="https://drive.google.com/file/d/…/view (compartido con enlace) o URL .mp4" disabled={driveBusy}
+                  <input value={driveUrl} onChange={e => setDriveUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") usarVideoDrive(); }} placeholder="https://drive.google.com/file/d/…/view (compartido con enlace) o URL .mp4" disabled={driveBusy}
                     style={{ flex: 1, background: T.input, border: `1px solid ${T.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.text, fontFamily: "'Inter',system-ui,sans-serif" }} />
-                  <button onClick={useDriveVideo} disabled={driveBusy || !driveUrl.trim()} style={{ ...BtnSecondary(T), padding: "8px 12px", fontSize: 12, opacity: (driveBusy || !driveUrl.trim()) ? 0.55 : 1, whiteSpace: "nowrap" }}>
+                  <button onClick={usarVideoDrive} disabled={driveBusy || !driveUrl.trim()} style={{ ...BtnSecondary(T), padding: "8px 12px", fontSize: 12, opacity: (driveBusy || !driveUrl.trim()) ? 0.55 : 1, whiteSpace: "nowrap" }}>
                     {driveBusy ? "Subiendo…" : "Usar link"}
                   </button>
                 </div>

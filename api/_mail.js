@@ -1,21 +1,23 @@
 // api/_mail.js — Política de mails de Growith (27/oct/2026). No lo expone Vercel (empieza con _).
 //
-// Por qué: la cuota diaria de Resend se superaba todos los días. Todos los envíos de la
-// plataforma pasan por resendEnviar(), que decide:
-//   · tipo "interno": mails a Growith / Soluna / la ejecutiva de Andreani / el depósito → salen.
-//   · tipo "accion": los que el usuario manda A MANO en ese momento (invitar a un miembro,
-//     reenviar una factura, recordatorio manual, mail de prueba) → salen.
-//   · tipo "cliente" (por defecto): todo lo automático a los clientes de Growith y a sus
-//     compradores (bienvenida, avisos de prueba, facturas al comprador, avisos de envío,
-//     tareas, calendario, saldo bajo, Stripe…) → APAGADO salvo que
-//     system/mail_config.clientes === true (Admin → Configuración → Mails).
-// Además, un destinatario que es el fundador o un mail interno siempre sale, sin importar el tipo,
-// y hay un tope diario (system/mail_config.topeDia, 90 por defecto) para lo que no es interno.
-// Lo que se frena se cuenta en system/mail_cuota/dias/{AAAA-MM-DD} {enviados, suprimidos, porOrigen}.
+// Por qué: la cuota diaria de Resend se superaba todos los días. Todos los envíos de la plataforma
+// pasan por resendEnviar(), que MIDE y REPARTE la cuota (no apaga nada por defecto):
+//   · Cuenta lo enviado y lo frenado por día y por origen en system/mail_cuota/dias/{AAAA-MM-DD}
+//     {enviados, suprimidos, porOrigen.{origen}.{enviados|suprimidos}} → Admin → Configuración → Mails
+//     muestra qué tipo de mail está llenando la cuota.
+//   · Tope diario (system/mail_config.topeDia, 90 por defecto): pasado el 70 %, los de prioridad BAJA
+//     (facturas al comprador, avisos de envíos al comprador, calendario) se frenan para que lleguen los
+//     importantes (pagos, plan, saldo, invitaciones, depósito); pasado el 100 % solo sale lo interno.
+//   · system/mail_config.apagados.{origen} = true apaga un tipo puntual desde Admin.
+//   · Nunca se frenan: mails a Growith / Soluna / el fundador / internos (tipo "interno", ejecutiva de
+//     Andreani, depósito) y los que alguien manda A MANO (tipo "accion": invitar un miembro, reenviar
+//     una factura, recordatorio manual, mail de prueba).
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { FOUNDERS } from "./_auth.js";
 
 const INTERNOS_FIJOS = ["contacto.growith@gmail.com", "soluna.biolight@gmail.com"];
+// Se frenan primero cuando el día pasa el 70 % del tope.
+export const PRIORIDAD_BAJA = ["facturas", "seguimientos", "calendario"];
 let _cfg = null, _cfgAt = 0;
 const diaAR = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 const lower = s => String(s || "").trim().toLowerCase();
@@ -26,7 +28,7 @@ async function mailCfg(db) {
   try { const s = await db.doc("system/mail_config").get(); c = s.exists ? s.data() : {}; } catch (_) {}
   try { for (const uid of FOUNDERS) { const f = await db.collection("users").doc(uid).get(); if (f.exists && f.data().email) fund.push(lower(f.data().email)); } } catch (_) {}
   _cfg = {
-    clientes: c.clientes === true,
+    apagados: (c.apagados && typeof c.apagados === "object") ? c.apagados : {},
     topeDia: Number(c.topeDia) > 0 ? Number(c.topeDia) : 90,
     internos: [...new Set([...INTERNOS_FIJOS, ...fund, ...(Array.isArray(c.internos) ? c.internos.map(lower) : [])])],
   };
@@ -48,22 +50,21 @@ export async function resendEnviar(payload, { tipo = "cliente", origen = "" } = 
   if (!key || !tos.length) return { error: "missing" };
   let db = null;
   try { db = getFirestore(); } catch (_) {}
-  const c = db ? await mailCfg(db) : { clientes: false, topeDia: 90, internos: INTERNOS_FIJOS };
+  const c = db ? await mailCfg(db) : { apagados: {}, topeDia: 90, internos: INTERNOS_FIJOS };
   const aInterno = tos.every(t => c.internos.includes(t));
-  const permitido = aInterno || tipo === "interno" || tipo === "accion" || c.clientes;
-  if (!permitido) {
-    if (db) contar(db, "suprimidos", origen);
-    console.log(`[mail] suprimido (${origen || tipo}): "${String(payload.subject || "").slice(0, 80)}"`);
-    return { ok: false, suprimido: true, error: "Los mails automáticos a clientes están apagados" };
-  }
-  if (db && !aInterno) {
+  const libre = aInterno || tipo === "interno" || tipo === "accion";
+  const frenar = (motivo, error) => {
+    if (db) contar(db, "suprimidos", origen || tipo);
+    console.log(`[mail] frenado (${origen || tipo}, ${motivo}): "${String(payload.subject || "").slice(0, 80)}"`);
+    return { ok: false, suprimido: true, motivo, error };
+  };
+  if (!libre && c.apagados[origen]) return frenar("apagado", "Este tipo de mail está apagado desde Admin");
+  if (db && !libre) {
     try {
       const s = await db.collection("system").doc("mail_cuota").collection("dias").doc(diaAR()).get();
-      if ((Number(s.data()?.enviados) || 0) >= c.topeDia) {
-        contar(db, "suprimidos", (origen || tipo) + "_tope");
-        console.warn(`[mail] tope diario (${c.topeDia}) alcanzado: no se manda "${String(payload.subject || "").slice(0, 80)}"`);
-        return { ok: false, suprimido: true, error: "Se alcanzó el tope diario de mails" };
-      }
+      const n = Number(s.data()?.enviados) || 0;
+      if (n >= c.topeDia) return frenar("tope", "Se alcanzó el tope diario de mails");
+      if (PRIORIDAD_BAJA.includes(origen) && n >= Math.floor(c.topeDia * 0.7)) return frenar("reserva", "Cupo del día reservado para mails importantes");
     } catch (_) {}
   }
   try {
@@ -88,5 +89,5 @@ export async function resendEnviar(payload, { tipo = "cliente", origen = "" } = 
 export async function mailResumen(db) {
   const c = await mailCfg(db);
   const s = await db.collection("system").doc("mail_cuota").collection("dias").orderBy("dia", "desc").limit(7).get().catch(() => ({ docs: [] }));
-  return { clientes: c.clientes, topeDia: c.topeDia, dias: s.docs.map(d => ({ dia: d.id, ...d.data() })) };
+  return { apagados: c.apagados, topeDia: c.topeDia, prioridadBaja: PRIORIDAD_BAJA, dias: s.docs.map(d => ({ dia: d.id, ...d.data() })) };
 }

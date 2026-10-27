@@ -2583,11 +2583,11 @@ async function handlerTareas(req, res) {
       if (action === "adminMailCfg") {
         if (body.set) {
           const patch = {};
-          if (typeof body.clientes === "boolean") patch.clientes = body.clientes;
+          if (body.origen && typeof body.apagado === "boolean") patch[`apagados.${String(body.origen).replace(/[^\w-]/g, "")}`] = body.apagado;
           if (Number(body.topeDia) > 0) patch.topeDia = Math.min(5000, Math.round(Number(body.topeDia)));
-          await db.doc("system/mail_config").set({ ...patch, updatedAt: adminNow, updatedBy: adminUid }, { merge: true });
+          if (Object.keys(patch).length) await db.doc("system/mail_config").update({ ...patch, updatedAt: adminNow, updatedBy: adminUid }).catch(async () => { await db.doc("system/mail_config").set({ apagados: {}, updatedAt: adminNow }, { merge: true }); await db.doc("system/mail_config").update({ ...patch, updatedBy: adminUid }); });
           mailCfgReset();
-          await log("mails", null, `Mails a clientes: ${patch.clientes === undefined ? "sin cambio" : patch.clientes ? "prendidos" : "apagados"}${patch.topeDia ? ` · tope ${patch.topeDia}/día` : ""}`);
+          await log("mails", null, body.origen ? `Mails "${body.origen}": ${body.apagado ? "apagados" : "prendidos"}` : `Tope de mails: ${patch.topeDia}/día`);
         }
         return res.json({ ok: true, ...(await mailResumen(db)) });
       }
