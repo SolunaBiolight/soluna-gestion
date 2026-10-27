@@ -18090,10 +18090,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   const [shopifyShop,setShopifyShop]=useState("");
   const [shopifyClientId,setShopifyClientId]=useState("");
   const [shopifySecret,setShopifySecret]=useState("");
-  // Hasta que la app de Growith esté aprobada en el App Store, el flujo por defecto
-  // es el de siempre (video + app propia del cliente). El "un clic" queda listo
-  // para activarlo cambiando este default a false.
-  const [shopifyAdvanced,setShopifyAdvanced]=useState(true);
+  // Shopify a un clic por defecto (app pública de Growith): solo el dominio + Autorizar.
+  // La revisión del App Store rechaza apps que dependan de apps personalizadas (2.2.1,
+  // oct/2026). La app propia del cliente queda como opción avanzada.
+  const [shopifyAdvanced,setShopifyAdvanced]=useState(false);
   const [connectingShopify,setConnectingShopify]=useState(false);
   const [showMLModal,setShowMLModal]=useState(false);
   const [connectingML,setConnectingML]=useState(false);
@@ -18276,7 +18276,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   // ¿Hay app central de Growith configurada? → el cliente solo pone el dominio.
   const [shopifyCentral,setShopifyCentral]=useState(null); // null = consultando
   useEffect(()=>{ if(!showShopifyModal) return; let ok=true; (async()=>{ try{ const r=await authFetch(`/api/integrations?platform=shopify&action=app_status&uid=${user.uid}`); const j=await r.json(); if(ok) setShopifyCentral(!!j.central); }catch(e){ if(ok) setShopifyCentral(false); } })(); return ()=>{ ok=false; }; },[showShopifyModal, user?.uid]);
-  const shopifyUnClic = shopifyCentral===true && !shopifyAdvanced;
+  const shopifyUnClic = shopifyCentral!==false && !shopifyAdvanced; // mientras consulta, ya muestra el un clic
   async function connectShopify() {
     if(!shopifyShop.trim()) { setMsg("Poné tu dominio .myshopify.com"); return; }
     if(!shopifyUnClic && (!shopifyClientId.trim() || !shopifySecret.trim())) {
@@ -19060,7 +19060,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                 <ModalCloseBtn T={T} onClick={()=>!connectingShopify && setShowShopifyModal(false)} disabled={connectingShopify}/>
               </div>
 
-              {false&&shopifyCentral===true&&(
+              {shopifyCentral===true&&(
                 <div style={{marginBottom:14,fontSize:11,color:T.textSm}}>
                   <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={shopifyAdvanced} onChange={e=>setShopifyAdvanced(e.target.checked)}/> Usar mi propia app de Shopify (avanzado)</label>
                 </div>
