@@ -226,6 +226,22 @@ async function listMetaAccounts(db, uid) {
   const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
   return snap.docs.map(d => d.data());
 }
+// ¿El token de esta cuenta puede modificar campañas? A la app de Growith Meta le rechazó
+// ads_management, pero un token propio del usuario (usuario del sistema de SU app) lo trae.
+// Se consulta /me/permissions y se guarda 6 h en la cuenta.
+async function puedeEditar(db, uid, cfg) {
+  if (!cfg?.access_token) return false;
+  const p = cfg.permiso_edicion;
+  if (p && Date.now() - (p.ts || 0) < 6 * 3600000) return !!p.ok;
+  let ok = false;
+  try {
+    const r = await (await fetch(`https://graph.facebook.com/v23.0/me/permissions?access_token=${encodeURIComponent(cfg.access_token)}`)).json();
+    ok = (r.data || []).some(x => x.permission === "ads_management" && x.status === "granted");
+  } catch (_) { return !!p?.ok; }
+  if (cfg.id) await metaAccountRef(db, uid, cfg.id).set({ permiso_edicion: { ok, ts: Date.now() } }, { merge: true }).catch(() => {});
+  return ok;
+}
+
 function safeAccount(cfg) {
   if (!cfg) return null;
   const { access_token, page_access_token, ...safe } = cfg;
@@ -234,6 +250,7 @@ function safeAccount(cfg) {
   safe.token_invalid = Boolean(cfg.token_invalid);
   safe.token_expires_at = cfg.token_expires_at || null;
   safe.token_refreshed_at = cfg.token_refreshed_at || null;
+  safe.puede_editar = !!cfg.permiso_edicion?.ok;
   return safe;
 }
 
@@ -1481,6 +1498,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
 
     if (action === "accounts" && req.method === "GET") {
       const accounts = await listMetaAccounts(db, uid);
+      await Promise.all(accounts.map(async a => { if (a.access_token) a.permiso_edicion = { ok: await puedeEditar(db, uid, a), ts: Date.now() }; }));
       const userSnap = await db.collection("users").doc(uid).get();
       const active = userSnap.data()?.meta_active_account || null;
       return res.json({ accounts: accounts.map(safeAccount), active });
@@ -1583,7 +1601,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       const accId = me.id;
       const existing = await loadMetaAccount(db, uid, accId) || {};
       const cfg = { ...existing, id: accId, user_id: me.id, user_name: me.name || "—", email: me.email || "",
-        access_token, created_at: existing.created_at || new Date().toISOString(),
+        access_token, created_at: existing.created_at || new Date().toISOString(), permiso_edicion: null,
         last_test: { ok: true, ts: new Date().toISOString(), msg: "Token válido" } };
       await saveMetaAccount(db, uid, accId, cfg);
       return res.json({ ok: true, id: accId, account: safeAccount(cfg), ad_accounts: intros.ad_accounts, pages: safePages(intros.pages) });
@@ -1676,6 +1694,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         "campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name",
         "spend", "impressions", "clicks", "ctr", "cpm", "cpc", "frequency", "reach",
         "actions", "action_values", "purchase_roas", "cost_per_action_type",
+        "video_avg_time_watched_actions",
         "date_start", "date_stop",
       ].join(",");
 
@@ -1826,6 +1845,9 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             daily_budget: node.daily_budget ? parseFloat(node.daily_budget) / 100 : null,
             objective: node.objective || null,
             creative: node.creative || null,
+            // Reproducciones de 3 s (actions.video_view) y tiempo promedio de reproducción (segundos).
+            video_3s: parseInt((r.actions || []).find(a => a.action_type === "video_view")?.value) || 0,
+            avg_watch: parseFloat((r.video_avg_time_watched_actions || [])[0]?.value) || 0,
           };
         });
 
@@ -1837,7 +1859,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             rows.push({
               id, name: n.name || "", status: n.status, effective_status: n.effective_status,
               spend: 0, impressions: 0, clicks: 0, ctr: 0, cpm: 0, cpc: 0, frequency: 0, reach: 0,
-              purchases: 0, purchase_value: 0, roas: 0, cpa: 0,
+              purchases: 0, purchase_value: 0, roas: 0, cpa: 0, video_3s: 0, avg_watch: 0,
               daily_budget: n.daily_budget ? parseFloat(n.daily_budget) / 100 : null,
               objective: n.objective || null,
               creative: n.creative || null,
@@ -1871,12 +1893,13 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
                 if (!isFinite(h) || !r.date_start) continue;
                 const z = zonaDe(new Date(utcDeLocal(r.date_start, h, accTz)).toISOString(), tzQ);
                 if (z.fecha < since || z.fecha > until) continue;
-                const a = acc[r[idField]] || (acc[r[idField]] = { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0 });
+                const a = acc[r[idField]] || (acc[r[idField]] = { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0 });
                 a.spend += parseFloat(r.spend) || 0; a.impressions += parseInt(r.impressions) || 0; a.clicks += parseInt(r.clicks) || 0;
+                a.video_3s += parseInt((r.actions || []).find(x => x.action_type === "video_view")?.value) || 0;
                 a.purchases += parseInt((r.actions || []).find(isP)?.value) || 0; a.purchase_value += parseFloat((r.action_values || []).find(isP)?.value) || 0;
               }
               for (const row of rows) {
-                const a = acc[row.id] || { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0 };
+                const a = acc[row.id] || { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0 };
                 Object.assign(row, a, {
                   ctr: a.impressions ? a.clicks / a.impressions * 100 : 0, cpm: a.impressions ? a.spend / a.impressions * 1000 : 0,
                   cpc: a.clicks ? a.spend / a.clicks : 0, roas: a.spend ? a.purchase_value / a.spend : 0, cpa: a.purchases ? a.spend / a.purchases : 0,
@@ -2723,8 +2746,8 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
     // blocked". Se corta acá con un mensaje claro (el front ya no ofrece estas
     // acciones; esto cubre Copilot, clientes viejos y llamadas directas).
     // Cuando Meta apruebe ads_management: quitar este bloque y sumar el scope en oauth_start.
-    if ((action === "set_status" || action === "set_budget") && req.method === "POST") {
-      return res.status(403).json({ error: "Meta no le otorgó a Growith el permiso para modificar campañas (ads_management). Pausar, activar o cambiar presupuestos se hace desde el Administrador de anuncios de Meta.", code: "meta_solo_lectura" });
+    if ((action === "set_status" || action === "set_budget") && req.method === "POST" && !(await puedeEditar(db, uid, await loadMetaAccount(db, uid, acc_id || req.query.acc_id)))) {
+      return res.status(403).json({ error: "Esta cuenta está conectada solo para mirar. Para pausar, activar o cambiar presupuestos desde Growith, conectá Meta con un token de usuario del sistema con el permiso ads_management (Meta → Configuración → Conectar con token).", code: "meta_solo_lectura" });
     }
     if (action === "set_status" && req.method === "POST") {
       const { node_id, status } = req.body || {};

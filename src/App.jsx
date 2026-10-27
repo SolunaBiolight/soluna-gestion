@@ -907,6 +907,8 @@ const TIKTOK_PRONTO = true;
 // Google, TikTok, ML) y las reglas automáticas de Meta para no ofrecer algo que
 // va a fallar. El análisis (Dashboard, gasto, ROAS) sigue entero: `ads_read` SÍ
 // está aprobado. Para reactivar cuando Meta apruebe: poner esto en false.
+// Parámetros de URL recomendados para Meta: cada venta cruza por id con su campaña, conjunto y anuncio.
+const GH_UTM_PARAMS = "utm_source=facebook&utm_medium=paid&utm_id={{campaign.id}}&utm_campaign={{campaign.name}}&utm_term={{adset.id}}&utm_content={{ad.id}}";
 // Menú lateral (estático). También alimenta Admin > Sistema > Accesos por sección.
 // Tienda de productos digitales (Impultienda): solo estas secciones. Sin stock,
 // envíos, reclamos, canjes, Mercado Libre, Google Ads, tareas ni calendario.
@@ -3431,11 +3433,13 @@ function AppConectorIA({T, user, app, onHome}) {
   };
   useEffect(()=>{ setConex(null); setCred(null); cargar(); /* eslint-disable-next-line */ },[user?.uid,app]);
   const copiar=async(t,msg="Copiado")=>{ try{ await navigator.clipboard.writeText(t); toast(msg); }catch(e){ appAlert(t,{title:"Copialo a mano"}); } };
-  const desconectar=async()=>{
-    if(!await appConfirm(`${app} va a dejar de poder leer los datos de esta tienda. ¿Desconectamos?`,{title:`Desconectar ${app}`,okLabel:"Desconectar",danger:true})) return;
+  // Sin id corta todas las conexiones de la app; con id, solo esa (ej. una de dos cuentas de Claude).
+  const desconectar=async(id)=>{
+    const msg=id?`Esa cuenta de ${app} va a dejar de poder leer los datos de esta tienda. Las otras conexiones siguen andando. ¿Desconectamos?`:`${app} va a dejar de poder leer los datos de esta tienda. ¿Desconectamos?`;
+    if(!await appConfirm(msg,{title:`Desconectar ${app}`,okLabel:"Desconectar",danger:true})) return;
     setBusy(true);
     try{
-      const r=await authFetch(`/api/mcp?action=revocar`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,app})});
+      const r=await authFetch(`/api/mcp?action=revocar`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(id?{uid:user.uid,id}:{uid:user.uid,app})});
       const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
       toast(`${app} desconectado`); cargar();
     }catch(e){ appAlert("Error: "+e.message); } finally{ setBusy(false); }
@@ -3529,8 +3533,8 @@ function AppConectorIA({T, user, app, onHome}) {
           </div>
         </GadsPaso>
 
-        <GadsPaso T={T} n="4" title="Conexiones" sub={`Cada vez que alguien autoriza Growith desde ${app} para esta tienda, aparece acá.`}
-          right={conectado?<Btn T={T} variant="danger" size="sm" onClick={desconectar} disabled={busy}>Desconectar {app}</Btn>:null}>
+        <GadsPaso T={T} n="4" title="Conexiones" sub={`Cada vez que alguien autoriza Growith desde ${app} para esta tienda, aparece acá. Podés conectar varias cuentas de ${app} a la vez.`}
+          right={conectado?<Btn T={T} variant="danger" size="sm" onClick={()=>desconectar()} disabled={busy}>{conex.length>1?"Desconectar todas":`Desconectar ${app}`}</Btn>:null}>
           {conex===null
             ? <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,fontSize:DS.font.md,color:T.textMd}}><Spinner size={12} color={T.textMd}/> Buscando conexiones…</div>
             : !conectado
@@ -3541,6 +3545,7 @@ function AppConectorIA({T, user, app, onHome}) {
                       <span style={{fontWeight:DS.w.semibold,color:T.text}}>{c.host||app}</span>
                       <span>Conectado el {fecha(c.creada)}</span>
                       <span>· Último uso {fecha(c.ultimoUso)}</span>
+                      {conex.length>1&&<Btn T={T} variant="ghost" size="sm" style={{marginLeft:"auto"}} onClick={()=>desconectar(c.id)} disabled={busy}>Desconectar</Btn>}
                     </div>
                   ))}
                 </div>}
@@ -17142,9 +17147,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   const [shopifyShop,setShopifyShop]=useState("");
   const [shopifyClientId,setShopifyClientId]=useState("");
   const [shopifySecret,setShopifySecret]=useState("");
-  // Hasta que la app de Growith esté aprobada en el App Store, el flujo por defecto
-  // es el de siempre (video + app propia del cliente). El "un clic" queda listo
-  // para activarlo cambiando este default a false.
+  // Dos tarjetas (oct/2026, revisión del App Store ref. 130112): "Shopify" abre el flujo de
+  // siempre (video + app propia del cliente, el que anda para todas las tiendas hoy) y
+  // "Shopify a un clic" abre el OAuth de la app pública (dominio + Autorizar), que hasta
+  // la aprobación solo instala en tiendas de desarrollo. Cada tarjeta fija el modo al abrir.
   const [shopifyAdvanced,setShopifyAdvanced]=useState(true);
   const [connectingShopify,setConnectingShopify]=useState(false);
   const [showMLModal,setShowMLModal]=useState(false);
@@ -17328,7 +17334,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   // ¿Hay app central de Growith configurada? → el cliente solo pone el dominio.
   const [shopifyCentral,setShopifyCentral]=useState(null); // null = consultando
   useEffect(()=>{ if(!showShopifyModal) return; let ok=true; (async()=>{ try{ const r=await authFetch(`/api/integrations?platform=shopify&action=app_status&uid=${user.uid}`); const j=await r.json(); if(ok) setShopifyCentral(!!j.central); }catch(e){ if(ok) setShopifyCentral(false); } })(); return ()=>{ ok=false; }; },[showShopifyModal, user?.uid]);
-  const shopifyUnClic = shopifyCentral===true && !shopifyAdvanced;
+  const shopifyUnClic = shopifyCentral!==false && !shopifyAdvanced; // mientras consulta, ya muestra el un clic (solo desde su tarjeta)
   async function connectShopify() {
     if(!shopifyShop.trim()) { setMsg("Poné tu dominio .myshopify.com"); return; }
     if(!shopifyUnClic && (!shopifyClientId.trim() || !shopifySecret.trim())) {
@@ -17706,7 +17712,15 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               key:"sh", group:"Tienda", label:"Shopify", sub: shStore ? (shStore.storeName||shStore.shop) : impStore ? "Esta tienda es de productos digitales (Impultienda). Para conectar Shopify, creá otra tienda desde el selector de abajo: cada tienda es física o digital." : "Ventas, productos y el checkout con Andreani",
               connected:!!shStore, disabled:(!!tnStore||!!impStore) && !shStore, brand:"#95BF47", iconBg:"#fff",
               icon:<BrandIcon name="shopify" size={30}/>,
-              onConnect:()=>setShowShopifyModal(true), onDisconnect:()=>disconnectStore("shopify"),
+              onConnect:()=>{ setShopifyAdvanced(true); setShowShopifyModal(true); }, onDisconnect:()=>disconnectStore("shopify"),
+            },
+            {
+              // App pública de Growith (la del App Store). Activa a propósito: el revisor de Shopify la prueba desde acá.
+              key:"sh1", group:"Tienda", label:"Shopify a un clic", tag:"PRÓXIMAMENTE",
+              sub: impStore ? "Esta tienda es de productos digitales (Impultienda)." : "Próximamente vas a poder conectar Shopify con un clic, sin crear tu app. Por ahora usá la opción de arriba.",
+              connected:false, disabled:(!!tnStore||!!impStore), brand:"#95BF47", iconBg:"#fff",
+              icon:<BrandIcon name="shopify" size={30}/>,
+              onConnect:()=>{ setShopifyAdvanced(false); setShowShopifyModal(true); },
             },
             {
               // Productos digitales: una tienda de Growith con Impultienda es SOLO
@@ -17891,7 +17905,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               onConnect: ()=>onNavigate&&onNavigate("chatgpt"),
               onDisconnect: ()=>iaDesconectar("ChatGPT"),
             },
-          ].filter(p=>!(p.key==="sh"&&tnStore)&&!(p.key==="tn"&&shStore)).map((p,idx,arr)=>{
+          ].filter(p=>!(p.key==="sh"&&tnStore)&&!(p.key==="sh1"&&(tnStore||shStore))&&!(p.key==="tn"&&shStore)).map((p,idx,arr)=>{
             const showGroup=idx===0||arr[idx-1].group!==p.group;
             return (
               <React.Fragment key={p.key}>
@@ -17904,7 +17918,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                     <div style={{fontSize:13.5,fontWeight:700,color:T.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                       {p.label}
                       {p.connected&&<span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,fontWeight:700,color:T.green,background:T.green+"14",borderRadius:99,padding:"2px 8px"}}><span style={{width:6,height:6,borderRadius:"50%",background:T.green,boxShadow:"0 0 6px "+T.green}}/>Conectado</span>}
-                      {p.soon&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 7px"}}>PRÓXIMAMENTE</span>}
+                      {(p.soon||p.tag)&&<span style={{fontSize:9,fontWeight:800,letterSpacing:0.5,background:T.yellow+"22",color:T.yellow,borderRadius:99,padding:"2px 7px"}}>{p.tag||"PRÓXIMAMENTE"}</span>}
                     </div>
                     <div style={{fontSize:11.5,color:T.textSm,marginTop:3,lineHeight:1.45}}>{p.sub}</div>
                   </div>
@@ -34433,7 +34447,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [mmon,setMmonS]=useState(()=>{ try{ return localStorage.getItem("growith_imp_moneda")||""; }catch(_){ return ""; } });
   const setMmon=(v)=>{ setMmonS(v); try{ if(v) localStorage.setItem("growith_imp_moneda",v); else localStorage.removeItem("growith_imp_moneda"); }catch(_){} };
   const [fxM,setFxM]=useState(null);
-  useEffect(()=>{ if(!mmon||fxM) return; const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; authFetch(`/api/impultienda?action=fx&uid=${u}`).then(r=>r.json()).then(j=>{ if(j.fx) setFxM(j.fx); }).catch(()=>{}); /* eslint-disable-next-line */ },[mmon]);
+  useEffect(()=>{ if(fxM) return; const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; authFetch(`/api/impultienda?action=fx&uid=${u}`).then(r=>r.json()).then(j=>{ if(j.fx) setFxM(j.fx); }).catch(()=>{}); /* eslint-disable-next-line */ },[mmon]);
   const convFila=(row,de)=>{ if(!mmon||!fxM) return row; const a=fxM[String(de||"USD").toUpperCase()], b=fxM[mmon]; if(!a||!b) return row; const k=b/a; const o={...row}; for(const f of ["spend","purchase_value","cpa","cpm","cpc","daily_budget"]) if(typeof o[f]==="number") o[f]=o[f]*k; return o; };
   const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[]}); }catch(_){} };
   useEffect(()=>{ if(activeAccId) cargarCtasMeta(); /* eslint-disable-next-line */ },[activeAccId]); // espera a que esté la tienda activa (window.__ghTiendaUid)
@@ -34442,6 +34456,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const verJuntas=ctasElegidas.length>0;
 
   // Estado del tab Análisis (Ads Manager)
+  // Ventas reales por UTM (Impultienda): pisan compras / revenue / ROAS / CPA / AOV de Meta.
+  const [utmAtr,setUtmAtr]=useState(null);
+  const [utmBusy,setUtmBusy]=useState(false);
   const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad
   const [aSince,setASince]=useState(()=>fechaAR(new Date(Date.now()-7*86400000)));
   const [aUntil,setAUntil]=useState(()=>hoyAR());
@@ -34453,8 +34470,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // ROAS break-even configurable (persiste en localStorage)
   const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem(ghKey("growith_meta_roas_be")))||2; } catch(_) { return 2; } });
   // Columnas visibles (persiste)
-  const DEFAULT_COLS = ["spend","purchases","purchase_value","roas","cpa","ctr","cpm","cpc","frequency","impressions","reach"];
-  const [aCols,setACols]=useState(()=>{ try { const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols"))||"null"); return Array.isArray(s)&&s.length?s:DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
+  const DEFAULT_COLS = ["roas","cpa","aov","purchase_value","purchases","spend","cpc","ctr","cpm","frequency","hook","avg_watch"];
+  const [aCols,setACols]=useState(()=>{ try { const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v2"))||"null"); return Array.isArray(s)&&s.length?s:DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
   const [aColsOpen,setAColsOpen]=useState(false);
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
@@ -34936,19 +34953,63 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         // Todas las cuentas elegidas en paralelo, unidas en una sola lista (cada fila sabe de qué cuenta es).
         const res = await Promise.all(ctasJuntas.map(c=>metaApi("insights","GET",null,{...params,ad_account:c.id}).then(x=>({c,x})).catch(e=>({c,x:{error:e.message}}))));
         const errs = res.filter(r=>r.x?.error).map(r=>`${r.c.nombre}: ${r.x.error}`);
-        const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...convFila(row,r.c.moneda),_act:r.c.id,_cuenta:r.c.nombre,name:`${row.name||""}  ·  ${r.c.nombre}`})));
+        const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...convFila(row,r.c.moneda),_moneda:(mmon&&fxM)?mmon:(r.c.moneda||"USD"),_act:r.c.id,_cuenta:r.c.nombre,name:`${row.name||""}  ·  ${r.c.nombre}`})));
         d = rows.length||!errs.length ? {rows} : {error:errs.join(" | ")};
-      } else { d = await metaApi("insights","GET",null,params); if (d?.rows) { const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency; d={...d,rows:d.rows.map(r=>convFila(r,de))}; } }
+      } else { d = await metaApi("insights","GET",null,params); if (d?.rows) { const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency; d={...d,rows:d.rows.map(r=>({...convFila(r,de),_moneda:(mmon&&fxM)?mmon:(de||"USD")}))}; } }
       // Si dispararon otra carga después de esta, descartamos.
       if (myReqId !== loadInsightsReqIdRef.current) return;
       if(d.error) { setAError(d.error); if(!cached) setARows([]); }
       else { setARows(d.rows||[]); ghSwrSet(swrKey, d.rows||[]); }
+      cargarUtm();
     } catch(e) {
       if (myReqId !== loadInsightsReqIdRef.current) return;
       if(!cached) setAError(e.message || "Error de red");
     } finally {
       if (myReqId === loadInsightsReqIdRef.current) setALoading(false);
     }
+  }
+
+  async function cargarUtm() {
+    try {
+      const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid;
+      const j=await authFetch(`/api/impultienda?action=utm_atribucion&uid=${u}&desde=${aSince}&hasta=${aUntil}&tz=${encodeURIComponent(mtz)}`).then(r=>r.json());
+      setUtmAtr(j&&j.activo?j:null);
+    } catch(_) {}
+  }
+  async function reprocesarUtm() {
+    setUtmBusy(true);
+    try {
+      const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid;
+      const j=await authFetch(`/api/impultienda?action=utm_reprocesar&uid=${u}`,{method:"POST"}).then(r=>r.json());
+      if(j.error) throw new Error(j.error);
+      toast(`60 días reprocesados: ${j.atribuidas} de ${j.ventas} ventas cruzadas con ${j.campanas} campañas${j.sinUtm?` · ${j.sinUtm} sin UTM`:""}`,"success");
+      await cargarUtm();
+    } catch(e) { toast("No se pudo reprocesar: "+e.message,"error"); }
+    finally { setUtmBusy(false); }
+  }
+  // Fila de Meta + ventas reales por UTM. Meta pone gasto, CPC, CTR, CPM, frecuencia y video;
+  // ventas, revenue, ROAS, CPA y AOV salen de Growith (ventas de Impultienda cruzadas por UTM).
+  const conUtm=(r,lvl)=>{
+    const o={...r, aov: r.purchases?r.purchase_value/r.purchases:0, hook: r.impressions?(r.video_3s||0)/r.impressions*100:0};
+    if(!utmAtr||utmAtr.desde!==aSince||utmAtr.hasta!==aUntil) return o;
+    const m=(utmAtr[lvl==="campaign"?"c":lvl==="adset"?"s":"a"]||{})[r.id]||{n:0,rev:0};
+    const cod=String(r._moneda||"USD").toUpperCase(); const k=cod==="USD"?1:Number(fxM?.[cod]);
+    if(!k) return o;
+    const rev=m.rev*k;
+    return {...o, purchases:m.n, purchase_value:rev, roas:r.spend?rev/r.spend:0, cpa:m.n&&r.spend?r.spend/m.n:0, aov:m.n?rev/m.n:0};
+  };
+  const metaEditable=!!activeAcc?.puede_editar;
+  async function cambiarPresupuesto(row) {
+    const v=await appPrompt(`Presupuesto diario nuevo para "${row.name||row.id}" (en la moneda de la cuenta):`, String(row.daily_budget||""), {title:"Cambiar presupuesto"});
+    if(v==null||v==="") return;
+    const n=parseFloat(String(v).replace(",","."));
+    if(!isFinite(n)||n<=0) return toast("Monto inválido","warning");
+    setABusyIds(b=>({...b,[row.id]:true}));
+    try {
+      const d=await metaApi("set_budget","POST",{node_id:row.id,daily_budget:n},{acc_id:activeAccId});
+      if(d.error) toast("Error: "+d.error,"error");
+      else { toast("Presupuesto actualizado","success"); setARows(prev=>prev.map(r=>r.id===row.id?{...r,daily_budget:n}:r)); }
+    } finally { setABusyIds(b=>{ const x={...b}; delete x[row.id]; return x; }); }
   }
 
   // Drill down: cuando se hace click en una row, entrar a sus hijos
@@ -34972,7 +35033,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Persistir ROAS BE y columnas
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_roas_be"), String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
-  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols"), JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v2"), JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
@@ -36168,7 +36229,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 ) : (() => {
                   // Filtrar + sortear
-                  let filtered = aRows;
+                  let filtered = aRows.map(r=>conUtm(r,aLevel));
                   if (aQuery.trim()) {
                     const q = aQuery.trim().toLowerCase();
                     filtered = filtered.filter(r => (r.name||"").toLowerCase().includes(q));
@@ -36199,6 +36260,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   const totalRoas = sumSpend > 0 ? sumPurchaseValue / sumSpend : 0;
                   const totalCpa = sumPurchases > 0 ? sumSpend / sumPurchases : 0;
                   const totalCtr = sumImpr > 0 ? (sumClicks / sumImpr) * 100 : 0;
+                  const totalAov = sumPurchases > 0 ? sumPurchaseValue / sumPurchases : 0;
+                  const sumV3 = filtered.reduce((s,r)=>s+(r.video_3s||0),0);
+                  const totalHook = sumImpr > 0 ? sumV3 / sumImpr * 100 : 0;
 
                   const fmt = (n) => n.toLocaleString("es-AR",{minimumFractionDigits:2, maximumFractionDigits:2});
                   const fmtInt = (n) => Math.round(n).toLocaleString("es-AR");
@@ -36211,8 +36275,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   // Mapa de columnas configurables
                   const COL_META = {
                     spend:          { label:"Gasto",          render: r => cur+fmt(r.spend),            total: () => cur+fmt(sumSpend), bold:true },
-                    purchases:      { label:"Compras",        render: r => r.purchases,                 total: () => sumPurchases },
-                    purchase_value: { label:"Valor compras",  render: r => cur+fmt(r.purchase_value),   total: () => cur+fmt(sumPurchaseValue) },
+                    purchases:      { label:"Ventas",         render: r => r.purchases,                 total: () => sumPurchases },
+                    purchase_value: { label:"Revenue",        render: r => cur+fmt(r.purchase_value),   total: () => cur+fmt(sumPurchaseValue) },
+                    aov:            { label:"AOV",            render: r => r.aov ? cur+fmt(r.aov) : "—", total: () => totalAov ? cur+fmt(totalAov) : "—" },
+                    hook:           { label:"Retención 3 s",  render: r => r.hook ? fmt(r.hook)+"%" : "—", total: () => totalHook ? fmt(totalHook)+"%" : "—" },
+                    avg_watch:      { label:"Tiempo prom.",   render: r => r.avg_watch ? fmt(r.avg_watch)+" s" : "—", total: () => "—" },
                     roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x", total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
                     cpa:            { label:"CPA",            render: r => r.cpa ? cur+fmt(r.cpa) : "—", total: () => totalCpa ? cur+fmt(totalCpa) : "—" },
                     ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: () => fmt(totalCtr)+"%" },
@@ -36231,8 +36298,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {/* Resumen ejecutivo del rango (sobre lo filtrado) */}
                     <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
                       <KPI T={T} label="Gasto" value={cur+fmt(sumSpend)} sub={`${filtered.length} ${aLevel==="campaign"?"campañas":aLevel==="adset"?"adsets":"ads"}`} color={T.accent}/>
-                      <KPI T={T} label="Compras" value={String(sumPurchases)} sub={sumClicks?`${fmtInt(sumClicks)} clicks`:""} color={T.text}/>
-                      <KPI T={T} label="Valor compras" value={cur+fmt(sumPurchaseValue)} sub="según píxel de Meta" color={T.text}/>
+                      <KPI T={T} label="Ventas" value={String(sumPurchases)} sub={utmAtr?(utmAtr.sinAtribuir?.n?`${utmAtr.sinAtribuir.n} del período sin UTM que cruce`:"todas cruzadas por UTM"):(sumClicks?`${fmtInt(sumClicks)} clicks`:"")} color={T.text}/>
+                      <KPI T={T} label="Revenue" value={cur+fmt(sumPurchaseValue)} sub={utmAtr?"ventas reales por UTM":"según píxel de Meta"} color={T.text}/>
+                      <KPI T={T} label="AOV" value={totalAov?cur+fmt(totalAov):"—"} sub="revenue por venta" color={T.text}/>
                       <KPI T={T} label="ROAS" value={fmt(totalRoas)+"x"} sub={aRoasBe>0?`BE de referencia ${aRoasBe}x`:""} color={totalRoas>=aRoasBe?T.green:(totalRoas>0?T.red:T.textSm)}/>
                       <KPI T={T} label="CPA" value={totalCpa?cur+fmt(totalCpa):"—"} sub={totalCtr?`CTR ${fmt(totalCtr)}%`:""} color={T.text}/>
                     </div>
@@ -36257,9 +36325,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       {aColsOpen && (
                         <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
                           {[
-                            {k:"spend",l:"Gasto"},{k:"purchases",l:"Compras"},{k:"purchase_value",l:"Valor compras"},
-                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},{k:"cpc",l:"CPC"},
-                            {k:"frequency",l:"Frecuencia"},{k:"impressions",l:"Impresiones"},{k:"reach",l:"Alcance"},{k:"clicks",l:"Clicks"},
+                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"aov",l:"AOV"},{k:"purchase_value",l:"Revenue"},{k:"purchases",l:"Ventas"},
+                            {k:"spend",l:"Gasto"},{k:"cpc",l:"CPC"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},
+                            {k:"frequency",l:"Frecuencia"},{k:"hook",l:"Retención 3 s"},{k:"avg_watch",l:"Tiempo prom. de video"},
+                            {k:"impressions",l:"Impresiones"},{k:"reach",l:"Alcance"},{k:"clicks",l:"Clicks"},
                           ].map(c=>(
                             <label key={c.k} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",fontSize:11,color:T.text,cursor:"pointer"}}>
                               <input type="checkbox" checked={aCols.includes(c.k)} onChange={e=>{
@@ -36294,6 +36363,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </div>
                     {/* Búsqueda */}
                     <input type="text" placeholder="Buscar por nombre…" value={aQuery} onChange={e=>setAQuery(e.target.value)} style={{flex:1,minWidth:140,background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    {utmAtr && (
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <span title="Ventas, revenue, ROAS, CPA y AOV salen de las ventas de Impultienda cruzadas por UTM. Gasto, CPC, CTR, CPM, frecuencia y video salen de Meta." style={{fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:6,padding:"4px 7px",letterSpacing:0.3,whiteSpace:"nowrap"}}>VENTAS POR UTM</span>
+                        <GhTip T={T} text={"Para que cada venta caiga en su campaña, conjunto y anuncio, pegá esto en Meta → anuncio → Parámetros de URL:\n\n"+GH_UTM_PARAMS+"\n\nSi Growith marca más ventas y mejor ROAS que Meta, está trackeando bien. Las ventas sin UTM quedan como \"sin atribuir\"."}/>
+                        <button onClick={()=>{ try{ navigator.clipboard.writeText(GH_UTM_PARAMS); toast("Parámetros de URL copiados","success"); }catch(_){ appAlert(GH_UTM_PARAMS,{title:"Copialo a mano"}); } }} title="Copiar los parámetros de URL para Meta" style={{background:T.card,border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"5px 8px",fontSize:11,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>Copiar UTM</button>
+                        <button onClick={reprocesarUtm} disabled={utmBusy} title="Rehace el cruce de los últimos 60 días: trae todos los anuncios con entrega y vuelve a asignar cada venta a su campaña, conjunto y anuncio" style={{background:T.card,border:`1px solid ${T.border}`,color:T.textMd,borderRadius:8,padding:"5px 8px",fontSize:11,cursor:utmBusy?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>{utmBusy?<Spinner size={10} color={T.textMd}/>:null}Reprocesar 60 días</button>
+                      </div>
+                    )}
+                    <span title={metaEditable?"El token de esta cuenta tiene ads_management: podés pausar, activar y cambiar presupuestos desde acá.":"Solo lectura. Para editar desde Growith conectá un token de usuario del sistema con ads_management (pestaña Cuenta)."} style={{fontSize:10,fontWeight:700,color:metaEditable?T.accent:T.textSm,background:(metaEditable?T.accent:T.textSm)+"18",borderRadius:6,padding:"4px 7px",letterSpacing:0.3,whiteSpace:"nowrap"}}>{metaEditable?"EDICIÓN ACTIVA":"SOLO LECTURA"}</span>
                     <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {aLoading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
                     </button>
@@ -36317,7 +36395,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               return (
                                 <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
                                   <td style={{padding:"10px 12px",display:"flex",gap:4}}>
-                                    {PUBLICADORES_ARCHIVADOS ? (
+                                    {PUBLICADORES_ARCHIVADOS && !metaEditable ? (
                                       // Sin ads_management Growith no puede pausar ni activar: se muestra el
                                       // estado como un punto, no como un interruptor que fallaría al tocarlo.
                                       <span title={isActive?"Activa (se pausa desde el Administrador de anuncios de Meta)":"Pausada"} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:isActive?T.green:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>
@@ -36344,7 +36422,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     <div style={{fontSize:10,color:T.textSm,marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:aLevel==="campaign"?T.accent+"22":aLevel==="adset"?T.green+"22":T.yellow+"22",color:aLevel==="campaign"?T.accent:aLevel==="adset"?T.green:T.yellow,fontWeight:700}}>{aLevel==="campaign"?"Camp":aLevel==="adset"?"Adset":"Ad"}</span>
                                       <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
-                                      {r.daily_budget && <span>· {cur}{fmt(r.daily_budget)}/día</span>}
+                                      {r.daily_budget && (metaEditable
+                                        ? <button onClick={()=>cambiarPresupuesto(r)} disabled={busy} title="Cambiar presupuesto diario" style={{background:"transparent",border:"none",padding:0,fontSize:10,color:T.accent,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline dotted"}}>· {cur}{fmt(r.daily_budget)}/día ✎</button>
+                                        : <span>· {cur}{fmt(r.daily_budget)}/día</span>)}
                                       {(() => {
                                         const prods = productsForRow(r, aLevel);
                                         if (prods.length === 0) return null;
