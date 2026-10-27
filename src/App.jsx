@@ -1310,7 +1310,7 @@ function LocConfirmModal({T,items,onDone,onCancel}){
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             <select value={v} onChange={e=>setSel(s=>({...s,[o.numero]:e.target.value}))} style={{...iS,marginBottom:0,flex:1,minWidth:240}}>
-              {x.opts.map(l=><option key={l} value={l}>{linda(l)}{l===x.sug?" — sugerida":""}</option>)}
+              {x.opts.map(l=><option key={l} value={l}>{linda(l)}{l===x.sug?" (sugerida)":""}</option>)}
               <option value="EXCLUIR">No exportar este pedido ahora</option>
             </select>
           </div>
@@ -1347,7 +1347,7 @@ function RastrearPedidosModal({T,uid,onClose,puedeDeposito=false,onDescargar,onD
       setLote(j.envios||[]); const h={}; (j.envios||[]).forEach(e=>{ h[horaDe(e.at)]=true; }); setHoras(h); }
     catch(e){ setErr(e.message||"error de conexión"); } setBusy(false); }
   const copiar=async t=>{ try{ await navigator.clipboard.writeText(t); toast("Copiado","success"); }catch(_){ toast("No se pudo copiar","warning"); } };
-  const resumen=()=>res.resultados.map(x=>`#${x.numero} — ${x.titulo}${x.tracking?` — ${x.tracking}`:""}`).join("\n");
+  const resumen=()=>res.resultados.map(x=>`#${x.numero} · ${x.titulo}${x.tracking?` · ${x.tracking}`:""}`).join("\n");
   const cuenta=k=>res?res.resultados.filter(x=>x.nivel===k).length:0;
   const elegidos=res?res.resultados.filter(x=>sel[x.numero]&&reenviable(x)):[];
   const nReenv=res?res.resultados.filter(reenviable).length:0;
@@ -1492,7 +1492,7 @@ function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,i
           <span style={{width:8,height:8,borderRadius:99,background:tc,flexShrink:0}}/>
           <span style={{whiteSpace:"nowrap"}}>{o.esSucursal?(ghEsHop(o)?"Punto HOP":"Sucursal"):"Domicilio"}</span>
           {pd&&<svg aria-label="Puede requerir confirmar sucursal al exportar" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.yellow} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>}
-          {canje&&<span title={`Canje de ${canje.influencer||"un influencer"}${canje.usuario?" (@"+canje.usuario+")":""} — la etiqueta y el tracking se le cargan solos al canje`} style={{fontSize:DS.font.sm,fontWeight:700,color:T.purple,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>· Canje {canje.influencer||canje.usuario||""}</span>}
+          {canje&&<span title={`Canje de ${canje.influencer||"un influencer"}${canje.usuario?" (@"+canje.usuario+")":""} · la etiqueta y el tracking se le cargan solos al canje`} style={{fontSize:DS.font.sm,fontWeight:700,color:T.purple,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>· Canje {canje.influencer||canje.usuario||""}</span>}
         </div>
         <div title={pd?[pd.name,pdDir,ad.locality||ad.city,pdCp?`CP ${pdCp}`:""].filter(Boolean).join(" · "):(o.medioEnvio||"")} style={{...sub,paddingLeft:15}}>{pdTxt||o.medioEnvio||"—"}</div>
       </div>
@@ -1652,7 +1652,7 @@ function OnboardingWizard({T, user, onComplete}) {
     {id:"tn",       nombre:"Tienda Nube",    desc:"Pedidos, productos y stock en tiempo real", onClick:conectarTN},
     {id:"ml",       nombre:"Mercado Libre",  desc:"Publicaciones, ventas y comisiones",        onClick:conectarML},
     {id:"shopify",  nombre:"Shopify",        desc:"Pedidos y catálogo sincronizados",          onClick:irAConfig},
-    {id:"arca",     nombre:"Solo quiero facturar",  desc:"Cargá tu CUIT y facturá con ARCA — la tienda la conectás después", onClick:()=>onComplete("arca")},
+    {id:"arca",     nombre:"Solo quiero facturar",  desc:"Cargá tu CUIT y facturá con ARCA. La tienda la conectás después", onClick:()=>onComplete("arca")},
   ];
 
   // Todas las secciones, explicadas para alguien que no conoce la app.
@@ -1773,7 +1773,7 @@ function OnboardingWizard({T, user, onComplete}) {
             </div>
             <div style={{background:`linear-gradient(135deg, ${T.accentSolid}14, transparent 70%)`,border:`1px solid ${T.accentSolid}44`,borderRadius:DS.r.xl,padding:"16px 18px"}}>
               <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:3}}>Growith: todo junto, desde USD 19/mes</div>
-              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>El plan Pro completo cuesta USD 69/mes — menos que una sola de esas herramientas. Y arrancás con <strong style={{color:T.text}}>14 días gratis con todo incluido</strong>, sin tarjeta.</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.55}}>El plan Pro completo cuesta USD 69/mes. Menos que una sola de esas herramientas. Y arrancás con <strong style={{color:T.text}}>14 días gratis con todo incluido</strong>, sin tarjeta.</div>
             </div>
             <Nav cta="Empezar"/>
           </div>
@@ -2707,7 +2707,7 @@ function GadsPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}
               {imgBusy?<Spinner size={24} color={T.textMd}/>:<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>}
             </div>
             <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>{imgBusy?"Preparando recortes…":"Arrastrá tus imágenes o tocá para elegir"}</div>
-            <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>JPG · PNG · WebP — hasta 20 horizontales y 20 cuadradas</div>
+            <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>JPG · PNG · WebP. Hasta 20 horizontales y 20 cuadradas</div>
           </label>
           {land.length>0&&<div style={{marginTop:DS.sp.lg}}><div style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd,marginBottom:DS.sp.sm}}>Horizontales ({land.length})</div><Thumbs lista={land} ratio={1.91}/></div>}
           {sq.length>0&&<div style={{marginTop:DS.sp.lg}}><div style={{fontSize:DS.font.sm,fontWeight:DS.w.semibold,color:T.textMd,marginBottom:DS.sp.sm}}>Cuadradas ({sq.length})</div><Thumbs lista={sq} ratio={1}/></div>}
@@ -2993,7 +2993,7 @@ function AppTiktokAds({T, user, onHome, onGoConfig, tab="analisis", setTab=()=>{
               </div>
             </div>
             <div style={{fontSize:11,color:T.textSm,lineHeight:1.6}}>
-              Datos de la Marketing API de TikTok (conversiones y compras según tu píxel). El gasto de TikTok ya se descuenta solo en el Dashboard{account.currency&&account.currency!=="ARS"?` — la cuenta está en ${account.currency} y se pasa a pesos con el dólar de Costos`:""}.
+              Datos de la Marketing API de TikTok (conversiones y compras según tu píxel). El gasto de TikTok ya se descuenta solo en el Dashboard{account.currency&&account.currency!=="ARS"?`. La cuenta está en ${account.currency} y se pasa a pesos con el dólar de Costos`:""}.
             </div>
           </>
         )}
@@ -3254,7 +3254,7 @@ function TtPublicador({T, user, accounts, account, setAcc, sym, onVerAnalisis}) 
             {leyendo?<Spinner size={24} color={T.textMd}/>:<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>}
           </div>
           <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text}}>{leyendo?"Leyendo videos…":"Arrastrá tus videos o tocá para elegir"}</div>
-          <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>MP4 · MOV — hasta 20 videos de {TT_MAX_MB} MB cada uno</div>
+          <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:4}}>MP4 · MOV. Hasta 20 videos de {TT_MAX_MB} MB cada uno</div>
         </label>
         {videos.length>0&&(
           <div style={{display:"flex",flexDirection:"column",gap:DS.sp.md,marginTop:DS.sp.lg}}>
@@ -3805,7 +3805,7 @@ function AppReferidos({T, user, onHome}){
   const link=data?`${ghShareOrigin()}/?ref=${data.code}`:"";
   const usd=n=>"USD "+(Number(n)||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
   const copiar=(txt,msg)=>{try{navigator.clipboard.writeText(txt);toast(msg||"Copiado","success");}catch(_){toast("No se pudo copiar","warning");}};
-  const waText=data?encodeURIComponent(`Estoy usando Growith para gestionar mi e-commerce (facturación ARCA, envíos, stock, profit — todo en un solo lugar) y está muy bueno. Registrate con mi link y probalo gratis: ${link}`):"";
+  const waText=data?encodeURIComponent(`Estoy usando Growith para gestionar mi e-commerce (facturación ARCA, envíos, stock, profit. Todo en un solo lugar) y está muy bueno. Registrate con mi link y probalo gratis: ${link}`):"";
   return (
     <div style={{minHeight:"100vh",background:T.bg,fontFamily:"'Inter',system-ui,sans-serif"}}>
       <AppTopbar T={T} section="Referidos" sectionId="referidos" onHome={onHome}/>
@@ -3824,19 +3824,19 @@ function AppReferidos({T, user, onHome}){
           {data&&(
             <>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"stretch"}}>
-                <div onClick={()=>copiar(link,"Link copiado — compartilo donde quieras")}
+                <div onClick={()=>copiar(link,"Link copiado. Compartilo donde quieras")}
                   style={{flex:1,minWidth:240,display:"flex",alignItems:"center",gap:10,background:T.bg,border:`1px solid ${T.border}`,borderRadius:10,padding:"11px 14px",cursor:"pointer"}}>
                   <span style={{fontSize:13,fontWeight:600,color:T.text,fontFamily:"'Cascadia Code','Consolas',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{link}</span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
                 </div>
-                <button onClick={()=>copiar(link,"Link copiado — compartilo donde quieras")} style={{...BtnPrimary(T),fontSize:13,padding:"11px 18px"}}>Copiar link</button>
+                <button onClick={()=>copiar(link,"Link copiado. Compartilo donde quieras")} style={{...BtnPrimary(T),fontSize:13,padding:"11px 18px"}}>Copiar link</button>
                 <a href={`https://wa.me/?text=${waText}`} target="_blank" rel="noreferrer"
                   style={{display:"inline-flex",alignItems:"center",gap:7,background:"#25D366",color:"#fff",borderRadius:10,padding:"11px 16px",fontSize:13,fontWeight:700,textDecoration:"none"}}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                   WhatsApp
                 </a>
               </div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Tu código: <span onClick={()=>copiar(data.code,"Código copiado")} style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontWeight:700,color:T.accent,cursor:"pointer",background:T.accentSolid+"14",borderRadius:5,padding:"2px 8px"}}>{data.code}</span> — también sirve escribiéndolo a mano al registrarse.</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:10}}>Tu código: <span onClick={()=>copiar(data.code,"Código copiado")} style={{fontFamily:"'Cascadia Code','Consolas',monospace",fontWeight:700,color:T.accent,cursor:"pointer",background:T.accentSolid+"14",borderRadius:5,padding:"2px 8px"}}>{data.code}</span>. También sirve escribiéndolo a mano al registrarse.</div>
             </>
           )}
         </div>
@@ -4281,7 +4281,7 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset, labelTe
     : "Período");
   return (
     <div ref={wrapRef} style={{position:"relative",display:"inline-block",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>
-      <button onClick={toggleOpen} title={since&&until?`${new Date(since+"T00:00:00").toLocaleDateString("es-AR")} — ${new Date(until+"T00:00:00").toLocaleDateString("es-AR")}`:"Elegir período"} style={{display:"inline-flex",alignItems:"center",gap:trigCompacto?6:8,height:34,padding:trigCompacto?"0 12px":"0 15px",boxSizing:"border-box",background:"transparent",border:`1px solid ${open?T.accent+"66":T.border}`,borderRadius:DS.r.full,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+      <button onClick={toggleOpen} title={since&&until?`${new Date(since+"T00:00:00").toLocaleDateString("es-AR")} · ${new Date(until+"T00:00:00").toLocaleDateString("es-AR")}`:"Elegir período"} style={{display:"inline-flex",alignItems:"center",gap:trigCompacto?6:8,height:34,padding:trigCompacto?"0 12px":"0 15px",boxSizing:"border-box",background:"transparent",border:`1px solid ${open?T.accent+"66":T.border}`,borderRadius:DS.r.full,fontSize:12,color:T.text,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <span style={{whiteSpace:"nowrap"}}>{label}</span> <span style={{color:T.textSm,fontSize:10}}>▾</span>
       </button>
@@ -4349,7 +4349,7 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset, labelTe
               );
             })}
           </div>
-          {tmpStart && <div style={{marginTop:8,padding:"6px 10px",background:T.accent+"15",border:`1px solid ${T.accent}33`,borderRadius:7,fontSize:11,color:T.textMd}}>Inicio: {new Date(tmpStart+"T00:00:00").toLocaleDateString("es-AR")} — elegí la fecha final</div>}
+          {tmpStart && <div style={{marginTop:8,padding:"6px 10px",background:T.accent+"15",border:`1px solid ${T.accent}33`,borderRadius:7,fontSize:11,color:T.textMd}}>Inicio: {new Date(tmpStart+"T00:00:00").toLocaleDateString("es-AR")} · elegí la fecha final</div>}
         </div>
         </>);
       })(),
@@ -5308,7 +5308,7 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
     // mandaba el paquete a la dirección de facturación del cliente.
     // o.sucursal = elegida a mano por el usuario (selector de Canjes/Envíos).
     const sucursal=o.sucursal||ghMatchSucursal(locs, o.direccion, o.pickupDetails, o.dirNumero);
-    if(!sucursal) throw new Error("es un envío a sucursal y no pude identificar cuál en la lista de Andreani — generá esta etiqueta desde Envíos, que permite elegir la sucursal a mano");
+    if(!sucursal) throw new Error("es un envío a sucursal y no pude identificar cuál en la lista de Andreani. Generá esta etiqueta desde Envíos, que permite elegir la sucursal a mano");
     const cells=[...baseCells,sC('N'+rn,sucursal)].join('');
     const rowXml='<row r="3" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>';
     const sheet2file=zip.file('xl/worksheets/sheet2.xml');
@@ -5338,12 +5338,12 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
   s.id="growith-spin";
   s.textContent=`
     /* ═══════════════════════════════════════════
-       GROWITH — SISTEMA DE ANIMACIONES GLOBAL
+       GROWITH. SISTEMA DE ANIMACIONES GLOBAL
        Todos los movimientos de la app pasan por acá.
        Durations: fast=120ms | normal=200ms | slow=320ms
        Easing: ease = cubic-bezier(0.4,0,0.2,1)
-               spring = cubic-bezier(0.22,1,0.36,1)  — overshoots leve, se siente vivo
-               bounce = cubic-bezier(0.34,1.56,0.64,1) — más rebote, para elementos pequeños
+               spring = cubic-bezier(0.22,1,0.36,1) . Overshoots leve, se siente vivo
+               bounce = cubic-bezier(0.34,1.56,0.64,1) · más rebote, para elementos pequeños
     ═══════════════════════════════════════════ */
 
     /* ── Keyframes: entradas ── */
@@ -5384,7 +5384,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     }
 
     /* ══════════════════════════════════════
-       CLASES DE ANIMACIÓN — usar con className
+       CLASES DE ANIMACIÓN. Usar con className
     ══════════════════════════════════════ */
 
     /* Páginas y secciones */
@@ -5402,7 +5402,7 @@ if(typeof document!=="undefined"&&!document.getElementById("growith-spin")){
     .gh-modal   { animation: growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both; }
     .gh-modal-closing { animation: growith-scaleOut 0.18s ease both; }
     /* El contenido de cualquier overlay entra con scale+lift aunque no tenga
-       clase propia — cubre todos los modales existentes de una sola vez */
+       clase propia. Cubre todos los modales existentes de una sola vez */
     .gh-overlay > :first-child { animation: growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both; }
 
     /* Dropdowns, popovers, menus contextuales */
@@ -5910,7 +5910,7 @@ function AsyncButton({onClick, children, style, disabled, ...props}) {
     try { await onClick(e); }
     catch(err) {
       console.error(err);
-      try { toast(String(err?.message||"Algo falló — probá de nuevo"),"error",6000); } catch(_) {}
+      try { toast(String(err?.message||"Algo falló. Probá de nuevo"),"error",6000); } catch(_) {}
     }
     finally { setLoading(false); }
   };
@@ -6868,7 +6868,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -7102,7 +7102,7 @@ function AppReclamos({T, orders, ordersStatus, fetchOrders, fbStatus, user, onHo
           <div style={{padding:"24px 0 48px",maxWidth:520}}>
             <div style={{fontSize:20,fontWeight:800,color:T.text,marginBottom:20,letterSpacing:-0.5,display:"flex",alignItems:"center",gap:8}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Configuración</div>
             <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"20px 22px"}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>SLA — Umbral de urgencia</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4,display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>SLA: umbral de urgencia</div>
               <div style={{fontSize:13,color:T.textMd,marginBottom:16}}>Un reclamo se marca como urgente cuando lleva más de este tiempo sin resolverse.</div>
               <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                 {[1,2,3,5,7,10].map(d=>(
@@ -7719,8 +7719,8 @@ function ghCanjeAccion(c, cfg){
   if(est==="Enviado"){
     const d=dias(c.fechaEnvio);
     if(d!==null&&d>=cfg.sinrespuesta) return {tipo:"sinrespuesta",sev:3,dias:d,label:`Enviado hace ${d}d sin respuesta`};
-    if(d!==null&&d>=cfg.demora&&c.trackingCat!=="entregado") return {tipo:"demorado",sev:1,dias:d,label:`En camino hace ${d}d — posible demora`};
-    return {tipo:"ok",sev:0,label:d!==null?`En camino — ${d}d`:"En camino"};
+    if(d!==null&&d>=cfg.demora&&c.trackingCat!=="entregado") return {tipo:"demorado",sev:1,dias:d,label:`En camino hace ${d}d. Posible demora`};
+    return {tipo:"ok",sev:0,label:d!==null?`En camino · ${d}d`:"En camino"};
   }
   if(est==="Contenido pendiente"){
     const cont=c.contenido||[];
@@ -7729,16 +7729,16 @@ function ghCanjeAccion(c, cfg){
     const debe=total-entregados;
     const d=dias(c.trackEntregadoAt||c.fechaEnvio);
     if(total===0) return {tipo:"ok",sev:0,label:"Acordar contenido"};
-    if(debe<=0) return {tipo:"ok",sev:0,label:"Contenido completo — cerrar canje"};
+    if(debe<=0) return {tipo:"ok",sev:0,label:"Contenido completo. Cerrar canje"};
     // Piezas con fecha límite vencida: manda sobre los umbrales por días.
     const hoyP=hoyAR();
     const vencidas=ghPiezasDe(c).filter(p=>(p.estado||"pendiente")==="pendiente"&&p.fechaLimite&&p.fechaLimite<hoyP).length;
-    if(vencidas>0) return {tipo:"contenido",sev:2,dias:d,label:`${vencidas} pieza${vencidas!==1?"s":""} vencida${vencidas!==1?"s":""} — reclamar`};
-    if(d!==null&&d>=cfg.contCritico) return {tipo:"contenido",sev:3,dias:d,label:`Sin contenido hace ${d}d — considerá cerrarlo`};
-    if(d!==null&&d>=cfg.contUrgente) return {tipo:"contenido",sev:2,dias:d,label:`Reclamar contenido — ${d}d`};
-    if(d!==null&&d>=cfg.contAviso) return {tipo:"contenido",sev:1,dias:d,label:`Debe ${debe} contenido${debe!==1?"s":""} — ${d}d`};
+    if(vencidas>0) return {tipo:"contenido",sev:2,dias:d,label:`${vencidas} pieza${vencidas!==1?"s":""} vencida${vencidas!==1?"s":""} · reclamar`};
+    if(d!==null&&d>=cfg.contCritico) return {tipo:"contenido",sev:3,dias:d,label:`Sin contenido hace ${d}d. Considerá cerrarlo`};
+    if(d!==null&&d>=cfg.contUrgente) return {tipo:"contenido",sev:2,dias:d,label:`Reclamar contenido · ${d}d`};
+    if(d!==null&&d>=cfg.contAviso) return {tipo:"contenido",sev:1,dias:d,label:`Debe ${debe} contenido${debe!==1?"s":""} · ${d}d`};
     const margen=d!==null?cfg.contAviso-d:null;
-    return {tipo:"ok",sev:0,label:margen!==null?`Esperando contenido — ${margen}d de margen`:`Debe ${debe} contenido${debe!==1?"s":""}`};
+    return {tipo:"ok",sev:0,label:margen!==null?`Esperando contenido · ${margen}d de margen`:`Debe ${debe} contenido${debe!==1?"s":""}`};
   }
   return null;
 }
@@ -7758,7 +7758,7 @@ function CanjeCuponEditor({T,iS,code,pct,onSave,onCancel,crearEnTn}){
       const v=parseFloat(desc);
       if(!isFinite(v)||v<=0||v>100) throw new Error("Poné el % de descuento que va a dar el código (1 a 100)");
       const r=await crearEnTn(cod,v);
-      toast(r.creado?`Código ${cod} creado en Tienda Nube (${v}% OFF) y vinculado al canje`:`El código ${cod} ya existía en Tienda Nube — vinculado al canje`,"success",6000);
+      toast(r.creado?`Código ${cod} creado en Tienda Nube (${v}% OFF) y vinculado al canje`:`El código ${cod} ya existía en Tienda Nube. Vinculado al canje`,"success",6000);
     }
     onSave(cod,p);
   };
@@ -8219,7 +8219,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0).map(x=>`${x.acordados} ${x.tipo||x.nombre||""}`.trim()).join(", ");
     return [
       `Guion para el canje de ${c.influencer||"influencer"}`,
-      u?`Instagram: @${u} — https://instagram.com/${u}`:"",
+      u?`Instagram: @${u} · https://instagram.com/${u}`:"",
       c.telefono?`WhatsApp: ${c.telefono}`:"",
       c.email?`Email: ${c.email}`:"",
       prods?`Productos del canje: ${prods}`:"",
@@ -8235,7 +8235,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     try{
       const r=await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         action:"createTarea",uid:user.uid,
-        titulo:`Guion — canje de ${c.influencer||c.usuario||"influencer"}`,
+        titulo:`Guion. Canje de ${c.influencer||c.usuario||"influencer"}`,
         descripcion:descripcionGuion(c,pgNotas.trim()),
         asignadoEmail:colab.email,asignadoNombre:colab.nombre||"",
         managerEmail:user.email||"",prioridad:"normal",
@@ -8255,7 +8255,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const t=(d?.tareas||[]).find(x=>x._id===c.guionTareaId);
       if(!t){ toast("No se encontró la tarea del guion (¿se borró?)","warning"); return; }
       const dels=(t.deliverables||[]).filter(x=>x.link);
-      if(!dels.length){ toast(`Todavía no subieron el guion — la tarea está "${t.estado||"pendiente"}"`,"info",4500); return; }
+      if(!dels.length){ toast(`Todavía no subieron el guion. La tarea está "${t.estado||"pendiente"}"`,"info",4500); return; }
       window.open(dels[dels.length-1].link,"_blank","noopener");
     }catch(e){ toast("No se pudo abrir el guion: "+e.message,"error"); }
   }
@@ -8385,7 +8385,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       const writeP=form._docId
         ? updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})})
         : addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
-      writeP.catch(e=>toast("El canje no se pudo guardar en el servidor: "+String(e?.message||e).slice(0,120)+" — revisá que siga en la lista","error",8000));
+      writeP.catch(e=>toast("El canje no se pudo guardar en el servidor: "+String(e?.message||e).slice(0,120)+". Revisá que siga en la lista","error",8000));
       // Programar email de recordatorio si hay fechaEnvioProgr nueva o cambiada
       const prevFecha = prev?.fechaEnvioProgr;
       if(p.fechaEnvioProgr && p.fechaEnvioProgr !== prevFecha) {
@@ -8580,7 +8580,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               {[
                 {n:1,title:"Perfiles de influencers",desc:"Creá el perfil una sola vez: código de descuento, % de descuento, % de comisión, redes y nicho. Después cada canje nuevo se autocompleta eligiendo el perfil."},
                 {n:2,title:"Nuevo canje",desc:"Con '+ Canje' elegís el perfil o cargás los datos desde un pedido real ('Cargar desde pedido' trae cliente, productos con nombre corto, dirección y hasta el punto de retiro). Definí los productos, el contenido acordado y listo: arranca en 'Por enviar'."},
-                {n:3,title:"Etiqueta Andreani desde el alta",desc:"Si cargaste el pedido, el botón 'Exportar XLSX Andreani' del mismo modal te da el Excel del envío al toque — sin crear el canje, ir al detalle y volver. Si el punto de retiro no existe en la lista de Andreani, se abre el selector de sucursales cercanas ordenadas por distancia."},
+                {n:3,title:"Etiqueta Andreani desde el alta",desc:"Si cargaste el pedido, el botón 'Exportar XLSX Andreani' del mismo modal te da el Excel del envío al toque. Sin crear el canje, ir al detalle y volver. Si el punto de retiro no existe en la lista de Andreani, se abre el selector de sucursales cercanas ordenadas por distancia."},
                 {n:4,title:"Kanban por estado",desc:"Las columnas son el ciclo completo: Por enviar → Enviado → Contenido pendiente → Cerrado. 'Contenido pendiente' se ordena por urgencia (lo más viejo arriba) y Cerrado muestra los últimos 30 días (con botón para ver todos)."},
                 {n:5,title:"Hoy en Canjes",desc:"La tira de arriba junta TODO lo que requiere acción: canjes sin despachar, envíos demorados, paquetes entregados o en sucursal, contenido vencido y recordatorios. Cada chip filtra el kanban a esos canjes con un click, y cada card muestra su próximo paso. Los umbrales de días se configuran con el engranaje de la tira. El badge de Canjes en el menú cuenta estas acciones pendientes."},
                 {n:6,title:"Contenido y recordatorios",desc:"En el detalle marcás los contenidos entregados sobre los acordados (la barra de progreso de cada card). Si a los 5 días de entregado falta contenido, te llega un recordatorio por email. También podés crear una tarea de guion para el equipo con fecha límite."},
@@ -8588,7 +8588,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -9615,7 +9615,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                                   influencer:c.influencer, producto:c.producto||((c.productosCanje||[])[0]?.nombre||""),
                                   tracking:c.tracking||"", fechaEnvioProgr:val, delayMs:ms,
                                 })}).catch(()=>{});
-                                toast(`Envío programado para el ${d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})} — te llega un mail ese día a las 9AM`,"success",4500);
+                                toast(`Envío programado para el ${d.toLocaleDateString("es-AR",{day:"2-digit",month:"long"})} · te llega un mail ese día a las 9AM`,"success",4500);
                               }
                             } else {
                               // Pasada u hoy → fecha real de envío
@@ -9636,7 +9636,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                      export XLSX de 1 fila. No se edita desde acá a propósito. ── */}
               {(()=>{
                 const dirTxt=c.esSucursal
-                  ?("Retiro en sucursal"+(c.pickupDetails?.name?`: ${c.pickupDetails.name}`:"")+(c.pickupDetails?.address?.address?` — ${c.pickupDetails.address.address} ${c.pickupDetails.address.number||""}`.trim():""))
+                  ?("Retiro en sucursal"+(c.pickupDetails?.name?`: ${c.pickupDetails.name}`:"")+(c.pickupDetails?.address?.address?` · ${c.pickupDetails.address.address} ${c.pickupDetails.address.number||""}`.trim():""))
                   :[[c.direccion,c.dirNumero].filter(Boolean).join(" "),c.piso?`Piso ${c.piso}`:"",c.localidad,c.provincia,c.cp?`CP ${c.cp}`:""].filter(Boolean).join(", ");
                 return (
                   <div style={secStyle}>
@@ -9659,11 +9659,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           }
                         }
                         const faltaNow=faltantes(cx);
-                        if(faltaNow.length){ toast((cx.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+faltaNow.join(", ")):"El canje no tiene nº de pedido — cargalo para traer la dirección","warning",5000); return; }
+                        if(faltaNow.length){ toast((cx.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+faltaNow.join(", ")):"El canje no tiene nº de pedido. Cargalo para traer la dirección","warning",5000); return; }
                         try{
                           const ok=await exportarXlsxCanje(cx);
                           if(ok) save({etiquetaVia:"excel",etiquetaAt:new Date().toISOString()});
-                          if(ok) toast(cx.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking acá":"Excel generado — subilo al portal de Andreani y pegá el tracking acá","success",5000);
+                          if(ok) toast(cx.esSucursal?"Excel generado (envío a sucursal) · subilo al portal de Andreani y pegá el tracking acá":"Excel generado. Subilo al portal de Andreani y pegá el tracking acá","success",5000);
                         }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
                       }} style={{...BtnSecondary(T),fontSize:12,color:T.green,borderColor:T.green+"66",height:32,padding:"0 14px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
                     </div>
@@ -9672,17 +9672,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       const via=c.etiquetaVia==="api"?"por API":c.etiquetaVia==="excel"?"por Excel":"";
                       const cuando=c.etiquetaAt&&isFinite(Date.parse(c.etiquetaAt))?new Date(c.etiquetaAt).toLocaleDateString("es-AR",{day:"2-digit",month:"short"}):"";
                       let col=T.textSm, txt;
-                      if(tr){ col=T.green; txt=`Etiqueta lista${via?" "+via:""}${cuando?" · "+cuando:""} — tracking ${tr}`; }
-                      else if(c.etiquetaVia){ col=T.yellow; txt=`Etiqueta generada ${via}${cuando?" · "+cuando:""} — el tracking se completa solo cuando subís el PDF de rótulos en Envíos`; }
-                      else if((c.pedidoRef||"").trim()){ txt=`Sin etiqueta todavía — el pedido #${c.pedidoRef} figura como canje en Envíos: emitila desde ahí (por API o en el lote de Excel) y el tracking vuelve solo.`; }
+                      if(tr){ col=T.green; txt=`Etiqueta lista${via?" "+via:""}${cuando?" · "+cuando:""} · tracking ${tr}`; }
+                      else if(c.etiquetaVia){ col=T.yellow; txt=`Etiqueta generada ${via}${cuando?" · "+cuando:""} · el tracking se completa solo cuando subís el PDF de rótulos en Envíos`; }
+                      else if((c.pedidoRef||"").trim()){ txt=`Sin etiqueta todavía. El pedido #${c.pedidoRef} figura como canje en Envíos: emitila desde ahí (por API o en el lote de Excel) y el tracking vuelve solo.`; }
                       else txt="Sin nº de pedido: cargalo arriba para que Envíos lo reconozca como canje.";
                       const copiarLogistica=async()=>{
                         const prods=(c.productosCanje||[]).map(x=>`${x.cantidad||1}x ${x.nombre}`).join(", ")||c.producto||"";
                         const dest=c.esSucursal
-                          ?`Retiro en sucursal${c.pickupDetails?.name?": "+c.pickupDetails.name:""}${c.pickupDetails?.address?.address?" — "+c.pickupDetails.address.address+" "+(c.pickupDetails.address.number||""):""}`.trim()
+                          ?`Retiro en sucursal${c.pickupDetails?.name?": "+c.pickupDetails.name:""}${c.pickupDetails?.address?.address?": "+c.pickupDetails.address.address+" "+(c.pickupDetails.address.number||""):""}`.trim()
                           :[[c.direccion,c.dirNumero].filter(Boolean).join(" "),c.piso?"Piso "+c.piso:"",c.localidad,c.provincia,c.cp?"CP "+c.cp:""].filter(Boolean).join(", ");
                         const lineas=[
-                          `CANJE — ${c.influencer||""}${c.usuario?" (@"+c.usuario.replace("@","")+")":""}`,
+                          `CANJE · ${c.influencer||""}${c.usuario?" (@"+c.usuario.replace("@","")+")":""}`,
                           (c.pedidoRef||"").trim()?`Pedido #${c.pedidoRef}`:"Sin nº de pedido",
                           prods?`Productos: ${prods}`:"",
                           dest?`Destino: ${dest}`:"",
@@ -9690,7 +9690,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                           c.telefono?`Tel: ${c.telefono}`:"",
                           `Tracking: ${tr||"pendiente"}`,
                         ].filter(Boolean).join("\n");
-                        try{ await navigator.clipboard.writeText(lineas); toast("Resumen copiado — pegalo en el grupo de logística","success"); }catch(_){ toast("No se pudo copiar","warning"); }
+                        try{ await navigator.clipboard.writeText(lineas); toast("Resumen copiado. Pegalo en el grupo de logística","success"); }catch(_){ toast("No se pudo copiar","warning"); }
                       };
                       return (
                         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10,padding:"9px 12px",borderRadius:10,background:col+"10",border:`1px solid ${col}33`}}>
@@ -9713,7 +9713,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         </div>
                       </div>
                     ):(
-                      <div style={{fontSize:12,color:T.textSm,background:T.bg,border:`1px dashed ${T.border}`,borderRadius:10,padding:"10px 12px"}}>Sin dirección cargada. Los datos de envío vienen del pedido de la tienda — cargá el nº de pedido arriba y se completa solo.</div>
+                      <div style={{fontSize:12,color:T.textSm,background:T.bg,border:`1px dashed ${T.border}`,borderRadius:10,padding:"10px 12px"}}>Sin dirección cargada. Los datos de envío vienen del pedido de la tienda. Cargá el nº de pedido arriba y se completa solo.</div>
                     )}
                   </div>
                 );
@@ -9733,7 +9733,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       <div style={{fontSize:12,color:T.yellow,background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:14}}>No hay colaboradores cargados en Tareas. Agregá a Nico desde la sección Tareas primero.</div>
                     ):(
                       <select value={pgSel} onChange={e=>setPgSel(e.target.value)} style={{...iS,marginBottom:14}}>
-                        {pgColabs.map(col=><option key={col.email} value={col.email}>{col.nombre||col.email}{col.rol?` — ${col.rol}`:""}</option>)}
+                        {pgColabs.map(col=><option key={col.email} value={col.email}>{col.nombre||col.email}{col.rol?` · ${col.rol}`:""}</option>)}
                       </select>
                     )}
                     <div style={{fontSize:11,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Fecha límite (opcional)</div>
@@ -9812,7 +9812,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       </div>
                     </div>
                     {/* Piezas */}
-                    {piezas.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin piezas acordadas — agregá una con los botones de abajo.</div>}
+                    {piezas.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin piezas acordadas. Agregá una con los botones de abajo.</div>}
                     <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
                       {piezas.map(pz=>{
                         const estK=(pz.estado||"pendiente");
@@ -9883,7 +9883,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 const guardarCupon=(cod,pct)=>{
                   save({codigoDescuento:cod,comisionPct:pct});
                   setCupEdit(false);
-                  toast(cod?"Código asignado al canje — se sincroniza con Códigos y comisiones":"Código quitado del canje","success",4500);
+                  toast(cod?"Código asignado al canje. Se sincroniza con Códigos y comisiones":"Código quitado del canje","success",4500);
                 };
                 return (
                   <div style={{background:code&&!cupEdit?`linear-gradient(135deg, ${T.accentSolid}16, transparent 65%)`:T.card,border:`1px solid ${code&&!cupEdit?T.accentSolid+"44":T.border}`,borderRadius:14,padding:"16px 18px"}}>
@@ -9895,7 +9895,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     </div>
                     {(!code||cupEdit)?(
                       <>
-                        {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y desde acá abrís sus métricas — sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
+                        {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y desde acá abrís sus métricas. Sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
                         <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null} crearEnTn={crearCuponTn}/>
                       </>
                     ):(
@@ -9907,7 +9907,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         </div>
                         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                           <AsyncButton onClick={()=>verMetricasCupon(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver métricas</AsyncButton>
-                          <span style={{fontSize:11,color:T.textSm,lineHeight:1.5,flex:1,minWidth:180}}>Pedidos, ventas y comisión en tiempo real — el mismo panel que ve el/la influencer.</span>
+                          <span style={{fontSize:11,color:T.textSm,lineHeight:1.5,flex:1,minWidth:180}}>Pedidos, ventas y comisión en tiempo real. El mismo panel que ve el/la influencer.</span>
                         </div>
                       </>
                     )}
@@ -9958,7 +9958,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,color:T.text,fontWeight:600}}>{s.descripcion}</div>
-                  {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
+                  {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(": ")}{!clickable&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
                 </div>
                 {distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{fmtDist(distM)}</span>}
               </div>
@@ -9966,21 +9966,21 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           };
           return (
             <div>
-              {sucPick.hint&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>El punto elegido en el pedido (<strong style={{color:T.text}}>{sucPick.hint}</strong>) no está en el desplegable de carga masiva de Andreani — elegí la sucursal más cercana.</div>}
+              {sucPick.hint&&<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>El punto elegido en el pedido (<strong style={{color:T.text}}>{sucPick.hint}</strong>) no está en el desplegable de carga masiva de Andreani. Elegí la sucursal más cercana.</div>}
               <input autoFocus value={sucQ} onChange={e=>setSucQ(e.target.value)} placeholder="Buscar otra por calle, barrio o localidad..." style={{...iS,marginBottom:10}}/>
               {q.length<2?(
                 sucCerca?.loading?(
                   <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
                 ):(sucCerca?.lista||[]).length===0?(
                   <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>
-                    {sucCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales — buscá arriba por calle o barrio"
-                     :sucCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial — buscá arriba por calle o barrio"
-                     :`No pude calcular cercanías${sucCerca?.diag?` (${sucCerca.diag})`:""} — buscá arriba por calle o barrio`}
+                    {sucCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales. Buscá arriba por calle o barrio"
+                     :sucCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial. Buscá arriba por calle o barrio"
+                     :`No pude calcular cercanías${sucCerca?.diag?` (${sucCerca.diag})`:""} · buscá arriba por calle o barrio`}
                   </div>
                 ):(
                   <div>
                     <div style={{fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>
-                      {sucCerca.aproximado?`De la zona del pedido${sucCerca.origen?` (${sucCerca.origen})`:""} — sin distancia exacta`:`Más cercanas al punto del pedido${sucCerca.origen?` (${sucCerca.origen})`:""}`}
+                      {sucCerca.aproximado?`De la zona del pedido${sucCerca.origen?` (${sucCerca.origen})`:""} · sin distancia exacta`:`Más cercanas al punto del pedido${sucCerca.origen?` (${sucCerca.origen})`:""}`}
                     </div>
                     <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
                       {(sucCerca.lista||[]).map((s,i)=><Row key={i} s={s} i={i} valor={s.tpl} distM={s.distM}/>)}
@@ -9993,7 +9993,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center"}}>Sin resultados para "{sucQ}"</div>
               ):(
                 <div>
-                  {sucRes?.oficial===false&&<div style={{fontSize:10,color:T.yellow,marginBottom:6}}>La API oficial no respondió — mostrando la lista del template (puede estar desactualizada)</div>}
+                  {sucRes?.oficial===false&&<div style={{fontSize:10,color:T.yellow,marginBottom:6}}>La API oficial no respondió. Mostrando la lista del template (puede estar desactualizada)</div>}
                   <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
                     {(sucRes?.lista||[]).map((s,i)=>{
                       const tpl=sucRes?.oficial===false?String(s.descripcion||"").trim():(tplM.get(tplN(s.descripcion))||null);
@@ -10103,7 +10103,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     const v=parseFloat(formCupDesc);
                     if(!isFinite(v)||v<=0||v>100) throw new Error("Poné el % de descuento del código (1 a 100)");
                     const r=await crearCuponTn((form.codigoDescuento||"").toUpperCase().trim(),v);
-                    toast(r.creado?`Código ${r.code} creado en tu tienda (${v}% OFF) — quedó asignado a este canje al guardar`:`El código ${r.code} ya existía en tu tienda`,"success",6000);
+                    toast(r.creado?`Código ${r.code} creado en tu tienda (${v}% OFF) · quedó asignado a este canje al guardar`:`El código ${r.code} ya existía en tu tienda`,"success",6000);
                   }} style={{...BtnSecondary(T),fontSize:11,padding:"6px 12px"}}>Crear en mi tienda</AsyncButton>
                 </div>
               )}
@@ -10283,7 +10283,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 if(falta.length){ toast((f.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+falta.join(", ")):"Cargá primero el pedido (arriba) para traer la dirección de envío","warning",5000); return; }
                 try{
                   const ok=await exportarXlsxCanje(f);
-                  if(ok) toast(f.esSucursal?"Excel generado (envío a sucursal) — subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado — subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
+                  if(ok) toast(f.esSucursal?"Excel generado (envío a sucursal) · subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado. Subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
                 }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
               }} style={{...BtnSecondary(T),fontSize:13,color:T.green,borderColor:T.green+"66",height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13,height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",marginLeft:"auto"}}>Cancelar</button>
@@ -10375,7 +10375,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(!mp) return;
       window.history.replaceState(null,"",window.location.pathname+window.location.hash);
       if(mp==="ok") toast("¡Pago recibido! Tu saldo se acredita solo en unos segundos.","success",6000);
-      else if(mp==="pending") toast("Tu pago está en proceso — el saldo se acredita cuando Mercado Pago lo apruebe.","warning",7000);
+      else if(mp==="pending") toast("Tu pago está en proceso. El saldo se acredita cuando Mercado Pago lo apruebe.","warning",7000);
       else toast("El pago no se completó. Podés intentar de nuevo desde Saldo de envíos.","warning",7000);
       // El webhook acredita en segundos pero el chip mostraba el saldo VIEJO
       // hasta recargar — pollear el status hasta ver el saldo subir (~48s máx).
@@ -11060,7 +11060,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(ovr&&!(locs.sucursales||[]).includes(ovr)){ delete sucursalOverridesRef.current[ovrKey(o)]; persistOverrides(); ovr=""; }
         const sucursal=ovr||findAndreaniSucursal(locs,...sucArgs(o))||"";
         sucEscritas.push({numero:o.numero,comprador:o.comprador,sucursal});
-        if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal,locs.sucursales)==="warn")verifRows.push({o,suave:verifSuave(o,sucursal),numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} — ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
+        if(!sucReemplazoRef.current.has(ovrKey(o))&&verifSucursalTplVsTienda(o,sucursal,locs.sucursales)==="warn")verifRows.push({o,suave:verifSuave(o,sucursal),numero:o.numero,comprador:o.comprador,tipo:"sucursal",escrito:sucursal||"(vacío)",esperado:(o.pickupDetails?`${o.pickupDetails.name||""} · ${o.pickupDetails.address?.address||""} ${o.pickupDetails.address?.number||""}`:`${o.direccion||""} ${o.dirNumero||""}, ${o.localidad||o.ciudad||""}`).trim()});
         const cells=[
           sC('A'+rn,""),
           nC('B'+rn,parseInt(cfg&&cfg.peso)||200),
@@ -11321,8 +11321,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const pd=o?.pickupDetails||{};
       const punto={nombre:pd.name||"",dir:`${pd.address?.address||""} ${pd.address?.number||""}`.trim(),loc:pd.address?.locality||pd.address?.city||"",cp:String(pd.address?.zipcode||pd.address?.zip_code||o?.cp||"")};
       authFetch("/api/andreani?action=punto_map_set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,key:pk,datos,verificado,punto})})
-        .then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); toast(`La sucursal quedó guardada solo en este navegador — no se pudo guardar en el servidor: ${d.error||("HTTP "+r.status)}`,"warning",8000); } })
-        .catch(e=>toast(`La sucursal quedó guardada solo en este navegador — sin conexión con el servidor (${e.message})`,"warning",8000));
+        .then(async r=>{ if(!r.ok){ const d=await r.json().catch(()=>({})); toast(`La sucursal quedó guardada solo en este navegador. No se pudo guardar en el servidor: ${d.error||("HTTP "+r.status)}`,"warning",8000); } })
+        .catch(e=>toast(`La sucursal quedó guardada solo en este navegador. Sin conexión con el servidor (${e.message})`,"warning",8000));
     }
   }
 
@@ -11905,8 +11905,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Éxito → toast (sin modal que pida click); si quedaron pedidos en
       // esquina afuera del Excel, se abre directo su modal informativo.
       toast(verifRowsRef.current.length
-        ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado (${verifRowsRef.current.length} destino${verifRowsRef.current.length!==1?"s":""} sin verificar)`
-        :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel — descargado destinos verificados con tu tienda`,"success");
+        ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel. Descargado (${verifRowsRef.current.length} destino${verifRowsRef.current.length!==1?"s":""} sin verificar)`
+        :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel. Descargado destinos verificados con tu tienda`,"success");
       if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
       setExportDone({count:finalOrders.length, ts:Date.now()}); // ya no abre modal: refresca el mapa "ya exportado"
       logUsage("etiquetas", finalOrders.length);
@@ -12073,11 +12073,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         });
         if(chosen===null) return; // cancelar todo
         if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[ovrKey(o)]="EXCLUIR"; persistOverrides(); resuelto=true; break; }
-        if(forzar&&chosen===(autoMatch0||"")){ toast("Esa es justamente la sucursal que Andreani no tiene operativa — elegí otra (Ver cercanas) o mandalo a domicilio","warning",6500); continue; }
+        if(forzar&&chosen===(autoMatch0||"")){ toast("Esa es justamente la sucursal que Andreani no tiene operativa. Elegí otra (Ver cercanas) o mandalo a domicilio","warning",6500); continue; }
         // Lo elegido puede venir de la lista oficial: traducirlo al desplegable.
         const tpl=(locs.sucursales||[]).includes(chosen)?chosen:ghTplDeOficial(locs,{descripcion:chosen});
         if(!tpl){
-          toast(`"${chosen}" no existe en el desplegable del Excel de carga masiva — elegí otra sucursal (la búsqueda de abajo muestra solo las válidas)`,"warning",6500);
+          toast(`"${chosen}" no existe en el desplegable del Excel de carga masiva. Elegí otra sucursal (la búsqueda de abajo muestra solo las válidas)`,"warning",6500);
           continue; // reabrir el modal para el mismo pedido
         }
         sucursalOverridesRef.current[ovrKey(o)]=tpl; persistOverrides();
@@ -12207,7 +12207,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Capa final: motor de cercanías (listado GEO completo) con el mismo
       // match estricto por calle+número — la distancia NO decide (#5898).
       if(!ofc){ try{ const dC=await fetchCercanasRaw(o); ofc=matchSucursalOficial(dC.sucursales,o,{exacto:!dC.aproximado&&dC.stats?.geo?.origenSrc==="geocode"}); }catch(_){} }
-      if(!ofc&&!Array.isArray(oficiales)) return {row:mkRow(o,{incluido:false,cotError:"Lista oficial de Andreani no disponible — probá de nuevo en unos minutos"})};
+      if(!ofc&&!Array.isArray(oficiales)) return {row:mkRow(o,{incluido:false,cotError:"Lista oficial de Andreani no disponible. Probá de nuevo en unos minutos"})};
       if(!ofc) return {modal:"sucursal",oficiales};
       return {row:mkRow(o,{oficial:ofc,verif:verifSucursalVsTienda(o,ofc),conflictoOk:false})};
     };
@@ -12233,9 +12233,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         setLocOficialSel("");
         const chosenEsq=await new Promise(resolve=>{ setLocationModal({order:o,locs:null,resolve,type:"sucursal",oficiales:p.oficiales,wantOficial:true,esquina:true}); setLocSearch(""); });
         if(chosenEsq===null){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); return; } // cancelar todo
-        if(chosenEsq==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — emitilo a mano en Andreani (carga individual)"})); continue; }
+        if(chosenEsq==="EXCLUIR"){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina. Emitilo a mano en Andreani (carga individual)"})); continue; }
         const ofcEsq=chosenEsq&&chosenEsq.oficial?chosenEsq.oficial:null;
-        if(!ofcEsq){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina — sin sucursal elegida"})); continue; }
+        if(!ofcEsq){ rows.push(mkRow(o,{incluido:false,cotError:"Dirección en esquina. Sin sucursal elegida"})); continue; }
         rows.push(mkRow(o,{tipo:"sucursal",oficial:ofcEsq,esquina:true,conflictoOk:true}));
         continue;
       }
@@ -12318,7 +12318,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     r.cot=null; r.cotError=""; r.incluido=true;
     recordarPunto(o,{oficial:{id:ofc.id,codigo:ofc.codigo??null,numero:ofc.numero??null,descripcion:ofc.descripcion||"",direccion:ofc.direccion||null}});
     pushBulk("revision");
-    toast("Sucursal corregida — la nueva elección quedó guardada para este punto","success");
+    toast("Sucursal corregida. La nueva elección quedó guardada para este punto","success");
     cotizarBulk({silencioso:true});
   }
   async function emitirBulk(){
@@ -12380,7 +12380,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         }catch(e){ errRed=e; resp=null; if(intento===0) await new Promise(res=>setTimeout(res,2500)); }
       }
       if(!resp){
-        r.emitError="Sin respuesta del servidor. No sabemos si la etiqueta salió: NO la vuelvas a emitir — revisá Seguimientos en un minuto (si salió, aparece ahí con su número).";
+        r.emitError="Sin respuesta del servidor. No sabemos si la etiqueta salió: NO la vuelvas a emitir. Revisá Seguimientos en un minuto (si salió, aparece ahí con su número).";
         r.emitTipo="dudoso";
       } else if(!resp.ok||d.error){
           const code=d.code||d.error;
@@ -12388,11 +12388,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           // debitar): no se sabe si la etiqueta salió → dudoso, nunca "rechazo" para reintentar (19/oct/2026).
           const sinCuerpo=!d||(!d.error&&!d.code);
           r.emitTipo=code==="saldo_insuficiente"?"saldo":code==="precio_cambio"?"precio":(d.dudoso||code==="dudoso"||resp.status===502&&/no pudimos confirmar/i.test(String(d.error))||(sinCuerpo&&resp.status>=500))?"dudoso":code==="en_curso"?"dudoso":"rechazo";
-          if(sinCuerpo&&resp.status>=500){ r.emitError="El servidor se cortó mientras emitía. No sabemos si la etiqueta salió: NO la vuelvas a emitir — revisá Seguimientos en un minuto (si salió, aparece ahí con su número)."; done++; pushBulk("emitiendo",{done,total:inc.length}); return; }
+          if(sinCuerpo&&resp.status>=500){ r.emitError="El servidor se cortó mientras emitía. No sabemos si la etiqueta salió: NO la vuelvas a emitir. Revisá Seguimientos en un minuto (si salió, aparece ahí con su número)."; done++; pushBulk("emitiendo",{done,total:inc.length}); return; }
           if(code==="saldo_insuficiente") sinSaldo=true;
           if(code==="precio_cambio"&&typeof d.precio==="number"){ r.cot={...(r.cot||{}),precio:d.precio}; }
           r.emitError=code==="saldo_insuficiente"
-            ?`Saldo insuficiente — faltan ${fmtMoney((d.precio||0)-(d.saldo||0))}`
+            ?`Saldo insuficiente. Faltan ${fmtMoney((d.precio||0)-(d.saldo||0))}`
             :(typeof d.error==="string"?d.error:`Error al emitir (HTTP ${resp.status})`);
           if(typeof d.saldo==="number") setAndreani(a=>({...a,saldo:d.saldo}));
         } else {
@@ -12577,7 +12577,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       } else ghDescargarPdfB64(res.pdf,`Andreani_${numeroDeEnvio}.pdf`);
       toast("Etiqueta descargada","success");
     }
-    else if(res.pending) toast(`La etiqueta ${numeroDeEnvio} todavía se está generando — reintentá en unos segundos`,"warning");
+    else if(res.pending) toast(`La etiqueta ${numeroDeEnvio} todavía se está generando. Reintentá en unos segundos`,"warning");
     else toast(`No se pudo descargar la etiqueta ${numeroDeEnvio}: ${res.error}`,"error");
   }
   // "Descargar todas": un solo PDF fusionado con pdf-lib (ya es dependencia del
@@ -12805,7 +12805,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         }
       } else { try{ ventana&&ventana.close(); }catch(_){} }
       const verbo=ventana?"lista":"descargada";
-      if(pendientes.length) toast(`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} ${verbo}${pdfs.length!==1?"s":""} · ${pendientes.length} todavía en proceso (${pendientes.join(", ")}) — reintentá en unos segundos`,"warning");
+      if(pendientes.length) toast(`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} ${verbo}${pdfs.length!==1?"s":""} · ${pendientes.length} todavía en proceso (${pendientes.join(", ")}) · reintentá en unos segundos`,"warning");
       else toast(ventana?`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} lista${pdfs.length!==1?"s":""} para imprimir`:`${pdfs.length} etiqueta${pdfs.length!==1?"s":""} descargada${pdfs.length!==1?"s":""}`,"success");
     }catch(e){
       console.error("descargarTodasBulk:",e);
@@ -13029,7 +13029,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({envios:[{numero:String(result.pedidoNum),tracking:String(result.tracking),estado:"despachado",activo:true,tiendaPendiente:{orderId:String(result.pedidoNum),tracking:String(result.tracking),error:String(err.message||"").slice(0,200)}}]}),
       }).catch(()=>{});
-      err.enCola=true; err.message=`${err.message} — quedó en cola: Growith lo reintenta solo`;
+      err.enCola=true; err.message=`${err.message} · quedó en cola: Growith lo reintenta solo`;
     } else {
       setTrackingSent(p=>({...p,[result.pedidoNum]:"error"}));
     }
@@ -13073,7 +13073,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       setSeguimientoProgress({active:false,current:0,total:0,last:"",done:false,ok:0,fail:0,errors:[]});
     } else {
       // El toast también, por si está en otra sección con el modal desmontado
-      toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} · ${fail} con error — el detalle está en Envíos`,"warning",7000);
+      toast(`${ok} seguimiento${ok!==1?"s":""} enviado${ok!==1?"s":""} · ${fail} con error. El detalle está en Envíos`,"warning",7000);
       const resFin={active:false,current:pending.length,total:pending.length,last:"",done:true,ok,fail,errors};
       _ghSegLastResult={ts:Date.now(),res:resFin}; // por si el componente está desmontado
       setSeguimientoProgress(resFin);
@@ -13131,13 +13131,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   setSeguimientoProgress(p=>({...p,min:true}));
                   segHud({active:true,min:true,current:seguimientoProgress.current,total:seguimientoProgress.total,ok:seguimientoProgress.ok,fail:seguimientoProgress.fail});
                 }} style={{marginTop:16,width:"100%",padding:"9px 14px",fontSize:12,fontWeight:600,borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                  Seguir en segundo plano — usá la app mientras termina
+                  Seguir en segundo plano. Usá la app mientras termina
                 </button>
               </>
             ) : (
               <>
                 {/* Resultado con errores (el éxito total sale como toast, sin
-                    modal): sobrio, sin glow ni placas macizas — chips con
+                    modal): sobrio, sin glow ni placas macizas. Chips con
                     número y el detalle de qué pedidos fallaron. */}
                 <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
                   <StatusIcon type={seguimientoProgress.ok===0?"error":"warning"} size={40}/>
@@ -13161,11 +13161,11 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 {seguimientoProgress.errors?.length>0&&(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:16,maxHeight:150,overflowY:"auto"}}>
                     {seguimientoProgress.errors.map((e,i)=>(
-                      <div key={i} style={{fontSize:12,color:T.textMd,marginBottom:4,lineHeight:1.5}}><span style={{fontWeight:700,color:T.red}}>#{e.pedido}</span> — {e.msg}</div>
+                      <div key={i} style={{fontSize:12,color:T.textMd,marginBottom:4,lineHeight:1.5}}><span style={{fontWeight:700,color:T.red}}>#{e.pedido}</span>: {e.msg}</div>
                     ))}
                   </div>
                 )}
-                <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>Los que fallaron quedan pendientes — corregí el motivo y volvé a enviar seguimientos: solo se reintentan los que faltan.</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>Los que fallaron quedan pendientes. Corregí el motivo y volvé a enviar seguimientos: solo se reintentan los que faltan.</div>
                 <div style={{display:"flex",justifyContent:"flex-end"}}>
                   <button onClick={()=>setSeguimientoProgress(p=>({...p,done:false}))} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
                 </div>
@@ -13243,7 +13243,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         {andreani.enabled&&(()=>{
           // Saldo bajo: el chip pasa a ámbar (o rojo si ya no alcanza para ninguna etiqueta)
           const chipColor=andreani.saldoBajo?(andreani.etiquetasEstimadas===0?T.red:T.yellow):T.green;
-          const chipTitle=andreani.saldoBajo?"Saldo bajo — hacé clic para cargar saldo":"Saldo de envíos Andreani";
+          const chipTitle=andreani.saldoBajo?"Saldo bajo. Hacé clic para cargar saldo":"Saldo de envíos Andreani";
           return (
           <button onClick={()=>setAndreaniSaldoOpen(true)} title={chipTitle}
             style={{display:"inline-flex",alignItems:"center",gap:8,height:36,padding:"0 14px 0 12px",borderRadius:DS.r.full,boxSizing:"border-box",border:`1px solid ${T.border}`,background:T.card,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0,alignSelf:"center",whiteSpace:"nowrap"}}>
@@ -13291,7 +13291,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
                   {[
                     {n:1,icon:"",title:"Pedidos automáticos",desc:"Los pedidos de tu tienda se sincronizan solos, sin cargar nada a mano. En 'Por empaquetar' ves todo lo que falta despachar; cuando marcás un pedido como empaquetado pasa a 'Por enviar'. El botón 'Sincronizar' de arriba trae lo último al instante."},
-                    {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) — no es el total de la venta: poné lo que realmente querés asegurar."},
+                    {n:2,icon:"",title:"El paquete y el valor declarado",desc:"El botón 'Paquete' guarda las medidas, el peso y el valor declarado con los que se cotizan y emiten TODAS tus etiquetas. El valor declarado define el seguro que cobra Andreani (un % de ese valor) · no es el total de la venta: poné lo que realmente querés asegurar."},
                     {n:3,icon:"",title:"Etiquetas por Excel",desc:"En 'Por enviar', seleccioná pedidos y tocá 'Exportar XLSX': sale el Excel de carga masiva listo para subir al portal de Andreani (domicilio y sucursal/HOP en sus hojas correctas). Si el punto de retiro del cliente no existe en la lista de Andreani, se abre un selector con las sucursales más cercanas ordenadas por distancia para que elijas una."},
                     {n:4,icon:"",title:"Etiquetas listas (prepago)",desc:"Si tenés el prepago habilitado, el botón 'Generar etiquetas (Saldo)' cotiza y emite directo por la API de Andreani: el PDF sale al instante y el costo se debita de tu saldo. También podés cotizar un pedido puntual con el chip 'Cotizar' de cada fila antes de decidir. Cuando las etiquetas están listas elegís 'Imprimir y enviar seguimientos' (tu tienda marca los pedidos como enviados y le avisa al comprador) o 'Solo imprimir' si todavía no vas a despachar: en ese caso los seguimientos quedan pendientes en Seguimientos. Con 'Imprimir los SKU en la etiqueta' los productos salen impresos al pie."},
                     {n:5,icon:"",title:"Saldo de envíos",desc:"El chip verde con la billetera (arriba) muestra tu saldo. Tocalo para cargar: con Mercado Pago se acredita solo al instante, o por transferencia con referencia y lo acredita el equipo. Ahí mismo ves los movimientos (cada etiqueta descuenta) y tu sucursal de despacho."},
@@ -13301,7 +13301,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   ].map(s=>(
                     <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                       <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                      <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                      <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
                     </div>
                   ))}
                 </div>
@@ -13313,8 +13313,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 if(tabEnvio!=="buscar"){ setTabEnvio("buscar"); setSelected(new Map()); setSearchEnvios(""); setTabOrders([]); }
                 setBuscarLoading(true);
                 try{ const r=await authFetch(`/api/orders?uid=${user?.uid}&q=${encodeURIComponent(qv)}`); const data=await r.json().catch(()=>null);
-                  if(r.ok&&Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data)); else toast(typeof data?.error==="string"?data.error:"La búsqueda falló — probá de nuevo","error",5000);
-                }catch(ex){ toast("La búsqueda falló (red) — probá de nuevo","error",5000); }
+                  if(r.ok&&Array.isArray(data)) setTabOrders(buildOrdersFromAPI(data)); else toast(typeof data?.error==="string"?data.error:"La búsqueda falló. Probá de nuevo","error",5000);
+                }catch(ex){ toast("La búsqueda falló (red) · probá de nuevo","error",5000); }
                 setBuscarLoading(false); };
               const salirBusqueda=()=>{ setBuscarQuery(""); if(tabEnvio==="buscar"){ setTabEnvio("empaquetar"); setSelected(new Map()); fetchTabOrders("empaquetar"); } };
               return (
@@ -13453,7 +13453,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               {selected.size>0&&(
                 <>
                   {/* La config de paquete la usa el XLSX de TODOS (peso/medidas/valor
-                      declarado) — no solo la emisión por API. Sin este botón, las
+                      declarado) · no solo la emisión por API. Sin este botón, las
                       cuentas sin Andreani prepago exportaban con los defaults sin
                       poder cambiarlos. */}
                   <button onClick={()=>setPaqModal(true)} title={paqResumen()} style={{...BtnSecondary(T),height:42,boxSizing:"border-box",borderRadius:DS.r.full,fontSize:13,fontWeight:600,padding:"0 18px",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:8}}>
@@ -13507,7 +13507,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                 </div>
                 <div style={{fontSize:15,fontWeight:600,color:T.text,marginBottom:6}}>No pudimos traer los pedidos</div>
-                <div style={{fontSize:12,color:T.textSm,maxWidth:320,margin:"0 auto 16px"}}>Tu tienda no respondió o hubo un problema de red. Tus pedidos siguen ahí — probá de nuevo.</div>
+                <div style={{fontSize:12,color:T.textSm,maxWidth:320,margin:"0 auto 16px"}}>Tu tienda no respondió o hubo un problema de red. Tus pedidos siguen ahí. Probá de nuevo.</div>
                 <Btn T={T} variant="primary" size="md" onClick={()=>fetchTabOrders(tabEnvio,{fresh:true})}>Reintentar</Btn>
               </div>
             ):exportables.length===0?(
@@ -13536,7 +13536,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               <>
                 {tabError&&(
                   <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",background:T.yellowBg,borderBottom:`1px solid ${T.yellow}44`,fontSize:12,color:T.yellow}}>
-                    No se pudieron actualizar los pedidos — estás viendo los últimos datos guardados.
+                    No se pudieron actualizar los pedidos. Estás viendo los últimos datos guardados.
                     <button onClick={()=>fetchTabOrders(tabEnvio,{fresh:true})} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.yellow}66`,borderRadius:8,padding:"3px 12px",fontSize:11,fontWeight:600,color:T.yellow,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Reintentar</button>
                   </div>
                 )}
@@ -13551,9 +13551,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   const cot=andreani.enabled&&filaEsAndreani(o)?(()=>{
                     const c=cotRow[o.numero]; const yaNum=andreaniNumeroDe(o);
                     const lk={fontSize:12,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",gap:5,fontFamily:"'Inter',system-ui,sans-serif",background:"none",border:"none",padding:0,whiteSpace:"nowrap"};
-                    if(yaNum) return <span style={{display:"inline-flex",alignItems:"center",gap:10}}><span title={`Etiqueta emitida — envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk,color:T.green}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Etiqueta emitida</span><button title="Descargar el PDF de la etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...lk,color:T.accent}}>PDF</button></span>;
+                    if(yaNum) return <span style={{display:"inline-flex",alignItems:"center",gap:10}}><span title={`Etiqueta emitida. Envío ${yaNum}`} onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk,color:T.green}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Etiqueta emitida</span><button title="Descargar el PDF de la etiqueta" onClick={e=>{e.stopPropagation();descargarEtiquetaBulk(String(yaNum),ghSkuLinesDe(o));}} style={{...lk,color:T.accent}}>PDF</button></span>;
                     if(c?.loading) return <span style={{...lk,cursor:"default",color:T.textSm,fontWeight:500}}><Spinner size={10} color={T.textSm}/> Cotizando…</span>;
-                    if(c?.error) return <span title={`${c.error} — click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.red}}>No cotizó · reintentar</span>;
+                    if(c?.error) return <span title={`${c.error} · click para reintentar`} onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.red}}>No cotizó · reintentar</span>;
                     if(typeof c?.precio==="number") return <span title="Emitir la etiqueta de Andreani de este pedido" onClick={e=>{e.stopPropagation();setAndreaniOrder(o);}} style={{...lk}}><span style={{color:T.textSm,fontWeight:500}}>Etiqueta</span><span style={{color:T.green,fontWeight:700,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(c.precio)}</span></span>;
                     return <span title="Cotizar el envío por Andreani" onClick={e=>{e.stopPropagation();cotizarFila(o);}} style={{...lk,color:T.accent}}>Cotizar envío</span>;
                   })():null;
@@ -14191,7 +14191,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             <div style={{maxHeight:300,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10,marginBottom:14}}>
               {verifModal.items.map((v,i)=>(
                 <div key={v.numero+"_"+i} style={{padding:"10px 14px",borderTop:i>0?`1px solid ${T.borderL}`:"none"}}>
-                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>#{v.numero} — {v.comprador}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>#{v.numero} · {v.comprador}</div>
                   <div style={{fontSize:11,color:T.textSm}}>Según tu tienda:</div>
                   <div style={{fontSize:12,color:T.green,fontWeight:600,marginBottom:3}}>{v.esperado||"(sin datos del punto)"}</div>
                   <div style={{fontSize:11,color:T.textSm}}>Quedaría en el Excel:</div>
@@ -14285,7 +14285,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             <div>
               {/* Datos del pedido + lo que eligió el cliente en TN, como referencia neutra */}
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-                <div style={{fontSize:13,color:T.text,marginBottom:isSuc?6:0}}>Pedido <strong>#{order.numero}</strong> — {order.comprador}</div>
+                <div style={{fontSize:13,color:T.text,marginBottom:isSuc?6:0}}>Pedido <strong>#{order.numero}</strong>: {order.comprador}</div>
                 {isSuc&&order.pickupDetails&&(
                   <div style={{fontSize:12,color:T.text,background:T.bg,borderRadius:8,padding:"8px 10px"}}>
                     <div style={{fontSize:10,fontWeight:600,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:3}}>Punto de retiro según tu tienda</div>
@@ -14307,7 +14307,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               </div>
               {!isSuc&&(
                 <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.yellow,fontWeight:600}}>
-                  No se encontró la localidad exacta — buscala abajo.
+                  No se encontró la localidad exacta. Buscala abajo.
                 </div>
               )}
               {esquina&&!apiUI&&(
@@ -14322,7 +14322,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               )}
               {noExacto&&!esquina&&noOperativa==null&&!apiUI&&(
                 <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
-                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá — no al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece en el desplegable, excluí el pedido y cargalo a mano en Andreani.
+                  <strong>No pude confirmar el punto EXACTO que eligió el cliente.</strong> El envío va a ir a la sucursal que elijas acá. No al punto de arriba. Elegí solo si estás segura de que es el mismo lugar (misma calle y número); si no aparece en el desplegable, excluí el pedido y cargalo a mano en Andreani.
                 </div>
               )}
               {apiUI&&(
@@ -14340,7 +14340,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     {sugeridas.map(filaApi)}
                     {resultadosApi.length>0&&<div style={{position:"sticky",top:0,zIndex:1,background:T.surface,padding:"5px 12px",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5}}>{qToks.length?"Resultados":`Sucursales del CP ${cpOf||"del pedido"}`}</div>}
                     {resultadosApi.map(filaApi)}
-                    {!locCerca?.loading&&!todasApi.length&&<div style={{padding:"18px 14px",fontSize:12,color:T.textSm,textAlign:"center"}}>{qToks.length?`Sin resultados para "${locSearch}" — probá con menos palabras.`:"Escribí el nombre del punto, la calle o el CP para buscar en todo el listado de Andreani."}</div>}
+                    {!locCerca?.loading&&!todasApi.length&&<div style={{padding:"18px 14px",fontSize:12,color:T.textSm,textAlign:"center"}}>{qToks.length?`Sin resultados para "${locSearch}". Probá con menos palabras.`:"Escribí el nombre del punto, la calle o el CP para buscar en todo el listado de Andreani."}</div>}
                   </div>
                   {selObj&&cfSel&&(
                     <label style={{display:"flex",gap:8,alignItems:"flex-start",marginTop:10,padding:"9px 12px",background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,fontSize:12,color:T.text,cursor:"pointer",lineHeight:1.5}}>
@@ -14414,14 +14414,14 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                               const pO=ghPuntoDeOrden(order); const a=ghDirParse(pO?.calle,pO?.num); const b=ghDirParse(item,"");
                               const mismaCalle=ghMismaCalle(a,b);
                               const numTpl=(ghNrmSuc(item).match(/\b\d{2,5}\b/g)||[]).filter(x=>!a.nums.includes(x));
-                              if(mismaCalle&&a.num&&numTpl.length&&!numTpl.includes(a.num)) return <div style={{fontSize:11,color:T.red,marginTop:3}}>Misma calle pero el desplegable dice {numTpl.join("/")} y el cliente eligió {a.num} — no es este punto.</div>;
+                              if(mismaCalle&&a.num&&numTpl.length&&!numTpl.includes(a.num)) return <div style={{fontSize:11,color:T.red,marginTop:3}}>Misma calle pero el desplegable dice {numTpl.join("/")} y el cliente eligió {a.num} · no es este punto.</div>;
                               if(mismaCalle&&a.num&&numTpl.includes(a.num)) return <div style={{fontSize:11,color:T.green,marginTop:3}}>Misma calle y mismo número ({a.num}) según el nombre del desplegable.</div>;
                               if(mismaCalle) return <div style={{fontSize:11,color:T.yellow,marginTop:3}}>Misma calle que el punto del cliente ({[pO.calle,pO.num].filter(Boolean).join(" ")}); el desplegable no trae número, así que no se puede confirmar el {a.num||"número"}. Si es el único HOP de esa calle, es este.</div>;
                               return <div style={{fontSize:11,color:T.textSm,marginTop:3,opacity:0.8}}>No está en el listado oficial de Andreani y el nombre no coincide con la calle del punto ({[pO?.calle,pO?.num].filter(Boolean).join(" ")||"—"}).</div>;
                             })()}
                             {dirsUnicas.length>1&&(
                               <div style={{fontSize:11,color:T.yellow,marginTop:3,lineHeight:1.5}}>
-                                <strong>{dirsUnicas.length} puntos distintos comparten este nombre</strong> ({dirsUnicas.map(x=>x.dir).join(" / ")}) — el Excel no puede distinguirlos: emitilo por Etiquetas listas o a mano en Andreani.
+                                <strong>{dirsUnicas.length} puntos distintos comparten este nombre</strong> ({dirsUnicas.map(x=>x.dir).join(" / ")}) · el Excel no puede distinguirlos: emitilo por Etiquetas listas o a mano en Andreani.
                               </div>
                             )}
                           </div>
@@ -14447,7 +14447,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 )}
                 {locSearch.length>=2&&results.length===0&&(
                   <div style={{padding:"20px",textAlign:"center",color:T.textSm,fontSize:13,background:T.bg,borderRadius:10,border:`1px solid ${T.border}`}}>
-                    Sin resultados para "{locSearch}" — probá con menos palabras (solo la calle, o el barrio)
+                    Sin resultados para "{locSearch}". Probá con menos palabras (solo la calle, o el barrio)
                   </div>
                 )}
               </div>
@@ -14459,15 +14459,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{marginBottom:14}}>
                   <div style={{fontSize:12,fontWeight:600,color:T.textSm,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5}}>
                     {locCerca?.aproximado?`Sucursales de la zona del pedido${locCerca?.origen?` (${locCerca.origen})`:""}`:esquina?"Sucursales más cercanas a la dirección del pedido":"Sucursales más cercanas al punto del pedido"}
-                    {locCerca?.aproximado&&locCerca?.geoDiag&&(()=>{ try{ return localStorage.getItem("growith_diag")==="1"; }catch(_){ return false; } })()&&<span style={{display:"block",fontSize:10,fontWeight:400,textTransform:"none",letterSpacing:0,opacity:0.65,marginTop:2}}>Completando ubicaciones… {locCerca.geoDiag} — reabrí en unos segundos</span>}
+                    {locCerca?.aproximado&&locCerca?.geoDiag&&(()=>{ try{ return localStorage.getItem("growith_diag")==="1"; }catch(_){ return false; } })()&&<span style={{display:"block",fontSize:10,fontWeight:400,textTransform:"none",letterSpacing:0,opacity:0.65,marginTop:2}}>Completando ubicaciones… {locCerca.geoDiag} · reabrí en unos segundos</span>}
                   </div>
                   {locCerca?.loading?(
                     <div style={{fontSize:12,color:T.textSm,padding:"14px 4px",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><Spinner size={13} color={T.textSm}/> Buscando sucursales cercanas...</div>
                   ):(locCerca?.lista||[]).length===0?(
                     <div style={{fontSize:12,color:T.textSm,padding:"10px 4px"}}>
-                      {locCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales — usá el buscador de arriba"
-                       :locCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial — usá el buscador de arriba"
-                       :`No pude calcular cercanías${locCerca?.diag?` (${locCerca.diag})`:""} — usá el buscador de arriba`}
+                      {locCerca?.diag==="sin_coords"?"La API de Andreani no publica coordenadas de sus sucursales. Usá el buscador de arriba"
+                       :locCerca?.diag==="sin_origen"?"No pude ubicar el punto del pedido en el listado oficial. Usá el buscador de arriba"
+                       :`No pude calcular cercanías${locCerca?.diag?` (${locCerca.diag})`:""} · usá el buscador de arriba`}
                     </div>
                   ):(
                     <div style={{maxHeight:280,overflowY:"auto",border:`1px solid ${T.borderL}`,borderRadius:10}}>
@@ -14489,7 +14489,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:13,color:T.text,fontWeight:600,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{s.descripcion}{cf&&<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:DS.r.full,background:T.red+"18",color:T.red}}>{cf.grave?"No coincide":"Otra localidad"}</span>}</div>
-                              {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(" — ")}{!clickable&&!wantOficial&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
+                              {(dir||loc)&&<div style={{fontSize:11,color:T.textSm,marginTop:2}}>{[dir,loc].filter(Boolean).join(": ")}{!clickable&&!wantOficial&&<span style={{color:T.yellow}}> · no está en el desplegable de carga masiva</span>}</div>}
                               {cf&&<div style={{fontSize:11,color:T.red,marginTop:2}}>{cf.msg}</div>}
                             </div>
                             {s.distM!=null&&<span style={{fontSize:11,fontWeight:700,color:T.accent,flexShrink:0,whiteSpace:"nowrap"}}>{ghFmtDist(s.distM)}</span>}
@@ -14511,7 +14511,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <>
                     <button onClick={()=>{resolve(null);setLocationModal(null);}} style={{...BtnSecondary(T),fontSize:13}}>Cancelar exportación</button>
                     <button onClick={()=>{resolve("EXCLUIR");setLocationModal(null);}} style={{...BtnDanger(T),fontSize:13}}>Excluir este pedido</button>
-                    {!isSuc&&<button title="Usa la primera localidad de la provincia del pedido — revisá el Excel antes de subirlo" onClick={()=>{
+                    {!isSuc&&<button title="Usa la primera localidad de la provincia del pedido. Revisá el Excel antes de subirlo" onClick={()=>{
                       const fallback=locs.list.find(l=>l.startsWith((order.provincia||"BUENOS AIRES").toUpperCase()))||locs.list[0]||"";
                       resolve(fallback);setLocationModal(null);
                     }} style={{...BtnSecondary(T),fontSize:13}}>Usar primera disponible</button>}
@@ -14553,7 +14553,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
             <button onClick={()=>setPaqModal(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>Cambiar</button>
           </div>
           {/* El checkbox "Separar Domicilios/Sucursales" se eliminó: era código
-              muerto (el generador nunca lo leía — domicilio y sucursal ya van a
+              muerto (el generador nunca lo leía. Domicilio y sucursal ya van a
               hojas separadas del mismo Excel) */}
           <div style={{fontSize:11,color:T.textSm,marginBottom:20}}>Domicilios y sucursales van en hojas separadas del mismo Excel, como lo espera el portal de Andreani.</div>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
@@ -14603,7 +14603,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                       </div>
                       <span style={{fontSize:11,color:pd?.name?T.accent:T.textSm,fontWeight:600,textAlign:"right",maxWidth:180}}>{pd?.name||(isSucursalOrder(o)?"Retiro en sucursal":"A domicilio")}</span>
                     </div>
-                    {dirDisplay&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{dirDisplay}{locDisplay?` — ${locDisplay}`:""}</div>}
+                    {dirDisplay&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{dirDisplay}{locDisplay?` · ${locDisplay}`:""}</div>}
                     {!isSucursalOrder(o)&&(<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
                       <span style={{fontSize:12,color:T.textMd}}>Altura (número de puerta):</span>
                       <input type="number" min="1" placeholder="Ej.: 450" value={esquinaModal.alturas?.[o.numero]||""} onChange={e=>setEsquinaModal(m=>m&&({...m,alturas:{...(m.alturas||{}),[o.numero]:e.target.value}}))} style={{...iS,marginBottom:0,width:110,padding:"6px 10px",fontSize:13}}/>
@@ -14653,7 +14653,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       {/* ── Flujo bulk "Etiquetas listas" (emisión por API) ── */}
       {bulk&&(
-        <Modal T={T} open={true} hideClose={bulk.fase==="cotizando"||bulk.fase==="emitiendo"} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas — Andreani" width={920} zIndex={1500}>
+        <Modal T={T} open={true} hideClose={bulk.fase==="cotizando"||bulk.fase==="emitiendo"} onClose={()=>{ if(bulk.fase==="revision"||bulk.fase==="resultado"){ setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } else if(bulk.fase==="resolviendo"){ bulkCancelRef.current=true; setBulk(null); bulkRowsRef.current=[]; setExportSingleOrder(null); } }} title="Etiquetas listas. Andreani" width={920} zIndex={1500}>
           {/* Pasos del flujo: siempre visibles para saber dónde estás */}
           {(()=>{ const pasos=[["Preparar",["resolviendo"]],["Revisar",["cotizando","revision"]],["Emitir",["emitiendo"]],["Listo",["resultado"]]]; const idx=pasos.findIndex(p=>p[1].includes(bulk.fase)); return (
             <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:12}}>
@@ -14702,7 +14702,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>Revisá destino y precio. El saldo se debita recién al confirmar{tabEnvio==="empaquetar"?", y los pedidos quedan como enviados en tu tienda":""}.</div>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:T.textSm,marginBottom:12}}>
                   <span>Paquete por defecto: <strong style={{color:T.textMd}}>{paqResumen()}</strong></span>
-                  {paqPerfiles.length>0&&<select defaultValue="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); e.target.value=""; if(!pf) return; rows.filter(r=>!r.emitido).forEach(r=>{ r.paq={...pf}; r.cot=null; r.cotError=""; r.incluido=true; }); pushBulk("revision"); cotizarBulk(); }} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"3px 8px"}}><option value="">Aplicar un perfil a todos…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre} — {paqTxt(pf)}</option>)}</select>}
+                  {paqPerfiles.length>0&&<select defaultValue="" onChange={e=>{ const pf=paqPerfiles.find(x=>x.nombre===e.target.value); e.target.value=""; if(!pf) return; rows.filter(r=>!r.emitido).forEach(r=>{ r.paq={...pf}; r.cot=null; r.cotError=""; r.incluido=true; }); pushBulk("revision"); cotizarBulk(); }} style={{...iS,marginBottom:0,width:"auto",fontSize:11,padding:"3px 8px"}}><option value="">Aplicar un perfil a todos…</option>{paqPerfiles.map(pf=><option key={pf.nombre} value={pf.nombre}>{pf.nombre} · {paqTxt(pf)}</option>)}</select>}
                   <button onClick={async()=>{ const nombre=await appPrompt("Nombre del perfil de paquete (se guarda con el peso, medidas y valor declarado del paquete por defecto):","Caja chica"); if(!nombre) return; const pf={nombre:String(nombre).trim().slice(0,30),peso:exportCfg.peso,alto:exportCfg.alto,ancho:exportCfg.ancho,prof:exportCfg.prof,valor:exportCfg.valor}; savePaqPerfiles([...paqPerfiles.filter(x=>x.nombre!==pf.nombre),pf]); toast("Perfil guardado","success"); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Guardar el paquete por defecto como perfil</button>
                   {paqPerfiles.length>0&&<button onClick={async()=>{ const nombre=await appPrompt("¿Qué perfil querés borrar?\n"+paqPerfiles.map(x=>"• "+x.nombre).join("\n"),paqPerfiles[0].nombre); if(!nombre) return; savePaqPerfiles(paqPerfiles.filter(x=>x.nombre!==String(nombre).trim())); }} style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,fontFamily:"'Inter',system-ui,sans-serif"}}>Borrar un perfil</button>}
                 </div>
@@ -14717,7 +14717,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <tbody>
                       {rows.map((r,i)=>({r,i,sev:sevFila(r)})).sort((a,b)=>(a.sev-b.sev)||(a.i-b.i)).map(({r})=>{
                         const o=r.order;
-                        const destino=r.tipo==="sucursal"?(r.oficial?`Sucursal — ${r.oficial.descripcion}`:"Sucursal"):`Domicilio — ${o.localidad||o.ciudad||""}`;
+                        const destino=r.tipo==="sucursal"?(r.oficial?`Sucursal · ${r.oficial.descripcion}`:"Sucursal"):`Domicilio · ${o.localidad||o.ciudad||""}`;
                         // Dirección real de la sucursal destino — sin esto no
                         // se puede juzgar "¿es este el punto?" desde la revisión
                         const dirSuc=r.tipo==="sucursal"&&r.oficial?[[r.oficial.direccion?.calle,r.oficial.direccion?.numero].filter(Boolean).join(" "),r.oficial.direccion?.localidad,r.oficial.direccion?.codigoPostal?`CP ${r.oficial.direccion.codigoPostal}`:""].filter(Boolean).join(" · "):"";
@@ -14736,7 +14736,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                                 <div style={{color:cf.grave&&!r.conflictoOk?T.red:T.yellow,fontSize:11,marginTop:2,fontWeight:700}}>{cf.grave&&!r.conflictoOk?`No es el punto que eligió el cliente: ${cf.msg}. No se va a emitir hasta que la cambies o la confirmes.`:cf.grave?`Confirmaste esta sucursal aunque ${cf.msg}.`:`Ojo: ${cf.msg}.`}</div>
                               ); })()}
                               {r.tipo==="sucursal"&&r.verif==="warn"&&!r.deMemoria&&(
-                                <div style={{color:T.yellow,fontSize:11,marginTop:2,fontWeight:600}}>Distinto del punto que eligió el cliente ({r.order.pickupDetails?.name||"punto de retiro"}) — revisá antes de emitir</div>
+                                <div style={{color:T.yellow,fontSize:11,marginTop:2,fontWeight:600}}>Distinto del punto que eligió el cliente ({r.order.pickupDetails?.name||"punto de retiro"}) · revisá antes de emitir</div>
                               )}
                               {r.tipo==="sucursal"&&r.verif==="warn"&&r.deMemoria&&(
                                 <div style={{color:T.accent,fontSize:11,marginTop:2,fontWeight:600}}>Sucursal que confirmaste antes para este mismo punto de retiro</div>
@@ -14913,7 +14913,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                           </div>
                           <div style={{fontSize:12,color:T.textMd,marginTop:4}}>{de.d}{de.dir?<span style={{color:T.textSm}}> · {de.dir}</span>:null}</div>
                           {r.verifFinal==="warn"&&r.sucReal&&(
-                            <div style={{fontSize:11,color:T.yellow,fontWeight:600,marginTop:4}}>La etiqueta salió a {r.sucReal.descripcion}, distinto del punto elegido en tu tienda ({r.order.pickupDetails?.name||""}) — avisale al cliente.</div>
+                            <div style={{fontSize:11,color:T.yellow,fontWeight:600,marginTop:4}}>La etiqueta salió a {r.sucReal.descripcion}, distinto del punto elegido en tu tienda ({r.order.pickupDetails?.name||""}) · avisale al cliente.</div>
                           )}
                         </div>
                         <div style={{textAlign:"right",minWidth:150}}>
@@ -14943,7 +14943,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     </div>
                   ))}
                   {dudosos.length>0&&(
-                    <div style={{fontSize:11,fontWeight:700,color:T.yellow,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length?6:0}}>Sin confirmar ({dudosos.length}) — no las vuelvas a emitir</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.yellow,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length?6:0}}>Sin confirmar ({dudosos.length}) · no las vuelvas a emitir</div>
                   )}
                   {dudosos.map(r=>(
                     <div key={r.numero} style={{background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}66`,borderRadius:10,padding:"10px 14px"}}>
@@ -14955,7 +14955,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     </div>
                   ))}
                   {sinDebito.length>0&&(
-                    <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length||dudosos.length?6:0}}>No se emitieron ({sinDebito.length}) — sin débito</div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.red,textTransform:"uppercase",letterSpacing:0.5,marginTop:ok.length||dudosos.length?6:0}}>No se emitieron ({sinDebito.length}) · sin débito</div>
                   )}
                   {sinDebito.map(r=>(
                     <div key={r.numero} style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px"}}>
@@ -15010,7 +15010,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           onEditOrigen={()=>{setAndreaniSaldoOpen(false);setAndreaniOrigenOpen(true);}}/>
       )}
       {andreani.enabled&&(
-        <Modal T={T} open={andreaniOrigenOpen} onClose={()=>setAndreaniOrigenOpen(false)} title="Datos del remitente — Andreani" width={520}>
+        <Modal T={T} open={andreaniOrigenOpen} onClose={()=>setAndreaniOrigenOpen(false)} title="Datos del remitente. Andreani" width={520}>
           <AndreaniOrigenForm T={T} user={user}
             onSaved={()=>{
               setAndreani(a=>({...a,origenConfigurado:true}));setAndreaniOrigenOpen(false);
@@ -15424,7 +15424,7 @@ function AndreaniSaldoModal({T, open, onClose, saldo, onSaldo, onEditOrigen, suc
       ); })()}
       {saldoErr&&(
         <div style={{background:T.yellowBg,border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:T.yellow}}>
-          No se pudieron traer los movimientos — el saldo mostrado puede estar desactualizado. Cerrá y volvé a abrir para reintentar.
+          No se pudieron traer los movimientos. El saldo mostrado puede estar desactualizado. Cerrá y volvé a abrir para reintentar.
         </div>
       )}
       {/* ── Cargar saldo: monto → referencia única → transferencia → acreditación ── */}
@@ -15613,7 +15613,7 @@ function AndreaniSucOrigenCard({T, sucOrigen, onChange}){
       ):err?(
         <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.red}}>{err}</div>
       ):Array.isArray(res)&&res.length===0?(
-        <div style={{fontSize:12,color:T.textSm,padding:"4px 2px"}}>Sin resultados para "{q.trim()}" — probá con la localidad o el código postal.</div>
+        <div style={{fontSize:12,color:T.textSm,padding:"4px 2px"}}>Sin resultados para "{q.trim()}". Probá con la localidad o el código postal.</div>
       ):Array.isArray(res)&&res.length>0?(
         <div style={{border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",maxHeight:220,overflowY:"auto"}}>
           {res.map((s,i)=>(
@@ -15748,7 +15748,7 @@ function AndreaniOrigenForm({T, user, onSaved, onCancel, onSucOrigen, skipSucSte
     return (
       <div>
         <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>
-          Datos guardados. Último paso: <strong style={{color:T.text}}>tu sucursal de despacho</strong> — hace falta confirmarla para poder emitir etiquetas por API.
+          Datos guardados. Último paso: <strong style={{color:T.text}}>tu sucursal de despacho</strong>. Hace falta confirmarla para poder emitir etiquetas por API.
         </div>
         <AndreaniSucOrigenCard T={T} sucOrigen={sucStep}
           onChange={suc=>{
@@ -15955,7 +15955,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
       } else ghDescargarPdfB64(pdf,`Andreani_${numero}.pdf`);
       toast("Etiqueta descargada","success");
     }
-    else if(d&&d.pending){ setPdfPending(true); toast("Andreani todavía está generando el PDF — probá en unos segundos","warning"); }
+    else if(d&&d.pending){ setPdfPending(true); toast("Andreani todavía está generando el PDF. Probá en unos segundos","warning"); }
     else { toast("No se pudo descargar la etiqueta"+(d?.error?`: ${d.error}`:""),"error"); }
   }
 
@@ -15966,7 +15966,7 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
   });
 
   return (
-    <Modal T={T} open={true} onClose={onClose} title={`Etiqueta Andreani — pedido #${o.numero}`} width={560}>
+    <Modal T={T} open={true} onClose={onClose} title={`Etiqueta Andreani. Pedido #${o.numero}`} width={560}>
       {emitido?(
         /* ── Ya emitida: número + descarga, sin doble emisión ── */
         <div style={{textAlign:"center",padding:"8px 0 4px"}}>
@@ -16068,12 +16068,12 @@ function AndreaniEmitirModal({T, order:o, cfgDefaults, origenConfigurado, saldo,
                     {sucs.map(s=>{
                       const d=s.direccion||{};
                       const dir=[`${d.calle||""} ${d.numero||""}`.trim(),d.localidad].filter(Boolean).join(", ");
-                      return <option key={s.id} value={String(s.id)}>{s.descripcion}{dir?` — ${dir}`:""}</option>;
+                      return <option key={s.id} value={String(s.id)}>{s.descripcion}{dir?` · ${dir}`:""}</option>;
                     })}
                   </select>
                   {(()=>{
                     const s=sucs.find(x=>String(x.id)===sucId);
-                    if(!s) return <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Lista oficial de Andreani para el CP {cpSuc} — elegí una de la lista.</div>;
+                    if(!s) return <div style={{fontSize:11,color:T.textSm,marginTop:6}}>Lista oficial de Andreani para el CP {cpSuc} · elegí una de la lista.</div>;
                     return (
                       <div style={{fontSize:11,color:T.textSm,marginTop:6}}>
                         {s.direccion?`${s.direccion.calle||""} ${s.direccion.numero||""}, ${s.direccion.localidad||""} (CP ${s.direccion.codigoPostal||cpSuc})`:""}
@@ -16704,7 +16704,7 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
           <div style={{fontSize:13,color:T.textSm,marginTop:10}}>{mode==="login"?"Iniciá sesión en tu cuenta":"Creá tu cuenta gratis"}</div>
           {switchingTo?.email && (
             <div style={{marginTop:10,padding:"8px 12px",background:T.accent+"14",border:`1px solid ${T.accent}44`,borderRadius:8,fontSize:12,color:T.text}}>
-              Cambiando a <strong>{switchingTo.email}</strong>{switchingTo.provider==="google.com"?" — entrá con Google":" — poné tu contraseña"}
+              Cambiando a <strong>{switchingTo.email}</strong>{switchingTo.provider==="google.com"?". Entrá con Google":". Poné tu contraseña"}
             </div>
           )}
           {invitado && (
@@ -16928,7 +16928,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
       {!st && !err && <div style={{fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Consultando Shopify…</div>}
       {scopeFalta && (
         <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso de <strong>envíos</strong> (se agregó ahora). Reconectá Shopify una vez — no se pierde nada — y volvé acá.</span>
+          <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso de <strong>envíos</strong> (se agregó ahora). Reconectá Shopify una vez. No se pierde nada. Y volvé acá.</span>
           <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
         </div>
       )}
@@ -16955,7 +16955,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
       )}
       {!scopeFalta && st?.fulfillOk===false && st?.central!==false && !st?.reconectadaSinPermiso && (
         <div style={{background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:8,padding:"10px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso para <strong>marcar pedidos como enviados</strong> (fulfillment): sin eso, "Enviar seguimientos" no puede subir los trackings. Reconectá Shopify una vez — no se pierde nada.</span>
+          <span style={{flex:1,minWidth:220}}>Shopify todavía no le dio a Growith el permiso para <strong>marcar pedidos como enviados</strong> (fulfillment): sin eso, "Enviar seguimientos" no puede subir los trackings. Reconectá Shopify una vez. No se pierde nada.</span>
           <button onClick={onReconectar} style={{...BtnPrimary(T),fontSize:12,padding:"8px 14px"}}>Reconectar Shopify</button>
         </div>
       )}
@@ -16963,8 +16963,8 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
       {st?.test && (
         <div style={{background:(st.test.rates?.length?T.green:T.red)+"10",border:`1px solid ${st.test.rates?.length?T.green:T.red}44`,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.text,marginBottom:10,lineHeight:1.5}}>
           <strong>Prueba de cotización</strong> (CP {st.test.cp||"—"}): {st.test.rates?.length
-            ? <>{st.test.rates.length} opción{st.test.rates.length!==1?"es":""} — {st.test.rates.slice(0,4).map(r=>`${r.name} $${r.precio.toLocaleString("es-AR")}`).join(" · ")}{st.test.rates.length>4?" …":""}</>
-            : <span style={{color:T.red}}>sin tarifas — {st.test.why||"Andreani no respondió"}</span>}
+            ? <>{st.test.rates.length} opción{st.test.rates.length!==1?"es":""} · {st.test.rates.slice(0,4).map(r=>`${r.name} $${r.precio.toLocaleString("es-AR")}`).join(" · ")}{st.test.rates.length>4?" …":""}</>
+            : <span style={{color:T.red}}>sin tarifas: {st.test.why||"Andreani no respondió"}</span>}
         </div>
       )}
       {st && !scopeFalta && (
@@ -16973,7 +16973,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
             ? <button onClick={desactivar} disabled={busy} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px",color:T.red,borderColor:T.red+"44"}}>{busy?"…":"Desactivar"}</button>
             : <button onClick={activar} disabled={busy} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>{busy?<><Spinner size={12} color="#fff"/> Activando…</>:"Activar Andreani en el checkout"}</button>}
           <button onClick={()=>setOpen(o=>!o)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 14px"}}>{open?"Ocultar configuración":"Configurar precios y sucursales"}</button>
-          {st.otros?.length>0 && <span style={{fontSize:11,color:T.textSm}}>Otras apps de envío en tu Shopify: {st.otros.map(o=>o.name).join(", ")} — desactivalas en Shopify para que no se dupliquen las opciones.</span>}
+          {st.otros?.length>0 && <span style={{fontSize:11,color:T.textSm}}>Otras apps de envío en tu Shopify: {st.otros.map(o=>o.name).join(", ")} · desactivalas en Shopify para que no se dupliquen las opciones.</span>}
         </div>
       )}
       {st && activo && (
@@ -17167,7 +17167,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
   const cargarIaConex=()=>authFetch(`/api/mcp?action=conexiones&uid=${user.uid}`).then(r=>r.json()).then(d=>setIaConex(d&&d.ok?(d.conexiones||[]):null)).catch(()=>setIaConex(null));
   useEffect(()=>{ if(!user?.uid) return; cargarIaConex(); /* eslint-disable-next-line */ },[user?.uid]);
   const iaDe=(app)=>(iaConex||[]).filter(c=>c.app===app);
-  const iaSub=(app,desc)=>{ const cs=iaDe(app); if(!cs.length) return desc; const u=cs.map(c=>c.ultimoUso).filter(Boolean).sort().pop(); return `Conectado${u?` · último uso ${new Date(u).toLocaleDateString("es-AR")}`:""} — preguntale por tus ventas, campañas, stock y envíos`; };
+  const iaSub=(app,desc)=>{ const cs=iaDe(app); if(!cs.length) return desc; const u=cs.map(c=>c.ultimoUso).filter(Boolean).sort().pop(); return `Conectado${u?` · último uso ${new Date(u).toLocaleDateString("es-AR")}`:""} · preguntale por tus ventas, campañas, stock y envíos`; };
   const iaDesconectar=async(app)=>{
     try{
       const r=await authFetch(`/api/mcp?action=revocar`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,app})});
@@ -17211,7 +17211,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
             const j = await r.json();
             if (!r.ok || j.error) throw new Error(j.error || "HTTP "+r.status);
             setUserDoc(d=>({ ...(d||{}), recurrentes: { ...(j.recurrentes||{}), connected:true } }));
-            setMsg(`Recurrentes vinculado${j.recurrentes?.store_name ? " — "+j.recurrentes.store_name : ""}: las comisiones reales de cada cobro de suscripción ya entran a Márgenes`);
+            setMsg(`Recurrentes vinculado${j.recurrentes?.store_name ? ": "+j.recurrentes.store_name : ""}: las comisiones reales de cada cobro de suscripción ya entran a Márgenes`);
           } catch(e) { appAlert("No se pudo vincular Recurrentes: "+e.message+"\n\nVolvé a tocar Vincular: el código dura 10 minutos."); }
         })();
       }
@@ -17532,7 +17532,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
         body: JSON.stringify({id: cr.id}),
       });
 
-      setMsg(`Meta conectada (${aa.name || aa.id})${adAccounts.length>1?" — tenés "+adAccounts.length+" cuentas publicitarias, elegimos la primera. Cambiala desde Meta Ads → Cuenta si querés otra.":""}`);
+      setMsg(`Meta conectada (${aa.name || aa.id})${adAccounts.length>1?". Tenés "+adAccounts.length+" cuentas publicitarias, elegimos la primera. Cambiala desde Meta Ads → Cuenta si querés otra.":""}`);
       setShowMetaModal(false);
       setMetaToken("");
     } catch(e) {
@@ -17772,7 +17772,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                 ? `Conectado${(userDoc.googleAds.customers||[]).length ? ` · ${(userDoc.googleAds.customers||[]).length} cuenta(s)` : " · esperando developer token"}`
                 : (GADS_OAUTH_OK
                     ? "No conectado · mientras tanto podés cargar el gasto manual en Dashboard → Costos"
-                    : <>La conexión automática llega pronto — mientras tanto cargá el gasto manual en <a href="#/margenes/costos" style={{color:T.accent,fontWeight:700,textDecoration:"underline"}}>Dashboard → Configuraciones</a></>),
+                    : <>La conexión automática llega pronto. Mientras tanto cargá el gasto manual en <a href="#/margenes/costos" style={{color:T.accent,fontWeight:700,textDecoration:"underline"}}>Dashboard → Configuraciones</a></>),
               connected: !!userDoc?.googleAds?.connected, disabled:false, soon:!GADS_OAUTH_OK, brand:"#4285F4", iconBg:"#fff",
               icon:<BrandIcon name="google" size={28}/>,
               onConnect: async ()=>{
@@ -17794,7 +17794,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               sub: userDoc?.tiktokAds?.connected
                 ? `Conectado${(userDoc.tiktokAds.advertisers||[]).length ? ` · ${(userDoc.tiktokAds.advertisers||[]).length} cuenta(s)` : ""}`
                 : (tiktokConfigured===false
-                    ? "Próximamente — gasto y campañas de TikTok en el Dashboard"
+                    ? "Próximamente. Gasto y campañas de TikTok en el Dashboard"
                     : "Conectá tu cuenta publicitaria de TikTok para traer gasto y campañas"),
               connected: !!userDoc?.tiktokAds?.connected, disabled:false, soon: tiktokConfigured===false && !userDoc?.tiktokAds?.connected, brand:"#FE2C55", iconBg:"#fff",
               icon:<svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M16.5 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V3h3.2z" fill="#69C9D0"/><path d="M15.5 2c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2h3.2z" fill="#EE1D52"/><path d="M16 2.5c.3 2.4 1.7 3.9 4 4.1v3.1c-1.5 0-2.9-.5-4-1.3v6.4c0 3.3-2.7 5.9-6 5.9s-6-2.6-6-5.9 2.7-5.9 6-5.9c.3 0 .7 0 1 .1v3.2c-.3-.1-.6-.2-1-.2-1.5 0-2.8 1.2-2.8 2.8s1.3 2.8 2.8 2.8 2.8-1.2 2.8-2.8V2.5H16z" fill="#000"/></svg>,
@@ -17816,9 +17816,9 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               key:"gdrive", group:"Apps externas", label:"Google Drive",
               // Conexión por REDIRECCIÓN (sin popup): el token queda en users/{uid}.googleDrive.
               sub: userDoc?.googleDrive?.connected
-                ? <>{userDoc.googleDrive.email || "Conectado"} — elegís los videos desde el Publicador de Meta<GhTip T={T} text={DRIVE_TIP}/></>
+                ? <>{userDoc.googleDrive.email || "Conectado"} · elegís los videos desde el Publicador de Meta<GhTip T={T} text={DRIVE_TIP}/></>
                 : (driveConfigured===false
-                    ? "Próximamente — elegir los videos del anuncio directo desde tu Drive"
+                    ? "Próximamente. Elegir los videos del anuncio directo desde tu Drive"
                     : <>Conectá tu Drive para elegir creativos y copys (Google Docs) desde Meta → Publicar<GhTip T={T} text={DRIVE_TIP}/></>),
               connected: !!userDoc?.googleDrive?.connected, disabled:false, soon: driveConfigured===false && !userDoc?.googleDrive?.connected, brand:"#00ac47", iconBg:"#fff",
               icon:<svg width="30" height="27" viewBox="0 0 87.3 78"><path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 49.5C.4 50.9 0 52.45 0 54h27.5z" fill="#00ac47"/><path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.2z" fill="#ea4335"/><path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.85 0H34.45c-1.65 0-3.2.45-4.55 1.2z" fill="#00832d"/><path d="M59.8 54H27.5L13.75 77.8c1.35.8 2.9 1.2 4.55 1.2h50.7c1.65 0 3.2-.45 4.55-1.2z" fill="#2684fc"/><path d="M73.4 27.5l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 54h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>,
@@ -17844,7 +17844,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               // (lo canjea ConfigScreen al montar). Con la clave, Márgenes lee la comisión
               // REAL de MP de cada cobro de suscripción (api/orders.js).
               sub: userDoc?.recurrentes?.connected
-                ? `Vinculado${userDoc.recurrentes.store_name ? ` · ${userDoc.recurrentes.store_name}` : ""} — la comisión real de Mercado Pago de cada cobro de suscripción entra a Márgenes`
+                ? `Vinculado${userDoc.recurrentes.store_name ? ` · ${userDoc.recurrentes.store_name}` : ""} · la comisión real de Mercado Pago de cada cobro de suscripción entra a Márgenes`
                 : "Vinculá tu cuenta de Recurrentes: la comisión exacta de cada cobro de suscripción entra a tus márgenes, sin cargar nada a mano",
               connected: !!userDoc?.recurrentes?.connected, disabled:false, soon:false, brand:"#10b981", iconBg:"#fff",
               icon:<RecurrentesLogo size={28}/>,
@@ -17931,7 +17931,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
 
               {shStore && (
                 <div style={{marginTop:14,padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>Shopify — agregar scope <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code></div>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>Shopify. Agregar scope <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>read_products</code></div>
                   <ol style={{margin:0,paddingLeft:18}}>
                     <li>Entrá a <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>dev.shopify.com/dashboard</a> → abrí <strong style={{color:T.text}}>tu app de Growith</strong></li>
                     <li>Andá a <strong style={{color:T.text}}>Versiones</strong> → tocá <strong style={{color:T.text}}>"Crear versión"</strong> (a partir de la última)</li>
@@ -17944,13 +17944,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
 
               {mlStore && (
                 <div style={{marginTop:14,padding:"12px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10}}>
-                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>Mercado Libre — habilitar permiso <em>Publicación y sincronización</em></div>
+                  <div style={{fontWeight:700,color:T.text,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>Mercado Libre. Habilitar permiso <em>Publicación y sincronización</em></div>
                   <ol style={{margin:0,paddingLeft:18}}>
                     <li>Entrá a <a href="https://developers.mercadolibre.com.ar/devcenter" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>developers.mercadolibre.com.ar/devcenter</a> con el mismo usuario ML</li>
                     <li><strong style={{color:T.text}}>Mis aplicaciones</strong> → abrí tu app de Growith → tocá <strong style={{color:T.text}}>Editar</strong></li>
                     <li>Bajá hasta <strong style={{color:T.text}}>Permisos</strong> y marcá:
                       <ul style={{margin:"4px 0 0",paddingLeft:18}}>
-                        <li><strong style={{color:T.text}}>Publicación y sincronización</strong> · <strong style={{color:T.accent}}>Lectura y escritura</strong> — escritura es lo que permite editar precios, stock, imágenes y pausar publicaciones desde Gestión ML.</li>
+                        <li><strong style={{color:T.text}}>Publicación y sincronización</strong> · <strong style={{color:T.accent}}>Lectura y escritura</strong>. Escritura es lo que permite editar precios, stock, imágenes y pausar publicaciones desde Gestión ML.</li>
                       </ul>
                     </li>
                     <li>Tocá <strong style={{color:T.text}}>Guardar</strong> abajo del todo</li>
@@ -18018,13 +18018,13 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
               <button onClick={()=>{setNewLoginEmail("");setLoginPassword("");setShowLoginEmail(true);}} style={{...BtnSecondary(T),fontSize:12,justifyContent:"center",width:"100%",display:"flex",alignItems:"center",gap:6}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>Cambiar email de inicio de sesión</button>
             ) : (
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Login actual: <strong style={{color:T.text}}>{user?.email}</strong>. Te vamos a mandar un link al email nuevo — el cambio se aplica recién cuando lo confirmás ahí (hasta entonces seguís entrando con el actual).</div>
+                <div style={{fontSize:11,color:T.textSm,lineHeight:1.5}}>Login actual: <strong style={{color:T.text}}>{user?.email}</strong>. Te vamos a mandar un link al email nuevo. El cambio se aplica recién cuando lo confirmás ahí (hasta entonces seguís entrando con el actual).</div>
                 <input value={newLoginEmail} onChange={e=>setNewLoginEmail(e.target.value)} placeholder="Nuevo email de login" style={{...InputStyle(T),fontSize:13}}/>
                 {user?.providerData?.some(p=>p.providerId==="password") && (
                   <input type="password" value={loginPassword} onChange={e=>setLoginPassword(e.target.value)} placeholder="Tu contraseña actual (para confirmar)" style={{...InputStyle(T),fontSize:13}}/>
                 )}
                 {user?.providerData?.some(p=>p.providerId==="google.com") && !user?.providerData?.some(p=>p.providerId==="password") && (
-                  <div style={{fontSize:10,color:T.textSm}}>Entraste con Google — te va a pedir confirmar con tu cuenta de Google.</div>
+                  <div style={{fontSize:10,color:T.textSm}}>Entraste con Google. Te va a pedir confirmar con tu cuenta de Google.</div>
                 )}
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={changeLoginEmail} disabled={loginEmailChanging} style={{...BtnPrimary(T),fontSize:12,justifyContent:"center",flex:1}}>{loginEmailChanging?"Enviando...":"Enviar link de cambio"}</button>
@@ -18249,7 +18249,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
 
               {metaMode==="oauth" && META_OAUTH_OK && (
                 <div style={{marginBottom:6}}>
-                  <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>Conectá tu cuenta en <strong style={{color:T.text}}>un clic</strong>: se abre Facebook, autorizás el acceso a tus campañas y páginas, y volvés — listo.</div>
+                  <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>Conectá tu cuenta en <strong style={{color:T.text}}>un clic</strong>: se abre Facebook, autorizás el acceso a tus campañas y páginas, y volvés. Listo.</div>
                   <button onClick={connectMetaOauth} disabled={connectingMeta} style={{width:"100%",padding:"13px 18px",fontSize:14,fontWeight:700,borderRadius:10,border:"none",background:"#1877F2",color:"#fff",cursor:connectingMeta?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>
                     {connectingMeta?"Abriendo Facebook...":"Continuar con Facebook"}
@@ -18270,10 +18270,10 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                       </button>
                       <span style={{position:"absolute",top:-8,right:10,fontSize:9,fontWeight:800,letterSpacing:0.6,background:T.yellow,color:"#000",borderRadius:99,padding:"3px 9px"}}>PRÓXIMAMENTE</span>
                     </div>
-                    <div style={{fontSize:11,color:T.textSm,textAlign:"center",marginTop:6,lineHeight:1.5}}>La conexión en 1 clic va a estar disponible pronto. Mientras tanto, conectá con la <strong style={{color:T.text}}>conexión manual</strong> de abajo — funciona exactamente igual y el token no vence nunca.</div>
+                    <div style={{fontSize:11,color:T.textSm,textAlign:"center",marginTop:6,lineHeight:1.5}}>La conexión en 1 clic va a estar disponible pronto. Mientras tanto, conectá con la <strong style={{color:T.text}}>conexión manual</strong> de abajo. Funciona exactamente igual y el token no vence nunca.</div>
                     <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0 0"}}>
                       <div style={{flex:1,height:1,background:T.borderL}}/>
-                      <span style={{fontSize:11,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5}}>Conexión manual — disponible ahora</span>
+                      <span style={{fontSize:11,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5}}>Conexión manual. Disponible ahora</span>
                       <div style={{flex:1,height:1,background:T.borderL}}/>
                     </div>
                   </div>}
@@ -18281,7 +18281,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                 <div style={{fontWeight:700,color:T.text,marginBottom:8}}>Cómo generar tu System User Token (5-8 min)</div>
 
                 <div style={{marginBottom:10,padding:"8px 11px",background:T.yellowBg,border:`1.5px solid ${T.yellow||T.yellow}44`,borderRadius:6,fontSize:11,color:T.textMd,lineHeight:1.5,boxShadow:`0 0 0 1px ${T.yellow||T.yellow}18, 0 4px 12px ${T.yellow||T.yellow}14`}}>
-                  <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo — se crea en 2 minutos.
+                  <strong style={{color:T.text}}>Antes de empezar:</strong> necesitás <strong style={{color:T.text}}>una app en Meta for Developers</strong> (no importa cuál, sirve cualquiera). Si no tenés, mirá el desplegable de abajo. Se crea en 2 minutos.
                 </div>
 
                 <details style={{marginBottom:12,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8}}>
@@ -18293,7 +18293,7 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                     <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}><strong style={{color:T.text}}>Si es tu primera vez</strong> y te lleva a una página de documentación (SDK, "Empezar", etc.) es porque tu cuenta todavía no está registrada como desarrollador: tocá <strong style={{color:T.text}}>"Empezar" / "Get Started"</strong> (arriba a la derecha) y completá el registro. Cuando te pregunte <strong style={{color:T.text}}>"¿Cuál te describe mejor?"</strong>, elegí <strong style={{color:T.text}}>"Desarrollador"</strong> → <strong style={{color:T.text}}>Completar registro</strong>. Después volvés a <strong style={{color:T.text}}>developers.facebook.com/apps</strong>.</li>
                     <li>Tocá el botón verde <strong style={{color:T.text}}>"Crear app"</strong> (arriba a la derecha). Poné un nombre (ej. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>Growith Connect</code>) y tu email → <strong style={{color:T.text}}>Siguiente</strong>.</li>
                     <li>En <strong style={{color:T.text}}>Casos de uso</strong> elegí el <strong style={{color:T.text}}>primero: "Crear y administrar anuncios con la API de marketing"</strong> → Siguiente.</li>
-                    <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>En <strong style={{color:T.text}}>Negocio</strong> ("¿Qué portfolio comercial querés conectar?") <strong style={{color:T.text}}>elegí TU negocio</strong> — el mismo Business Manager donde tenés tus anuncios y tu página. Es importante que sea ese, no otro → Siguiente.</li>
+                    <li style={{padding:"6px 8px",background:T.yellow+"15",border:`1px solid ${T.yellow}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>En <strong style={{color:T.text}}>Negocio</strong> ("¿Qué portfolio comercial querés conectar?") <strong style={{color:T.text}}>elegí TU negocio</strong>. El mismo Business Manager donde tenés tus anuncios y tu página. Es importante que sea ese, no otro → Siguiente.</li>
                     <li>En <strong style={{color:T.text}}>Requisitos</strong> (dice "No se identificaron requisitos") → Siguiente. En <strong style={{color:T.text}}>Resumen</strong> → <strong style={{color:T.text}}>Crear app</strong>. Listo.</li>
                   </ol>
                 </details>
@@ -18305,18 +18305,18 @@ function ConfigScreen({T, user, onBack, onNavigate, darkMode, onToggleDark, orgs
                   <li>Con el usuario abierto → <strong style={{color:T.text}}>"Asignar activos"</strong> → seleccioná tu <strong style={{color:T.text}}>Cuenta publicitaria</strong>, tu <strong style={{color:T.text}}>Página</strong> y también la <strong style={{color:T.text}}>App</strong> que creaste (pestaña "Apps" → control total / "Administrar app") → en cada uno marcá <strong style={{color:T.text}}>control total / todos los permisos</strong> → Guardar. <span style={{color:T.yellow}}>Sin la App asignada, "Generar token" dice "No hay permisos disponibles".</span></li>
                   <li>Click en <strong style={{color:T.text}}>"Generar token"</strong> → paso <strong style={{color:T.text}}>"Seleccionar app"</strong>: elegí la app que creaste (Growith Connect) → <strong style={{color:T.text}}>"Definir caducidad"</strong>: <strong style={{color:T.text}}>Nunca</strong> → seguí.</li>
                   <li style={{padding:"8px 10px",background:T.accent+"10",border:`1px solid ${T.accent}33`,borderRadius:6,marginLeft:-8,paddingLeft:14}}>
-                    <strong style={{color:T.text}}>"Asignar permisos"</strong> — marcá estos (buscá cada uno con el cuadro de búsqueda):
+                    <strong style={{color:T.text}}>"Asignar permisos"</strong>. Marcá estos (buscá cada uno con el cuadro de búsqueda):
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
                       {["ads_management","ads_read","business_management","pages_show_list","pages_read_engagement"].map(p=>(
                         <code key={p} style={{background:T.surface,padding:"2px 7px",borderRadius:4,fontSize:10,color:T.accent,fontFamily:"'Cascadia Code','Consolas','SF Mono',Menlo,monospace"}}>{p}</code>
                       ))}
                     </div>
-                    <div style={{marginTop:6,fontSize:10,color:T.textSm}}>Los 3 primeros son <strong style={{color:T.text}}>obligatorios</strong>. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>read_insights</code> e <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>instagram_basic</code> ya no aparecen en tokens de sistema (Meta los eliminó de este flujo) — están cubiertos por <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> y <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_read_engagement</code>. <strong style={{color:T.text}}>NO marques</strong> catalog_management, pages_manage_ads, threads ni messaging.</div>
+                    <div style={{marginTop:6,fontSize:10,color:T.textSm}}>Los 3 primeros son <strong style={{color:T.text}}>obligatorios</strong>. <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>read_insights</code> e <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>instagram_basic</code> ya no aparecen en tokens de sistema (Meta los eliminó de este flujo) · están cubiertos por <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>ads_read</code> y <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>pages_read_engagement</code>. <strong style={{color:T.text}}>NO marques</strong> catalog_management, pages_manage_ads, threads ni messaging.</div>
                   </li>
                   <li>Al terminar de asignar los permisos <strong style={{color:T.text}}>el token se genera solo</strong>: en la pantalla final <strong style={{color:T.text}}>"Se creó el token"</strong> tocá <strong style={{color:T.text}}>"Copiar"</strong> (empieza con <code style={{background:T.surface,padding:"1px 5px",borderRadius:3,fontSize:10,color:T.accent}}>EAA...</code>) → pegalo abajo. <strong style={{color:T.red}}>Copialo ahora</strong>: no se vuelve a mostrar.</li>
                 </ol>
                 <div style={{marginTop:10,padding:"8px 12px",background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:6,fontSize:11,color:T.green}}>
-                  El token "Nunca vence" — no vas a tener que renovarlo.
+                  El token "Nunca vence". No vas a tener que renovarlo.
                 </div>
               </div>
               <div style={{marginBottom:14}}>
@@ -19632,7 +19632,7 @@ function AppCalendarioPagos({T,user,onHome}){
                     {esPrestamoNuevo&&(<>
                       <div>{lbl("Banco / entidad")}<select style={{...iS,color:form.banco?T.text:T.textSm}} value={form.banco||""} onChange={e=>{const b=e.target.value; setForm(f=>({...f,banco:b,titulo:(!f.titulo||/^Préstamo\b/.test(f.titulo))?(b&&b!=="Otro"?`Préstamo ${b}`:(b==="Otro"?"Préstamo":f.titulo)):f.titulo}));}}><option value="">Elegí el banco…</option>{BANCOS.map(b=><option key={b} value={b}>{b}</option>)}</select></div>
                       <div>{lbl("Capital prestado")}<input style={iS} inputMode="decimal" placeholder="Monto que te prestaron" value={form.capital} onChange={e=>setForm(f=>({...f,capital:e.target.value}))}/></div>
-                      <div>{lbl("Tasa anual (TNA %) — opcional")}<input style={iS} inputMode="decimal" placeholder={tasaImplicita&&!tasaImplicita.sinInteres?`calculada: ${tasaImplicita.tna.toFixed(1)}%`:"La calcula sola con la cuota"} value={form.tna} onChange={e=>setForm(f=>({...f,tna:e.target.value}))}/></div>
+                      <div>{lbl("Tasa anual (TNA %) · opcional")}<input style={iS} inputMode="decimal" placeholder={tasaImplicita&&!tasaImplicita.sinInteres?`calculada: ${tasaImplicita.tna.toFixed(1)}%`:"La calcula sola con la cuota"} value={form.tna} onChange={e=>setForm(f=>({...f,tna:e.target.value}))}/></div>
                       {tasaImplicita&&!ghNumAR(form.tna)&&(
                         <div style={{gridColumn:"1 / -1",background:T.accentSolid+"0d",border:`1px solid ${T.accentSolid}33`,borderRadius:10,padding:"10px 12px",fontSize:12,color:T.textMd,lineHeight:1.6}}>
                           {tasaImplicita.sinInteres
@@ -20546,7 +20546,7 @@ function EnvioCasoModal({T, data, onClose, onCreated}){
           </div>
         </div>
         <div style={{fontSize:12,color:T.textSm,lineHeight:1.5,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:8,padding:"8px 12px"}}>{ayuda}</div>
-        {motivo==="cambio"&&<div><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Nueva dirección o fecha</div><input value={dir} onChange={ev=>setDir(ev.target.value)} placeholder="Calle 123, piso, localidad, CP — o 'viernes por la mañana'" style={{...iS,marginBottom:0}}/></div>}
+        {motivo==="cambio"&&<div><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>Nueva dirección o fecha</div><input value={dir} onChange={ev=>setDir(ev.target.value)} placeholder="Calle 123, piso, localidad, CP. O 'viernes por la mañana'" style={{...iS,marginBottom:0}}/></div>}
         <div><div style={{fontSize:11,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>{motivo==="anulacion"?"Comentario (opcional)":"Qué pasó"}</div><textarea value={desc} onChange={ev=>setDesc(ev.target.value)} rows={3} placeholder={motivo==="anulacion"?"Ej: el cliente canceló la compra":"Una o dos líneas alcanzan"} style={{...iS,marginBottom:0,resize:"vertical",fontFamily:"'Inter',system-ui,sans-serif"}}/></div>
         {motivo==="danado"&&(
           <div>
@@ -21114,7 +21114,7 @@ function AdmShopifyPermisos({T,u}){
   const modal=dg&&(<Modal T={T} open onClose={()=>setDg(null)} title={`Shopify · ${dg.email||u._id}`} width={620} zIndex={1500}>
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       <div>
-        {fila("Tienda Nube conectada",dg.tiendaNube?<span style={{color:T.yellow,fontWeight:600}}>Sí — bloquea conectar Shopify en esta misma tienda</span>:"No")}
+        {fila("Tienda Nube conectada",dg.tiendaNube?<span style={{color:T.yellow,fontWeight:600}}>Sí. Bloquea conectar Shopify en esta misma tienda</span>:"No")}
         {fila("Tiendas Shopify guardadas",dg.shopify.length?dg.shopify.map(x=><div key={x.shop}>{x.shop} · {x.central?"app de Growith":"app propia"} · {x.conToken?"con acceso":"sin acceso"}{x.connectedAt?` · ${new Date(x.connectedAt).toLocaleDateString("es-AR")}`:""}{x.refreshError?<span style={{color:T.red}}> · {x.refreshError}</span>:null}</div>):"Ninguna")}
         {fila("Vínculos de tienda → esta cuenta",dg.vinculos.length?dg.vinculos.join(", "):"Ninguno")}
         {fila("Intentos de conexión a medias",dg.pendientes.length?dg.pendientes.map((x,i)=><div key={i}>{x.shop||"?"}{x.created_at?` · ${new Date(x.created_at).toLocaleString("es-AR")}`:""}</div>):"Ninguno")}
@@ -21909,7 +21909,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   // Opciones del envío especial: SOLO las variantes de la tienda (Tienda Nube / Shopify), nunca Mercado Libre.
   // Sin tienda conectada (portal por link): lo que ese cliente ya mandó por Andreani.
   const catalogo=(()=>{ const m=new Map();
-    for(const p of prodsTienda){ if(p.sku&&!m.has(p.sku)) m.set(p.sku,{l:`${p.sku} — ${[p.producto,p.variante].filter(Boolean).join(" ")}`,sku:p.sku,vr:p.variante||"",prod:p.producto||""}); }
+    for(const p of prodsTienda){ if(p.sku&&!m.has(p.sku)) m.set(p.sku,{l:`${p.sku} · ${[p.producto,p.variante].filter(Boolean).join(" ")}`,sku:p.sku,vr:p.variante||"",prod:p.producto||""}); }
     if(!m.size) for(const t of (st.tandas||[]).filter(t=>t.canal!=="ml")) for(const pd of t.pedidos||[]) for(const it of pd.items||[]){ const val=String(it).replace(/^\d+\s*x\s+/i,"").replace(/\s*\(x\s*\d+\)\s*$/i,"").trim(); if(val&&!m.has(val)) m.set(val,{l:val}); }
     return [...m.entries()].map(([v,o])=>({v,...o})).sort((a,b)=>a.l.localeCompare(b.l)).slice(0,400); })();
   // Dos pasos: pendiente → impresa. Todo lo que no está pendiente ni cancelado ya salió impreso.
@@ -22070,7 +22070,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
           <DepTable T={T} minWidth={420} empty="" rows={st.ingresos} cols={[
             {h:"Fecha",w:"70px",render:g=>ghDepFechaLinda(g.fecha)},
             {h:"Bultos",w:"70px",align:"right",render:g=>g.bultos||"—"},
-            {h:"Contenido",w:"1fr",render:g=><span style={{color:T.textMd}}>{g.items.length?g.items.map(it=>`${it.cant}x ${it.sku}`).join(", "):"—"}{g.nota?<span style={{color:T.textSm}}> — {g.nota}</span>:null}</span>},
+            {h:"Contenido",w:"1fr",render:g=><span style={{color:T.textMd}}>{g.items.length?g.items.map(it=>`${it.cant}x ${it.sku}`).join(", "):"—"}{g.nota?<span style={{color:T.textSm}}>: {g.nota}</span>:null}</span>},
           ]}/>
         </>)}
       </div>)}
@@ -23295,7 +23295,7 @@ function DepositoIngresos({T,api,owner}){
       {h:"Fecha",w:"80px",render:g=>ghDepFechaLinda(g.fecha)},
       {h:"Cliente",w:"1fr",render:g=><strong>{g.clienteNombre}</strong>},
       {h:"Bultos",w:"70px",align:"right",render:g=>g.bultos||"—"},
-      {h:"Contenido",w:"2fr",render:g=><span style={{color:T.textMd}}>{g.items.length?g.items.map(it=>`${it.cant}x ${it.sku}`).join(", "):"—"}{g.nota?<span style={{color:T.textSm}}> — {g.nota}</span>:null}</span>},
+      {h:"Contenido",w:"2fr",render:g=><span style={{color:T.textMd}}>{g.items.length?g.items.map(it=>`${it.cant}x ${it.sku}`).join(", "):"—"}{g.nota?<span style={{color:T.textSm}}>: {g.nota}</span>:null}</span>},
       {h:"Recibió",w:"110px",render:g=><span style={{color:T.textSm}}>{g.porNombre}</span>},
       ...(owner?[{h:"",w:"70px",align:"right",render:g=><DepBtn T={T} variant="ghost" size="sm" onClick={()=>eliminar(g)}>Borrar</DepBtn>}]:[]),
     ]}/>
@@ -23537,7 +23537,7 @@ function AdmCasos({T, usuariosPorUid, setCuenta, onCambio}){
   useEffect(()=>{ load(false); },[]);
   const textoWa=c=>[
     `Hola${st.ejecutivaNombre?" "+st.ejecutivaNombre:""}! Te paso una gestión de ${c.tienda||c.email||"un cliente"} (cliente de Growith):`,
-    `• Envío: ${c.numeroDeEnvio||c.tracking} — pedido #${c.numero}`,
+    `• Envío: ${c.numeroDeEnvio||c.tracking} · pedido #${c.numero}`,
     `• Destinatario: ${c.cliente||"-"}${c.localidad?" · "+c.localidad:""} · ${c.esSucursal?"retiro en sucursal":"a domicilio"}`,
     `• Motivo: ${c.motivoLabel}`,
     c.descripcion?`• Detalle: ${c.descripcion}`:"",
@@ -23558,7 +23558,7 @@ function AdmCasos({T, usuariosPorUid, setCuenta, onCambio}){
   const lista=st.casos;
   return (
     <Card T={T} padding="lg">
-      <AdmTitulo T={T} t="Gestiones ante Andreani" sub={`Reclamos, cambios y anulaciones de los clientes (o del sistema). La ejecutiva las recibe por mail${st.ejecutivaEmail?" ("+st.ejecutivaEmail+")":" — cargá su mail en Configuración"} y las resuelve desde su portal; el WhatsApp queda para urgencias.`} right={<div style={{display:"flex",gap:6,alignItems:"center"}}><button onClick={()=>{ setTodos(v=>!v); load(!todos); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>{todos?"Solo abiertas":"Ver todas"}</button><Btn T={T} variant="secondary" size="sm" onClick={()=>load()}>Actualizar</Btn></div>}/>
+      <AdmTitulo T={T} t="Gestiones ante Andreani" sub={`Reclamos, cambios y anulaciones de los clientes (o del sistema). La ejecutiva las recibe por mail${st.ejecutivaEmail?" ("+st.ejecutivaEmail+")":". Cargá su mail en Configuración"} y las resuelve desde su portal; el WhatsApp queda para urgencias.`} right={<div style={{display:"flex",gap:6,alignItems:"center"}}><button onClick={()=>{ setTodos(v=>!v); load(!todos); }} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>{todos?"Solo abiertas":"Ver todas"}</button><Btn T={T} variant="secondary" size="sm" onClick={()=>load()}>Actualizar</Btn></div>}/>
       {st.loading?<AdmSkeleton T={T}/>:st.error?<div style={{fontSize:12,color:T.red}}>{st.error}</div>:lista.length===0?<AdmVacio T={T} titulo="Sin gestiones abiertas" sub="Cuando un cliente pida algo a Andreani desde la ficha de un envío, aparece acá."/>:(
         <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:520,overflowY:"auto"}}>
           {lista.map(c=>{ const cc=ghEnvioCasoColor(T,c.estado); const u=usuariosPorUid[c.uid]; const abierto=["abierto","enviado","respondido"].includes(c.estado); return (
@@ -24424,7 +24424,7 @@ function GhImpersonBanner({T, info}) {
       window.location.hash = "#/admin/clientes";
       window.location.reload();
     } catch (e) {
-      try { toast(String(e.message||e)+" — cerrando sesión","warning",4000); } catch(_){}
+      try { toast(String(e.message||e)+". Cerrando sesión","warning",4000); } catch(_){}
       try { sessionStorage.removeItem("growith_impersonate"); } catch (_) {}
       try { window.__ghImpersonando = false; } catch (_) {}
       try { await signOut(auth); } catch (_) {}
@@ -25102,7 +25102,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
     await tareasApi({action:"updateTarea",tareaId,prioridad});
     setDatos(prev=>({...prev,tareas:prev.tareas.map(t=>t._id===tareaId?{...t,prioridad}:t)}));
     if(kanbanSelected?._id===tareaId) setKanbanSelected(prev=>({...prev,prioridad}));
-    toast(prioridad?"Tarea marcada como prioridad — el equipo la ve destacada":"Prioridad quitada","success");
+    toast(prioridad?"Tarea marcada como prioridad. El equipo la ve destacada":"Prioridad quitada","success");
   }
 
   async function updateEstado(tareaId, estado, feedback="") {
@@ -25354,7 +25354,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <span style={{flexShrink:0,display:"inline-flex"}}><GhI n={isBlocked?"ban":"refresh"} size={15}/></span>
                 <div>
                   <div style={{fontSize:12,fontWeight:600,color:T.red,marginBottom:isRevision&&t.feedbackActual?4:0}}>
-                    {isBlocked?"Bloqueada — el equipo fue notificado":"El equipo revisó tu entrega y pidió cambios"}
+                    {isBlocked?"Bloqueada. El equipo fue notificado":"El equipo revisó tu entrega y pidió cambios"}
                   </div>
                   {isRevision&&t.feedbackActual&&(
                     <div style={{fontSize:12,color:T.text,lineHeight:1.5}}>{t.feedbackActual}</div>
@@ -25999,7 +25999,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                           placeholder="Describí exactamente qué cambiar (le llega por email y WhatsApp)..."
                           style={{...iS,fontSize:13,width:"100%",minHeight:80,resize:"vertical",marginBottom:10,borderColor:(feedbackText[t._id]||"").trim()?"":T.red+"66",boxSizing:"border-box"}}/>
                         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                          <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador — es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:13,padding:"9px 18px",fontWeight:700}}>Enviar pedido de cambios</AsyncButton>
+                          <AsyncButton onClick={()=>{if(!(feedbackText[t._id]||"").trim())return appAlert("Escribí el feedback para el colaborador. Es obligatorio.");pedirCambios(t._id);}} style={{...BtnDanger(T),fontSize:13,padding:"9px 18px",fontWeight:700}}>Enviar pedido de cambios</AsyncButton>
                           {(feedbackText[t._id]||"").trim()&&colab?.telefono&&(
                             <a href={`https://wa.me/${colab.telefono.replace(/\D/g,"")}?text=${encodeURIComponent(`Hola ${colab.nombre.split(" ")[0]}, sobre tu tarea "${t.titulo}":\n\n${feedbackText[t._id]}\n\nSubí la nueva versión en tu portal cuando esté lista`)}`}
                               target="_blank" rel="noreferrer"
@@ -26071,7 +26071,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <>
                 <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"linear-gradient(135deg,"+T.red+"14"+","+T.red+"08"+")",borderRadius:DS.r.lg,border:"1.5px solid "+T.red+"40"+"",marginBottom:8}}>
                   <span style={{display:"inline-flex"}}><GhI n="ban" size={15}/></span>
-                  <div style={{flex:1,fontSize:12,color:T.red,fontWeight:600}}>Bloqueada — el equipo ya fue notificado</div>
+                  <div style={{flex:1,fontSize:12,color:T.red,fontWeight:600}}>Bloqueada. El equipo ya fue notificado</div>
                 </div>
                 <AsyncButton onClick={async()=>{
                   await fetch("/api/tareas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"publicUpdateEstado",token:colabMode.token,tareaId:t._id,estado:"en_proceso",progresoLabel:"En proceso"})});
@@ -26400,7 +26400,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     ].map(s=>(
                       <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                         <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
                       </div>
                     ))}
                   </div>
@@ -27170,7 +27170,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                     ].map(s=>(
                       <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                         <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                        <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
                       </div>
                     ))}
                   </div>
@@ -27357,7 +27357,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                             <div style={{fontSize:11,color:T.textSm,fontWeight:600,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>Acceso al portal</div>
                             <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Sin permisos activados, solo ve y actualiza <strong style={{color:T.textMd}}>sus propias tareas asignadas</strong>. Cada permiso suma acceso:</div>
                             {[
-                              {key:"verTareas",label:"Gestión de tareas",desc:"Ve TODO el tablero y puede crear, aprobar y pedir cambios — rol manager/CM",badge:"CM"},
+                              {key:"verTareas",label:"Gestión de tareas",desc:"Ve TODO el tablero y puede crear, aprobar y pedir cambios. Rol manager/CM",badge:"CM"},
                               {key:"verEquipo",label:"Estado del equipo",desc:"Ve la pestaña Equipo con las tareas de todos, solo lectura"},
                               {key:"verCreativos",label:"Creativos",desc:"Ve el tablero de producción de creativos"},
                               {key:"editorProduccion",label:"Editor de producción",desc:"Puede recibir creativos asignados"},
@@ -28143,7 +28143,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                       {!colabMode&&<button onClick={()=>openMatModal()} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px",fontWeight:700,flexShrink:0}}>+ Material</button>}
                     </div>
                     {materiales.length===0
-                      ? <div style={{fontSize:DS.font.md,color:T.textSm,fontStyle:"italic",padding:"14px 16px",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:DS.r.lg}}>Sin materiales todavía — agregá links a carpetas de Drive, plantillas de Canva o guías de marca. Tu equipo los va a ver acá y en su portal.</div>
+                      ? <div style={{fontSize:DS.font.md,color:T.textSm,fontStyle:"italic",padding:"14px 16px",background:T.surface,border:`1px dashed ${T.border}`,borderRadius:DS.r.lg}}>Sin materiales todavía. Agregá links a carpetas de Drive, plantillas de Canva o guías de marca. Tu equipo los va a ver acá y en su portal.</div>
                       : (()=>{
                           const catsPresentes=MAT_CATS.filter(c=>materiales.some(m=>m.cat===c.id));
                           const matsFiltrados=matCatFilter?materiales.filter(m=>m.cat===matCatFilter):materiales;
@@ -28291,7 +28291,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
                 <div style={{fontSize:11,fontWeight:600,color:T.textSm}}>Links</div>
                 <Btn T={T} variant="secondary" size="sm" onClick={()=>setRefLinks(p=>[...p,{id:Math.random().toString(36).slice(2),tipo:"web",label:"",url:""}])}>+ Agregar link</Btn>
               </div>
-              {refLinks.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic",marginBottom:8,padding:"10px 0"}}>Sin links todavía — tocá "+ Agregar link"</div>}
+              {refLinks.length===0&&<div style={{fontSize:12,color:T.textSm,fontStyle:"italic",marginBottom:8,padding:"10px 0"}}>Sin links todavía. Tocá "+ Agregar link"</div>}
               {refLinks.map((l,li)=>{
                 const esOtro=(l.tipo||"web")==="otro";
                 return(
@@ -28397,7 +28397,7 @@ function AppTareas({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab, col
               <button onClick={()=>setShowBoardModal(false)} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:20,lineHeight:1,padding:0}}>✕</button>
             </div>
             <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:16}}>
-              Compartí este link con tu equipo. Todas las colaboradoras pueden ver todas las tareas, actualizar el estado de las suyas y dejar comentarios — sin necesidad de crear una cuenta.
+              Compartí este link con tu equipo. Todas las colaboradoras pueden ver todas las tareas, actualizar el estado de las suyas y dejar comentarios. Sin necesidad de crear una cuenta.
             </div>
             {boardLinkLoading?(
               <div style={{padding:"16px",textAlign:"center",color:T.textSm,fontSize:13}}>Generando link...</div>
@@ -28583,7 +28583,7 @@ function EditorProduccionView({T, token}) {
             );
           })}
         </div>
-        <div style={{textAlign:"center",marginTop:32,fontSize:11,color:T.textSm}}>Growith — Sistema de producción creativa</div>
+        <div style={{textAlign:"center",marginTop:32,fontSize:11,color:T.textSm}}>Growith. Sistema de producción creativa</div>
       </div>
       <ToastContainer T={T}/>
       <AppPromptHost T={T}/>
@@ -29581,7 +29581,7 @@ function ArcaIvaTab({T, cuit, api, mono}){
           <DSBadge T={T} color={!r.tieneDatos?T.textSm:aPagar?T.red:aFavor?T.green:T.textMd} size="md">{!r.tieneDatos?"Sin datos todavía":aPagar?"IVA a pagar":aFavor?"Saldo a favor":"Sin saldo"}</DSBadge>
           <div style={{fontSize:38,fontWeight:900,letterSpacing:-1,margin:"10px 0 6px",color:!r.tieneDatos?T.textSm:aPagar?T.yellow:aFavor?T.green:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(Math.abs(r.resultado))}</div>
           <div style={{fontSize:12,color:T.textSm}}>
-            {!r.tieneDatos?"Emití facturas o importá tus compras para ver la proyección.":aPagar?`Es lo que hay que pagar de IVA por ${mesesNombres[mm-1]}${!d.compras?" — todavía sin compras cargadas":""}.`:aFavor?`Te queda saldo a favor que pasa a ${mesSig}.`:"Ventas y compras empatan este mes."}
+            {!r.tieneDatos?"Emití facturas o importá tus compras para ver la proyección.":aPagar?`Es lo que hay que pagar de IVA por ${mesesNombres[mm-1]}${!d.compras?". Todavía sin compras cargadas":""}.`:aFavor?`Te queda saldo a favor que pasa a ${mesSig}.`:"Ventas y compras empatan este mes."}
             {esActual&&r.tieneDatos&&<span> El mes sigue abierto: el número va a cambiar con cada factura.</span>}
           </div>
         </div>
@@ -29646,7 +29646,7 @@ function ArcaIvaTab({T, cuit, api, mono}){
 
       {/* Simulador */}
       <Card T={T} padding="lg">
-        <div style={{fontSize:13,fontWeight:700,color:T.text}}>Simulador — ¿qué pasa si…?</div>
+        <div style={{fontSize:13,fontWeight:700,color:T.text}}>Simulador: ¿qué pasa si…?</div>
         <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Metés montos hipotéticos con IVA (como los facturás) y mirás cómo queda el saldo en vivo. No se guarda nada.</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
           {[["+ Ventas a facturar",simV,setSimV],["+ Compras a cargar",simC,setSimC]].map(([lbl,val,set])=>(
@@ -29665,7 +29665,7 @@ function ArcaIvaTab({T, cuit, api, mono}){
           <span style={{fontSize:18,fontWeight:800,fontVariantNumeric:"tabular-nums",color:simRes>0?T.yellow:simRes<0?T.green:T.text}}>{simRes<0?"a favor ":""}{fmtMoney(Math.abs(simRes))}</span>
         </div>
         <div style={{fontSize:12,color:T.textMd,marginTop:8}}>
-          {simRes>0?<>Para no pagar IVA te falta cargar <b>{fmtMoney(faltaCompras)}</b> más de compras (con IVA) — o emitir notas de crédito de ventas por ese monto.</>
+          {simRes>0?<>Para no pagar IVA te falta cargar <b>{fmtMoney(faltaCompras)}</b> más de compras (con IVA) · o emitir notas de crédito de ventas por ese monto.</>
           :<>Con estos números no pagás IVA{simRes<0?` y te quedan ${fmtMoney(-simRes)} a favor para ${mesSig}`:""}.</>}
         </div>
       </Card>
@@ -29989,7 +29989,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
       });
     } catch(e) {
-      throw new Error("Sin conexión con el servidor — revisá tu internet");
+      throw new Error("Sin conexión con el servidor. Revisá tu internet");
     }
     let d;
     try { d = await r.json(); }
@@ -30220,7 +30220,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(updated.cuits){ setCuits(updated.cuits); setCuitSel(wizCuit); }
       resetWizard();
     } catch(e) {
-      toast("No se pudo guardar el CUIT — revisá tu conexión y probá de nuevo (la clave sigue en el wizard)","error");
+      toast("No se pudo guardar el CUIT. Revisá tu conexión y probá de nuevo (la clave sigue en el wizard)","error");
     } finally {
       setSavingCuit(false);
     }
@@ -30290,7 +30290,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       toast("CUIT actualizado","success");
       setShowEditCuit(false); setEditCuit(null);
     } catch(e) {
-      toast("No se pudieron guardar los cambios — revisá tu conexión","error");
+      toast("No se pudieron guardar los cambios. Revisá tu conexión","error");
     } finally {
       setSavingEdit(false);
     }
@@ -30616,7 +30616,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\n` +
       `Se emite una Nota de Crédito ${resumen.letra} por $${((resumen.total||0)-(resumen.nc_parciales_total||0)).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte ${resumen.nc_parciales_total>0?"lo que quedaba de":"100%"} la factura en ARCA. ` +
       `El IVA débito fiscal se descuenta de tu facturado del mes al cerrar el período.${emisorInfo}\n\n` +
-      `${resumen.orden_id?.startsWith?.("ML-") ? "Se DESADJUNTA la factura original de Mercado Libre — la venta queda como no facturada.\n\n" : ""}` +
+      `${resumen.orden_id?.startsWith?.("ML-") ? "Se DESADJUNTA la factura original de Mercado Libre. La venta queda como no facturada.\n\n" : ""}` +
       `Esta acción no se puede deshacer.`;
     if (!await appConfirm(msg, { okLabel: "Emitir NC y anular", danger: true })) return;
     const factura = {
@@ -30632,7 +30632,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       items: resumen.items,
     };
     setEmitting(true);
-    setNotaOp({ titulo:"Emitiendo Nota de Crédito en ARCA…", sub:`NC ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} — al terminar se descarga el PDF sola` });
+    setNotaOp({ titulo:"Emitiendo Nota de Crédito en ARCA…", sub:`NC ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} · al terminar se descarga el PDF sola` });
     try {
       let d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
       // Caso típico: Factura A sin CUIT en Growith — ofrecer cargarlo y retry
@@ -30684,15 +30684,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       // Recargar pendientes para que la venta vuelva a aparecer + pierda el verde
       await loadPendingOrders();
     } catch(e) {
-      toast("No se pudo emitir la NC — revisá tu conexión y verificá en Registros si salió","error");
+      toast("No se pudo emitir la NC. Revisá tu conexión y verificá en Registros si salió","error");
     } finally { setEmitting(false); setNotaOp(null); }
   }
 
   // ── Re-emitir una Factura B como A: NC de la B + Factura A al CUIT, en un paso ──
   async function reemitirComoA(resumen, batch) {
     if (!cuitSel || emitting) return;
-    if (!resumen.orden_id) return appAlert("Esta factura no está asociada a una venta — emitila manualmente desde Factura manual.");
-    if (!Array.isArray(resumen.items) || !resumen.items.length) return appAlert("Esta factura no tiene el detalle de items guardado — anulala y volvé a facturar la venta desde Facturar.");
+    if (!resumen.orden_id) return appAlert("Esta factura no está asociada a una venta. Emitila manualmente desde Factura manual.");
+    if (!Array.isArray(resumen.items) || !resumen.items.length) return appAlert("Esta factura no tiene el detalle de items guardado. Anulala y volvé a facturar la venta desde Facturar.");
     const cuitPrev = resumen.doc_tipo === "CUIT" ? resumen.doc_nro : "";
     const cuitInput = await appPrompt(`Re-emitir como Factura A la Factura B N° ${String(resumen.comprobante).padStart(8,"0")} ($${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})}).\n\nCUIT del cliente (11 dígitos, sin guiones):`, cuitPrev || "");
     if (cuitInput === null || cuitInput === undefined) return;
@@ -30718,15 +30718,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       items: resumen.items,
     };
     setEmitting(true);
-    setNotaOp({ titulo:"Paso 1 de 2 — Nota de Crédito en ARCA…", sub:`Anulando la Factura B N° ${String(resumen.comprobante).padStart(8,"0")}` });
+    setNotaOp({ titulo:"Paso 1 de 2. Nota de Crédito en ARCA…", sub:`Anulando la Factura B N° ${String(resumen.comprobante).padStart(8,"0")}` });
     try {
       const nc = await api("emit_nc", "POST", { cuit: cuitSel, factura });
       if (nc.error) {
-        await appAlert(`No se pudo emitir la NC — no se tocó nada.\n\nMensaje de ARCA:\n${nc.detalle || nc.error}`);
+        await appAlert(`No se pudo emitir la NC. No se tocó nada.\n\nMensaje de ARCA:\n${nc.detalle || nc.error}`);
         return;
       }
       if (nc.nc?.pdf_b64) { const a=document.createElement("a"); a.href="data:application/pdf;base64,"+nc.nc.pdf_b64; a.download=nc.nc.nombre_pdf; a.click(); }
-      setNotaOp({ titulo:"Paso 2 de 2 — Factura A en ARCA…", sub:`NC ${nc.nc?.letra||"B"} N° ${String(nc.nc?.comprobante||"").padStart(8,"0")} emitida: facturando a ${razon}` });
+      setNotaOp({ titulo:"Paso 2 de 2. Factura A en ARCA…", sub:`NC ${nc.nc?.letra||"B"} N° ${String(nc.nc?.comprobante||"").padStart(8,"0")} emitida: facturando a ${razon}` });
       const orden = {
         _platform: String(resumen.orden_id).startsWith("ML-") ? "mercadolibre" : String(resumen.orden_id).startsWith("SH-") ? "shopify" : String(resumen.orden_id).startsWith("IT-") ? "impultienda" : "tiendanube",
         nombre: razon.trim(),
@@ -30743,7 +30743,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       const d = await api("emit", "POST", { cuit: cuitSel, ordenes: { [resumen.orden_id]: orden }, product_map: {}, fecha_factura: hoyAR().replace(/-/g,""), punto_venta: factura.punto_venta, exento: false, concepto: 1 });
       const r = (d.resultados || [])[0];
       if (d.error || !r?.ok) {
-        await appAlert(`La NC salió bien (la Factura B quedó anulada), pero ARCA rechazó la Factura A:\n\n${d.error || r?.obs || "sin detalle"}\n\nLa venta volvió a Facturar como pendiente — corregí los datos y emitila desde ahí.`);
+        await appAlert(`La NC salió bien (la Factura B quedó anulada), pero ARCA rechazó la Factura A:\n\n${d.error || r?.obs || "sin detalle"}\n\nLa venta volvió a Facturar como pendiente. Corregí los datos y emitila desde ahí.`);
         return;
       }
       const pdf = (d.pdfs || [])[0];
@@ -30754,7 +30754,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       refreshDashboard();
       await loadPendingOrders();
     } catch(e) {
-      toast("Se cortó la conexión — verificá en Registros qué salió antes de reintentar","error");
+      toast("Se cortó la conexión. Verificá en Registros qué salió antes de reintentar","error");
     } finally { setEmitting(false); setNotaOp(null); }
   }
 
@@ -30792,7 +30792,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       items: r.items,
     }));
     setEmitting(true);
-    setNotaOp({ titulo:`Emitiendo ${facturas.length} Nota${facturas.length===1?"":"s"} de Crédito en ARCA…`, sub:"Una NC por cada factura del lote — puede tardar. No cierres esta ventana." });
+    setNotaOp({ titulo:`Emitiendo ${facturas.length} Nota${facturas.length===1?"":"s"} de Crédito en ARCA…`, sub:"Una NC por cada factura del lote. Puede tardar. No cierres esta ventana." });
     try {
       const d = await api("emit_nc_batch", "POST", { cuit: cuitSel, facturas });
       setNotaOp(null); // los avisos de resultado van en modales propios
@@ -30804,7 +30804,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       // Mostrar errores detallados de ARCA si hay fallos
       if (d.errors?.length) {
         const detalle = d.errors.slice(0, 8).map(e => `· Factura ${e.factura_comprobante}: ${e.error || "sin detalle"}`).join("\n");
-        await appAlert(`No se pudieron anular ${d.errors.length} factura(s):\n\n${detalle}${d.errors.length>8?`\n…y ${d.errors.length-8} más`:""}\n\nMirá el campo "error" — suele decir exactamente qué falló (datos del receptor, IVA, doc_nro vacío, etc.)`);
+        await appAlert(`No se pudieron anular ${d.errors.length} factura(s):\n\n${detalle}${d.errors.length>8?`\n…y ${d.errors.length-8} más`:""}\n\nMirá el campo "error". Suele decir exactamente qué falló (datos del receptor, IVA, doc_nro vacío, etc.)`);
       }
       // Ventas de ML que no se pudieron desadjuntar: listar links para borrarlas a mano
       if (mlFails > 0) {
@@ -30817,11 +30817,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           await appAlert(`${links.length} factura(s) de Mercado Libre no se pudieron desadjuntar automáticamente.\n\nBorralas a mano: en cada venta andá a "Ver más detalles" → factura adjunta → 3 puntitos → Eliminar. Usá el botón Ver en ML de cada factura, o estos links:\n\n${links.join("\n")}`);
         }
       }
-      setNotaOp({ titulo:"Actualizando registros…", sub:"Las NCs ya salieron — refrescando la lista" });
+      setNotaOp({ titulo:"Actualizando registros…", sub:"Las NCs ya salieron. Refrescando la lista" });
       refreshDashboard();
       await loadPendingOrders();
     } catch(e) {
-      toast("No se pudieron emitir las NCs — revisá tu conexión y verificá en Registros cuáles salieron","error");
+      toast("No se pudieron emitir las NCs. Revisá tu conexión y verificá en Registros cuáles salieron","error");
     } finally { setEmitting(false); setNotaOp(null); }
   }
 
@@ -30871,7 +30871,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     let okTotal=0; const errAll=[]; const mlFailAll=[];
     try {
       for (let ci=0; ci<chunks.length; ci++) {
-        setNotaOp({ titulo:"Emitiendo Notas de Crédito en ARCA…", sub:`Tanda ${ci+1}/${chunks.length} · ${Math.min((ci+1)*CHUNK,facturas.length)}/${facturas.length} NC — no cierres esta ventana` });
+        setNotaOp({ titulo:"Emitiendo Notas de Crédito en ARCA…", sub:`Tanda ${ci+1}/${chunks.length} · ${Math.min((ci+1)*CHUNK,facturas.length)}/${facturas.length} NC. No cierres esta ventana` });
         const d = await api("emit_nc_batch","POST",{ cuit: cuitSel, facturas: chunks[ci] });
         if (d.error) { errAll.push({ factura_comprobante:"—", error:d.error }); continue; }
         okTotal += d.ok_count || 0;
@@ -30882,7 +30882,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       toast(`${okTotal}/${facturas.length} NCs emitidas${errAll.length?` · ${errAll.length} con error`:""}${mlFailAll.length?` · ${mlFailAll.length} sin desadjuntar de ML`:""}`, (errAll.length||mlFailAll.length)?"warning":"success");
       if (errAll.length) {
         const detalle = errAll.slice(0,8).map(e=>`· Factura ${e.factura_comprobante}: ${e.error||"sin detalle"}`).join("\n");
-        await appAlert(`No se pudieron anular ${errAll.length} factura(s):\n\n${detalle}${errAll.length>8?`\n…y ${errAll.length-8} más`:""}\n\nLas que fallaron suelen ser Factura A sin CUIT del receptor — anulalas a mano desde el lote en Registros.`);
+        await appAlert(`No se pudieron anular ${errAll.length} factura(s):\n\n${detalle}${errAll.length>8?`\n…y ${errAll.length-8} más`:""}\n\nLas que fallaron suelen ser Factura A sin CUIT del receptor. Anulalas a mano desde el lote en Registros.`);
       }
       if (mlFailAll.length) {
         const links = mlFailAll.map(r => {
@@ -30892,10 +30892,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         }).filter(Boolean);
         if (links.length) await appAlert(`${links.length} factura(s) de Mercado Libre no se pudieron desadjuntar solas. Borralas a mano (venta → 3 puntitos del documento → Eliminar):\n\n${links.join("\n")}`);
       }
-      setNotaOp({ titulo:"Actualizando…", sub:"Las NCs ya salieron — refrescando" });
+      setNotaOp({ titulo:"Actualizando…", sub:"Las NCs ya salieron. Refrescando" });
       refreshDashboard();
     } catch(e) {
-      toast("Se cortó la emisión — verificá en Registros cuáles NCs salieron","error");
+      toast("Se cortó la emisión. Verificá en Registros cuáles NCs salieron","error");
     } finally {
       setEmitting(false); setNotaOp(null);
       // Refrescar: las emitidas desaparecen (su comprobante queda anulada) y aparecen las NC nuevas.
@@ -30927,7 +30927,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       const disponible = Math.round(((r.total||0) - (r.nc_parciales_total||0))*100)/100;
       if (monto > disponible + 0.009) return toast(`El monto supera lo que queda por acreditar ($${disponible.toLocaleString("es-AR",{minimumFractionDigits:2})})`, "warning");
       setNdEmitting(true);
-      setNotaOp({ titulo:"Emitiendo Nota de Crédito parcial en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} — al terminar se descarga el PDF sola` });
+      setNotaOp({ titulo:"Emitiendo Nota de Crédito parcial en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} · al terminar se descarga el PDF sola` });
       try {
         const factura = { tipo: r.tipo_cbte || (r.letra==="A"?1:r.letra==="C"?11:6), punto_venta: r.punto_venta || b?.punto_venta || 1, comprobante: r.comprobante, total: r.total, doc_tipo: r.doc_tipo || "", doc_nro: r.doc_nro || "", cliente: r.cliente || "", domicilio: r.domicilio || "", order_id: r.orden_id };
         const d = await api("emit_nc", "POST", { cuit: cuitSel, factura, monto, motivo: ndConcepto.trim() });
@@ -30935,12 +30935,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         if (d.nc?.pdf_b64) { const a = document.createElement("a"); a.href = "data:application/pdf;base64," + d.nc.pdf_b64; a.download = d.nc.nombre_pdf || "nota-de-credito.pdf"; a.click(); }
         toast(d.parcial?`Nota de crédito ${d.nc?.letra||""} N° ${String(d.nc?.comprobante||"").padStart(8,"0")} por $${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} emitida: la factura sigue vigente`:"Nota de crédito emitida: con esta se acreditó el total y la factura quedó anulada","success",7000);
         setNdModal(null); refreshDashboard();
-      } catch (e) { toast("No se pudo emitir la NC — revisá tu conexión y verificá en Registros si salió", "error"); }
+      } catch (e) { toast("No se pudo emitir la NC. Revisá tu conexión y verificá en Registros si salió", "error"); }
       finally { setNdEmitting(false); setNotaOp(null); }
       return;
     }
     setNdEmitting(true);
-    setNotaOp({ titulo:"Emitiendo Nota de Débito en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} — al terminar se descarga el PDF sola` });
+    setNotaOp({ titulo:"Emitiendo Nota de Débito en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} · al terminar se descarga el PDF sola` });
     try {
       const d = await api("emit_nd", "POST", {
         cuit: cuitSel,
@@ -30966,7 +30966,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       setNdModal(null);
       refreshDashboard();
     } catch (e) {
-      toast("No se pudo emitir la ND — revisá tu conexión y verificá en Registros si salió", "error");
+      toast("No se pudo emitir la ND. Revisá tu conexión y verificá en Registros si salió", "error");
     } finally { setNdEmitting(false); setNotaOp(null); }
   }
 
@@ -30999,7 +30999,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       let total = 0, rondas = 0, d = null, cursor = null;
       const porPv = {};
       do {
-        setResyncMsg(`Consultando AFIP — ronda ${rondas+1}${total?` · ${total} recuperados`:""}…`);
+        setResyncMsg(`Consultando AFIP. Ronda ${rondas+1}${total?` · ${total} recuperados`:""}…`);
         d = await api("resync_afip","POST",{cuit:cuitSel, ...(cursor?{cursor}:{})});
         if(d.error){ toast("Error: "+d.error,"error"); return; }
         total += d.recuperados||0; rondas++;
@@ -31011,13 +31011,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         const desg = pvList.length ? ` (PV ${pvList.join(", ")})` : "";
         toast(`${total} comprobante${total===1?"":"s"} recuperado${total===1?"":"s"} desde AFIP${desg}`,"success");
         // El backend no informa en qué meses cayeron — avisar que pueden no estar en el mes navegado
-        toast("Revisá otros meses con el selector de Registros — los comprobantes se guardan en su mes original","info");
+        toast("Revisá otros meses con el selector de Registros. Los comprobantes se guardan en su mes original","info");
         refreshDashboard();
       }
       if(d?.pendientes){
-        toast("Quedan más por revisar — tocá de nuevo para continuar","info");
+        toast("Quedan más por revisar. Tocá de nuevo para continuar","info");
       } else if(total===0){
-        toast("Registros al día — no hay comprobantes faltantes en AFIP","info");
+        toast("Registros al día. No hay comprobantes faltantes en AFIP","info");
       }
     } catch(e) {
       toast("Error: "+(e?.message||"no se pudo consultar AFIP"),"error");
@@ -31165,7 +31165,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(r?.ok) { toast(`Factura ${r.letra} N° ${String(r.comprobante).padStart(8,"0")} emitida`,"success"); refreshDashboard(); itemsValid.forEach(it=>saveConcepto(it.nombre.trim())); }
       else toast("Error: "+(r?.obs||"falló la emisión"),"error");
     } catch(e) {
-      toast("No se pudo emitir — revisá tu conexión y verificá en Registros si salió antes de reintentar","error");
+      toast("No se pudo emitir. Revisá tu conexión y verificá en Registros si salió antes de reintentar","error");
     } finally {
       setEmittingManual(false);
     }
@@ -31241,7 +31241,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         if(!resAcum.length){ setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]}); return; }
       }
       if(pendientesFinal.length){
-        toast(`Quedaron ${pendientesFinal.length} pedidos sin procesar por tiempo — volvé a facturar pendientes para terminarlos`,"warning");
+        toast(`Quedaron ${pendientesFinal.length} pedidos sin procesar por tiempo. Volvé a facturar pendientes para terminarlos`,"warning");
       }
       d = { ...(d||{}), resultados: resAcum, pdfs: pdfsAcum };
       const res = d.resultados||[];
@@ -31282,7 +31282,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       if(ok > 0) setTimeout(() => loadPendingOrders(), 1500);
     } catch(e) {
       setEmitProgress({active:false,current:0,total:0,ok:0,fail:0,done:false,errors:[]});
-      toast("No se pudo emitir — revisá tu conexión y NO reintentes sin verificar en Registros si salió","error");
+      toast("No se pudo emitir. Revisá tu conexión y NO reintentes sin verificar en Registros si salió","error");
     } finally {
       if(simInterval) clearInterval(simInterval);
       setEmitting(false);
@@ -31352,7 +31352,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.textMd} strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           {/* Portal a <body>: los controles de la topbar tienen overflow-x auto y
-              recortaban el desplegable — se abría pero no se veía (5/oct/2026). */}
+              recortaban el desplegable. Se abría pero no se veía (5/oct/2026). */}
           {showCuitMenu && ReactDOM.createPortal(
             <div className="gh-dropdown arca-cuit-menu" style={{position:"fixed",top:cuitMenuPos.top,right:cuitMenuPos.right,minWidth:280,maxWidth:"calc(100vw - 16px)",background:T.card,border:"1px solid "+T.border,borderRadius:12,padding:6,zIndex:1600,boxShadow:"0 8px 30px rgba(0,0,0,0.35)"}}>
               {cuits.map(c=>(
@@ -31399,7 +31399,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             <div style={{flex:1}}>
               <span style={{fontSize:12,fontWeight:700,color}}>{isExpired?"Certificado AFIP vencido":"Certificado AFIP próximo a vencer"}</span>
-              <span style={{fontSize:12,color,marginLeft:8}}>{isExpired?`Venció el ${exp.toLocaleDateString("es-AR")} — renovalo en ARCA para seguir emitiendo.`:`Vence el ${exp.toLocaleDateString("es-AR")} (${daysLeft}d restantes) — renovalo pronto.`}</span>
+              <span style={{fontSize:12,color,marginLeft:8}}>{isExpired?`Venció el ${exp.toLocaleDateString("es-AR")} · renovalo en ARCA para seguir emitiendo.`:`Vence el ${exp.toLocaleDateString("es-AR")} (${daysLeft}d restantes) · renovalo pronto.`}</span>
             </div>
             <a href="https://www.arca.gob.ar" target="_blank" rel="noopener" style={{fontSize:11,fontWeight:600,color,textDecoration:"underline",whiteSpace:"nowrap"}}>Ir a ARCA →</a>
           </div>
@@ -31413,7 +31413,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"70px 24px",textAlign:"center"}}>
             <div style={{fontSize:16,fontWeight:700,color:T.text,marginBottom:8}}>No se pudieron cargar tus CUITs</div>
             <div style={{fontSize:13,color:T.textMd,maxWidth:420,lineHeight:1.6,marginBottom:20}}>
-              Hubo un problema de conexión con el servidor. Tus CUITs y certificados están a salvo — reintentá en unos segundos.
+              Hubo un problema de conexión con el servidor. Tus CUITs y certificados están a salvo. Reintentá en unos segundos.
             </div>
             <Btn T={T} variant="primary" onClick={loadCuits}>Reintentar</Btn>
           </div>
@@ -31434,8 +31434,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
                 {[
                   {step:"1",title:"Tocá 'Conectar CUIT' y completá tus datos",desc:"El wizard te pide CUIT, razón social, condición frente al IVA (Responsable Inscripto o Monotributista) y punto de venta. Necesitás clave fiscal nivel 3 en ARCA y estar inscripto como RI o Monotributo (no Consumidor Final).",color:T.accent},
-                  {step:"2",title:"Generá tu certificado",desc:"Growith genera por vos un par RSA-2048 directamente en tu navegador — la clave privada nunca sale de tu computadora hasta que termines. Te da un CSR para subir en ARCA (Administración de Certificados Digitales → Nuevo); descargá y guardá tu clave con el botón Descargar clave. ARCA te devuelve un .crt que subís en el wizard, y listo.",color:T.blue},
-                  {step:"3",title:"Elegí las ventas a facturar",desc:"Conectá Tienda Nube, Shopify o Mercado Libre desde Config y Growith trae solo tus ventas pagas automáticamente — sin subir archivos. En la pestaña Facturar las ves unificadas con cliente, CUIT/DNI y monto ya detectados: tildás las que querés y listo. También podés emitir una factura manual para ventas por fuera de tus tiendas.",color:T.yellow},
+                  {step:"2",title:"Generá tu certificado",desc:"Growith genera por vos un par RSA-2048 directamente en tu navegador. La clave privada nunca sale de tu computadora hasta que termines. Te da un CSR para subir en ARCA (Administración de Certificados Digitales → Nuevo); descargá y guardá tu clave con el botón Descargar clave. ARCA te devuelve un .crt que subís en el wizard, y listo.",color:T.blue},
+                  {step:"3",title:"Elegí las ventas a facturar",desc:"Conectá Tienda Nube, Shopify o Mercado Libre desde Config y Growith trae solo tus ventas pagas automáticamente. Sin subir archivos. En la pestaña Facturar las ves unificadas con cliente, CUIT/DNI y monto ya detectados: tildás las que querés y listo. También podés emitir una factura manual para ventas por fuera de tus tiendas.",color:T.yellow},
                   {step:"4",title:"Emití y descargá los PDFs",desc:"Revisá la previsualización de las facturas. Podés renombrar los productos si querés que aparezcan distinto en el comprobante. Tocá 'Emitir' y en segundos tenés todas las facturas con CAE válido emitidas en ARCA. Descargá los PDFs uno por uno o todos juntos en un click.",color:T.green},
                 ].map(s=>(
                   <div key={s.step} style={{display:"flex",gap:12,padding:18,background:T.card,borderRadius:12,border:"1px solid "+T.border}}>
@@ -31479,12 +31479,12 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{marginBottom:16,padding:16,background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
                     {[
-                      {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre — Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá — descargá y guardá tu clave con el botón Descargar clave) y verificación.",color:T.accent},
-                      {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Facturar' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar — el verde marca las que ya están emitidas.",color:T.blue},
+                      {step:"1",title:"Conectá tus tiendas y tu CUIT",desc:"Desde Config conectá Tienda Nube, Shopify y Mercado Libre. Growith trae las órdenes pagas automáticamente, sin necesidad de subir Excel. Después, arriba a la derecha: selector de CUIT → '+ Conectar nuevo CUIT'. El wizard de 3 pasos te guía con tus datos fiscales, generación del certificado (Growith arma el par RSA, te da el CSR para subir a ARCA → ARCA te devuelve un .crt que cargás acá. Descargá y guardá tu clave con el botón Descargar clave) y verificación.",color:T.accent},
+                      {step:"2",title:"Revisá las ventas pendientes",desc:"En la pestaña 'Facturar' aparecen unificadas todas las ventas de TN, Shopify y ML que todavía no facturaste. Filtrá por canal, período (mes actual o anterior, retroactivo), rango de monto o estado de pago. Growith ya detectó CUIT/DNI, dirección, productos y armó la condición IVA del receptor (RG 5616, obligatorio desde 01/06/2026). Tildá las que querés facturar. El verde marca las que ya están emitidas.",color:T.blue},
                       {step:"3",title:"Ajustá lo que necesites",desc:"Antes de emitir podés cambiar cómo aparece el nombre de los productos en el PDF, elegir el punto de venta y la fecha de la factura (hasta 5 días atrás en productos y 10 en servicios). Growith elige solo si va A, B o C según el comprador. Para Mercado Libre, el PDF se sube automáticamente como documento fiscal de la venta apenas se emite (también desde 'Adjuntar pendientes a ML' en Configuración).",color:T.yellow},
-                      {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Cada PDF sale con el número de CAE, su fecha de vencimiento y el QR oficial de ARCA — el cliente lo escanea con la cámara y ve en la web de ARCA que la factura está aprobada y es real. Descarga uno por uno o en zip; todo queda en Registros para descargar de nuevo cuando quieras.",color:T.green},
-                      {step:"5",title:"Adjunto automático en Mercado Libre",desc:"Apenas se emite una factura de una venta de ML, Growith sube el PDF como documento fiscal de esa orden directo a Mercado Libre — el comprador ya lo ve en su detalle de compra y vos cumplís la obligación sin tocar nada. Si fallara la subida (token vencido o ML caído), podés reintentar desde 'Adjuntar pendientes a ML' en Configuración.",color:T.orange||T.yellow},
-                      {step:"6",title:"¿Te equivocaste? Anulá con Nota de Crédito",desc:"Si emitiste una factura con un error (CUIT mal, monto distinto, producto cambiado), andá a 'Registros' y al lado de cada comprobante tenés el botón para emitir la Nota de Crédito que la cancela. La NC sale por el mismo monto, mismo cliente y referencia el CAE original — ARCA la deja firme y queda en Registros enlazada a la factura original. Después podés volver a Facturar y emitir la factura corregida.",color:T.red},
+                      {step:"4",title:"Emití y descargá",desc:"Tocá 'Emitir' y Growith se conecta directo con ARCA por WSAA+WSFE: comprobante con CAE válido en segundos. Cada PDF sale con el número de CAE, su fecha de vencimiento y el QR oficial de ARCA. El cliente lo escanea con la cámara y ve en la web de ARCA que la factura está aprobada y es real. Descarga uno por uno o en zip; todo queda en Registros para descargar de nuevo cuando quieras.",color:T.green},
+                      {step:"5",title:"Adjunto automático en Mercado Libre",desc:"Apenas se emite una factura de una venta de ML, Growith sube el PDF como documento fiscal de esa orden directo a Mercado Libre. El comprador ya lo ve en su detalle de compra y vos cumplís la obligación sin tocar nada. Si fallara la subida (token vencido o ML caído), podés reintentar desde 'Adjuntar pendientes a ML' en Configuración.",color:T.orange||T.yellow},
+                      {step:"6",title:"¿Te equivocaste? Anulá con Nota de Crédito",desc:"Si emitiste una factura con un error (CUIT mal, monto distinto, producto cambiado), andá a 'Registros' y al lado de cada comprobante tenés el botón para emitir la Nota de Crédito que la cancela. La NC sale por el mismo monto, mismo cliente y referencia el CAE original. ARCA la deja firme y queda en Registros enlazada a la factura original. Después podés volver a Facturar y emitir la factura corregida.",color:T.red},
                     ].map(s=>(
                       <div key={s.step} style={{display:"flex",gap:12,padding:16,background:T.bg,borderRadius:10,border:"1px solid "+T.border}}>
                         <div style={{width:32,height:32,borderRadius:8,background:s.color+"18",border:"1px solid "+s.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:s.color,flexShrink:0}}>{s.step}</div>
@@ -31592,7 +31592,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   {(tnRevalidando||tnLoading) && tnData && (
                     <div style={{display:"flex",alignItems:"center",gap:10,background:T.accent+"12",border:`1.5px solid ${T.accent}55`,borderRadius:10,padding:"11px 14px",marginBottom:12,fontSize:12,color:T.accent,fontWeight:600,lineHeight:1.5}}>
                       <Spinner size={14} color={T.accent}/>
-                      <span>Actualizando ventas en vivo desde tus tiendas… Los totales y la lista pueden estar incompletos hasta que termine — la facturación queda deshabilitada mientras tanto.</span>
+                      <span>Actualizando ventas en vivo desde tus tiendas… Los totales y la lista pueden estar incompletos hasta que termine. La facturación queda deshabilitada mientras tanto.</span>
                     </div>
                   )}
 
@@ -31679,7 +31679,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <select value={metodoPagoSel} onChange={e=>setMetodoPagoSel(e.target.value)} style={{...iS,width:"auto",padding:"6px 10px",fontSize:12}}>
                       <option value="todos">Todos los métodos de pago</option>
                       {/* Agrupado por PLATAFORMA de cobro (Pago Nube / Mercado Pago / Transferencia),
-                          no por tipo de tarjeta — sirve para facturar a distintos CUITs según
+                          no por tipo de tarjeta. Sirve para facturar a distintos CUITs según
                           por dónde entró la plata. Órdenes viejas sin el campo caen al método crudo. */}
                       {pendStats.metodosPago.map(m=><option key={m} value={m}>{m}</option>)}
                     </select>
@@ -31719,14 +31719,14 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     return (
                     <details style={{marginBottom:12}}>
                       <summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:T.text,padding:"10px 14px",background:T.yellowBg,border:"1px solid "+T.yellow+"44",borderRadius:8,listStyle:"none"}}>
-                        ¿Las ventas de Shopify no traen DNI/CUIT? — Click para ver cómo configurar tu checkout
+                        ¿Las ventas de Shopify no traen DNI/CUIT?. Click para ver cómo configurar tu checkout
                       </summary>
                       <div style={{padding:"14px 16px",background:T.bg,border:"1px solid "+T.borderL,borderTop:"none",borderRadius:"0 0 8px 8px",fontSize:12,color:T.textMd,lineHeight:1.7}}>
                         <div style={{marginBottom:10}}>
-                          Shopify no tiene un campo nativo de "DNI/CUIT" — pero sí tiene el campo <strong style={{color:T.text}}>"Empresa"</strong> (<em>Company name</em>) que vamos a reutilizar para que tus clientes carguen su documento. Hay que hacer 2 cosas en tu admin de Shopify:
+                          Shopify no tiene un campo nativo de "DNI/CUIT". Pero sí tiene el campo <strong style={{color:T.text}}>"Empresa"</strong> (<em>Company name</em>) que vamos a reutilizar para que tus clientes carguen su documento. Hay que hacer 2 cosas en tu admin de Shopify:
                         </div>
 
-                        <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 1 — Activar el campo "Empresa" como requerido</div>
+                        <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 1. Activar el campo "Empresa" como requerido</div>
                         <ol style={{margin:0,paddingLeft:20}}>
                           <li>Admin de Shopify → <strong style={{color:T.text}}>Configuración</strong> (abajo a la izquierda del sidebar)</li>
                           <li>Click en <strong style={{color:T.text}}>Pagar</strong> / <strong style={{color:T.text}}>Checkout</strong></li>
@@ -31735,13 +31735,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <li>Click en <strong style={{color:T.text}}>"Guardar"</strong> arriba a la derecha</li>
                         </ol>
 
-                        <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 2 — Renombrar el label "Empresa" → "DNI o CUIT"</div>
+                        <div style={{marginTop:14,marginBottom:6,fontSize:11,textTransform:"uppercase",color:T.accent,fontWeight:700,letterSpacing:0.5}}>Paso 2. Renombrar el label "Empresa" → "DNI o CUIT"</div>
                         <ol style={{margin:0,paddingLeft:20}}>
                           <li>Admin de Shopify → <strong style={{color:T.text}}>Tienda online</strong> (en el sidebar izquierdo, debajo de "Canales de ventas")</li>
                           <li>En el <strong style={{color:T.text}}>tema actual</strong> (el que dice "Tema actual" / "Current theme") tocá el botón <strong style={{color:T.text}}>⋮</strong> (tres puntos, al lado de "Editar tema")</li>
                           <li>En el menú que se abre, click en <strong style={{color:T.text}}>"Editar contenido predeterminado del tema"</strong> / <strong style={{color:T.text}}>"Edit default theme content"</strong></li>
                           <li>Te abre una pantalla con categorías y un buscador. En la barra de búsqueda escribí: <code style={{background:T.surface,padding:"1px 6px",borderRadius:3,fontSize:11,color:T.accent}}>company</code></li>
-                          <li>Buscá la(s) entrada(s) del <strong style={{color:T.text}}>checkout</strong> / <strong style={{color:T.text}}>pago</strong> que digan "Empresa" o "Company" (suele haber varias — modificá <strong style={{color:T.text}}>todas</strong> las que estén dentro de "checkout" o "contact")</li>
+                          <li>Buscá la(s) entrada(s) del <strong style={{color:T.text}}>checkout</strong> / <strong style={{color:T.text}}>pago</strong> que digan "Empresa" o "Company" (suele haber varias. Modificá <strong style={{color:T.text}}>todas</strong> las que estén dentro de "checkout" o "contact")</li>
                           <li>Cambiá el texto a: <code style={{background:T.surface,padding:"2px 8px",borderRadius:3,fontSize:11,color:T.green,fontWeight:700}}>DNI o CUIT (sin puntos ni guiones)</code></li>
                           <li>Click en <strong style={{color:T.text}}>"Guardar"</strong></li>
                         </ol>
@@ -31919,13 +31919,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                   ? <span title={PLATFORM[plat].label} style={{display:"inline-flex",flexShrink:0}}><BrandIcon name={plat} size={17}/></span>
                                   : <span style={{fontSize:10,padding:"2px 8px",borderRadius:5,background:badgeColor(plat)+"1a",color:badgeColor(plat),fontWeight:700,border:`1px solid ${badgeColor(plat)}44`,letterSpacing:0.2,flexShrink:0,whiteSpace:"nowrap"}}>{label}</span>}
                                 {wasAnulada&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.textSm+"22",color:T.textSm,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>ANULADA</span>}
-                                {o.estado_pago==="authorized"&&!billed&&<span title="Pago autorizado por MercadoPago — aún no liquidado. Podés facturarla igual." style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.yellow+"18",color:T.yellow,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,border:"1px solid "+T.yellow+"33"+""}}>AUTORIZ.</span>}
+                                {o.estado_pago==="authorized"&&!billed&&<span title="Pago autorizado por MercadoPago. Aún no liquidado. Podés facturarla igual." style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.yellow+"18",color:T.yellow,fontWeight:700,whiteSpace:"nowrap",flexShrink:0,border:"1px solid "+T.yellow+"33"+""}}>AUTORIZ.</span>}
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                                   <div style={{fontSize:12,fontWeight:600,color:billed?T.green:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>#{id} · {o.nombre||"sin nombre"}</div>
                                   <div style={{fontSize:10,color:T.textSm}}>
                                     {billed
                                       ? `Facturada F${o._billed_info?.letra||""} N°${String(o._billed_info?.nro||"").padStart(8,"0")}`
-                                      : wasAnulada ? "Fue facturada y anulada — podés re-facturar"
+                                      : wasAnulada ? "Fue facturada y anulada. Podés re-facturar"
                                       : `F${tipoFact} · ${o.doc_tipo==="CUIT"?`CUIT ${o.doc_nro}${condLbl}`:o.doc_tipo==="DNI"?`DNI ${o.doc_nro}`:"Consumidor Final"}`}
                                   </div>
                                 </div>
@@ -32043,7 +32043,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
                               {r.ok&&r.fallback_ab&&(
                                 <div style={{fontSize:11,color:T.orange,marginTop:4,padding:"6px 8px",background:T.orange+"14",border:`1px solid ${T.orange}44`,borderRadius:6,lineHeight:1.4}}>
-                                  <b>Salió Factura B, no A.</b> {r.fallback_ab}{/10000|CLASE 'A'|CLASE "A"/i.test(r.fallback_ab)?" — Tu CUIT emisor no está habilitado por AFIP para clase A: pedí la habilitación en AFIP → Regímenes de Facturación y Registración → Habilitación de comprobantes (F.855/856).":""}
+                                  <b>Salió Factura B, no A.</b> {r.fallback_ab}{/10000|CLASE 'A'|CLASE "A"/i.test(r.fallback_ab)?". Tu CUIT emisor no está habilitado por AFIP para clase A: pedí la habilitación en AFIP → Regímenes de Facturación y Registración → Habilitación de comprobantes (F.855/856).":""}
                                 </div>
                               )}
                               {r.ok&&r.orden_id?.startsWith("ML-")&&(r.ml_uploaded
@@ -32196,7 +32196,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                               <span style={{fontSize:11,color:T.textSm}}>Click para personalizar ▾</span>
                             </summary>
                             <div style={{padding:"4px 14px 14px"}}>
-                              <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Personalizá cómo aparece cada producto en el PDF — o usá un concepto genérico para todo el lote.</div>
+                              <div style={{fontSize:11,color:T.textSm,marginBottom:10}}>Personalizá cómo aparece cada producto en el PDF. O usá un concepto genérico para todo el lote.</div>
                               <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
                                 <input value={conceptoTodos} onChange={e=>setConceptoTodos(e.target.value)} placeholder='Ej: "Productos varios" o "Venta de productos"' style={{...iS,fontSize:12,flex:1,minWidth:200}}/>
                                 <button onClick={()=>{const c=conceptoTodos.trim(); if(!c) return; setProductMap(Object.fromEntries(productos.map(p=>[p,c])));}}
@@ -32745,7 +32745,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                           <span style={{display:"inline-flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
                                             <TipoBadge tipo={x.tipo}/>
                                             {r.anulada&&<Tag color={T.red} title={`Anulada con NC${r.nc_nro?` N° ${String(r.nc_nro).padStart(8,"0")}`:""}`}>Anulada</Tag>}
-                                            {r.recuperado_afip&&<Tag color={T.textMd} title="Reconstruida desde AFIP — sin detalle de items">Recuperada</Tag>}
+                                            {r.recuperado_afip&&<Tag color={T.textMd} title="Reconstruida desde AFIP. Sin detalle de items">Recuperada</Tag>}
                                             {r.motivo_b&&<Tag color={T.yellow} title={r.motivo_b}>B por rechazo de A</Tag>}
                                             {r.nd&&r.factura_origen&&<Tag color={T.purple} title="Nota de débito asociada">de la N° {String(r.factura_origen.comprobante||"").padStart(8,"0")}</Tag>}
                                           </span>
@@ -32800,7 +32800,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
 
                       {/* Menú de acciones flotante */}
                       {/* Portal a <body>: la pestaña tiene una animación con transform que
-                          convierte a position:fixed en relativo al contenedor — el menú
+                          convierte a position:fixed en relativo al contenedor. El menú
                           se dibujaba fuera de la pantalla y parecía que ⋯ no hacía nada. */}
                       {regMenu && menuX && menuX.k==="f" && ReactDOM.createPortal(
                         <>
@@ -33032,7 +33032,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const col = errores>0 ? T.yellow : T.green;
                     return (
                       <div style={{marginTop:14,padding:"9px 12px",background:col+"12",border:`1px solid ${col}44`,borderRadius:8,fontSize:12,color:col,fontWeight:600}}>
-                        Última corrida: {fechaStr} — {emitidas} factura{emitidas===1?"":"s"} emitida{emitidas===1?"":"s"}{errores>0?`, ${errores} error${errores===1?"":"es"}`:""}
+                        Última corrida: {fechaStr} · {emitidas} factura{emitidas===1?"":"s"} emitida{emitidas===1?"":"s"}{errores>0?`, ${errores} error${errores===1?"":"es"}`:""}
                       </div>
                     );
                   })()}
@@ -33079,7 +33079,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Por defecto todo se factura al 21%. Si vendés productos con IVA reducido (10,5%) o exentos, mapealos acá.</div>
                   </div>
                   {alicRows.length===0 && (
-                    <div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin productos mapeados — todo sale al 21%.</div>
+                    <div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Sin productos mapeados. Todo sale al 21%.</div>
                   )}
                   {alicRows.map((row,i)=>(
                     <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
@@ -33231,9 +33231,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <li>Buscá el servicio <strong style={{color:T.text}}>"Administración de puntos de venta y domicilios"</strong> (si no lo ves: <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → Nueva Relación → buscá el servicio y autorizá tu CUIT).</li>
                     <li>Click en <strong style={{color:T.text}}>"A/B/M de puntos de venta"</strong>.</li>
                     <li>Tocá <strong style={{color:T.text}}>"Agregar"</strong>.</li>
-                    <li><strong style={{color:T.text}}>Número</strong>: el próximo libre (si ya tenés 1, 2, 3, poné <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>4</code> — no se pueden reutilizar).</li>
+                    <li><strong style={{color:T.text}}>Número</strong>: el próximo libre (si ya tenés 1, 2, 3, poné <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>4</code>. No se pueden reutilizar).</li>
                     <li><strong style={{color:T.text}}>Nombre de fantasía</strong>: <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>Growith API</code> (o lo que quieras).</li>
-                    <li><strong style={{color:T.text}}>Sistema</strong>: del dropdown elegí <strong style={{color:T.green}}>"RECE para aplicativo y web services"</strong> (NO "Factura en Línea" — esos son manuales).</li>
+                    <li><strong style={{color:T.text}}>Sistema</strong>: del dropdown elegí <strong style={{color:T.green}}>"RECE para aplicativo y web services"</strong> (NO "Factura en Línea". Esos son manuales).</li>
                     <li><strong style={{color:T.text}}>Domicilio</strong>: el fiscal del CUIT.</li>
                     <li>Confirmar.</li>
                   </ol>
@@ -33242,13 +33242,13 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div style={{background:T.bg,border:"1px solid "+T.border,borderRadius:10,padding:"12px 14px"}}>
                   <label style={labelS}>¿Qué número de Punto de Venta quedó?</label>
                   <input value={wizPuntoVenta} onChange={e=>setWizPuntoVenta(e.target.value.replace(/\D/g,"").slice(0,5))} placeholder="Ej. 4" style={iS}/>
-                  <div style={{fontSize:10,color:T.textSm,marginTop:6,lineHeight:1.55}}>Anotá acá el número exacto que te quedó tras crearlo. Si todavía no lo creaste, dejá el campo y volvé después de hacerlo en ARCA — el wizard te espera.</div>
+                  <div style={{fontSize:10,color:T.textSm,marginTop:6,lineHeight:1.55}}>Anotá acá el número exacto que te quedó tras crearlo. Si todavía no lo creaste, dejá el campo y volvé después de hacerlo en ARCA. El wizard te espera.</div>
                 </div>
 
                 <details style={{marginTop:4}}>
                   <summary style={{cursor:"pointer",fontSize:12,color:T.accent,fontWeight:600}}>¿Por qué no sirven los "Factura en Línea"?</summary>
                   <div style={{padding:"10px 14px",marginTop:6,background:T.bg,borderRadius:8,fontSize:11,color:T.textMd,lineHeight:1.6}}>
-                    "Factura en Línea" (Responsable Inscripto o Monotributo) es el portal manual de ARCA donde cargás factura por factura. <strong style={{color:T.text}}>No tiene API expuesta.</strong> El web service WSFE de ARCA — que Growith usa para emitir con un click — solo acepta puntos de venta del régimen <strong style={{color:T.text}}>RECE</strong>. Si intentás emitir con un PV tipo "Factura en Línea", ARCA devuelve: <code style={{background:T.surface,padding:"1px 4px",borderRadius:3,fontSize:10}}>NO AUTORIZADO A EMITIR COMPROBANTES — EL PUNTO DE VENTA INFORMADO DEBE ESTAR DADO DE ALTA Y SER DEL TIPO RECE</code>.
+                    "Factura en Línea" (Responsable Inscripto o Monotributo) es el portal manual de ARCA donde cargás factura por factura. <strong style={{color:T.text}}>No tiene API expuesta.</strong> El web service WSFE de ARCA. Que Growith usa para emitir con un click. Solo acepta puntos de venta del régimen <strong style={{color:T.text}}>RECE</strong>. Si intentás emitir con un PV tipo "Factura en Línea", ARCA devuelve: <code style={{background:T.surface,padding:"1px 4px",borderRadius:3,fontSize:10}}>NO AUTORIZADO A EMITIR COMPROBANTES. EL PUNTO DE VENTA INFORMADO DEBE ESTAR DADO DE ALTA Y SER DEL TIPO RECE</code>.
                   </div>
                 </details>
               </div>
@@ -33308,8 +33308,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 <div>
                   <label style={labelS}>Ambiente ARCA</label>
                   <select value={wizArcaProd?"prod":"homo"} onChange={e=>setWizArcaProd(e.target.value==="prod")} style={iS}>
-                    <option value="homo">Homologación (pruebas — las facturas no son reales)</option>
-                    <option value="prod">Producción (facturas reales con CAE válido — cuidado)</option>
+                    <option value="homo">Homologación (pruebas. Las facturas no son reales)</option>
+                    <option value="prod">Producción (facturas reales con CAE válido. Cuidado)</option>
                   </select>
                 </div>
               </div>
@@ -33346,7 +33346,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{fontSize:13,fontWeight:700,color:T.text}}>Subí el CSR a ARCA</div>
                         </div>
                         <div style={{fontSize:11,color:T.textMd,background:T.bg,border:"1px solid "+T.borderL,borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
-                          ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong>. Ya descargamos tu <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>growith-{wizCuit}.csr</code> al generar — buscalo en tu carpeta de Descargas.
+                          ARCA te va a pedir <strong style={{color:T.text}}>subir un archivo</strong>. Ya descargamos tu <code style={{background:T.surface,padding:"1px 4px",borderRadius:3}}>growith-{wizCuit}.csr</code> al generar. Buscalo en tu carpeta de Descargas.
                         </div>
                         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
                           <Btn T={T} variant="secondary" size="sm" onClick={descargarCsr}>Descargar CSR de nuevo</Btn>
@@ -33357,17 +33357,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                         </div>
                         {!wizArcaProd && (
                           <div style={{fontSize:11,color:T.yellow,background:T.yellowBg,border:"1px solid "+T.yellow+"33",borderRadius:6,padding:"7px 10px",marginBottom:10,lineHeight:1.5}}>
-                            Elegiste ambiente <strong>Homologación</strong>. En "Administración de Certificados Digitales" buscá la opción de Homologación antes de agregar el alias — los certs de homologación no funcionan en producción.
+                            Elegiste ambiente <strong>Homologación</strong>. En "Administración de Certificados Digitales" buscá la opción de Homologación antes de agregar el alias. Los certs de homologación no funcionan en producción.
                           </div>
                         )}
 
-                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte A — Crear el alias en ARCA (sube el .csr)</div>
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte A. Crear el alias en ARCA (sube el .csr)</div>
                         <ol style={{margin:"4px 0 10px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
                           <li>Entrá a <a href="https://www.afip.gob.ar" target="_blank" rel="noopener" style={{color:T.accent,textDecoration:"underline"}}>arca.gob.ar</a> con tu CUIT y clave fiscal <strong style={{color:T.text}}>nivel 3</strong></li>
                           <li>Entrá al servicio <strong style={{color:T.text}}>"Administración de Certificados Digitales"</strong> → tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
                           <li>Escribí un <strong style={{color:T.text}}>nombre de alias</strong> (ej. <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>growith</code>), tocá <strong style={{color:T.text}}>"Seleccionar archivo"</strong> y elegí el <code style={{background:T.bg,padding:"1px 4px",borderRadius:3,fontSize:11}}>.csr</code> que descargaste. Después tocá <strong style={{color:T.text}}>"Agregar alias"</strong></li>
-                          <li style={{color:T.yellow}}>Esperá unos segundos. ARCA puede tardar en mostrar el alias creado — <strong style={{color:T.text}}>no toques "Agregar alias" dos veces</strong> o vas a duplicarlo</li>
-                          <li>Tocá <strong style={{color:T.text}}>"VOLVER"</strong> → en la tabla "Certificados" vas a ver tu alias → tocá <strong style={{color:T.text}}>"Ver"</strong> en esa fila → tocá el ícono <strong style={{color:T.text}}>"Descargar"</strong>. ARCA descarga el certificado <strong style={{color:T.text}}>sin extensión</strong>, no te preocupes — el dropzone de abajo lo acepta igual</li>
+                          <li style={{color:T.yellow}}>Esperá unos segundos. ARCA puede tardar en mostrar el alias creado: <strong style={{color:T.text}}>no toques "Agregar alias" dos veces</strong> o vas a duplicarlo</li>
+                          <li>Tocá <strong style={{color:T.text}}>"VOLVER"</strong> → en la tabla "Certificados" vas a ver tu alias → tocá <strong style={{color:T.text}}>"Ver"</strong> en esa fila → tocá el ícono <strong style={{color:T.text}}>"Descargar"</strong>. ARCA descarga el certificado <strong style={{color:T.text}}>sin extensión</strong>, no te preocupes. El dropzone de abajo lo acepta igual</li>
                         </ol>
                         <details style={{margin:"0 0 14px",fontSize:11,color:T.textSm}}>
                           <summary style={{cursor:"pointer",padding:"6px 10px",background:T.bg,borderRadius:6,border:"1px solid "+T.borderL}}>▶ ¿No te aparece "Administración de Certificados Digitales" en tus servicios? (solo primera vez)</summary>
@@ -33379,7 +33379,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </ol>
                         </details>
 
-                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte B — Autorizar el alias para Facturación Electrónica</div>
+                        <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:6,textTransform:"uppercase",letterSpacing:0.4}}>Parte B. Autorizar el alias para Facturación Electrónica</div>
                         <ol style={{margin:"4px 0 14px",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.8}}>
                           <li>Volvé al portal de ARCA → <strong style={{color:T.text}}>"Administrador de Relaciones de Clave Fiscal"</strong> → tocá <strong style={{color:T.text}}>"Nueva Relación"</strong></li>
                           <li>
@@ -33387,7 +33387,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                             <ul style={{margin:"4px 0 0",paddingLeft:18,lineHeight:1.7}}>
                               <li>Tocá <strong style={{color:T.text}}>ARCA</strong> en la grilla de organismos</li>
                               <li>Se despliega → tocá <strong style={{color:T.text}}>"WebServices"</strong></li>
-                              <li>En la lista (ordenada alfabéticamente) buscá <strong style={{color:T.text}}>"Facturación Electrónica"</strong> (Nivel de seguridad mínimo requerido 3) — ojo, NO es "Facturación Electrónica con Detalle - MTXCA" ni "Factura electronica de exportacion", es el del medio sin sufijos</li>
+                              <li>En la lista (ordenada alfabéticamente) buscá <strong style={{color:T.text}}>"Facturación Electrónica"</strong> (Nivel de seguridad mínimo requerido 3) · ojo, NO es "Facturación Electrónica con Detalle - MTXCA" ni "Factura electronica de exportacion", es el del medio sin sufijos</li>
                             </ul>
                           </li>
                           <li>
@@ -33470,7 +33470,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                 </div>
                 {testResult&&(
                   <div style={{padding:14,borderRadius:8,marginBottom:16,background:testResult.ok?T.greenBg:T.redBg,border:"1px solid "+(testResult.ok?T.green:T.red)+"33",fontSize:12,color:testResult.ok?T.green:T.red,fontWeight:500}}>
-                    {testResult.ok?"Conexión exitosa con ARCA":"Error al conectar con ARCA"} — {testResult.msg}
+                    {testResult.ok?"Conexión exitosa con ARCA":"Error al conectar con ARCA"} · {testResult.msg}
                   </div>
                 )}
                 <button onClick={handleTestCuitWiz} disabled={testingCuit||!certText.trim()||!keyText.trim()} style={{background:T.card,border:"1px solid "+T.border,color:T.text,borderRadius:8,padding:"10px 16px",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:12,opacity:(!certText.trim()||!keyText.trim())?0.5:1}}>
@@ -33515,7 +33515,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
               <div>
                 <div style={{fontSize:16,fontWeight:700,color:T.text}}>Editar datos del CUIT</div>
-                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>CUIT {formatCuit(editCuit.cuit)} — el certificado y la clave solo cambian si pegás uno nuevo abajo</div>
+                <div style={{fontSize:11,color:T.textSm,marginTop:2}}>CUIT {formatCuit(editCuit.cuit)} · el certificado y la clave solo cambian si pegás uno nuevo abajo</div>
               </div>
               <button onClick={()=>setShowEditCuit(false)} style={{background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:18,padding:4,lineHeight:1}}>✕</button>
             </div>
@@ -33551,7 +33551,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       <input type="checkbox" checked={!!p.exento} onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],exento:e.target.checked};setEditCuit({...editCuit,puntos_venta:arr});}}/>
                       IVA exento
                     </label>
-                    <select value={String(p.concepto||1)} title="Concepto AFIP del comprobante — Servicios/Prod. y serv. habilita fecha retroactiva de hasta 10 días (Productos: 5)"
+                    <select value={String(p.concepto||1)} title="Concepto AFIP del comprobante. Servicios/Prod. y serv. habilita fecha retroactiva de hasta 10 días (Productos: 5)"
                       onChange={e=>{const arr=[...(editCuit.puntos_venta||[])];arr[i]={...arr[i],concepto:parseInt(e.target.value)};setEditCuit({...editCuit,puntos_venta:arr});}}
                       style={{...iS,width:"auto",fontSize:12,padding:"6px 8px"}}>
                       <option value="1">Productos</option>
@@ -33588,11 +33588,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               {/* Renovar certificado vencido — pega el .crt nuevo (y la .key solo si cambió) */}
               <div style={{border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",background:T.surface}}>
                 <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:3}}>Renovar certificado</div>
-                <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Solo pegá el certificado nuevo cuando lo renueves en ARCA. Si generaste el CSR desde Growith, la clave no cambia — dejala vacía.</div>
+                <div style={{fontSize:11,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Solo pegá el certificado nuevo cuando lo renueves en ARCA. Si generaste el CSR desde Growith, la clave no cambia. Dejala vacía.</div>
                 <label style={labelS}>Certificado nuevo (.crt · PEM)</label>
                 <textarea value={editCuit._new_cert||""} onChange={e=>setEditCuit({...editCuit,_new_cert:e.target.value})} placeholder="-----BEGIN CERTIFICATE-----" rows={3}
                   style={{...iS,fontFamily:"monospace",fontSize:10,resize:"vertical",marginBottom:10}}/>
-                <label style={labelS}>Clave privada (.key · PEM) — opcional, solo si también cambió</label>
+                <label style={labelS}>Clave privada (.key · PEM) · opcional, solo si también cambió</label>
                 <textarea value={editCuit._new_key||""} onChange={e=>setEditCuit({...editCuit,_new_key:e.target.value})} placeholder="-----BEGIN PRIVATE KEY----- (dejar vacío si no cambió)" rows={3}
                   style={{...iS,fontFamily:"monospace",fontSize:10,resize:"vertical"}}/>
                 {(editCuit._new_cert||"").trim() && !(editCuit._new_cert||"").includes("-----BEGIN CERTIFICATE-----") && (
@@ -34012,7 +34012,7 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
                   );
                 })}
               </div>
-              <div style={{fontSize:10,color:T.textSm,lineHeight:1.5}}>{productIds.length===0 ? "Aplica a TODOS los anuncios — ningún filtro de producto." : `Solo aplica a anuncios cuya URL de destino esté asociada a estos ${productIds.length} producto${productIds.length===1?"":"s"}.`}</div>
+              <div style={{fontSize:10,color:T.textSm,lineHeight:1.5}}>{productIds.length===0 ? "Aplica a TODOS los anuncios. Ningún filtro de producto." : `Solo aplica a anuncios cuya URL de destino esté asociada a estos ${productIds.length} producto${productIds.length===1?"":"s"}.`}</div>
             </>
           )}
         </div>
@@ -34021,7 +34021,7 @@ function RuleEditor({T, initialRule, onSave, onCancel, products=[]}) {
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:18,padding:"10px 14px",background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:8}}>
           <div style={{flex:1}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text}}>Regla activa</div>
-            <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{active ? "Se evaluará automáticamente cada 30 minutos y aplicará la acción cuando se cumpla." : "Está pausada — no se evalúa hasta que la actives."}</div>
+            <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{active ? "Se evaluará automáticamente cada 30 minutos y aplicará la acción cuando se cumpla." : "Está pausada. No se evalúa hasta que la actives."}</div>
           </div>
           <div onClick={()=>setActive(a=>!a)} style={{width:44,height:24,borderRadius:20,background:active?T.green:T.borderL,cursor:"pointer",position:"relative",transition:"background 0.2s",flexShrink:0}}>
             <div style={{position:"absolute",top:3,left:active?22:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.3)"}}/>
@@ -34262,7 +34262,7 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
   if (!unlocked) return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "42px 26px", textAlign: "center", maxWidth: 420, margin: "36px auto" }}>
       <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
-      <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Publicador IA — en pruebas</div>
+      <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>Publicador IA. En pruebas</div>
       <div style={{ fontSize: 12.5, color: T.textSm, marginTop: 6, marginBottom: 18, lineHeight: 1.5 }}>Función en fase beta. Ingresá la clave para desbloquearla.</div>
       <div style={{ display: "flex", gap: 8, maxWidth: 300, margin: "0 auto" }}>
         <input type="password" value={keyInput} autoFocus onChange={e => setKeyInput(e.target.value)}
@@ -34279,7 +34279,7 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 16, maxWidth: 760 }}>
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 18px" }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: T.text }}>🤖 Publicador IA</div>
-        <div style={{ fontSize: 11.5, color: T.textSm, marginTop: 3 }}>Charlá para armar tu anuncio. Antes de publicar te muestro TODO para que confirmes. Se crea siempre <strong>en PAUSA</strong> — vos lo activás cuando quieras.</div>
+        <div style={{ fontSize: 11.5, color: T.textSm, marginTop: 3 }}>Charlá para armar tu anuncio. Antes de publicar te muestro TODO para que confirmes. Se crea siempre <strong>en PAUSA</strong>. Vos lo activás cuando quieras.</div>
       </div>
 
       {/* Chat */}
@@ -34390,7 +34390,7 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
           {result.ok ? (
             <>
               <div style={{ fontSize: 14, fontWeight: 800, color: T.green }}>✅ ¡Anuncio creado en PAUSA!</div>
-              <div style={{ fontSize: 12, color: T.textMd, marginTop: 5 }}>Está listo pero <strong>pausado</strong> — revisalo y activalo cuando quieras. Campaña #{String(result.campaign_id).slice(-6)}.</div>
+              <div style={{ fontSize: 12, color: T.textMd, marginTop: 5 }}>Está listo pero <strong>pausado</strong>. Revisalo y activalo cuando quieras. Campaña #{String(result.campaign_id).slice(-6)}.</div>
               {result.manager_url && <a href={result.manager_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 8, ...BtnSecondary(T), textDecoration: "none", fontSize: 12, padding: "7px 14px" }}>Ver en Meta Ads Manager →</a>}
             </>
           ) : (
@@ -35672,10 +35672,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     // se están subiendo a Meta (esos se auto-publican al terminar — el usuario puede irse).
     const queue = withCopy.filter(c => !c._uploading && !c._processing && !String(c.id).startsWith("_temp"));
     const stillUploading = withCopy.length - queue.length;
-    if (!await appConfirm(`Publicar ${withCopy.length} ad${withCopy.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?${stillUploading>0?`\n\n${stillUploading} todavía se está${stillUploading===1?"":"n"} subiendo — se publicará${stillUploading===1?"":"n"} solo al terminar. Dejá la app abierta unos minutos.`:""}`,{okLabel:"Publicar"})) return;
+    if (!await appConfirm(`Publicar ${withCopy.length} ad${withCopy.length===1?"":"s"} en Meta ${publishActiveByDefault?"ACTIVE":"PAUSED"}?${stillUploading>0?`\n\n${stillUploading} todavía se está${stillUploading===1?"":"n"} subiendo. Se publicará${stillUploading===1?"":"n"} solo al terminar. Dejá la app abierta unos minutos.`:""}`,{okLabel:"Publicar"})) return;
     // Los que aún suben se auto-publican al terminar (ya tienen copy + destino).
     if (stillUploading > 0) setAutoPublishEnabled(true);
-    if (queue.length === 0) { toast(`${stillUploading} ad${stillUploading===1?"":"s"} se publicará${stillUploading===1?"":"n"} solo al terminar de subir — dejá la app abierta`); return; }
+    if (queue.length === 0) { toast(`${stillUploading} ad${stillUploading===1?"":"s"} se publicará${stillUploading===1?"":"n"} solo al terminar de subir. Dejá la app abierta`); return; }
     setBulkPublishing(true);
     setBulkProgress({done:0,total:queue.length,errors:[]});
     const errs = [];
@@ -35867,7 +35867,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         </div>
       ))}
       <div style={{background:T.greenBg,border:`1px solid ${T.green}33`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:11,color:T.green}}>
-        El token "Nunca vence" — no vas a tener que renovarlo ni reconectar la cuenta
+        El token "Nunca vence". No vas a tener que renovarlo ni reconectar la cuenta
       </div>
       <div style={{background:T.yellowBg||(T.yellow+"15"),border:`1px solid ${T.yellow}44`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:11,color:T.textMd,lineHeight:1.55}}>
         <div style={{fontWeight:700,color:T.text,marginBottom:4}}>¿Estás conectando una <em>nueva</em> cuenta publicitaria y ya tenés una app de Meta creada?</div>
@@ -35947,7 +35947,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <div style={{background:T.red+"12",border:`1.5px solid ${T.red}55`,borderRadius:12,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:220}}>
               <div style={{fontSize:14,fontWeight:700,color:T.red}}>El token de Meta está vencido</div>
-              <div style={{fontSize:12,color:T.textMd,marginTop:3,lineHeight:1.5}}>Sin token válido no se leen métricas, las reglas no operan y Márgenes no ve el gasto de ads. Reconectá para retomar — a partir de ahora Growith renueva el token solo antes de que venza.</div>
+              <div style={{fontSize:12,color:T.textMd,marginTop:3,lineHeight:1.5}}>Sin token válido no se leen métricas, las reglas no operan y Márgenes no ve el gasto de ads. Reconectá para retomar. A partir de ahora Growith renueva el token solo antes de que venza.</div>
             </div>
             <div style={{display:"flex",gap:8,flexShrink:0,flexWrap:"wrap"}}>
               {META_OAUTH_OK
@@ -35981,14 +35981,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {title:"Análisis",desc:"La tabla de análisis desglosa el rendimiento por campaña, conjunto o anuncio, con drill-down, columnas configurables y breakdowns (edad, ubicación, ubicación del anuncio). Definí tu ROAS break-even y se pinta solo qué gana y qué pierde plata."},
                 ...(PUBLICADORES_ARCHIVADOS ? [] : [
                   {title:"Publicar creativos",desc:"En Publicar subís imágenes y videos en masa, escribís el copy y Growith crea los anuncios en tu campaña (con opción de publicación automática al terminar la subida)."},
-                  {title:"Reglas automáticas",desc:"En Reglas definís condiciones (ROAS, CPA, gasto) y Growith pausa, sube o baja presupuesto solo — cada 30 min con la app abierta y 1 vez al día en la nube, avisándote de cada acción."},
+                  {title:"Reglas automáticas",desc:"En Reglas definís condiciones (ROAS, CPA, gasto) y Growith pausa, sube o baja presupuesto solo. Cada 30 min con la app abierta y 1 vez al día en la nube, avisándote de cada acción."},
                 ]),
                 {title:"Gasto en tu profit",desc:"El gasto de Meta se descuenta automáticamente en el Dashboard de márgenes: tu profit ya lo tiene restado, sin planillas."},
                 {title:"Si la conexión se cae",desc:"Si el token deja de servir, aparece un banner rojo arriba con el botón para reconectar. Con la conexión por Facebook, Growith lo renueva solo antes del vencimiento."},
               ].map((s,i)=>({...s,n:i+1})).map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -36624,7 +36624,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <div style={{padding:"8px 12px",background:T.bg,borderRadius:8,marginTop:6,border:`1px solid ${T.borderL}`}}>
                                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
                                     <span style={{fontSize:9,color:T.textSm,textTransform:"uppercase",fontWeight:600,letterSpacing:0.4}}>Retención de video</span>
-                                    {ad.video_p25<40 && <span title="Menos del 40% llega al primer cuarto — el hook pierde a la mayoría" style={{fontSize:9,color:T.orange||T.yellow,fontWeight:700}}>hook débil</span>}
+                                    {ad.video_p25<40 && <span title="Menos del 40% llega al primer cuarto. El hook pierde a la mayoría" style={{fontSize:9,color:T.orange||T.yellow,fontWeight:700}}>hook débil</span>}
                                   </div>
                                   <div style={{display:"flex",gap:4,alignItems:"flex-end",height:26}}>
                                     {[["25%",ad.video_p25],["50%",ad.video_p50],["75%",ad.video_p75],["100%",ad.video_p100]].map(([l,v])=>(
@@ -36890,7 +36890,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.user_name||"Cuenta Meta"}</div>
                         <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{a.ad_account_name||"Sin ad account"}{a.ig_username?` · @${a.ig_username}`:""}</div>
                         {a.token_invalid
-                          ? <div style={{fontSize:10,color:T.red,marginTop:2,fontWeight:700}}>✕ Token vencido — reconectá esta cuenta</div>
+                          ? <div style={{fontSize:10,color:T.red,marginTop:2,fontWeight:700}}>✕ Token vencido. Reconectá esta cuenta</div>
                           : a.oauth
                             ? <div style={{fontSize:10,color:T.green,marginTop:2}}>Conectada vía Facebook{a.token_expires_at?` · renueva sola (vence ${new Date(a.token_expires_at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})})`:" · se renueva sola"}</div>
                             : <div style={{fontSize:10,color:T.green,marginTop:2}}>System User Token</div>}
@@ -36905,7 +36905,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               {/* Selector post-conexión si tiene múltiples */}
               {connectData&&(
                 <div style={{...Card,border:`1px solid ${T.accentSolid}55`}}>
-                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>Token válido — {connectData.user_name} · Elegí tu ad account y página</div>
+                  <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:14}}>Token válido: {connectData.user_name} · Elegí tu ad account y página</div>
                   <label style={Label}>Ad Account</label>
                   <select value={selAdAcc} onChange={e=>setSelAdAcc(e.target.value)} style={{...iS,marginBottom:12}}>
                     <option value="">— Seleccioná —</option>
@@ -36939,7 +36939,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <button onClick={async()=>{ try{ const d=await metaApi("oauth_start"); if(d.url) window.location.href=d.url; else toast(d.error||"No se pudo iniciar la conexión","error"); }catch(e){ toast("Error: "+(e?.message||""),"error"); } }} style={{...BtnPri,width:"100%",justifyContent:"center",marginBottom:10}}>
                     Conectar con Facebook (recomendado)
                   </button>
-                  <div style={{fontSize:10,color:T.textSm,textAlign:"center",marginBottom:12,lineHeight:1.5}}>Un click, sin tokens a mano — Growith renueva la conexión automáticamente antes de que venza.<br/>¿Preferís un System User Token? Pegalo abajo.</div>
+                  <div style={{fontSize:10,color:T.textSm,textAlign:"center",marginBottom:12,lineHeight:1.5}}>Un click, sin tokens a mano. Growith renueva la conexión automáticamente antes de que venza.<br/>¿Preferís un System User Token? Pegalo abajo.</div>
                   </>) : (
                   <div style={{marginBottom:14}}>
                     {/* Botón de 1 clic visible pero desactivado: se ve que existe y que vuelve pronto */}
@@ -36953,7 +36953,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{fontSize:11,color:T.textSm,textAlign:"center",marginTop:6,lineHeight:1.5}}>La conexión en 1 clic va a estar disponible pronto. Mientras tanto, conectá con la <strong style={{color:T.text}}>conexión manual</strong>: funciona exactamente igual y el token no vence nunca. La guía te lleva paso a paso (5-8 min).</div>
                     <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0 0"}}>
                       <div style={{flex:1,height:1,background:T.borderL}}/>
-                      <span style={{fontSize:11,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5}}>Conexión manual — disponible ahora</span>
+                      <span style={{fontSize:11,fontWeight:700,color:T.accent,textTransform:"uppercase",letterSpacing:0.5}}>Conexión manual. Disponible ahora</span>
                       <div style={{flex:1,height:1,background:T.borderL}}/>
                     </div>
                   </div>
@@ -37070,7 +37070,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               {/* ── Sección 2: PUBLICAR ADS ──────────────────── */}
               <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"20px 22px",marginBottom:16}}>
                 <SectionHeader n="2" title="Publicar ads"/>
-                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos, elegí campaña/AdSet y pegá tu copy en cada uno. Cuando le des publicar, se suben a Meta y se crean los anuncios — podés dejar la app abierta unos minutos y se hace solo en segundo plano.</div>
+                <div style={{fontSize:12,color:T.textMd,marginBottom:14,lineHeight:1.6}}>Soltá tus creativos, elegí campaña/AdSet y pegá tu copy en cada uno. Cuando le des publicar, se suben a Meta y se crean los anuncios. Podés dejar la app abierta unos minutos y se hace solo en segundo plano.</div>
 
                 {/* Mode toggle */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
@@ -37149,7 +37149,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <div style={{fontSize:32,marginBottom:6,display:"flex",justifyContent:"center"}}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
                   <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:4}}>Arrastrá tus creativos acá</div>
                   <div style={{fontSize:12,color:T.textSm,marginBottom:6}}>o tocá para elegir desde tu Mac</div>
-                  <div style={{fontSize:10,color:T.textSm,letterSpacing:0.3}}>.mp4 · .mov · .jpg · .png — sin límite, uno por ad</div>
+                  <div style={{fontSize:10,color:T.textSm,letterSpacing:0.3}}>.mp4 · .mov · .jpg · .png. Sin límite, uno por ad</div>
                 </div>
 
                 {/* Queue */}
@@ -37415,7 +37415,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           onChange={d=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,start_time:d?`${d}T${(x.start_time||"").slice(11,16)||"09:00"}`:""}:x)}))}
                           onTimeChange={t=>setNewCampMulti(p=>({...p,adsets:p.adsets.map((x,i)=>i===idx?{...x,start_time:`${(x.start_time||"").slice(0,10)||hoyAR()}T${t||"09:00"}`}:x)}))}
                           style={{...iS,width:"100%"}}/>
-                        <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Hora local — Meta lo programa para arrancar a esta fecha.</div>
+                        <div style={{fontSize:10,color:T.textSm,marginTop:4}}>Hora local. Meta lo programa para arrancar a esta fecha.</div>
                       </div>
                     ))}
 
@@ -37453,7 +37453,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </select>
                     <label style={Label}>Nombre</label>
                     <input value={newAdsetForm.name} onChange={e=>setNewAdsetForm(p=>({...p,name:e.target.value}))} style={{...iS,marginBottom:10}}/>
-                    <label style={Label}>Presupuesto diario ({curCode}) — ignorado si la campaña es CBO</label>
+                    <label style={Label}>Presupuesto diario ({curCode}) · ignorado si la campaña es CBO</label>
                     <input type="number" value={newAdsetForm.daily_budget} onChange={e=>setNewAdsetForm(p=>({...p,daily_budget:e.target.value}))} style={{...iS,marginBottom:10}}/>
                     <label style={Label}>Inicio (opcional)</label>
                     <GhDatePicker T={T} value={(newAdsetForm.start_time||"").slice(0,10)} time timeValue={(newAdsetForm.start_time||"").slice(11,16)} allowPast={false} placeholder="Ahora (al crear)"
@@ -37844,7 +37844,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
       const texto = await f.text();
       setAdjunto({ tipo: "texto", nombre: f.name, texto });
     } else {
-      toast("Formato no soportado — imágenes, CSV o TXT", "warning");
+      toast("Formato no soportado. Imágenes, CSV o TXT", "warning");
     }
   }
 
@@ -38008,7 +38008,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
         {showGuiaCp&&(
           <div style={{padding:"14px 4px 0",display:"flex",flexDirection:"column",gap:5}}>
             {[
-              {n:1,title:"Preguntale lo que quieras de TU negocio",desc:"Copilot lee tus datos reales (ventas, profit, stock, envíos, campañas) y responde con cifras exactas — no inventa números. Probá las preguntas sugeridas para arrancar."},
+              {n:1,title:"Preguntale lo que quieras de TU negocio",desc:"Copilot lee tus datos reales (ventas, profit, stock, envíos, campañas) y responde con cifras exactas. No inventa números. Probá las preguntas sugeridas para arrancar."},
               {n:2,title:"Adjuntos",desc:"Podés subirle una imagen o un archivo (un CSV, una captura de una campaña) y analizarlo en contexto con tus datos."},
               {n:3,title:"Acciones",desc:"Además de responder, puede ejecutar cosas si se lo pedís: crear una tarea al equipo, ajustar el presupuesto de una campaña de Meta o corregir stock. Siempre te confirma antes."},
               {n:4,title:"Resumen diario",desc:"Pedile 'el resumen del día' y te arma el estado del negocio: ventas, profit, alertas de stock y envíos con problemas."},
@@ -38017,7 +38017,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
             ].map(s=>(
               <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                 <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
               </div>
             ))}
           </div>
@@ -38032,7 +38032,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
               </div>
               <div style={{fontSize:20,fontWeight:800,color:T.text,letterSpacing:-0.4}}>Preguntale a tu negocio</div>
               <div style={{fontSize:13,color:T.textSm,marginTop:8,lineHeight:1.6,maxWidth:440,margin:"8px auto 0"}}>
-                El Copilot responde con <strong style={{color:T.textMd}}>tus números reales</strong> — los mismos que calculan Márgenes y Envíos. No inventa cifras: si no tiene un dato, te dice dónde encontrarlo.
+                El Copilot responde con <strong style={{color:T.textMd}}>tus números reales</strong>. Los mismos que calculan Márgenes y Envíos. No inventa cifras: si no tiene un dato, te dice dónde encontrarlo.
               </div>
               {/* Puesta a punto — el Copilot ve qué falta y guía paso a paso.
                   Identidad propia de Growith: card violeta con el gradiente del
@@ -38092,7 +38092,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                     try {
                       const r = await authFetch(`/api/meta?action=set_status&uid=${uid}&acc_id=${encodeURIComponent(acc)}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({node_id: camp, status})}).then(x=>x.json());
                       if (r.error) throw new Error(r.error);
-                      setMsgs(p=>[...p,{role:"assistant",text:`Listo — la campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
+                      setMsgs(p=>[...p,{role:"assistant",text:`Listo. La campaña **${nombre}** quedó ${status==="PAUSED"?"pausada":"activa"}.`}]);
                     } catch(e) {
                       setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude ${verbo} la campaña: ${e.message}`}]);
                     }
@@ -38106,7 +38106,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                     )}
                     {mMeta && (
                       <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${mMeta[3]==="PAUSED"?T.red+"44":T.green+"44"}`,borderRadius:10}}>
-                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta. Requiere tu confirmación</div>
                         <div style={{fontSize:13,color:T.text,marginBottom:8}}>{mMeta[3]==="PAUSED"?"Pausar":"Activar"} campaña: <strong>{mMeta[4]}</strong></div>
                         <button onClick={ejecutarMeta} style={{...(mMeta[3]==="PAUSED"?BtnDanger(T):BtnPrimary(T)),fontSize:12,padding:"7px 14px"}}>
                           {mMeta[3]==="PAUSED"?"Pausar campaña":"Activar campaña"}
@@ -38115,22 +38115,22 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                     )}
                     {mBudget && (
                       <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${T.accent}44`,borderRadius:10}}>
-                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta. Requiere tu confirmación</div>
                         <div style={{fontSize:13,color:T.text,marginBottom:8}}>Presupuesto de <strong>{mBudget[4]}</strong> → <strong>${parseInt(mBudget[3]).toLocaleString("es-AR")}/día</strong></div>
                         <button onClick={async()=>{
                           if(!(await appConfirm(`¿Cambiar el presupuesto diario de "${mBudget[4]}" a $${parseInt(mBudget[3]).toLocaleString("es-AR")}?`,{okLabel:"Cambiar presupuesto"}))) return;
                           try{
                             const r=await authFetch(`/api/meta?action=set_budget&uid=${uid}&acc_id=${encodeURIComponent(mBudget[1])}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({node_id:mBudget[2],daily_budget:parseInt(mBudget[3])})}).then(x=>x.json());
                             if(r.error) throw new Error(r.error);
-                            setMsgs(p=>[...p,{role:"assistant",text:`Listo — **${mBudget[4]}** quedó con presupuesto de $${parseInt(mBudget[3]).toLocaleString("es-AR")}/día.`}]);
+                            setMsgs(p=>[...p,{role:"assistant",text:`Listo: **${mBudget[4]}** quedó con presupuesto de $${parseInt(mBudget[3]).toLocaleString("es-AR")}/día.`}]);
                           }catch(e){ setMsgs(p=>[...p,{role:"assistant",error:true,text:`No pude cambiar el presupuesto: ${e.message}`}]); }
                         }} style={{...BtnPrimary(T),fontSize:12,padding:"7px 14px"}}>Cambiar presupuesto</button>
                       </div>
                     )}
                     {mTarea && (
                       <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${T.accent}44`,borderRadius:10}}>
-                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
-                        <div style={{fontSize:13,color:T.text,marginBottom:8}}>Crear tarea <strong>"{mTarea[2].trim()}"</strong> para <strong>{mTarea[1].trim()}</strong>{mTarea[3].trim()?<span style={{color:T.textSm}}> — {mTarea[3].trim()}</span>:null}</div>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta. Requiere tu confirmación</div>
+                        <div style={{fontSize:13,color:T.text,marginBottom:8}}>Crear tarea <strong>"{mTarea[2].trim()}"</strong> para <strong>{mTarea[1].trim()}</strong>{mTarea[3].trim()?<span style={{color:T.textSm}}>: {mTarea[3].trim()}</span>:null}</div>
                         <button onClick={async()=>{
                           if(!(await appConfirm(`¿Crear la tarea "${mTarea[2].trim()}" asignada a ${mTarea[1].trim()}? Le llega un email con el acceso.`,{okLabel:"Crear tarea"}))) return;
                           try{
@@ -38143,7 +38143,7 @@ function AppCopilot({T, user, onHome, onNavigate, connectedStores={}}) {
                     )}
                     {mStock && (
                       <div style={{marginTop:10,padding:"10px 12px",background:T.surface,border:`1px solid ${T.accent}44`,borderRadius:10}}>
-                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta — requiere tu confirmación</div>
+                        <div style={{fontSize:11,color:T.textSm,fontWeight:700,textTransform:"uppercase",letterSpacing:0.4,marginBottom:6}}>Acción propuesta. Requiere tu confirmación</div>
                         <div style={{fontSize:13,color:T.text,marginBottom:8}}>Stock de <strong>{mStock[3].trim()||"item"}</strong> → <strong>{parseInt(mStock[2])} unidades</strong></div>
                         <button onClick={async()=>{
                           if(!(await appConfirm(`¿Setear el stock de "${mStock[3].trim()}" en ${parseInt(mStock[2])} unidades? Si el stock cruzado está activado, se propaga a tus tiendas.`,{okLabel:"Ajustar stock"}))) return;
@@ -38555,7 +38555,7 @@ function MLPublicar({ T, uid }) {
   const predecir = async () => {
     if (!baseTitle.trim()) { toast("Escribí primero el título", "warning"); return; }
     setPredicting(true); setSuggestions([]);
-    try { const j = await ghMlApi(uid, "ml_predict_category", { q: baseTitle.trim(), site }); setSuggestions(j.suggestions || []); if (!j.suggestions?.length) toast("Sin sugerencias — probá con otro título o cargá la categoría a mano", "info"); }
+    try { const j = await ghMlApi(uid, "ml_predict_category", { q: baseTitle.trim(), site }); setSuggestions(j.suggestions || []); if (!j.suggestions?.length) toast("Sin sugerencias. Probá con otro título o cargá la categoría a mano", "info"); }
     catch (e) { toast("Error prediciendo categoría: " + e.message, "error"); }
     finally { setPredicting(false); }
   };
@@ -38628,7 +38628,7 @@ function MLPublicar({ T, uid }) {
         const j = await ghMlApi(uid, "ml_create_bulk", {}, { data: { items } });
         setResults(j.results || []);
       }
-      toast("Listo — revisá el resultado abajo", "success");
+      toast("Listo. Revisá el resultado abajo", "success");
     } catch (e) { toast("Error publicando: " + e.message, "error"); }
     finally { setPublishing(false); }
   };
@@ -38989,11 +38989,11 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
               {n:2,title:"Publicaciones",desc:"Todas tus publicaciones con estado (activa/pausada), precio, stock y ventas. Filtrá por estado y buscá por título o SKU."},
               {n:3,title:"Ventas en tus números",desc:"Las ventas de ML aparecen en el Dashboard con sus comisiones e impuestos reales descontados, y el gasto de Mercado Ads también se resta solo del profit."},
               {n:4,title:"Stock cruzado",desc:"Con el catálogo vinculado por SKU (sección Stock), las ventas de ML descuentan del inventario central y podés empujar ajustes de stock hacia ML."},
-              {n:5,title:"Facturas automáticas",desc:"Si usás el Facturador con piloto automático, cada venta de ML se factura sola y el PDF se sube a la orden como documento fiscal — el comprador lo ve sin que hagas nada."},
+              {n:5,title:"Facturas automáticas",desc:"Si usás el Facturador con piloto automático, cada venta de ML se factura sola y el PDF se sube a la orden como documento fiscal. El comprador lo ve sin que hagas nada."},
             ].map(s=>(
               <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                 <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
               </div>
             ))}
           </div>
@@ -39046,7 +39046,7 @@ function AppML({T, user, onHome, onGoConfig, tab="gestion", setTab}) {
         {selectedIds.size > 0 && (
           <div style={{background:`linear-gradient(90deg, ${T.accent}15, ${T.accentSolid}08)`,border:`1px solid ${T.accent}55`,borderRadius:14,padding:"14px 18px",marginBottom:14}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:bulkMode?12:0,flexWrap:"wrap",gap:8}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text}}>{selectedIds.size} seleccionada{selectedIds.size===1?"":"s"} — aplicar cambio bulk:</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>{selectedIds.size} seleccionada{selectedIds.size===1?"":"s"} · aplicar cambio bulk:</div>
               <button onClick={()=>setSelectedIds(new Set())} style={{padding:"4px 10px",fontSize:11,border:`1px solid ${T.border}`,borderRadius:6,background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Limpiar selección</button>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:bulkMode?12:0}}>
@@ -39417,7 +39417,7 @@ function ComisionesPanel({ T, uid }) {
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Otros métodos de pago</div>
         <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Si cobrás por fuera de Mercado Pago (transferencia, efectivo, otra pasarela), esos métodos aparecen solos acá cuando entra una venta. Cargá qué % o monto fijo te descuenta cada uno.</div>
-        {metodos.length===0 && <div style={{fontSize:12,color:T.textSm}}>Por ahora todas tus ventas cobran por Mercado Pago — no hay nada que configurar acá.</div>}
+        {metodos.length===0 && <div style={{fontSize:12,color:T.textSm}}>Por ahora todas tus ventas cobran por Mercado Pago. No hay nada que configurar acá.</div>}
         {metodos.map(name=>{
           const m = cfg.metodos[name]||{};
           return (
@@ -39732,7 +39732,7 @@ function CostosPanel({ T, uid }) {
           <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12}}>
             <div style={{flex:1}}>
               <div style={{fontSize:12,fontWeight:600,color:T.text}}>Costo promedio por orden</div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Lo que te cuesta despachar cada pedido de tu tienda (Shopify / Tienda Nube). No aplica a Mercado Libre — eso va abajo.</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Lo que te cuesta despachar cada pedido de tu tienda (Shopify / Tienda Nube). No aplica a Mercado Libre. Eso va abajo.</div>
             </div>
             <span style={{fontSize:13,color:T.textSm}}>$</span>
             <input type="number" min="0" value={envio} onChange={e=>setEnvio(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
@@ -39761,7 +39761,7 @@ function CostosPanel({ T, uid }) {
       {metaAdAccts.length > 0 && (
         <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 16px"}}>
           <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Cuentas de Meta Ads para el margen</div>
-          <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Tildá las cuentas publicitarias de <strong style={{color:T.text}}>esta</strong> tienda — el Ad Spend del margen suma SOLO esas. Si no tildás ninguna, toma <strong style={{color:T.text}}>todas</strong>. El <strong style={{color:T.text}}>fee %</strong> de la derecha (recargo de tarjeta / agencia) se suma al Ad Spend de <strong style={{color:T.text}}>esa</strong> cuenta.</div>
+          <div style={{fontSize:11,color:T.textSm,marginBottom:12,lineHeight:1.5}}>Tildá las cuentas publicitarias de <strong style={{color:T.text}}>esta</strong> tienda. El Ad Spend del margen suma SOLO esas. Si no tildás ninguna, toma <strong style={{color:T.text}}>todas</strong>. El <strong style={{color:T.text}}>fee %</strong> de la derecha (recargo de tarjeta / agencia) se suma al Ad Spend de <strong style={{color:T.text}}>esa</strong> cuenta.</div>
           <div style={{display:"flex",flexDirection:"column",gap:2}}>
             <label style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,cursor:"pointer",background:metaSel.length===0?T.accent+"14":"transparent",border:`1px solid ${metaSel.length===0?T.accent+"55":T.borderL}`}}>
               <input type="checkbox" checked={metaSel.length===0} onChange={()=>setMetaSel([])} style={{width:15,height:15}}/>
@@ -40170,7 +40170,7 @@ function DolarPanel({ T, uid }) {
       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 18px"}}>
         <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>Dólar para Meta Ads <span style={{fontSize:10,fontWeight:600,color:T.textSm,background:T.surface,borderRadius:6,padding:"2px 7px",marginLeft:6}}>respaldo</span></div>
         <div style={{fontSize:11,color:T.textSm,marginBottom:14,lineHeight:1.5}}>
-          El gasto de Meta ahora se convierte con <strong style={{color:T.text}}>el mismo dólar de arriba</strong> (el de Costos Adicionales) — un solo dólar para todo el dashboard, porque siempre conseguís los USDT del mismo lado. Este dólar histórico día por día quedó solo como <strong style={{color:T.text}}>respaldo</strong>: se usa únicamente si no tenés cargado el dólar de arriba.
+          El gasto de Meta ahora se convierte con <strong style={{color:T.text}}>el mismo dólar de arriba</strong> (el de Costos Adicionales) · un solo dólar para todo el dashboard, porque siempre conseguís los USDT del mismo lado. Este dólar histórico día por día quedó solo como <strong style={{color:T.text}}>respaldo</strong>: se usa únicamente si no tenés cargado el dólar de arriba.
         </div>
         <label style={{display:"block",fontSize:11,color:T.textSm,marginBottom:6}}>Tipo de dólar para Ads</label>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
@@ -40671,7 +40671,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if(!await appConfirm("Vas a ACTIVAR el stock cruzado: a partir de ahora Growith va a escribir el stock del inventario central en tu tienda (Tienda Nube / Shopify) y Mercado Libre cada vez que cambie (venta, edición manual, sincronización).\n\nRecomendado: usá primero el modo Simulación y revisá los resultados.\n\n¿Activar la escritura real?",{danger:true,okLabel:"Activar escritura"})) return;
     }
     setSyncMode(m); pushSettings({sync_mode:m});
-    toast(m==="off"?"Stock cruzado apagado":m==="simulacion"?"Modo simulación activado — nada se escribe todavía":"Stock cruzado ACTIVADO","success");
+    toast(m==="off"?"Stock cruzado apagado":m==="simulacion"?"Modo simulación activado. Nada se escribe todavía":"Stock cruzado ACTIVADO","success");
   }
   async function sincronizarAhora(){
     setSyncPushing(true); setSyncResults(null);
@@ -41073,7 +41073,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if (sim.error) return toast(sim.error,"error");
       const sb = sim.sin_base || [];
       if (!sim.items) {
-        await appAlert(`Tu stock ya coincide con los movimientos registrados: no hay nada que corregir.${sb.length?`\n\n${sb.length} producto(s) no se pueden reconstruir porque nunca les cargaste el stock a mano — su número viene de la plataforma. Para esos, editá el stock una vez y desde ahí se sigue solo.`:""}`,{okLabel:"Entendido"});
+        await appAlert(`Tu stock ya coincide con los movimientos registrados: no hay nada que corregir.${sb.length?`\n\n${sb.length} producto(s) no se pueden reconstruir porque nunca les cargaste el stock a mano. Su número viene de la plataforma. Para esos, editá el stock una vez y desde ahí se sigue solo.`:""}`,{okLabel:"Entendido"});
         return;
       }
       const det = (sim.cambios||[]).slice(0,10).map(c=>{
@@ -41104,7 +41104,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           if (enCero.length) {
             extra = "\n\n" + enCero.slice(0,4).map(d =>
               `${d.nombre}\n· Stock: ${d.stock_total}\n· Movimientos registrados: ${d.movimientos} (${d.unidades_vendidas} unidades)\n· Órdenes ya procesadas: ${d.ordenes_procesadas}` +
-              (d.stock_baseline_at ? `\n· Stock fijado el ${new Date(d.stock_baseline_at).toLocaleDateString("es-AR")}${d.baseline_tapa_ventas?" — POSTERIOR a las ventas, por eso no descontaron":""}` : "\n· Sin stock fijado a mano")
+              (d.stock_baseline_at ? `\n· Stock fijado el ${new Date(d.stock_baseline_at).toLocaleDateString("es-AR")}${d.baseline_tapa_ventas?". POSTERIOR a las ventas, por eso no descontaron":""}` : "\n· Sin stock fijado a mano")
             ).join("\n\n");
           }
         } catch(_) {}
@@ -41724,7 +41724,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
                 </div>
               ))}
             </div>
@@ -41753,7 +41753,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             title={modoStock==="central"?"Arriba se muestra TU inventario (el de abajo). Tocá para ver el stock que reporta TN/Shopify.":"Arriba se muestra el stock de TN/Shopify. Tocá para volver a tu inventario cargado."}
             style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 11px",fontSize:11,fontWeight:600,border:`1px solid ${modoStock==="tienda"?T.yellow:T.border}`,borderRadius:6,background:modoStock==="tienda"?(T.yellowBg||T.yellow+"18"):"transparent",color:modoStock==="tienda"?T.yellow:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s"}}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-            {modoStock==="central"?"Poner stock de TN/Shopify":"Mostrando TN/Shopify — volver a mi stock"}
+            {modoStock==="central"?"Poner stock de TN/Shopify":"Mostrando TN/Shopify. Volver a mi stock"}
           </button>}
           {/* (comparativa "vs período anterior" retirada) */}
         </div>}
@@ -42087,7 +42087,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,gap:12}}>
                         <div>
                           <div style={{fontSize:14,fontWeight:800,color:T.text}}>Cómo dejar tu inventario andando</div>
-                          <div style={{fontSize:11.5,color:T.textSm,marginTop:3}}>4 pasos y listo — después el stock se descuenta solo con cada venta.</div>
+                          <div style={{fontSize:11.5,color:T.textSm,marginTop:3}}>4 pasos y listo. Después el stock se descuenta solo con cada venta.</div>
                         </div>
                         <button onClick={()=>{ setInvGuideDismissed(true); try{ localStorage.setItem(`growith_inv_guide_${uid}`,"1"); }catch(_){} }}
                           title="Cerrar guía" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:17,padding:0,lineHeight:1,flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
@@ -42364,7 +42364,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   <label style={{fontSize:10,color:T.textSm,fontWeight:600,letterSpacing:0.4,textTransform:"uppercase",display:"block",marginBottom:4}}>Producto (item de inventario)</label>
                   <select value={transferItemId} onChange={e=>setTransferItemId(e.target.value)} style={{width:"100%",background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"9px 10px",fontSize:12,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",marginBottom:14}}>
                     <option value="">Seleccionar...</option>
-                    {invItems.map(it=>{const enFrom=parseInt(it.stock_by_warehouse?.[transferFrom])||0;return <option key={it.id} value={it.id}>{it.nombre}{it.sku?` (${it.sku})`:""} — {enFrom} uds en origen</option>;})}
+                    {invItems.map(it=>{const enFrom=parseInt(it.stock_by_warehouse?.[transferFrom])||0;return <option key={it.id} value={it.id}>{it.nombre}{it.sku?` (${it.sku})`:""} · {enFrom} uds en origen</option>;})}
                   </select>
                   <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,alignItems:"center",marginBottom:14}}>
                     <div>
@@ -42791,7 +42791,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   {syncResults&&(
                     <div style={{marginTop:14,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"12px 14px"}}>
                       <div style={{fontSize:11,fontWeight:700,color:T.text,marginBottom:8}}>
-                        {syncResults.mode==="simulacion"?"Resultado de la simulación":"Resultado de la sincronización"} — {syncResults.resumen.total} publicaciones revisadas · <span style={{color:T.green}}>{syncResults.mode==="simulacion"?`${syncResults.resumen.simulados} cambios detectados`:`${syncResults.resumen.escritos} escritas`}</span> · {syncResults.resumen.sin_cambio} ya iguales{syncResults.resumen.errores>0&&<> · <span style={{color:T.red}}>{syncResults.resumen.errores} errores</span></>}
+                        {syncResults.mode==="simulacion"?"Resultado de la simulación":"Resultado de la sincronización"} · {syncResults.resumen.total} publicaciones revisadas · <span style={{color:T.green}}>{syncResults.mode==="simulacion"?`${syncResults.resumen.simulados} cambios detectados`:`${syncResults.resumen.escritos} escritas`}</span> · {syncResults.resumen.sin_cambio} ya iguales{syncResults.resumen.errores>0&&<> · <span style={{color:T.red}}>{syncResults.resumen.errores} errores</span></>}
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:260,overflowY:"auto"}}>
                         {syncResults.results.filter(r=>!r.skipped).map((r,i)=>(
@@ -42803,7 +42803,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               : <span style={{color:T.red,flexShrink:0,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.error}>{r.error}</span>}
                           </div>
                         ))}
-                        {syncResults.results.filter(r=>!r.skipped).length===0&&<div style={{fontSize:11,color:T.textSm,padding:"4px 0"}}>Todo el stock ya está alineado — no había nada para cambiar.</div>}
+                        {syncResults.results.filter(r=>!r.skipped).length===0&&<div style={{fontSize:11,color:T.textSm,padding:"4px 0"}}>Todo el stock ya está alineado. No había nada para cambiar.</div>}
                       </div>
                     </div>
                   )}
@@ -42844,8 +42844,8 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                   {alertas.length>0&&(
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {alertNotif.whatsapp&&<a href={`https://wa.me/${alertNotif.whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent(`Alerta de stock crítico — Growith\n${alertas.slice(0,5).map(a=>`• ${a.producto} ${a.variante}: ${a.stock} uds (${a.daysLeft??0}d)`).join("\n")}`)}`} target="_blank" rel="noopener" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.green,borderColor:T.green+"55"}}>Enviar alerta por WhatsApp</a>}
-                      <button onClick={()=>{if("Notification"in window){Notification.requestPermission().then(p=>{if(p==="granted"){new Notification("Stock crítico — Growith",{body:alertas.slice(0,3).map(a=>`${a.producto}: ${a.stock} uds`).join("\n"),icon:"/favicon.ico"});}});}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Notificación browser</button>
+                      {alertNotif.whatsapp&&<a href={`https://wa.me/${alertNotif.whatsapp.replace(/\D/g,"")}?text=${encodeURIComponent(`Alerta de stock crítico. Growith\n${alertas.slice(0,5).map(a=>`• ${a.producto} ${a.variante}: ${a.stock} uds (${a.daysLeft??0}d)`).join("\n")}`)}`} target="_blank" rel="noopener" style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",textDecoration:"none",color:T.green,borderColor:T.green+"55"}}>Enviar alerta por WhatsApp</a>}
+                      <button onClick={()=>{if("Notification"in window){Notification.requestPermission().then(p=>{if(p==="granted"){new Notification("Stock crítico. Growith",{body:alertas.slice(0,3).map(a=>`${a.producto}: ${a.stock} uds`).join("\n"),icon:"/favicon.ico"});}});}}} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px"}}>Notificación browser</button>
                     </div>
                   )}
                 </div>
@@ -42858,7 +42858,7 @@ function AppStock({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Calculadora punto de reorden */}
                 {alertas.length>0&&(
                   <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"14px 18px"}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>¿Cuándo pedir? — Calculadora de punto de reorden</div>
+                    <div style={{fontSize:13,fontWeight:700,color:T.text,marginBottom:4}}>¿Cuándo pedir?. Calculadora de punto de reorden</div>
                     <div style={{fontSize:11,color:T.textSm,marginBottom:12}}>Basado en tu tasa de venta y el lead time configurado por producto</div>
                     <div style={{display:"flex",flexDirection:"column",gap:8}}>
                       {alertas.filter(a=>a.rate>0).slice(0,8).map((a,i)=>{
@@ -43410,7 +43410,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       })();
       const [vivoOk,pollOk]=await Promise.all([vivoP,pollP]);
       if(vivoOk||pollOk) lastErr=null;
-      else if(!lastErr) lastErr=new Error("El período nuevo está tardando más de lo normal. Volvé a intentar en un minuto — el cálculo sigue corriendo de fondo.");
+      else if(!lastErr) lastErr=new Error("El período nuevo está tardando más de lo normal. Volvé a intentar en un minuto. El cálculo sigue corriendo de fondo.");
       if(vigente()) setCalcNuevo(false);
     } else {
       // 2b) Datos en vivo, con reintentos automáticos: TN tira 504 seguido cuando
@@ -43620,14 +43620,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const setupVacio = rendData && (cc.cogs||0)===0 && !(cc.impuestos>0) && !(cc.envioProm>0) && cc.envioModo!=="orden";
   const qItems = [];
   if (rendData && !setupVacio) {
-    if ((q.productosSinCogs||0)>0) qItems.push({k:"costos", msg:`${q.productosSinCogs} producto(s) vendidos sin costo cargado — su COGS cuenta $0 y el profit está sobreestimado (${(q.productosSinCogsNombres||[]).slice(0,3).join(", ")}${(q.productosSinCogs||0)>3?"…":""})`, cta:"Cargar costos"});
-    if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0% — el profit no descuenta carga impositiva", cta:"Configurar"});
+    if ((q.productosSinCogs||0)>0) qItems.push({k:"costos", msg:`${q.productosSinCogs} producto(s) vendidos sin costo cargado. Su COGS cuenta $0 y el profit está sobreestimado (${(q.productosSinCogsNombres||[]).slice(0,3).join(", ")}${(q.productosSinCogs||0)>3?"…":""})`, cta:"Cargar costos"});
+    if (q.impuestosSinConfig) qItems.push({k:"comisiones", msg:"Impuestos configurados en 0%. El profit no descuenta carga impositiva", cta:"Configurar"});
     if (q.envioSinConfig) qItems.push({k:"costos", msg:"Costo de envío en $0 (modo promedio sin valor cargado)", cta:"Configurar"});
     if (q.tnFees?.diag) qItems.push({k:null, msg:q.tnFees.diag});
     if (q.tnMp && !q.tnMp.mpToken && (q.tnMp.conTn < q.tnMp.total)) qItems.push({k:"integraciones", msg:`Conectá tu cuenta de Mercado Pago (Integraciones → Mercado Pago (cobros)) y las comisiones de cada venta se leen exactas y al instante. Mientras tanto se leen desde Tienda Nube de a 60 ventas por cálculo (${q.tnMp.conTn} de ${q.tnMp.total} listas)`, cta:"Conectar", go:"config"});
     if (q.shMp && !q.shMp.mpToken) qItems.push({k:"integraciones", msg:`${q.shMp.total} venta(s) de Shopify cobradas con Mercado Pago sin el cargo real: Shopify no lo informa. Conectá la cuenta de Mercado Pago (Integraciones → Mercado Libre, es la misma cuenta) y se lee el cargo exacto de cada pago`, cta:"Conectar",go:"config"});
     if (q.shMp && q.shMp.mpToken && q.shMp.conFee===0 && q.shMp.conRef>0) qItems.push({k:null, msg:`Mercado Pago está conectado pero ninguna venta de Shopify cruzó con su pago (${q.shMp.conRef} con referencia). Puede ser otra cuenta de MP que la que cobra en Shopify: revisá en Dashboard → Configuraciones qué cuenta lee los pagos`});
-    if (q.shMp && q.shMp.mpToken && q.shMp.conRef===0 && q.shMp.muestra) qItems.push({k:null, msg:`Shopify no devuelve el id del pago de MP en sus transacciones (gateway ${q.shMp.muestra.gateway||"?"}, campos: ${(q.shMp.muestra.receiptKeys||[]).join(",")||"ninguno"}) — pasale este texto a soporte de Growith`});
+    if (q.shMp && q.shMp.mpToken && q.shMp.conRef===0 && q.shMp.muestra) qItems.push({k:null, msg:`Shopify no devuelve el id del pago de MP en sus transacciones (gateway ${q.shMp.muestra.gateway||"?"}, campos: ${(q.shMp.muestra.receiptKeys||[]).join(",")||"ninguno"}) · pasale este texto a soporte de Growith`});
     if (q.tnFees && q.tnFees.conCargo===0 && q.tnFees.sinCargo>0 && !q.tnFees.diag && !q.tnMp?.mpToken) qItems.push({k:null, msg:`Tienda Nube no informa el cargo de la pasarela en tus ventas (${q.tnFees.sinCargo} revisadas${q.tnFees.muestra?` · ej. ${q.tnFees.muestra.orden}: ${q.tnFees.muestra.transacciones} transacción(es), estados ${q.tnFees.muestra.estados.join("/")||"—"}, cargos ${q.tnFees.muestra.conCargos?"sí":"no"}, campos ${q.tnFees.muestra.claves.join(",")||"—"}`:""})`});
     const mpParcial = q.mpResumen && q.mpResumen.mpToken && q.mpResumen.conReal>0 && q.mpResumen.sinReal>0;
     if (mpParcial) {
@@ -43637,10 +43637,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
       qItems.push({k:"comisiones", msg:`Mercado Pago: ${r.conReal} de ${r.total} ventas ya tienen su cargo real. Las ${r.sinReal} restantes usan ${String(r.pctFallback).replace(".",",")}% ${r.fallbackEstimado?"estimado":"(el % que cargaste)"} mientras tanto (${porQue}). Es una aproximación en pocas ventas, no un error: en Órdenes cada venta dice si su cargo es real`, cta:r.fallbackEstimado?"Ver %":null});
     }
     if (mlRet && mlRet.total>0 && !mlRet.on) qItems.push({k:"comisiones", msg:`Mercado Libre te retuvo ${fmtM(mlRet.total)} en percepciones y retenciones este período y no están descontadas del profit. Si tu "Impuestos de Mercado Libre" no las contempla, activá "Descontar las percepciones y retenciones reales" en Comisiones e impuestos`, cta:"Activar"});
-    if (q.mpSinConfig && !mpParcial) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo — recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
-    if (rendData?.meta?.metaFallo) qItems.push({k:null, msg:`Meta Ads está conectado pero el gasto no está entrando: la pauta figura en $0 y la ganancia de este período está inflada${rendData?.meta?.metaPermisos?" — Meta bloqueó el acceso a la API: revisá en developers.facebook.com que la app esté en modo Activo y que ads_read tenga Acceso avanzado":rendData?.meta?.metaTokenExpired?" — el token venció, reconectá Meta desde Configuración → Integraciones":""}`});
-    if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` — ${rendData.meta.googleAdsDiag}`:""}`});
-    if (rendData?.meta?.tiktokAdsConectado && rendData?.meta?.tiktokAdsFuente!=="auto") qItems.push({k:null, msg:`TikTok Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.tiktokAdsDiag?` — ${rendData.meta.tiktokAdsDiag}`:""}`});
+    if (q.mpSinConfig && !mpParcial) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo. Recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
+    if (rendData?.meta?.metaFallo) qItems.push({k:null, msg:`Meta Ads está conectado pero el gasto no está entrando: la pauta figura en $0 y la ganancia de este período está inflada${rendData?.meta?.metaPermisos?". Meta bloqueó el acceso a la API: revisá en developers.facebook.com que la app esté en modo Activo y que ads_read tenga Acceso avanzado":rendData?.meta?.metaTokenExpired?". El token venció, reconectá Meta desde Configuración → Integraciones":""}`});
+    if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` · ${rendData.meta.googleAdsDiag}`:""}`});
+    if (rendData?.meta?.tiktokAdsConectado && rendData?.meta?.tiktokAdsFuente!=="auto") qItems.push({k:null, msg:`TikTok Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.tiktokAdsDiag?` · ${rendData.meta.tiktokAdsDiag}`:""}`});
     if (rendData?.meta?.mlAdsConectado && rendData?.meta?.mlAdsFuente!=="auto") qItems.push({k:null, msg:"Mercado Libre está conectado pero el gasto de Mercado Ads no está entrando: si estás pauteando, la ganancia de este período está inflada. Suele ser que la cuenta no tiene Product Ads habilitado"});
     if (rendData?.meta?.stockDegradado) {
       // Antes decía solo "tocá Actualizar", pero Actualizar vuelve a pegarle a
@@ -43650,13 +43650,13 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         ? new Date(rendData.meta.stockDegradado).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})
         : null;
       const motivo = rendData.meta.stockDegradadoMotivo;
-      qItems.push({k:null, msg:`Estos números son de ${ts?`las ${ts}`:"la última actualización completa"}, no de ahora: tu tienda no respondió a tiempo${motivo?` (${motivo})`:""}. Los datos son correctos pero viejos. Suele destrabarse solo en unos minutos — Growith reintenta cada 4 minutos.`});
+      qItems.push({k:null, msg:`Estos números son de ${ts?`las ${ts}`:"la última actualización completa"}, no de ahora: tu tienda no respondió a tiempo${motivo?` (${motivo})`:""}. Los datos son correctos pero viejos. Suele destrabarse solo en unos minutos. Growith reintenta cada 4 minutos.`});
     }
-    if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube — los totales están TRUNCADOS. Usá un rango más corto."});
-    if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre — los totales de ML están TRUNCADOS."});
+    if (q.tnTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Tienda Nube. Los totales están TRUNCADOS. Usá un rango más corto."});
+    if (q.mlTruncated) qItems.push({k:null, msg:"El período supera las 2.000 órdenes de Mercado Libre. Los totales de ML están TRUNCADOS."});
     if ((q.reembolsosParciales||0)>0) qItems.push({k:null, msg:`${q.reembolsosParciales} orden(es) con reembolso parcial contadas a valor pleno (TN no informa el monto devuelto)`});
-    if ((q.mlDevueltas||0)>0) qItems.push({k:null, msg:`${q.mlDevueltas} venta(s) de ML devueltas — su costo de envío no se cuenta (ML anula el cargo); el revenue sigue contado a valor pleno`});
-    if (!q.dolarAdsHistorico && (tot.adSpendMeta||0)>0) qItems.push({k:"dolar", msg:"La serie histórica del dólar no está disponible — el Ad Spend USD se convirtió con una cotización única actual", cta:"Ver"});
+    if ((q.mlDevueltas||0)>0) qItems.push({k:null, msg:`${q.mlDevueltas} venta(s) de ML devueltas. Su costo de envío no se cuenta (ML anula el cargo); el revenue sigue contado a valor pleno`});
+    if (!q.dolarAdsHistorico && (tot.adSpendMeta||0)>0) qItems.push({k:"dolar", msg:"La serie histórica del dólar no está disponible. El Ad Spend USD se convirtió con una cotización única actual", cta:"Ver"});
   }
   const alerts = [];
   if (rendData) {
@@ -43793,7 +43793,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {calcNuevo&&(
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"10px 14px",borderRadius:10,border:`1px solid ${T.border}`,background:T.card,fontSize:13,color:T.textMd,fontWeight:500}}>
               <Spinner size={14} color={T.accent}/>
-              Calculando período nuevo — puede tardar un minuto la primera vez…
+              Calculando período nuevo. Puede tardar un minuto la primera vez…
             </div>
           )}
           <div style={{display:"flex",gap:6,marginBottom:18}}>{[90,110,120].map((w,i)=><div key={i} style={{width:w}}><Skel h={34} r={10}/></div>)}</div>
@@ -43818,7 +43818,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             {[["ars","$"],["usd","US$"]].map(([id,lbl])=>{
               const act = usdMode ? id==="usd" : id==="ars";
               return (
-                <button key={id} title={id==="usd"?`Ver en dólares — cotización promedio del período $${Math.round(usdRate).toLocaleString("es-AR")}`:"Ver en pesos"}
+                <button key={id} title={id==="usd"?`Ver en dólares. Cotización promedio del período $${Math.round(usdRate).toLocaleString("es-AR")}`:"Ver en pesos"}
                   onClick={()=>{ const n=id==="usd"; if(n===usdMode) return; setUsdMode(n); try{localStorage.setItem(ghKey("growith_margenes_usd"),n?"1":"0");}catch(_){} }}
                   onMouseEnter={e=>{if(!act)e.currentTarget.style.color=T.text;}}
                   onMouseLeave={e=>{if(!act)e.currentTarget.style.color=T.textSm;}}
@@ -43912,7 +43912,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               {n:1,title:"Tu profit real",desc:"Cada venta entra sola desde tu tienda (Tienda Nube / Shopify) y Mercado Libre, y Growith le descuenta TODO: comisiones de la plataforma y del medio de pago, impuestos, costo de envío, costo del producto y la publicidad (Meta y Mercado Ads). Lo que ves es lo que realmente te queda."},
               {n:2,title:"Las cards",desc:"Ventas, profit, margen, ROAS, ticket promedio y más. Se arrastran para reordenar y elegís cuáles ver. Cada card compara contra el período anterior."},
               {n:3,title:"Canales",desc:"Cambiá entre Global, tu tienda y Mercado Libre para ver los números de cada canal por separado, con sus propias comisiones e impuestos."},
-              {n:4,title:"Costos",desc:"En la tab Costos cargás el costo de cada producto ($ o % del precio) — sin eso el profit no puede ser real. En Adicionales van los costos fijos mensuales (alquiler, sueldos, apps) y en Dólar la cotización para verlo todo en USD."},
+              {n:4,title:"Costos",desc:"En la tab Costos cargás el costo de cada producto ($ o % del precio) · sin eso el profit no puede ser real. En Adicionales van los costos fijos mensuales (alquiler, sueldos, apps) y en Dólar la cotización para verlo todo en USD."},
               {n:5,title:"P&L Mensual",desc:"El estado de resultados de cada mes: facturación, costos, impuestos, publicidad y resultado final. Ideal para comparar meses y ver la tendencia."},
               {n:6,title:"Impuestos y comisiones",desc:"En Comisiones configurás qué % se lleva cada canal y método de pago, e impuestos como IIBB. Growith los aplica automáticamente a cada venta según su canal."},
               {n:7,title:"Fact. Externa",desc:"¿Vendés también por fuera (mayorista, showroom, transferencia)? Cargalo en Facturación Externa y entra al profit global sin mezclarse con los canales conectados."},
@@ -43920,7 +43920,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             ].map(s=>(
               <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                 <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span> — {s.desc}</span>
+                <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
               </div>
             ))}
           </div>
@@ -43933,7 +43933,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
         <div style={{position:"fixed",top:118,left:"50%",transform:"translateX(-50%)",zIndex:55,maxWidth:"min(680px,calc(100vw - 32px))",background:T.card,border:`1px solid ${T.orange}55`,borderRadius:12,boxShadow:"0 12px 32px rgba(0,0,0,0.35)",padding:"9px 16px",fontSize:12,color:T.orange,fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <span style={{width:6,height:6,borderRadius:"50%",background:T.orange,flexShrink:0,marginTop:5,alignSelf:"flex-start"}}/>
           <span style={{minWidth:0,fontWeight:600,lineHeight:1.5}}>
-            No pudimos actualizar en vivo — mostrando los últimos datos guardados ({new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}).
+            No pudimos actualizar en vivo. Mostrando los últimos datos guardados ({new Date(rendData.loadedAt).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}).
             {/* El error del backend dice QUÉ falló (timeout de la tienda, HTTP,
                 red). Sin esto el cartel solo repetía "no pudimos" y no había
                 forma de saber si esperar o si algo está roto de verdad. */}
@@ -44167,10 +44167,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                     {(ab.feePct>0) && row(`+ Fee sobre pauta (${ab.feePct}%)`, fmtM(ab.feeMonto), "(configurado en Cotización Dólar)")}
                     {row("Ad Spend Meta total", fmtM(ab.total), fuentes.length>1?null:"= la tarjeta AD SPEND", true)}
                     {(ab.diasSinCotiz>0) && (
-                      <div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:6}}>{ab.diasSinCotiz} día{ab.diasSinCotiz>1?"s":""} sin cotización disponible — ese gasto quedó excluido del total.</div>
+                      <div style={{fontSize:DS.font.sm,color:T.yellow,marginTop:6}}>{ab.diasSinCotiz} día{ab.diasSinCotiz>1?"s":""} sin cotización disponible. Ese gasto quedó excluido del total.</div>
                     )}
                     <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.5,borderTop:`1px solid ${T.borderL}`,paddingTop:8}}>
-                      {hayConv ? "Cada día se convierte con la cotización de ESE día (histórico), no con el dólar de hoy — por eso el total no cambia cuando se mueve el dólar. " : ""}{ab.feePct>0 ? "El fee sobre pauta suma el recargo real que pagás sobre lo que factura Meta (impuestos/tarjeta). Otras apps muestran el gasto sin ese recargo — por eso pueden mostrar un número más chico." : ""}
+                      {hayConv ? "Cada día se convierte con la cotización de ESE día (histórico), no con el dólar de hoy. Por eso el total no cambia cuando se mueve el dólar. " : ""}{ab.feePct>0 ? "El fee sobre pauta suma el recargo real que pagás sobre lo que factura Meta (impuestos/tarjeta). Otras apps muestran el gasto sin ese recargo. Por eso pueden mostrar un número más chico." : ""}
                     </div>
                   </>
                 )}
@@ -44251,14 +44251,14 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
           {canalVista==="global" && (<>
 
           {/* (El resumen de ayer vive fusionado con la proyección en la tira de
-              stats debajo del gráfico — una sola franja, sin cajitas sueltas.) */}
+              stats debajo del gráfico. Una sola franja, sin cajitas sueltas.) */}
 
           {panelWrap("metrics", <>
           {/* Hero KPIs */}
           <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 12px",display:"flex",alignItems:"center",gap:10}}>Métricas Principales <span style={{marginLeft:"auto",display:"inline-flex",gap:4,alignItems:"center"}}><button onClick={()=>{setEditMetas(s=>!s); setMetasDraft(metas);}} title="Configurar metas (ROAS y margen objetivo)" style={{background:editMetas?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editMetas?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008.6 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 8.6a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H8a1.65 1.65 0 001-1.51V2a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V8a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button><button onClick={()=>setEditSecKpis(s=>!s)} title="Elegir qué KPIs se muestran" style={{background:editSecKpis?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editSecKpis?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button><EyeBtn k="sec"/><EyeBtn k="main"/></span></div>
           {editMetas && (
             <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-end",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"12px 14px"}}>
-              <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Metas del negocio — los umbrales definen cuándo un KPI se marca en rojo; las metas del mes ($) habilitan el apartado de progreso:</span>
+              <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Metas del negocio. Los umbrales definen cuándo un KPI se marca en rojo; las metas del mes ($) habilitan el apartado de progreso:</span>
               {[["roas","ROAS objetivo (x)"],["trueRoas","True ROAS objetivo (x)"],["margen","Margen objetivo (%)"],["revenueMes","Revenue del mes ($)"],["profitMes","Profit del mes ($)"]].map(([k,l])=>(
                 <label key={k} style={{display:"flex",flexDirection:"column",gap:4,fontSize:10,color:T.textSm,fontWeight:600}}>
                   {l}
@@ -44652,7 +44652,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                               <span style={{display:"inline-flex",alignItems:"center",gap:5,marginRight:8,verticalAlign:"middle"}}>
                                 {(f.brands||[]).map(b=><BrandIcon key={b} name={b} size={15}/>)}
                               </span>
-                              {f.canal}{f.atribGoogle&&<span title="Órdenes y revenue según el modelo de atribución de Google — esas ventas también están contadas en la fila de la tienda" style={{fontSize:10,color:T.textSm,fontWeight:500,marginLeft:6}}>atribución de Google</span>}
+                              {f.canal}{f.atribGoogle&&<span title="Órdenes y revenue según el modelo de atribución de Google. Esas ventas también están contadas en la fila de la tienda" style={{fontSize:10,color:T.textSm,fontWeight:500,marginLeft:6}}>atribución de Google</span>}
                             </td>
                             {COLS.map(([k,,fmt])=>(
                               <td key={k} style={{padding:"10px 12px",textAlign:"right",color:T.text,whiteSpace:"nowrap",borderBottom:`1px solid ${T.borderL}`}}>{fmt(f[k])}</td>
@@ -44728,7 +44728,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                 return (<>
                   {editCanalCards && (
                     <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,background:T.card,border:`1px solid ${T.accent}44`,borderRadius:10,padding:"10px 12px"}}>
-                      <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Métricas de {titulo} — tocá para mostrar/ocultar · arrastrá para reordenar:</span>
+                      <span style={{fontSize:11,color:T.textMd,fontWeight:600,width:"100%"}}>Métricas de {titulo} · tocá para mostrar/ocultar · arrastrá para reordenar:</span>
                       {cardsOrdered(CANAL_CARDS,orderKey).map(k=>{
                         const on=visMap[k.label]!==false;
                         return <button key={k.label}
@@ -44780,7 +44780,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
               for (const p of lista) for (const [f,d] of Object.entries(p.dias||{}).sort((a,b)=>a[0]<b[0]?-1:1)) {
                 filas.push([`"${String(p.nombre).replace(/"/g,'""')}"`,p.canal==="ml"?"Mercado Libre":"Tienda",f,d.u,d.o,Math.round(d.rev),Math.round(d.cogs),Math.round(d.com),Math.round(d.imp),Math.round(d.env),Math.round(d.ads||0),Math.round(d.prof||0),d.o>0?Math.round((d.ads||0)/d.o):0,d.rev>0?((d.prof||0)/d.rev*100).toFixed(1):"0"].join(";"));
               }
-              if(!filas.length){ toast("Todavía no hay serie diaria por producto — actualizá los datos","warning"); return; }
+              if(!filas.length){ toast("Todavía no hay serie diaria por producto. Actualizá los datos","warning"); return; }
               const blob = new Blob(["\ufeff"+head+"\n"+filas.join("\n")],{type:"text/csv;charset=utf-8"});
               const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="rentabilidad_productos_diario_growith.csv"; a.click(); URL.revokeObjectURL(a.href);
             };
@@ -44836,7 +44836,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                               <td style={{padding:"8px 12px",color:T.text,fontWeight:500,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={p.nombre}>
                                 {prodCmpOn&&<input type="checkbox" checked={prodCmp.has(p.key)} onClick={e=>e.stopPropagation()} onChange={()=>setProdCmp(s=>{const n=new Set(s); if(n.has(p.key)) n.delete(p.key); else if(n.size<6) n.add(p.key); return n;})} style={{marginRight:8,verticalAlign:"middle",accentColor:T.accentSolid}}/>}
                                 <span style={{display:"inline-block",width:10,color:T.textSm,marginRight:4,fontSize:10}}>{abierto?"▾":"▸"}</span>
-                                {p.nombre}{p.sinCogs&&<span title="Sin costo cargado — el profit de este producto está sobreestimado" style={{marginLeft:6,fontSize:10,color:T.yellow,fontWeight:700}}>sin costo</span>}
+                                {p.nombre}{p.sinCogs&&<span title="Sin costo cargado. El profit de este producto está sobreestimado" style={{marginLeft:6,fontSize:10,color:T.yellow,fontWeight:700}}>sin costo</span>}
                               </td>
                               <td style={{padding:"8px 12px",color:T.textSm,whiteSpace:"nowrap"}}>{p.canal==="ml"?"Mercado Libre":"Tienda"}</td>
                               <td style={{padding:"8px 12px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:T.textMd}}>{fmtInt(p.units)}</td>
@@ -44853,7 +44853,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                               <tr>
                                 <td colSpan={11} style={{padding:0,background:T.bg}}>
                                   {!dias.length ? (
-                                    <div style={{padding:"12px 16px",fontSize:12,color:T.textSm}}>Sin detalle diario todavía — se completa en la próxima actualización de datos.</div>
+                                    <div style={{padding:"12px 16px",fontSize:12,color:T.textSm}}>Sin detalle diario todavía. Se completa en la próxima actualización de datos.</div>
                                   ) : (
                                     <div style={{maxHeight:300,overflow:"auto"}}>
                                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
