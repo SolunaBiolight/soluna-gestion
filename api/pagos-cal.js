@@ -18,17 +18,10 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardUid, guardCron } from "./_auth.js";
 import { esDemo } from "./_demo.js";
 
-async function sendEmail({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return { error: "missing" };
-  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject, html }), signal: AbortSignal.timeout(10000),
-    });
-    return r.ok ? { ok: true } : { error: (await r.json().catch(() => ({})))?.message };
-  } catch (e) { return { error: e.message }; }
+import { resendEnviar } from "./_mail.js";
+async function sendEmail({ to, subject, html, tipo }, opts = {}) {
+  // Pasa por la política de mails (api/_mail.js): lo automático a clientes está apagado.
+  return resendEnviar({ to: [to], subject, html }, { origen: "calendario", ...(tipo ? { tipo } : {}), ...opts });
 }
 const fmtARS = n => "$" + Math.round(Number(n) || 0).toLocaleString("es-AR");
 const fmtMonto = (m, mon) => mon === "USD" ? "USD " + Math.round(Number(m) || 0).toLocaleString("es-AR") : fmtARS(m);

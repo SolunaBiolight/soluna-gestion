@@ -10,6 +10,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { guardCron } from "./_auth.js";
 import { esDemo } from "./_demo.js";
 
+import { resendEnviar } from "./_mail.js";
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
   initializeApp({ credential: cert({
@@ -20,25 +21,9 @@ function initAdmin() {
   return getFirestore();
 }
 
-async function sendEmail({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return { error: "missing" };
-  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject, html }),
-      // Sin timeout, un Resend colgado se come el presupuesto entero del cron.
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await r.json();
-    if (!r.ok) { console.error("[check-expiring] email error:", data?.message); return { error: data?.message }; }
-    return { ok: true, id: data.id };
-  } catch(e) {
-    console.error("[check-expiring] fetch error:", e.message);
-    return { error: e.message };
-  }
+async function sendEmail({ to, subject, html, tipo }, opts = {}) {
+  // Pasa por la política de mails (api/_mail.js): lo automático a clientes está apagado.
+  return resendEnviar({ to: [to], subject, html }, { origen: "plan", ...(tipo ? { tipo } : {}), ...opts });
 }
 
 function emailHtml({ nombre, diasRestantes, isTrial, planesPlanesUrl, manual }) {

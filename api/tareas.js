@@ -14,6 +14,7 @@ import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos
 import { AsyncLocalStorage } from "node:async_hooks";
 import { esDemo } from "./_demo.js";
 
+import { resendEnviar, mailResumen, mailCfgReset } from "./_mail.js";
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
   initializeApp({ credential: cert({
@@ -90,38 +91,14 @@ async function mailBloqueadoDemo() {
 }
 
 // delayMs opcional → usa Resend scheduled_at (permite cancelar antes de enviar)
-async function sendEmail({ to, subject, html, delayMs, attachments }) {
+async function sendEmail({ to, subject, html, delayMs, attachments, tipo }, opts = {}) {
   if (await mailBloqueadoDemo()) { console.log(`[email] tienda demo: no se envía "${subject}"`); return { ok: true, demo: true, id: null }; }
-  const key = process.env.RESEND_API_KEY;
-  if (!key) { console.error("[email] RESEND_API_KEY no configurada"); return { error: "RESEND_API_KEY_FALTANTE" }; }
-  if (!to)  { console.error("[email] destinatario vacío"); return { error: "Sin destinatario" }; }
-  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
-  const usingSandbox = from.includes("onboarding@resend.dev");
-  if (usingSandbox) {
-    console.warn(`[email] SANDBOX: onboarding@resend.dev — solo entrega al dueño de la cuenta. Intentando enviar a ${to} de todas formas...`);
-  }
-  try {
-    const body = { from, to: [to], subject, html };
-    if (Array.isArray(attachments) && attachments.length) body.attachments = attachments;
-    if (delayMs) {
-      body.scheduled_at = new Date(Date.now() + delayMs).toISOString();
-      console.log(`[email] programado en ${delayMs/1000}s → "${subject}"`);
-    } else {
-      console.log(`[email] enviando desde "${from}" a "${to}" subject="${subject}"`);
-    }
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json();
-    if (!r.ok) { console.error("[email] Resend error:", JSON.stringify(data)); return { error: data?.message || "Error Resend", detail: data }; }
-    console.log(`[email] OK id=${data.id}${delayMs?" (programado)":""}`);
-    return { ok: true, id: data.id };
-  } catch(e) {
-    console.error("[email] fetch error:", e.message);
-    return { error: e.message };
-  }
+  if (!to) return { error: "Sin destinatario" };
+  // Pasa por la política de mails (api/_mail.js): lo automático a clientes está apagado.
+  const body = { to: [to], subject, html };
+  if (Array.isArray(attachments) && attachments.length) body.attachments = attachments;
+  if (delayMs) body.scheduled_at = new Date(Date.now() + delayMs).toISOString();
+  return resendEnviar(body, { origen: "tareas", ...(tipo ? { tipo } : {}), ...opts });
 }
 
 // Cancela un email programado en Resend (solo funciona si todavía no se envió)
@@ -1445,7 +1422,7 @@ async function handlerTareas(req, res) {
         // de la cuenta). No es una credencial: solo precarga el email en el
         // alta; la invitación se reclama al entrar con esa casilla.
         const link = `https://www.growithapp.com/?invitado=${encodeURIComponent(email)}`;
-        const mailRes = await sendEmail({
+        const mailRes = await sendEmail({ tipo: "accion",
           to: email,
           subject: `${ownerNombre ? ownerNombre + " te invitó" : "Te invitaron"} a Growith`,
           html: emailInvitacionMiembro({ nombre, ownerNombre, secciones, link }),
@@ -2218,7 +2195,7 @@ async function handlerTareas(req, res) {
   <a href="${link}" style="display:block;text-align:center;background:#6366f1;color:#fff;padding:14px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;margin:20px 0">Ver mi tarea →</a>
   <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Sistema de gestión</p>
 </div>`;
-      const result = await sendEmail({ to: tarea.asignadoEmail, subject: `Recordatorio — ${tarea.titulo}`, html });
+      const result = await sendEmail({ to: tarea.asignadoEmail, subject: `Recordatorio — ${tarea.titulo}`, html, tipo: "accion" });
       if (result.error) return res.status(500).json({ error: result.error });
       return res.json({ ok: true });
     }
@@ -2403,7 +2380,7 @@ async function handlerTareas(req, res) {
         </div>
         <p style="font-size:11px;color:#9ca3af;text-align:center;margin-top:24px">Enviado desde Growith — notificaciones@growith.app</p>
       </div>`;
-      const result = await sendEmail({ to, subject:"Email de prueba — Growith funciona correctamente", html });
+      const result = await sendEmail({ to, subject:"Email de prueba — Growith funciona correctamente", html, tipo: "accion" });
       if (result?.error) return res.status(500).json({ error: result.error, detail: result });
       return res.json({ ok:true, id: result?.id });
     }
@@ -2420,7 +2397,7 @@ async function handlerTareas(req, res) {
       const link = token ? colabPortalLink(origin, token) : (origin || "https://growithapp.com");
       const colab = { nombre: nombre || to };
       const html = emailRecordatorio({ colab, titulo, codigo: codigo||"", estado: estado||"", deadline: deadline||null, link, nota: nota||"" });
-      const result = await sendEmail({ to, subject:`Recordatorio: ${titulo} — Growith`, html });
+      const result = await sendEmail({ to, subject:`Recordatorio: ${titulo} — Growith`, html, tipo: "accion" });
       if (result?.error) return res.status(500).json({ error: result.error, detail: result });
       return res.json({ ok:true, id: result?.id });
     }
@@ -2589,7 +2566,7 @@ async function handlerTareas(req, res) {
     }
 
     // Acciones solo-admin
-    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta","adminClientErrors"];
+    const adminActions = ["setSectionsConfig","adminGetData","adminGetUsage","adminGetActividad","adminGetLog","adminGetSystem","adminImpersonar","pagoComprobante","activarPlan","desactivarPlan","confirmarPago","rechazarPago","addNote","extenderPlan","gestionarPlan","activarPrueba","ajustarDias","toggleAdmin","adminBuscarCuenta","adminClientErrors","adminMailCfg"];
     if (adminActions.includes(action)) {
       // La identidad del admin sale del TOKEN verificado, no del uid del body.
       const adm = await requireAdmin(req);
@@ -2601,6 +2578,19 @@ async function handlerTareas(req, res) {
         try { const s = await db.collection("users").doc(String(targetUid)).get(); return s.exists ? (s.data().email || "") : ""; } catch (_) { return ""; }
       };
       const log = async (accion, targetUid, detalle, data) => logAdmin(db, { adminUid, action: accion, targetUid, targetEmail: targetUid ? await emailDe(targetUid) : null, detalle, data });
+
+      // Política de mails (api/_mail.js): ver lo enviado / frenado y prender o apagar los automáticos a clientes.
+      if (action === "adminMailCfg") {
+        if (body.set) {
+          const patch = {};
+          if (typeof body.clientes === "boolean") patch.clientes = body.clientes;
+          if (Number(body.topeDia) > 0) patch.topeDia = Math.min(5000, Math.round(Number(body.topeDia)));
+          await db.doc("system/mail_config").set({ ...patch, updatedAt: adminNow, updatedBy: adminUid }, { merge: true });
+          mailCfgReset();
+          await log("mails", null, `Mails a clientes: ${patch.clientes === undefined ? "sin cambio" : patch.clientes ? "prendidos" : "apagados"}${patch.topeDia ? ` · tope ${patch.topeDia}/día` : ""}`);
+        }
+        return res.json({ ok: true, ...(await mailResumen(db)) });
+      }
 
       if (action === "adminClientErrors") {
         const desde = new Date(Date.now() - 3 * 3600e3 - 7 * 86400e3).toISOString().slice(0, 10);
@@ -3074,7 +3064,7 @@ async function handlerTareas(req, res) {
   </div>
   <p style="font-size:12px;color:#9ca3af;text-align:center">Growith — Gestión de canjes</p>
 </div>`;
-      const result = await sendEmail({
+      const result = await sendEmail({ tipo: "accion",
         to: ownerEmail,
         subject: `Hoy toca enviar el canje de ${influencer}`,
         html,

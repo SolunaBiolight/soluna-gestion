@@ -8,18 +8,12 @@ import { FieldValue } from "firebase-admin/firestore";
 import { esDemo } from "./_demo.js";
 import { esNumeroEnvioDemo } from "./_demo_ops.js";
 
+import { resendEnviar } from "./_mail.js";
 // Mail simple (Resend), best-effort: nunca rompe el cron.
-async function mailEnvios(to, subject, html) {
-  if (!to || !process.env.RESEND_API_KEY) return false;
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to, subject, html }),
-      signal: AbortSignal.timeout(8000),
-    });
-    return r.ok;
-  } catch (e) { console.error("[envios mail]", e.message); return false; }
+async function mailEnvios(to, subject, html, opts = {}) {
+  // Pasa por la política de mails (api/_mail.js): avisos a compradores y dueños apagados.
+  const r = await resendEnviar({ to: [].concat(to || []), subject, html }, { origen: "seguimientos", ...opts });
+  return !!r?.ok;
 }
 const esc = (v) => String(v ?? "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
 const mailShell = (titulo, sub, cuerpo) => `<div style="font-family:Inter,system-ui,sans-serif;max-width:540px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">

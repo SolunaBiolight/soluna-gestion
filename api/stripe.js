@@ -28,6 +28,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { requireUid } from "./_auth.js";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 
+import { resendEnviar } from "./_mail.js";
 const STRIPE_API = "https://api.stripe.com/v1";
 const STRIPE_VERSION = "2024-06-20";
 const SITE = "https://www.growithapp.com";
@@ -124,17 +125,9 @@ async function registrarFallaPago(db, uid, plan, msg, code) {
   } catch (e) { console.warn("[stripe] registrarFallaPago:", e.message); }
 }
 
-async function sendEmail({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return { error: "missing" };
-  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject, html }), signal: AbortSignal.timeout(10000),
-    });
-    return r.ok ? { ok: true } : { error: (await r.json().catch(() => ({})))?.message };
-  } catch (e) { return { error: e.message }; }
+async function sendEmail({ to, subject, html, tipo }, opts = {}) {
+  // Pasa por la política de mails (api/_mail.js): lo automático a clientes está apagado.
+  return resendEnviar({ to: [to], subject, html }, { origen: "stripe", ...(tipo ? { tipo } : {}), ...opts });
 }
 const fechaAR = d => d.toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric", timeZone: "America/Argentina/Buenos_Aires" });
 

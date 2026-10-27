@@ -18,6 +18,7 @@ import { guardCron } from "./_auth.js";
 import { mpReconciliarCargas } from "./andreani.js";
 import { acreditarComisionReferido, descontarCreditoAplicado } from "./referidos.js";
 
+import { resendEnviar } from "./_mail.js";
 const WALLET = "TXGtDab6Lf3jtSRgq7uB2WbRfqdRA3PTCD"; // misma USDT_ADDRESS que muestra AppPlanes
 const USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // contrato oficial USDT en Tron
 
@@ -33,21 +34,9 @@ function initAdmin() {
 
 function addMonths(date, n) { const d = new Date(date); d.setMonth(d.getMonth() + Number(n)); return d; }
 
-async function sendEmail({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return { error: "missing" };
-  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject, html }),
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await r.json();
-    if (!r.ok) return { error: data?.message };
-    return { ok: true };
-  } catch (e) { return { error: e.message }; }
+async function sendEmail({ to, subject, html, tipo }, opts = {}) {
+  // Pasa por la política de mails (api/_mail.js): lo automático a clientes está apagado.
+  return resendEnviar({ to: [to], subject, html }, { origen: "usdt", ...(tipo ? { tipo } : {}), ...opts });
 }
 
 // Transferencias TRC20 entrantes confirmadas desde minTs (ms). Devuelve

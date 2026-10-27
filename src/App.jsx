@@ -25006,6 +25006,38 @@ function AdmMonoTopes({T}){
   </Card>);
 }
 // ── Configuración (17/oct/2026): todo lo que se configura, una tarjeta por tema ──
+// Mails (27/oct/2026): la cuota diaria de Resend se superaba todos los días. Los automáticos a
+// clientes y compradores están APAGADOS por defecto (api/_mail.js); acá se ve lo frenado y se prenden.
+function AdmMailsCfg({ctx}){
+  const {T, adminApi} = ctx;
+  const [d,setD]=useState(null); const [busy,setBusy]=useState(false); const [tope,setTope]=useState("");
+  const cargar=()=>adminApi({action:"adminMailCfg"}).then(r=>{ setD(r); setTope(String(r.topeDia||90)); }).catch(e=>setD({err:e.message}));
+  useEffect(()=>{ cargar(); },[]);
+  const guardar=async patch=>{ setBusy(true); try{ const r=await adminApi({action:"adminMailCfg",set:true,...patch}); setD(r); toast("Guardado ✓","success"); }catch(e){ toast(e.message,"error"); } finally{ setBusy(false); } };
+  const hoy=d?.dias?.[0]; const ORIG={plan:"Prueba y plan",facturas:"Facturas al comprador",seguimientos:"Avisos de envíos",envios:"Envíos con saldo",tareas:"Tareas y equipo",calendario:"Calendario de pagos",stripe:"Cobros con tarjeta",deposito:"Depósito",usdt:"Pagos USDT"};
+  return (<Card T={T} padding="lg">
+    <AdmTitulo T={T} t="Mails" sub="Los mails automáticos a tus clientes y a sus compradores están apagados para no pasar la cuota diaria de Resend. Siguen saliendo los que te llegan a vos y los que alguien manda a mano (invitar a un miembro, reenviar una factura, recordatorio)."/>
+    {!d?<AdmSkeleton T={T}/>:d.err?<div style={{color:T.red,fontSize:DS.font.base}}>{d.err}</div>:<>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:`1px solid ${T.borderL}`}}>
+        <div style={{flex:1}}><div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>Mails automáticos a clientes</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>{d.clientes?"Prendidos: salen todos, hasta el tope diario.":"Apagados: no se manda ninguno."}</div></div>
+        <DSToggle T={T} active={!!d.clientes} onToggle={()=>!busy&&guardar({clientes:!d.clientes})}/>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
+        <div style={{flex:1}}><div style={{fontSize:DS.font.base,fontWeight:600,color:T.text}}>Tope por día</div><div style={{fontSize:DS.font.sm,color:T.textSm}}>Pasado este número solo salen los mails internos (el plan gratis de Resend da 100 por día).</div></div>
+        <input type="number" min={1} value={tope} onChange={e=>setTope(e.target.value)} style={{...InputStyle(T),width:90,textAlign:"right"}}/>
+        <DepBtn T={T} size="sm" disabled={busy||!(Number(tope)>0)||Number(tope)===d.topeDia} onClick={()=>guardar({topeDia:Number(tope)})}>Guardar</DepBtn>
+      </div>
+      <div style={{fontSize:DS.font.base,fontWeight:600,color:T.text,margin:"12px 0 6px"}}>Últimos días</div>
+      {!d.dias?.length?<div style={{fontSize:DS.font.sm,color:T.textSm}}>Todavía no hay datos.</div>:d.dias.map(x=>(<div key={x.dia} style={{display:"flex",gap:10,fontSize:DS.font.sm,padding:"4px 0",color:T.textMd}}>
+        <span style={{width:90,color:T.text}}>{x.dia.split("-").reverse().slice(0,2).join("/")}</span>
+        <span style={{width:110}}>{x.enviados||0} enviados</span>
+        <span style={{color:(x.suprimidos||0)>0?T.yellow:T.textSm}}>{x.suprimidos||0} frenados</span>
+      </div>))}
+      {hoy?.porOrigen&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:8,lineHeight:1.6}}>Hoy frenados por tipo: {Object.entries(hoy.porOrigen).filter(([,v])=>v?.suprimidos).map(([k,v])=>`${ORIG[k]||k.replace(/_tope$/," (tope)")} ${v.suprimidos}`).join(" · ")||"ninguno"}</div>}
+    </>}
+  </Card>);
+}
+
 function AdmConfig({ctx}) {
   const {T, usuarios, usuariosPorUid, setCuenta, envCfg, setEnvCfg, saveEnvCfg, sectionsConfig, saveSectionsConfig, user} = ctx;
   const [nuevo,setNuevo]=useState(""); const saldos=null;
@@ -25016,6 +25048,7 @@ function AdmConfig({ctx}) {
   return (
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+            <AdmMailsCfg ctx={ctx}/>
             <Card T={T} padding="lg">
               <AdmTitulo T={T} t="Precio de las etiquetas" sub="Costo real = tarifa de lista menos tu descuento, más seguro. Precio al cliente = costo real más markup. Cada cliente puede tener su markup propio en su ficha."/>
               {!envCfg?<AdmSkeleton T={T}/>:(<>

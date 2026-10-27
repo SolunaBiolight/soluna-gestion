@@ -16,6 +16,7 @@ import { ensureShopifyToken } from "./integrations/_shared.js";
 import { esDemo, leerDemo, MEDIOS_DEMO } from "./_demo.js";
 import { caeDemo, caeVtoDemo } from "./_demo_ops.js";
 
+import { resendEnviar } from "./_mail.js";
 // Con varios ML conectados, la facturación usa la cuenta elegida para VENTAS de
 // ML (margenesMlVentas). Vacío = primera cuenta (1 solo ML, como siempre).
 async function mlVentasAcc(db, uid) {
@@ -1509,27 +1510,12 @@ function validarPercepciones(ordenes, cfg) {
 // ─── Email de la factura al cliente (Resend) ────────────────────────────────
 // Mismo patrón que api/check-expiring.js: RESEND_API_KEY + RESEND_FROM y
 // timeout de 10s. Siempre best-effort: un fallo acá jamás toca la emisión.
-async function sendEmailResend({ to, subject, html, attachments, reply_to }) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return { error: "missing" };
-  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
-  try {
-    const payload = { from, to: [to], subject, html };
-    if (Array.isArray(attachments) && attachments.length) payload.attachments = attachments;
-    if (reply_to) payload.reply_to = reply_to;
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) { console.error("[arca-mail] email error:", data?.message); return { error: data?.message }; }
-    return { ok: true, id: data.id };
-  } catch (e) {
-    console.error("[arca-mail] fetch error:", e.message);
-    return { error: e.message };
-  }
+async function sendEmailResend({ to, subject, html, attachments, reply_to }, opts = {}) {
+  // Pasa por la política de mails (api/_mail.js): las facturas automáticas al comprador están apagadas.
+  const payload = { to: [to], subject, html };
+  if (Array.isArray(attachments) && attachments.length) payload.attachments = attachments;
+  if (reply_to) payload.reply_to = reply_to;
+  return resendEnviar(payload, { origen: "facturas", ...opts });
 }
 
 
@@ -1585,7 +1571,7 @@ async function pdfDeComprobante(c, cfg) {
 
 // Envía la factura recién emitida al comprador. pdfB64 opcional: si el PDF
 // falló, va el mail sin adjunto con la aclaración. Devuelve true/false.
-async function enviarFacturaEmail({ cfg, orden, orderId, letra, pv, nro, cae, total, pdfB64, link }) {
+async function enviarFacturaEmail({ cfg, orden, orderId, letra, pv, nro, cae, total, pdfB64, link, tipo }) {
   const esc = s => String(s || "").replace(/[<>&]/g, "");
   const nroFmt = `${String(pv).padStart(4, "0")}-${String(nro).padStart(8, "0")}`;
   const subject = `Tu factura ${letra} ${nroFmt} · ${cfg.razon_social || "compra"}`;
@@ -1624,7 +1610,7 @@ async function enviarFacturaEmail({ cfg, orden, orderId, letra, pv, nro, cae, to
   const r = await sendEmailResend({
     to: orden.email, subject, html, attachments,
     reply_to: cfg.envio_mail?.reply_to || null,
-  });
+  }, tipo ? { tipo } : {});
   return !!r.ok;
 }
 
@@ -5733,7 +5719,7 @@ export default async function handler(req, res) {
       const to = String(body.email || c.email || "").trim();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.status(400).json({ error: "Poné un mail válido" });
       let pdfB64 = null; try { pdfB64 = Buffer.from(await pdfDeComprobante(c, cfg)).toString("base64"); } catch (e) { console.error("[reenviar_mail] pdf:", e.message); }
-      const ok = await enviarFacturaEmail({ cfg, orden: { email: to, nombre: c.cliente || "" }, orderId: c.orden_id || "", letra: c.letra, pv: c.punto_venta, nro: c.nro, cae: c.cae, total: c.total, pdfB64, link: await linkFactura(db, uid, compId).catch(() => null) });
+      const ok = await enviarFacturaEmail({ cfg, orden: { email: to, nombre: c.cliente || "" }, orderId: c.orden_id || "", letra: c.letra, pv: c.punto_venta, nro: c.nro, cae: c.cae, total: c.total, pdfB64, link: await linkFactura(db, uid, compId).catch(() => null), tipo: "accion" }); // reenvío a mano
       if (!ok) return res.status(502).json({ error: "No se pudo mandar el mail. Probá de nuevo en unos minutos." });
       await ref.set({ mail_enviado: true, mail_reenviado_at: new Date().toISOString(), ...(body.email ? { email: to } : {}) }, { merge: true }).catch(() => {});
       return res.json({ ok: true, to });

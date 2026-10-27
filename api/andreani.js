@@ -57,6 +57,7 @@ import { esDemo } from "./_demo.js";
 import { hopIndexTodas, hopIndexPorCp, hopIndexSweep, hopIndexOrigen, hopIndexFotoTs, conHop } from "./_hop.js";
 import { numeroEnvioDemo, precioEtiquetaDemo, registrarTrackDemo, trazaDemo } from "./_demo_ops.js";
 
+import { resendEnviar } from "./_mail.js";
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
   initializeApp({ credential: cert({
@@ -345,7 +346,7 @@ export async function mailEjecutiva(db, cfg, casos, titulo) {
   <p style="font-size:12px;color:#6b7280">En el portal ves el detalle, las fotos y el historial de cada gestión, y respondés directamente: el cliente recibe tu respuesta al instante. Guardá el link, es siempre el mismo.</p>
   <p style="font-size:12px;color:#9ca3af;text-align:center;margin-top:24px">Growith — Envíos</p>
 </div>`;
-  const r = await sendEmail({ to, subject: titulo, html });
+  const r = await sendEmail({ to, subject: titulo, html, tipo: "interno" }); // a la ejecutiva de Andreani
   return !!r?.ok;
 }
 // ── Portal público de la ejecutiva: sin sesión, autenticado por token ──
@@ -398,7 +399,7 @@ async function portalEjecutiva(req, res, db, body, action) {
     }
     // A operaciones: para ver la respuesta y, si es una anulación aprobada, hacer el reintegro desde Admin.
     if (cfg.emailGestiones) {
-      try { await sendEmail({ to: cfg.emailGestiones, subject: `Andreani respondió: ${CASO_MOTIVOS[c.motivo] || c.motivo} · ${c.tienda || c.email || ""} → ${lbl}`, html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
+      try { await sendEmail({ tipo: "interno", to: cfg.emailGestiones, subject: `Andreani respondió: ${CASO_MOTIVOS[c.motivo] || c.motivo} · ${c.tienda || c.email || ""} → ${lbl}`, html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
   <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Andreani respondió por el portal</div>
   <p style="font-size:14px"><strong>${escT(c.tienda || c.email || "")}</strong> · envío <strong>${escT(c.numeroDeEnvio || c.tracking)}</strong> · ${escT(CASO_MOTIVOS[c.motivo] || "")} → <strong>${lbl}</strong></p>
   <p style="font-size:13px;white-space:pre-wrap;background:#f9fafb;border-radius:8px;padding:10px 14px">${escT(texto)}</p>
@@ -1149,24 +1150,9 @@ export const trazasDebugAndreani = trazasOficialAndreani;
 
 // ─── Email (mismo patrón Resend que check-expiring.js) ─────────────────────
 
-async function sendEmail({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key || !to) return { error: "missing" };
-  const from = process.env.RESEND_FROM || "Growith <onboarding@resend.dev>";
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: [to], subject, html }),
-      signal: AbortSignal.timeout(10000),
-    });
-    const data = await r.json();
-    if (!r.ok) { console.error("[andreani] email error:", data?.message); return { error: data?.message }; }
-    return { ok: true, id: data.id };
-  } catch (e) {
-    console.error("[andreani] email fetch error:", e.message);
-    return { error: e.message };
-  }
+async function sendEmail({ to, subject, html, tipo }, opts = {}) {
+  // Pasa por la política de mails (api/_mail.js): lo automático a clientes está apagado.
+  return resendEnviar({ to: [to], subject, html }, { origen: "envios", ...(tipo ? { tipo } : {}), ...opts });
 }
 
 // Mes actual en hora Argentina, formato YYYY-MM (para stats mensuales).
@@ -2830,7 +2816,7 @@ export default async function handler(req, res) {
       // Aviso al mail de operaciones (best-effort).
       try {
         const to = cfgE.emailGestiones;
-        if (to) await sendEmail({
+        if (to) await sendEmail({ tipo: "interno",
           to, subject: `Gestión Andreani nueva: ${CASO_MOTIVOS[motivo]} · ${tienda || ud.email || uid}`,
           html: `<div style="font-family:Inter,system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;color:#374151">
   <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:16px">Nueva gestión ante Andreani</div>

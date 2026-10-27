@@ -38,6 +38,7 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { randomBytes, createHash } from "crypto";
 import { requireUid, verifyAuth, guardCron } from "./_auth.js";
 
+import { resendEnviar } from "./_mail.js";
 export const DEPOSITO_OWNER = "WJH3ArqDPQcNLha9lOinvkVi9uJ2";
 const CHUNK_MAX = 700000;          // caracteres base64 por trozo
 const MAX_CHUNKS_PDF = 45;         // ≈ 23 MB de PDF
@@ -198,18 +199,9 @@ const LEDGER_SEL = ["clienteId", "estado", "total", "n", "fechaDespacho", "creat
 const porCliente = (ts, ps) => { const g = {}; const r = k => (g[k] = g[k] || { t: [], p: [] }); for (const d of ts.docs) r(d.data().clienteId).t.push({ id: d.id, t: d.data() }); for (const d of ps.docs) r(d.data().clienteId).p.push({ id: d.id, p: d.data() }); return r; };
 const cfgExtraDe = c => ({ extraItemsIncluidos: Math.max(0, Math.round(num(c?.extraItemsIncluidos ?? 5))), extraItemPrecio: Math.max(0, num(c?.extraItemPrecio ?? 500)) });
 
-async function sendEmail({ to, subject, html }) {
-  const key = process.env.RESEND_API_KEY;
-  const lista = (Array.isArray(to) ? to : [to]).filter(Boolean);
-  if (!key || !lista.length) return { error: "missing" };
-  try {
-    const r = await fetch("https://api.resend.com/emails", {
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: process.env.RESEND_FROM || "Growith <onboarding@resend.dev>", to: lista, subject, html }),
-      signal: AbortSignal.timeout(10000),
-    });
-    return r.ok ? { ok: true } : { error: `HTTP ${r.status}` };
-  } catch (e) { return { error: e.message }; }
+async function sendEmail({ to, subject, html }, opts = {}) {
+  // Los mails del depósito son internos (al depósito / a la dueña); mailCliente pasa tipo "cliente".
+  return resendEnviar({ to: (Array.isArray(to) ? to : [to]).filter(Boolean), subject, html }, { tipo: "interno", origen: "deposito", ...opts });
 }
 
 // Límite simple por IP para el portal público (por instancia; suficiente para frenar abuso casual).
