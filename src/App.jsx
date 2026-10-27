@@ -5264,17 +5264,36 @@ async function ghEtiquetaAndreaniXlsxUno(o) {
   function clEmail(s){return String(s||"").trim().replace(/\s+/g,'').replace(/[^\x21-\x7E]/g,'');}
   const dniDep=(()=>{const d=String(o.dni||"").replace(/\D/g,'');return d.length===11?d.slice(2,10):d;})();
   const partes=String(o.comprador||"").trim().split(' ');
-  const nombre=cl(partes[0]||"");const apellido=cl(partes.slice(1).join(' ')||"");
-  const tel=(o.telefono||"").replace(/[^0-9]/g,'');
-  const clean0=tel.startsWith('54')?tel.slice(2):tel.startsWith('0')?tel.slice(1):tel;
-  const clean=clean0.startsWith('9')&&clean0.length===10?clean0.slice(1):clean0;
-  let telCod='',telNum='';
-  if(clean.length>=10){telCod=clean.slice(0,clean.length-8);telNum=clean.slice(clean.length-8);}
-  else if(clean.length>=8){telCod=clean.slice(0,clean.length-8)||'';telNum=clean.slice(clean.length-8);}
-  else if(clean.length>0){telNum=clean;}
+  const nombre=cl(o.compNombre||partes[0]||"");const apellido=cl(o.compApellido||partes.slice(1).join(' ')||"");
+  // Teléfono: mismo parser que Envíos (ghTelAR, códigos de área de 2, 3 y 4 dígitos). Antes cortaba
+  // fijo en los últimos 8 dígitos, que solo sirve para el 11.
+  const {cod:telCod,num:telNum}=ghTelAR(o.telefono);
   // Localidad: núcleo ghMatchLocalidad. Sin coincidencia segura NO se genera el Excel
   // (antes caía a "la primera de la provincia" o "la primera de Buenos Aires").
-  const ubicacion=ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`)?.loc||"";
+  // 27/oct/2026: igual que el Excel de Envíos, si Growith ELIGIÓ una localidad que no es la ciudad
+  // que escribió el comprador (GH_LOC_A_CONFIRMAR) se confirma a mano, y lo elegido queda en la
+  // memoria compartida (users/{uid}/envios_cfg/loc_map) para que la próxima vez salga solo.
+  let ubicacion="";
+  if(!o.esSucursal){
+    const uidT=window.__ghTiendaUid||auth.currentUser?.uid||"";
+    const k=ghLocMemKey(o);
+    let mem=null;
+    if(k&&uidT){ try{ const r=await authFetch(`/api/andreani?action=loc_map_get&uid=${encodeURIComponent(uidT)}`); const d=await r.json(); mem=d?.entries?.[k]?.loc||null; }catch(_){} }
+    const m=mem?{loc:mem,motivo:"memoria"}:ghMatchLocalidad(locs,o.cp,o.provincia,[o.localidad,o.ciudad],`${o.direccion||""} ${o.piso||""}`);
+    ubicacion=m?.loc||"";
+    if(m&&GH_LOC_A_CONFIRMAR.has(m.motivo)){
+      const ciudad=o.ciudad||o.localidad||"—";
+      const ok=await appConfirm(`La ciudad del comprador es "${ciudad}" (CP ${o.cp||"—"}), pero en la lista de Andreani no figura con ese nombre. Growith eligió: ${m.loc}. ¿Está bien?`,{title:"Confirmá la localidad",okLabel:"Sí, usar esa",cancelLabel:"Elegir otra"});
+      if(!ok){
+        const opts=ghLocOpciones(locs,o,m.loc);
+        const v=await appPrompt(`Escribí el número de la localidad correcta:\n${opts.map((x,i)=>`${i+1}. ${x}`).join("\n")}`,"1",{title:"Elegí la localidad",okLabel:"Usar esa"});
+        const n=parseInt(v,10);
+        if(!(n>=1&&n<=opts.length)) throw new Error("No se eligió la localidad: no se generó el Excel.");
+        ubicacion=opts[n-1];
+      }
+      if(k&&uidT) authFetch("/api/andreani?action=loc_map_set",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:uidT,entries:{[k]:{loc:ubicacion}}})}).catch(()=>{});
+    }
+  }
   const dirNum=String(o.dirNumero||"");
   const direccion=cl(o.direccion||"");
   // Medidas del paquete: la misma config que usa Envíos (modal "Paquete"),
