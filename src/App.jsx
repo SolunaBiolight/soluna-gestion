@@ -2,7 +2,7 @@
 import ReactDOM from "react-dom";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, onSnapshot, addDoc as _fsAddDoc, updateDoc as _fsUpdateDoc, deleteDoc as _fsDeleteDoc, doc, serverTimestamp, setDoc as _fsSetDoc, getDoc, query, where, getDocs, orderBy, limit } from "firebase/firestore";
-import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup, signInWithCustomToken } from "firebase/auth";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, sendPasswordResetEmail, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup, signInWithCustomToken } from "firebase/auth";
 // ── Modo "Ver como cliente" (Admin) ─────────────────────────────────────────
 // El admin entra a la cuenta del cliente y PUEDE operar (soporte real). Lo que
 // no puede es lo irreversible o lo que mueve plata del cliente: emitir etiquetas
@@ -16971,7 +16971,7 @@ function LandingPage({T, onLogin}) {
       d:"Growith toma las ventas de tu tienda y de Mercado Libre y emite las facturas en ARCA, con CAE, PDF y QR oficial.",
       b:["Facturación automática de tus órdenes","Facturas y notas de crédito manuales","Monotributo y Responsable Inscripto","Varios CUITs y puntos de venta","La factura queda adjunta a la venta"], mock:"factura"},
     {k:"Publicidad", c:"#3b82f6", gi:"play", t:"Tus campañas de Meta y Google en un solo lugar",
-      d:"Mirá cómo viene cada campaña, pausala o activala y publicá campañas nuevas sin entrar a cada administrador de anuncios.",
+      d:PUBLICADORES_ARCHIVADOS?"Mirá cómo viene cada campaña de Meta y Google contra tu break-even, con el gasto ya descontado de tu ganancia, sin entrar a cada administrador de anuncios.":"Mirá cómo viene cada campaña, pausala o activala y publicá campañas nuevas sin entrar a cada administrador de anuncios.",
       b:["Análisis de campañas de Meta Ads y Google Ads",...(META_OAUTH_OK?["Meta se conecta en un clic con Facebook"]:[]),"ROAS por campaña contra tu break-even","El gasto publicitario entra solo a tus números","TikTok Ads, muy pronto"], mock:"campanas"},
     {k:"Stock", c:"#22c55e", gi:"box", t:"Un solo stock para Tienda Nube, Shopify y Mercado Libre",
       d:"Un inventario central por producto y variante, para saber qué tenés, qué se está por agotar y cuándo reponer.",
@@ -17024,7 +17024,7 @@ function LandingPage({T, onLogin}) {
       {[["meta","Prospección · Video","Activa",T.green],["googleads","Búsqueda · Marca","Activa",T.green],["meta","Remarketing 30 días","Pausada",T.textSm],["googleads","Performance Max","Activa",T.green]].map(([b,n,e,c],i)=>(
         <div key={i}>{filaMock(n, estado(e,c), chip(b,13,24))}</div>
       ))}
-      <div style={{fontSize:10.5,color:T.textSm,marginTop:8}}>Pausás o activás cada campaña desde acá</div>
+      <div style={{fontSize:10.5,color:T.textSm,marginTop:8}}>{PUBLICADORES_ARCHIVADOS?"Cada campaña con su ROAS contra tu break-even":"Pausás o activás cada campaña desde acá"}</div>
     </div>);
     if (m==="factura") return ventana("Facturador · ARCA", <div>
       {[["Factura B 0004-00001812","$ 58.900"],["Factura B 0004-00001811","$ 23.400"],["Factura A 0004-00000418","$ 112.000"],["Nota de crédito 0004-00000094","− $ 23.400"]].map(([f,mto])=>(
@@ -17054,7 +17054,7 @@ function LandingPage({T, onLogin}) {
     ["10:00","Despachás","Etiquetas Andreani con el SKU impreso, listas para imprimir en tanda.","clip"],
     ["11:30","Respondés","Preguntas de Mercado Libre y reclamos, sin abrir otra pestaña.","chat"],
     ["13:00","Facturás","Las ventas del día se facturan en ARCA sin copiar un solo dato.","file"],
-    ["16:00","Revisás campañas","Mirás cómo vienen Meta y Google y pausás la que no funciona.","play"],
+    ["16:00","Revisás campañas",PUBLICADORES_ARCHIVADOS?"Mirás cómo vienen Meta y Google y ves cuál deja ganancia y cuál no.":"Mirás cómo vienen Meta y Google y pausás la que no funciona.","play"],
     ["18:00","Reponés stock","La alerta te avisó que a un producto le quedan 4 días.","box"],
     ["19:00","Mirás la semana","El Calendario de pagos te muestra qué vence mañana.","calendar"],
   ];
@@ -17560,6 +17560,7 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
   const [password,setPassword]=useState("");
   const [nombre,setNombre]=useState("");
   const [error,setError]=useState("");
+  const [aviso,setAviso]=useState(""); // mensaje en verde (mail de recuperación enviado)
   const [loading,setLoading]=useState(false);
   const [switchingTo,setSwitchingTo]=useState(null);
   const [linkCopiado,setLinkCopiado]=useState(false);
@@ -17589,16 +17590,18 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
   const errMsg=(code)=>{
     const map={
       "auth/user-not-found":"No existe una cuenta con ese email.",
-      "auth/wrong-password":"Contraseña incorrecta.",
+      "auth/wrong-password":"Contraseña incorrecta. Si no te la acordás, tocá \"¿Te olvidaste la contraseña?\".",
       "auth/email-already-in-use":"Ya existe una cuenta con ese email.",
       "auth/weak-password":"La contraseña debe tener al menos 6 caracteres.",
       "auth/invalid-email":"El email no es válido.",
-      "auth/invalid-credential":"Email o contraseña incorrectos.",
+      "auth/invalid-credential":"Email o contraseña incorrectos. Si no te acordás la contraseña, tocá \"¿Te olvidaste la contraseña?\".",
       "auth/popup-closed-by-user":"Cerraste el popup antes de completar el login.",
       "auth/popup-blocked":"Tu navegador bloqueó la ventana de Google. Permití las ventanas emergentes para growithapp.com e intentá de nuevo.",
       "auth/network-request-failed":"No hay conexión. Revisá tu internet e intentá de nuevo.",
       "auth/operation-not-supported-in-this-environment":"Este navegador no permite entrar con Google. Abrí growithapp.com en Chrome o Safari.",
       "auth/web-storage-unsupported":"Este navegador no permite entrar con Google. Abrí growithapp.com en Chrome o Safari.",
+      "auth/missing-email":"Escribí tu email.",
+      "auth/too-many-requests":"Hiciste muchos intentos seguidos. Esperá unos minutos e intentá de nuevo.",
     };
     return map[code]||"Ocurrió un error. Intentá de nuevo.";
   };
@@ -17619,12 +17622,26 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
     setLoading(false);
   }
 
+  // Recuperar contraseña: el mail lo manda Firebase (no gasta el cupo de Resend).
+  // Firebase responde OK aunque el mail no tenga cuenta (no revela quién está registrado).
+  async function handleReset() {
+    const em=email.trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { setAviso(""); return setError("Escribí tu email arriba y volvé a tocar \"¿Te olvidaste la contraseña?\"."); }
+    setLoading(true); setError(""); setAviso("");
+    try {
+      auth.languageCode="es";
+      await sendPasswordResetEmail(auth, em, { url: "https://www.growithapp.com" });
+      setAviso(`Si ${em} tiene una cuenta, te llegó un mail para elegir una contraseña nueva. Revisá también Spam o Promociones.`);
+    } catch(e){ setError(errMsg(e.code)); }
+    setLoading(false);
+  }
+
   async function handleEmail() {
     if(!email||!password) return setError("Completá email y contraseña.");
-    setLoading(true); setError("");
+    if(mode==="register"&&!nombre.trim()) return setError("Ingresá tu nombre.");
+    setLoading(true); setError(""); setAviso("");
     try {
       if(mode==="register") {
-        if(!nombre.trim()) return setError("Ingresá tu nombre.");
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await updateProfile(result.user, {displayName: nombre});
         await ensureUserDoc(result.user, nombre);
@@ -17727,18 +17744,22 @@ function AuthScreen({T, darkMode, onToggleDark, onBackToLanding}) {
             <input style={iS} type="email" placeholder="tu@email.com" value={email} onChange={e=>setEmail(e.target.value)} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
           </div>
           <div style={{marginBottom:20}}>
-            <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,marginBottom:5,textTransform:"uppercase",letterSpacing:0.5}}>Contraseña</label>
+            <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:5}}>
+              <label style={{display:"block",fontSize:12,fontWeight:600,color:T.textMd,textTransform:"uppercase",letterSpacing:0.5}}>Contraseña</label>
+              {mode==="login"&&<button type="button" onClick={handleReset} disabled={loading} style={{background:"none",border:"none",padding:0,color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12}}>¿Te olvidaste la contraseña?</button>}
+            </div>
             <input style={iS} type="password" placeholder="••••••••" value={password} onChange={e=>setPassword(e.target.value)} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder} onKeyDown={e=>e.key==="Enter"&&handleEmail()}/>
           </div>
 
           {error&&<div style={{background:T.redBg,border:`1.5px solid ${T.red}55`,borderRadius:8,padding:"10px 14px",fontSize:13,color:T.red,marginBottom:16,boxShadow:`0 0 0 1px ${T.red}18, 0 4px 16px ${T.red}18`}}>{error}</div>}
+          {aviso&&!error&&<div style={{background:T.green+"14",border:`1.5px solid ${T.green}55`,borderRadius:8,padding:"10px 14px",fontSize:13,color:T.text,marginBottom:16,lineHeight:1.5}}>{aviso}</div>}
 
           <button onClick={handleEmail} disabled={loading} style={{...BtnPrimary(T),width:"100%",justifyContent:"center",padding:"13px",fontSize:15,opacity:loading?0.6:1}}>
             {loading?"Cargando...":(mode==="login"?"Iniciar sesión":"Crear cuenta")}
           </button>
 
           <div style={{textAlign:"center",marginTop:18,fontSize:13,color:T.textMd}}>
-            {mode==="login"?<>¿No tenés cuenta? <button onClick={()=>{setMode("register");setError("");}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>Registrate</button></>
+            {mode==="login"?<>¿No tenés cuenta? <button onClick={()=>{setMode("register");setError("");setAviso("");}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>Registrate</button></>
             :<>¿Ya tenés cuenta? <button onClick={()=>{setMode("login");setError("");}} style={{background:"none",border:"none",color:T.accent,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13}}>Iniciá sesión</button></>}
           </div>
         </div>
