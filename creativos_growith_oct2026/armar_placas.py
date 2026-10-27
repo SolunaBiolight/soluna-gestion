@@ -194,8 +194,8 @@ PIEZAS = [
 
 def main():
     os.makedirs(SALIDA, exist_ok=True)
-    for f in os.listdir(SALIDA):  # la entrega queda limpia: solo lo de esta corrida
-        if f.endswith(".png"):
+    for f in os.listdir(SALIDA):  # limpia SOLO sus piezas (01-10); las claras (11+) son de armar_placas_claras.py
+        if f.endswith(".png") and f[:2].isdigit() and int(f[:2]) <= 10:
             os.remove(os.path.join(SALIDA, f))
     hechos = []
     for nombre, fn, h in PIEZAS:
