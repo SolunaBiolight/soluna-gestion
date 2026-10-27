@@ -697,6 +697,8 @@ export default async function handler(req, res) {
         "mpi:1",
         // 7/oct/2026: percepciones y retenciones de Mercado Libre por pago
         "mlret:1",
+        // 26/oct/2026: el fulfillment propio ya no se suma a las ventas de ML Full (solo invalida a quien lo usa)
+        ...(parseFloat(userData.margenesEnvioCfg?.fulfillment) > 0 ? ["mlfull:1"] : []),
         // Demo: cada cambio de las ventas ficticias sube demo.version → caché inválida
         ...(demoMode ? [`demo:${userData.demo?.version || 0}`] : []),
       ].join("|");
@@ -1462,7 +1464,7 @@ export default async function handler(req, res) {
         // Fulfillment por paquete: se aplica a cada orden real (tienda + ML),
         // no a la facturación externa.
         const mlOrders  = Object.values(raw?.ml_data?.daily_orders||{}).reduce((a,b)=>a+b,0);
-        const fulfill   = fulfillFee * (storeOrders + mlOrders);
+        const fulfill   = fulfillFee * (storeOrders + Math.max(0, mlOrders - mlFullN(raw)));
         const envio     = envioTienda + (parseFloat(mlEnvio)||0) + fulfill;
         // Costos adicionales: legacy (fijos mensuales + % variable) + lista v2.
         const adic      = costosAdicPeriodo(sinceR, untilR, revenue);
@@ -1611,6 +1613,12 @@ export default async function handler(req, res) {
         return s.lt === "self_service" ? (envioMlFlex!=null ? envioMlFlex : envioProm) : (s.cost || 0);
       };
       const mlEnvioTot = raw => (raw?.ml_data?.ml_orders_detail||[]).reduce((s,o)=>s+mlEnvioDe(o),0);
+      // Fulfillment propio por paquete: NO va en las ventas de Mercado Libre FULL
+      // (las arma y despacha el depósito de ML, que ya cobra lo suyo). Colecta,
+      // Flex y Mercado Envíos despachados por el vendedor sí lo llevan.
+      const esMlFull = o => mlLogi[o?.shippingId]?.lt === "fulfillment";
+      const mlFulfillDe = o => esMlFull(o) ? 0 : fulfillFee;
+      const mlFullN = raw => (raw?.ml_data?.ml_orders_detail||[]).filter(esMlFull).length;
 
       // ── Comisión REAL de MP por venta (Shopify) — matcheo por receipt_id ──
       // Se resuelve ANTES de los totales para que el agregado sume SOLO las ventas
@@ -2159,7 +2167,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: fuera de los totales (processML ya las excluye)
           const rev=parseFloat(o.revenue)||0;
-          add(o.fecha, "ml", cogsDe(o) + rev*pctImpML + (mlRetOn ? mlRetDeOrden(o) : 0) + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+fulfillFee, rev);
+          add(o.fecha, "ml", cogsDe(o) + rev*pctImpML + (mlRetOn ? mlRetDeOrden(o) : 0) + (parseFloat(o.saleFee)||0) + mlEnvioDe(o)+mlFulfillDe(o), rev);
         }
         return { porDia, chContrib };
       }
@@ -2220,7 +2228,7 @@ export default async function handler(req, res) {
           ? (parseFloat(mlEnv)||0)
           : ((envioModoTienda==="orden" && (raw?.orders_detail||[]).length)
               ? (raw.orders_detail||[]).reduce((s,o)=>s+(parseFloat(o.envioCosto)||0),0)
-              : ord*envioProm)) + fulfillFee*ord;
+              : ord*envioProm)) + fulfillFee*(isMl ? Math.max(0, ord - mlFullN(raw)) : ord);
         const ads = parseFloat(adSpend)||0;
         const profit = rev - cogs - impuestos - comis - envio - ads;
         const netRev = profit + ads; // neto = contribución antes de pauta
@@ -2320,7 +2328,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: no van en la tabla (los totales ya las excluyen)
           const retO=mlRetDeOrden(o);
-          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o), imp=rev*pctImpML+(mlRetOn?retO:0), comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+fulfillFee;
+          const rev=parseFloat(o.revenue)||0, cogs=cogsDe(o), imp=rev*pctImpML+(mlRetOn?retO:0), comis=parseFloat(o.saleFee)||0, env=mlEnvioDe(o)+mlFulfillDe(o);
           const profit=rev-cogs-imp-comis-env;
           list.push({ id:o.id, nombre:o.nombre, fecha:o.fecha, canal:o.shippingId&&mlLogi[o.shippingId]?.lt==="self_service"?"ML Flex":"Mercado Libre", revenue:+rev.toFixed(2), cogs:+cogs.toFixed(2), impuestos:+imp.toFixed(2), comisiones:+comis.toFixed(2), envio:+env.toFixed(2), profit:+profit.toFixed(2), margin: rev>0?profit/rev:0,
             pay:"Mercado Pago", cust:o.cust||"", items:itemsDe(o.items), feeReal: true, retMl:+retO.toFixed(2), retMlOn: mlRetOn, mlLink:`https://www.mercadolibre.com.ar/ventas/${o.id}/detalle` });
@@ -2385,7 +2393,7 @@ export default async function handler(req, res) {
         for (const o of (raw?.ml_data?.ml_orders_detail||[])) {
           if (o.refunded) continue; // devoluciones/contracargos ML: fuera del desglose por producto
           const rev = parseFloat(o.revenue)||0;
-          repartir(o, o.items, rev*pctImpML + (mlRetOn ? mlRetDeOrden(o) : 0), parseFloat(o.saleFee)||0, mlEnvioDe(o)+fulfillFee, "ml");
+          repartir(o, o.items, rev*pctImpML + (mlRetOn ? mlRetDeOrden(o) : 0), parseFloat(o.saleFee)||0, mlEnvioDe(o)+mlFulfillDe(o), "ml");
         }
         return Object.values(agg).map(a=>{
           const profit = a.revenue - a.cogs - a.impuestos - a.comisiones - a.envio;

@@ -41639,7 +41639,7 @@ function CostosPanel({ T, uid }) {
         <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${T.borderL}`}}>
           <div style={{flex:1}}>
             <div style={{fontSize:12,fontWeight:600,color:T.text}}>Fulfillment por orden <span style={{fontSize:10,fontWeight:500,color:T.textSm}}>(opcional)</span></div>
-            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Si un fulfillment te despacha los paquetes, poné lo que te cobra por paquete despachado. Se suma al costo de logística de cada orden (tienda y ML), además del envío.</div>
+            <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Si un fulfillment te despacha los paquetes, poné lo que te cobra por paquete despachado. Se suma al costo de logística de cada orden de la tienda y de Mercado Libre, además del envío. Las ventas de Mercado Libre Full no lo llevan (esas las arma Mercado Libre).</div>
           </div>
           <span style={{fontSize:13,color:T.textSm}}>$</span>
           <input type="number" min="0" value={fulfillment} onChange={e=>setFulfillment(e.target.value)} placeholder="0" style={{...InputStyle(T),width:120,fontSize:13,textAlign:"right"}}/>
