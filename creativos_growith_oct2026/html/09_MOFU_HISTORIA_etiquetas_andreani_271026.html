@@ -1,0 +1,53 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block">
+<style>:root{--w:1080px;--h:1920px}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:var(--w);height:var(--h);background:#0b0e14;overflow:hidden}
+body{font-family:'Inter',system-ui,sans-serif;color:#fafafa;-webkit-font-smoothing:antialiased;position:relative}
+.glow{position:absolute;inset:0;background:radial-gradient(circle at 78% 8%, #8455FB2e 0%, transparent 46%),radial-gradient(circle at 10% 100%, #8455FB14 0%, transparent 40%);pointer-events:none}
+.lienzo{position:absolute;inset:0;padding:76px 80px;display:flex;flex-direction:column}
+.marca{display:flex;align-items:center;gap:16px;font-size:34px;font-weight:700;letter-spacing:-.5px}
+.marca img{width:48px;height:48px}
+.kicker{display:inline-flex;align-items:center;gap:12px;font-size:24px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#71717a}
+.kicker i{width:12px;height:12px;border-radius:6px;display:inline-block}
+h1{font-size:92px;line-height:1.02;letter-spacing:-3.4px;font-weight:700}
+h1 .gris{color:#a1a1aa}
+.sub{font-size:34px;line-height:1.45;color:#a1a1aa;letter-spacing:-.2px}
+.card{background:#161b22;border:1.5px solid #262c36;border-radius:32px;box-shadow:0 50px 100px -50px rgba(0,0,0,.8)}
+.barra{display:flex;align-items:center;gap:12px;padding:22px 30px;border-bottom:1.5px solid #1d222b;font-size:22px;color:#a1a1aa;font-weight:600}
+.barra .p{width:13px;height:13px;border-radius:7px;background:#262c36}
+.barra .tag{margin-left:auto;font-size:17px;letter-spacing:1px;text-transform:uppercase;color:#71717a;font-weight:500}
+.num{font-variant-numeric:tabular-nums}
+.medio{flex:1;display:flex;flex-direction:column;justify-content:center;padding:20px 0 40px}
+.medio>:first-child{margin-top:0!important}
+.pie{display:flex;align-items:center;gap:22px}
+.cta{background:#7c3aed;color:#fff;border-radius:999px;padding:24px 40px;font-size:30px;font-weight:600;white-space:nowrap}
+.pie .txt{font-size:24px;color:#71717a;line-height:1.4}
+.pie .txt b{color:#fafafa;font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:12px;border:1.5px solid #262c36;border-radius:999px;padding:12px 22px;font-size:24px;color:#a1a1aa;font-weight:500;background:#0b0e14cc}
+.chip img{height:28px}
+.lienzo{padding:150px 80px 230px}.medio{zoom:1.14}.medio h1{font-size:80px!important;letter-spacing:-3px!important}
+.saldo{display:flex;justify-content:space-between;align-items:flex-end;padding:28px 34px 22px}
+.saldo small,.lote small{display:block;font-size:20px;color:#71717a;margin-bottom:6px} .saldo b{font-size:52px;font-weight:700;letter-spacing:-1.5px}
+.lote{display:flex;align-items:center;gap:22px;margin:0 34px 30px;background:#0b0e14;border:1.5px solid #1d222b;border-radius:24px;padding:22px 24px}
+.lote img{width:62px;height:62px;object-fit:contain} .lote .t{font-size:26px;font-weight:600}
+.btn{background:#f97316;color:#fff;font-size:24px;font-weight:600;border-radius:999px;padding:14px 26px;white-space:nowrap}
+.puntos{display:flex;flex-direction:column;gap:16px;margin-top:40px;font-size:28px;color:#fafafa}
+.puntos div{display:flex;gap:16px;align-items:center}
+</style></head>
+<body><div class="glow"></div><div class="lienzo">
+<div class="marca"><img src="file:///Users/lautarogevi/growith-gestion/creativos_growith_oct2026/marca/logo-color.png" alt="">Growith</div><div class="medio">
+<div class="kicker" style="margin-top:90px"><i style="background:#f97316"></i>Envíos con saldo</div>
+<h1 style="margin-top:22px">Etiquetas de Andreani<br><span class="gris">sin contrato propio.</span></h1>
+<div class="card env" style="margin-top:70px">
+  <div class="barra"><span class="p"></span><span class="p"></span><span class="p"></span>&nbsp;Envíos<span class="tag">Datos de ejemplo</span></div>
+  <div class="saldo"><div><small>Saldo de envíos</small><b class="num">$ 84.300</b></div><div style="text-align:right"><small>Tu envío promedio</small><b class="num" style="font-size:36px">$ 6.850</b></div></div>
+  <div class="lote"><img src="file:///Users/lautarogevi/growith-gestion/creativos_growith_oct2026/marca/andreani-iso.png"><div style="flex:1"><small>12 pedidos para despachar</small><div class="t">Precio de cada etiqueta antes de emitir</div></div><span class="btn">Emitir 12</span></div>
+</div>
+<div class="puntos">
+  <div><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4L19 7"/></svg>Cargás saldo con Mercado Pago o transferencia</div>
+  <div><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4L19 7"/></svg>Si te equivocás, la anulás en 30 minutos y el saldo vuelve</div>
+  <div><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4L19 7"/></svg>Con el SKU impreso, listas para imprimir en tanda</div>
+</div>
+</div><div class="pie"><span class="cta">Probar gratis</span><span class="txt"><b>14 días gratis</b> · sin tarjeta<br>growithapp.com</span></div>
+</div></body></html>
