@@ -3533,11 +3533,13 @@ function AppConectorIA({T, user, app, onHome}) {
   };
   useEffect(()=>{ setConex(null); setCred(null); cargar(); /* eslint-disable-next-line */ },[user?.uid,app]);
   const copiar=async(t,msg="Copiado")=>{ try{ await navigator.clipboard.writeText(t); toast(msg); }catch(e){ appAlert(t,{title:"Copialo a mano"}); } };
-  const desconectar=async()=>{
-    if(!await appConfirm(`${app} va a dejar de poder leer los datos de esta tienda. ¿Desconectamos?`,{title:`Desconectar ${app}`,okLabel:"Desconectar",danger:true})) return;
+  // Sin id corta todas las conexiones de la app; con id, solo esa (ej. una de dos cuentas de Claude).
+  const desconectar=async(id)=>{
+    const msg=id?`Esa cuenta de ${app} va a dejar de poder leer los datos de esta tienda. Las otras conexiones siguen andando. ¿Desconectamos?`:`${app} va a dejar de poder leer los datos de esta tienda. ¿Desconectamos?`;
+    if(!await appConfirm(msg,{title:`Desconectar ${app}`,okLabel:"Desconectar",danger:true})) return;
     setBusy(true);
     try{
-      const r=await authFetch(`/api/mcp?action=revocar`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({uid:user.uid,app})});
+      const r=await authFetch(`/api/mcp?action=revocar`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(id?{uid:user.uid,id}:{uid:user.uid,app})});
       const j=await r.json(); if(!r.ok||j.error) throw new Error(j.error||"HTTP "+r.status);
       toast(`${app} desconectado`); cargar();
     }catch(e){ appAlert("Error: "+e.message); } finally{ setBusy(false); }
@@ -3631,8 +3633,8 @@ function AppConectorIA({T, user, app, onHome}) {
           </div>
         </GadsPaso>
 
-        <GadsPaso T={T} n="4" title="Conexiones" sub={`Cada vez que alguien autoriza Growith desde ${app} para esta tienda, aparece acá.`}
-          right={conectado?<Btn T={T} variant="danger" size="sm" onClick={desconectar} disabled={busy}>Desconectar {app}</Btn>:null}>
+        <GadsPaso T={T} n="4" title="Conexiones" sub={`Cada vez que alguien autoriza Growith desde ${app} para esta tienda, aparece acá. Podés conectar varias cuentas de ${app} a la vez.`}
+          right={conectado?<Btn T={T} variant="danger" size="sm" onClick={()=>desconectar()} disabled={busy}>{conex.length>1?"Desconectar todas":`Desconectar ${app}`}</Btn>:null}>
           {conex===null
             ? <div style={{display:"flex",alignItems:"center",gap:DS.sp.sm,fontSize:DS.font.md,color:T.textMd}}><Spinner size={12} color={T.textMd}/> Buscando conexiones…</div>
             : !conectado
@@ -3643,6 +3645,7 @@ function AppConectorIA({T, user, app, onHome}) {
                       <span style={{fontWeight:DS.w.semibold,color:T.text}}>{c.host||app}</span>
                       <span>Conectado el {fecha(c.creada)}</span>
                       <span>· Último uso {fecha(c.ultimoUso)}</span>
+                      {conex.length>1&&<Btn T={T} variant="ghost" size="sm" style={{marginLeft:"auto"}} onClick={()=>desconectar(c.id)} disabled={busy}>Desconectar</Btn>}
                     </div>
                   ))}
                 </div>}
