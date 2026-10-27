@@ -16140,7 +16140,16 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
   // Solo con connectedStores.loaded: mientras carga (o si la carga falla) no se
   // muestra — a un usuario con todo conectado le aparecía por la carrera.
   const [startDismissed, setStartDismissed] = useState(()=>{ try{ return localStorage.getItem(`growith_home_start_${user?.uid}`)==="1"; }catch(_){ return false; } });
-  const sinTienda = !!connectedStores.loaded && !startDismissed && !connectedStores.tn && !connectedStores.shopify && !connectedStores.ml;
+  // "Empecemos" (27/oct/2026): se marca solo con los mismos pasos que mide el embudo de Admin
+  // (tienda conectada → costos cargados → ARCA) y desaparece cuando están los tres o al cerrarla.
+  const tieneTienda = !!(connectedStores.tn || connectedStores.shopify || connectedStores.ml);
+  const pasosInicio = [
+    {n:1, hecho:tieneTienda, txt:"Conectá Tienda Nube, Mercado Libre o Shopify", cta:"Conectar", go:"config"},
+    {n:2, hecho:!!connectedStores.costos, txt:"Cargá los costos de tus productos para ver el margen real", cta:tieneTienda?"Traer de mi tienda":"Cargar costos", go:"margenes", costos:true},
+    {n:3, hecho:!!connectedStores.arca, txt:"Configurá tu CUIT y certificado para facturar desde acá", cta:"Configurar ARCA", go:"arca"},
+  ];
+  const pasosHechos = pasosInicio.filter(p=>p.hecho).length;
+  const sinTienda = !!connectedStores.loaded && !startDismissed && pasosHechos < pasosInicio.length;
   const nombre = user?.displayName?.split(" ")[0] || "ahí";
   const hora = new Date().getHours();
   const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
@@ -16358,22 +16367,17 @@ function HomeScreen({T, onNavigate, fbStatus, ordersCount, reclamosCount, canjes
           <button onClick={()=>{ setStartDismissed(true); try{ localStorage.setItem(`growith_home_start_${user?.uid}`,"1"); }catch(_){} }}
             title="Ocultar esta guía"
             style={{position:"absolute",top:12,right:14,background:"transparent",border:"none",color:T.textSm,fontSize:15,cursor:"pointer",padding:4,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
-          <div style={{fontSize:DS.font.xl,fontWeight:DS.w.bold,color:T.text,marginBottom:4}}>Empecemos</div>
+          <div style={{fontSize:DS.font.xl,fontWeight:DS.w.bold,color:T.text,marginBottom:4}}>Empecemos <span style={{fontSize:DS.font.base,fontWeight:DS.w.medium,color:T.textSm}}>· {pasosHechos} de {pasosInicio.length} listos</span></div>
           <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:DS.sp.lg,lineHeight:1.55}}>
-            Los números de arriba están en cero porque todavía no hay una tienda conectada. Con eso listo, Growith trae los pedidos solo.
+            {tieneTienda?"Tu tienda ya está conectada. Con los costos cargados, Growith te muestra tu ganancia real.":"Los números de arriba están en cero porque todavía no hay una tienda conectada. Con eso listo, Growith trae los pedidos solo."}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:DS.sp.sm}}>
-            {[
-              {n:1, hecho:false, txt:"Conectá Tienda Nube, Mercado Libre o Shopify", cta:"Conectar", go:"config"},
-              {n:2, hecho:false, txt:"Cargá los costos de tus productos para ver el margen real", cta:"Cargar costos", go:"margenes"},
-              {n:3, hecho:false, txt:"Configurá tu CUIT y certificado para facturar desde acá", cta:"Configurar ARCA", go:"arca"},
-            ].map(p=>(
-              <div key={p.n} style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg}}>
-                <span style={{width:22,height:22,borderRadius:DS.r.full,background:T.bg,border:`1px solid ${T.border}`,color:T.textSm,fontSize:DS.font.sm,fontWeight:DS.w.bold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{p.n}</span>
-                <span style={{flex:1,fontSize:DS.font.base,color:T.text}}>{p.txt}</span>
-                <Btn T={T} variant={p.n===1?"primary":"secondary"} size="sm" onClick={()=>onNavigate(p.go)}>{p.cta}</Btn>
-              </div>
-            ))}
+            {pasosInicio.map(p=>{ const primero=!p.hecho&&pasosInicio.find(x=>!x.hecho)===p; return (
+              <div key={p.n} style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"10px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,opacity:p.hecho?0.7:1}}>
+                <span style={{width:22,height:22,borderRadius:DS.r.full,background:p.hecho?T.green:T.bg,border:p.hecho?"none":`1px solid ${T.border}`,color:p.hecho?"#fff":T.textSm,fontSize:DS.font.sm,fontWeight:DS.w.bold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{p.hecho?"✓":p.n}</span>
+                <span style={{flex:1,fontSize:DS.font.base,color:T.text,textDecoration:p.hecho?"line-through":"none"}}>{p.txt}</span>
+                {!p.hecho&&<Btn T={T} variant={primero?"primary":"secondary"} size="sm" onClick={()=>{ if(p.costos&&tieneTienda){ try{ sessionStorage.setItem("growith_costos_importar","1"); }catch(_){} onNavigate("margenes_costos"); } else onNavigate(p.go); }}>{p.cta}</Btn>}
+              </div>); })}
             {/* Camino guiado: el Copilot revisa qué falta y lleva de la mano */}
             <div style={{display:"flex",alignItems:"center",gap:DS.sp.md,padding:"10px 12px",background:T.purpleBg,border:`1px solid ${T.purple}33`,borderRadius:DS.r.lg}}>
               <span style={{width:22,height:22,borderRadius:DS.r.full,background:T.purple+"22",color:T.purple,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
@@ -39622,6 +39626,13 @@ function CostosPanel({ T, uid }) {
     sku: v.sku || "",
     price: v.price || 0,
   })));
+  // "Traer los costos de mi tienda" desde el checklist del Dashboard o el Inicio: llega con este pedido
+  // en sessionStorage y corre la importación sola apenas cargan los productos (una vez).
+  React.useEffect(()=>{
+    if (!loaded || !prodRows.length) return;
+    let pedido=false; try{ pedido=sessionStorage.getItem("growith_costos_importar")==="1"; if(pedido) sessionStorage.removeItem("growith_costos_importar"); }catch(_){}
+    if (pedido) importarCostosTienda();
+  },[loaded, prodRows.length]);
   const q = busqProd.trim().toLowerCase();
   const visRows = q ? prodRows.filter(r => `${r.nombre} ${r.variante} ${r.sku}`.toLowerCase().includes(q)) : prodRows;
   const visMl = q ? mlItems.filter(p => String(p.nombre||"").toLowerCase().includes(q)) : mlItems;
@@ -43935,6 +43946,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
                     <span style={{width:22,height:22,borderRadius:"50%",background:T.accent+"22",color:T.accent,fontSize:DS.font.sm,fontWeight:DS.w.bold,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{s.n}</span>
                     <span style={{fontSize:DS.font.base,color:T.text,flex:1}}>{s.t}</span>
+                    {setTab && i===0 && <Btn T={T} variant="primary" size="sm" onClick={()=>{ try{ sessionStorage.setItem("growith_costos_importar","1"); }catch(_){} goTab("costos"); }}>Traer de mi tienda</Btn>}
                     {setTab && <Btn T={T} variant="secondary" size="sm" onClick={()=>goTab(s.k)}>Ir →</Btn>}
                   </div>
                 ))}
@@ -45736,7 +45748,8 @@ export default function App() {
       const arca=(d.cuits||[]).length>0;
       const imp=!!d.stores?.find(s=>s.type==="impultienda");
       try{ window.__ghEsDigital=imp; }catch(_){}
-      setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,imp,meta,arca,loaded:true});
+      const costos=Object.keys(d.margenesCogs||{}).length>0;
+      setConnectedStores({tn:!!tn,shopify:!!shopify,ml:!!ml,imp,meta,arca,costos,loaded:true});
       setEnviosProblemasN(Number(d.enviosProblemasN)||0);
       if(!ml) setMlPreguntasCount(0);
       const newId=tn?.storeId||null;
@@ -46275,6 +46288,7 @@ export default function App() {
   else pageContent = <HomeScreen T={T} connectedStores={connectedStores} enviosProblemas={enviosProblemasN} mlPreguntas={mlPreguntasCount} onNavigate={(p, docId)=>{
     if(p==="canjes"&&docId){ setPendingCanjeDetail(docId); }
     if(p==="ml"&&docId==="preguntas"){ setMlTab("preguntas"); }
+    if(p==="margenes_costos"){ setMargenesTab("costos"); p="margenes"; }
     setPage(p);
   }} fbStatus={fbStatus} ordersCount={totalOrdersCount??orders.length} reclamosCount={reclamosCount} canjesCount={canjesCount} alertas={alertas} user={user} userPlan={userPlan} planExpiry={planExpiry} isAdmin={isAdmin} darkMode={darkMode} onToggleDark={()=>setDarkMode(d=>!d)}/>;
 
