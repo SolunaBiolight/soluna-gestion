@@ -1604,6 +1604,8 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         access_token, created_at: existing.created_at || new Date().toISOString(), permiso_edicion: null,
         last_test: { ok: true, ts: new Date().toISOString(), msg: "Token válido" } };
       await saveMetaAccount(db, uid, accId, cfg);
+      // Se mira ya si el token trae ads_management, así el administrador habilita la edición sin recargar.
+      cfg.permiso_edicion = { ok: await puedeEditar(db, uid, cfg), ts: Date.now() };
       return res.json({ ok: true, id: accId, account: safeAccount(cfg), ad_accounts: intros.ad_accounts, pages: safePages(intros.pages) });
     }
 
