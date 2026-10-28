@@ -34571,7 +34571,7 @@ function MetaEscala({T, metaApi, metaEditable}) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
           <div>
             <div style={{fontSize:16,fontWeight:700,color:T.text}}>Reglas de escala automática</div>
-            <div style={{fontSize:12,color:T.textMd,marginTop:4,maxWidth:640}}>Growith revisa cada 15 minutos (:00, :15, :30 y :45, en la hora local de cada país) todas las campañas activas de tus cuentas publicitarias, con el gasto de Meta y tus ventas reales, y sube, baja o pausa según tus reglas. Lo que cambiás a mano manda, y nada pausado se vuelve a activar.</div>
+            <div style={{fontSize:12,color:T.textMd,marginTop:4,maxWidth:640}}>Escribilas acá o pedíselas a Claude con el conector de Growith (las carga solo). Growith revisa cada 15 minutos (:00, :15, :30 y :45, en la hora local de cada país) todas las campañas activas de tus cuentas publicitarias, con el gasto de Meta y tus ventas reales, y sube, baja o pausa según tus reglas. Lo que cambiás a mano manda, y nada pausado se vuelve a activar.</div>
           </div>
           {cfg&&<div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
             <label style={{display:"flex",gap:8,alignItems:"center",fontSize:12,color:T.text,fontWeight:600}}><DSToggle T={T} active={!!cfg.activo} onToggle={()=>estado({activo:!cfg.activo})}/>{cfg.activo?"Activas":"Apagadas"}</label>
@@ -34608,7 +34608,7 @@ function MetaEscala({T, metaApi, metaEditable}) {
           {(borrador.no_entendido||[]).length>0&&<div style={{marginTop:10,fontSize:12,color:T.yellow}}>No se pudo usar: {borrador.no_entendido.join(" · ")}</div>}
           <div style={{display:"flex",gap:8,marginTop:12}}><Btn T={T} variant="success" onClick={guardar} disabled={busy==="guardar"}>{busy==="guardar"?"Guardando…":"Guardar y activar"}</Btn></div>
         </div>}
-        {cfg&&!borrador&&<div style={{marginTop:12}}>{tabla(d.tabla||[])}<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Guardadas el {hora(cfg.actualizado)}.</div></div>}
+        {cfg&&!borrador&&<div style={{marginTop:12}}>{tabla(d.tabla||[])}<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Guardadas el {hora(cfg.actualizado)}{cfg.por==="mcp"?" desde tu asistente de IA (conector de Growith)":""}.</div></div>}
       </Card>
 
       {cfg&&<Card T={T}>

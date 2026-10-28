@@ -41,7 +41,7 @@ import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
-import { normalizarReglas, tablaReglas } from "./_escala.js";
+import { normalizarReglas, tablaReglas, interpretarReglas } from "./_escala.js";
 import { porHora as impPorHora, metricasDigitales, utmAtribucion, leerIndiceUtm, construirIndiceUtm, fxPorUsd, zonaDe, utcDeLocal } from "./impultienda.js";
 
 const ORIGINS = ["https://www.growithapp.com", "https://soluna-gestion.vercel.app"];
@@ -434,7 +434,7 @@ const INSTRUCCIONES = `Growith es la app de gestión del e-commerce del usuario 
 - Las herramientas devuelven cifras REALES calculadas por Growith. Citá solo esos números: no estimes ni inventes datos del negocio. Si un dato no está, decilo e indicá en qué sección de Growith verlo (https://www.growithapp.com).
 - Los montos están en pesos argentinos (ARS) salvo que el campo diga USD. "datos_al" indica cuándo se calcularon las cifras: aclaralo si te preguntan por lo más reciente.
 - Respondé en el idioma del usuario (por defecto, español rioplatense con voseo).
-- El acceso es de solo lectura, con UNA excepción: meta_accion pausa, activa y cambia presupuestos y pujas (cost cap / bid cap) de Meta cuando la cuenta tiene un token con ads_management (meta_administrador lo indica en "puede_editar"). Sin ese token, cualquier cambio lo hace el usuario desde Growith. Stock, precios y lo demás siempre los cambia el usuario.
+- El acceso es de solo lectura, con DOS excepciones: escala_guardar_reglas carga las reglas de escala automática de Meta que el usuario te dicte (Growith las corre solo cada 15 min), y meta_accion pausa, activa y cambia presupuestos y pujas (cost cap / bid cap) de Meta cuando la cuenta tiene un token con ads_management (meta_administrador lo indica en "puede_editar"). Sin ese token, cualquier cambio lo hace el usuario desde Growith. Stock, precios y lo demás siempre los cambia el usuario.
 - Para revisar o administrar Meta usá meta_administrador: las ventas, revenue, ROAS, CPA y AOV salen de las ventas reales cruzadas por UTM (no del píxel); gasto, CPC, CTR, CPM, frecuencia, pagos iniciados y retención salen de Meta. Antes de cada meta_accion, explicá el motivo con esos números; nunca actúes sobre campañas que el usuario no te pidió administrar.
 - La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente; si tiene varios y no eligió, se responde sobre la tienda que tiene abierta en Growith (cada respuesta lo aclara en "cliente"). seleccionar_cliente y cliente_id aceptan el NOMBRE de la tienda (sin distinguir mayúsculas) o el cliente_id. Los números de ventas y rentabilidad se recalculan en vivo si la caché tiene más de 5 minutos: son los mismos que ve el usuario en su Dashboard en ese momento. NO llames a seleccionar_cliente y a una consulta en la misma tanda (en paralelo): primero seleccioná, esperá la respuesta y recién después consultá; o mandá cliente_id directamente en la consulta. Cada respuesta trae el campo "cliente" (id y nombre): verificá que sea el que el usuario pidió. Cuando respondas, aclará de qué cliente son los números.`;
 
@@ -943,6 +943,10 @@ const TOOLS = [
   tool("escala_reglas", "Reglas de escala automática de Meta",
     "Las reglas de escala automática que el cliente guardó en Growith (Meta → Reglas de escala) TAL COMO GROWITH LAS INTERPRETÓ: tabla condición → acción → nivel → horario, la config exacta que aplica el motor, si están activas o en simulación y el texto original. Growith las corre solo cada 15 min (:00 :15 :30 :45 en la hora local del país de cada campaña).",
     SIN_ARGS),
+  tool("escala_guardar_reglas", "Cargar o cambiar las reglas de escala automática",
+    "Guarda en Growith las reglas de escala automática de Meta escritas en lenguaje natural (el mismo texto que el usuario pondría en Meta → Reglas de escala). Growith las interpreta, las guarda y quedan ACTIVAS: corren solas cada 15 min sobre todas las campañas. Devuelve la tabla tal como Growith las entendió y lo que no pudo usar: mostrásela al usuario. Reemplaza las reglas anteriores. simular=true: registra lo que haría sin tocar Meta. activo=false: guardarlas apagadas. Usala solo cuando el usuario te pidió cargar o cambiar sus reglas.",
+    { type: "object", properties: { reglas: { type: "string", description: "Las reglas completas en texto (horario, subida, bajada, pausa, excepciones, ventanas sin tocar…)." }, simular: { type: "boolean", description: "true = solo simular (default false)." }, activo: { type: "boolean", description: "false = guardarlas apagadas (default true)." } }, required: ["reglas"], additionalProperties: false },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }),
   tool("escala_registro", "Vueltas y cambios de la escala automática",
     "Para verificar que la escala automática corre: cada vuelta de 15 min (ok, saltada con motivo, o con errores: una vuelta con errores no toca nada), los cambios aplicados o simulados (hora, cuenta, campaña o conjunto, qué cambió, cuánto, qué regla y con qué números) y el resumen del día (21:30 hora Argentina). 'faltantes' lista los cuartos de hora sin vuelta registrada en la ventana pedida. horas: 1 a 72 (default 6).",
     { type: "object", properties: { horas: { type: "number", description: "Ventana hacia atrás en horas (1 a 72, default 6)." } }, additionalProperties: false }),
@@ -1163,6 +1167,15 @@ async function runTool(db, uid, name, args, origin, grantId) {
     if (!c?.reglas) return { fecha_hora_actual: fecha, configuradas: false, aviso: "El cliente no guardó reglas de escala (Meta → Reglas de escala en Growith)." };
     const R = normalizarReglas(c.reglas);
     return { fecha_hora_actual: fecha, configuradas: true, activas: !!c.activo, simulacion: !!c.simular, guardadas: c.actualizado, tabla: tablaReglas(R), config_aplicada: R, texto_original: c.prompt };
+  }
+  if (name === "escala_guardar_reglas") {
+    const prompt = String(args.reglas || "").trim();
+    if (prompt.length < 10) throw new Error("faltan las reglas en texto.");
+    const reglas = await interpretarReglas(prompt);
+    const cfg = { prompt: prompt.slice(0, 12000), reglas, activo: args.activo !== false, simular: !!args.simular, actualizado: new Date().toISOString(), por: "mcp", grantId: grantId || null };
+    await db.collection("users").doc(uid).collection("meta_escala").doc("cfg").set(cfg);
+    await db.collection("system").doc("meta_escala").set({ uids: { [uid]: cfg.activo } }, { merge: true });
+    return { fecha_hora_actual: fecha, ok: true, activas: cfg.activo, simulacion: cfg.simular, tabla: tablaReglas(normalizarReglas(reglas)), no_entendido: reglas.no_entendido || [], proxima_vuelta: "en el próximo cuarto de hora (:00 :15 :30 :45)" };
   }
   if (name === "escala_registro") {
     const horas = Math.min(72, Math.max(1, parseInt(args.horas) || 6));
