@@ -366,12 +366,13 @@ export function campanaDeVenta(utm, campanas) {
 // conjunto y campaña: id → nombre. Así una venta cruza aunque la UTM traiga el id o el
 // nombre, y aunque la campaña no haya gastado en el rango que se está mirando.
 // Doc users/{uid}/impultienda_cfg/utm_idx = {ts, dias, c:{id:nombre}, s:{id:[nombre,campId]}, a:{id:[nombre,setId,campId]}}.
-export async function construirIndiceUtm(db, uid, dias = 60) {
+// Con `base` se suma lo de los últimos `dias` al índice existente (refresco rápido de anuncios nuevos).
+export async function construirIndiceUtm(db, uid, dias = 60, base = null) {
   const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
   const elegidas = cfg.metaCuentas || [];
   const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
   const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
-  const idx = { ts: Date.now(), dias, c: {}, s: {}, a: {}, errores: [] };
+  const idx = base ? { ...base, ts: Date.now(), c: { ...(base.c || {}) }, s: { ...(base.s || {}) }, a: { ...(base.a || {}) }, errores: [] } : { ts: Date.now(), dias, c: {}, s: {}, a: {}, errores: [] };
   const hoy = new Date().toISOString().slice(0, 10);
   const vistas = new Set();
   for (const tk of tokens) {
@@ -466,8 +467,10 @@ function armarTiendas(cfg, ordenes) {
   return tiendasMap;
 }
 
-export async function utmAtribucion(db, uid, desde, hasta, tz, idx) {
-  const desdeMs = utcDeLocal(desde, 0, tz), hastaMs = utcDeLocal(addDias(hasta, 1), 0, tz);
+// opts.desdeMs/hastaMs: ventana exacta (p. ej. últimas 2 h). opts.dentro(o, tienda): filtro propio
+// (p. ej. "hoy" en la hora local del país de cada tienda); desde/hasta solo acotan la lectura.
+export async function utmAtribucion(db, uid, desde, hasta, tz, idx, opts = {}) {
+  const desdeMs = opts.desdeMs ?? utcDeLocal(desde, 0, tz), hastaMs = opts.hastaMs ?? utcDeLocal(addDias(hasta, 1), 0, tz);
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 2 * 86400000).toISOString()).get();
   const todas = snap.docs.map(d => d.data());
   const delWebhook = new Set(todas.filter(o => !o.importado && o.orden != null).map(o => String(o.orden)));
@@ -475,12 +478,14 @@ export async function utmAtribucion(db, uid, desde, hasta, tz, idx) {
   const [fx, cfgSnap] = await Promise.all([fxPorUsd(), db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()]);
   const tiendasMap = armarTiendas(cfgSnap.data() || {}, ordenes);
   // ct: por campaña, cuántas ventas fueron a cada tienda (para agrupar campañas por tienda).
-  const out = { c: {}, s: {}, a: {}, ct: {}, tiendas: tiendasMap, total: { n: 0, rev: 0 }, sinAtribuir: { n: 0, rev: 0 }, sinUtm: 0, importadas: 0 };
+  const out = { c: {}, s: {}, a: {}, ct: {}, tiendas: tiendasMap, total: { n: 0, rev: 0 }, sinAtribuir: { n: 0, rev: 0 }, sinUtm: 0, importadas: 0, ultimaVenta: null };
   const atr = {};
   for (const o of ordenes) if (!o.post_compra) atr[o.order_id] = atribuirUtm(o.utm, idx);
   for (const o of ordenes) {
     const t = Date.parse(o.ev_approved || "");
+    if (isFinite(t) && (!out.ultimaVenta || t > Date.parse(out.ultimaVenta))) out.ultimaVenta = o.ev_approved;
     if (!isFinite(t) || t < desdeMs || t >= hastaMs) continue;
+    if (opts.dentro && !opts.dentro(o, tiendasMap[o.store_id])) continue;
     const usd = aUsd(Number(o.total) || 0, o.moneda, fx) ?? 0;
     const n = o.post_compra ? 0 : 1;
     const x = o.post_compra ? (atr[o.orden_original] || atribuirUtm(o.utm, idx)) : atr[o.order_id];

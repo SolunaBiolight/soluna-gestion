@@ -41,7 +41,7 @@ import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
-import { porHora as impPorHora, metricasDigitales, utmAtribucion, leerIndiceUtm, construirIndiceUtm, fxPorUsd } from "./impultienda.js";
+import { porHora as impPorHora, metricasDigitales, utmAtribucion, leerIndiceUtm, construirIndiceUtm, fxPorUsd, zonaDe, utcDeLocal } from "./impultienda.js";
 
 const ORIGINS = ["https://www.growithapp.com", "https://soluna-gestion.vercel.app"];
 const DEFAULT_ORIGIN = ORIGINS[0];
@@ -433,7 +433,7 @@ const INSTRUCCIONES = `Growith es la app de gestión del e-commerce del usuario 
 - Las herramientas devuelven cifras REALES calculadas por Growith. Citá solo esos números: no estimes ni inventes datos del negocio. Si un dato no está, decilo e indicá en qué sección de Growith verlo (https://www.growithapp.com).
 - Los montos están en pesos argentinos (ARS) salvo que el campo diga USD. "datos_al" indica cuándo se calcularon las cifras: aclaralo si te preguntan por lo más reciente.
 - Respondé en el idioma del usuario (por defecto, español rioplatense con voseo).
-- El acceso es de solo lectura, con UNA excepción: meta_accion pausa, activa y cambia presupuestos de Meta cuando la cuenta tiene un token con ads_management (meta_administrador lo indica en "puede_editar"). Sin ese token, cualquier cambio lo hace el usuario desde Growith. Stock, precios y lo demás siempre los cambia el usuario.
+- El acceso es de solo lectura, con UNA excepción: meta_accion pausa, activa y cambia presupuestos y pujas (cost cap / bid cap) de Meta cuando la cuenta tiene un token con ads_management (meta_administrador lo indica en "puede_editar"). Sin ese token, cualquier cambio lo hace el usuario desde Growith. Stock, precios y lo demás siempre los cambia el usuario.
 - Para revisar o administrar Meta usá meta_administrador: las ventas, revenue, ROAS, CPA y AOV salen de las ventas reales cruzadas por UTM (no del píxel); gasto, CPC, CTR, CPM, frecuencia, pagos iniciados y retención salen de Meta. Antes de cada meta_accion, explicá el motivo con esos números; nunca actúes sobre campañas que el usuario no te pidió administrar.
 - La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente; si tiene varios y no eligió, se responde sobre la tienda que tiene abierta en Growith (cada respuesta lo aclara en "cliente"). seleccionar_cliente y cliente_id aceptan el NOMBRE de la tienda (sin distinguir mayúsculas) o el cliente_id. Los números de ventas y rentabilidad se recalculan en vivo si la caché tiene más de 5 minutos: son los mismos que ve el usuario en su Dashboard en ese momento. NO llames a seleccionar_cliente y a una consulta en la misma tanda (en paralelo): primero seleccioná, esperá la respuesta y recién después consultá; o mandá cliente_id directamente en la consulta. Cada respuesta trae el campo "cliente" (id y nombre): verificá que sea el que el usuario pidió. Cuando respondas, aclará de qué cliente son los números.`;
 
@@ -636,10 +636,29 @@ async function metaTokens(db, uid) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.access_token && !vistos.has(a.access_token) && vistos.add(a.access_token));
 }
 
+// Zona horaria por país (código de 2 letras de la tienda o del nombre de la campaña).
+const PAIS_TZ = {
+  AR: "America/Argentina/Buenos_Aires", UY: "America/Montevideo", CL: "America/Santiago", PE: "America/Lima", CO: "America/Bogota", MX: "America/Mexico_City",
+  BR: "America/Sao_Paulo", PY: "America/Asuncion", BO: "America/La_Paz", EC: "America/Guayaquil", VE: "America/Caracas", US: "America/New_York", CA: "America/Toronto",
+  ES: "Europe/Madrid", PT: "Europe/Lisbon", IT: "Europe/Rome", FR: "Europe/Paris", DE: "Europe/Berlin", AT: "Europe/Vienna", CH: "Europe/Zurich", BE: "Europe/Brussels",
+  NL: "Europe/Amsterdam", UK: "Europe/London", GB: "Europe/London", IE: "Europe/Dublin", PL: "Europe/Warsaw", CZ: "Europe/Prague", SK: "Europe/Bratislava", HU: "Europe/Budapest",
+  RO: "Europe/Bucharest", MD: "Europe/Chisinau", BG: "Europe/Sofia", GR: "Europe/Athens", TR: "Europe/Istanbul", HR: "Europe/Zagreb", SI: "Europe/Ljubljana", RS: "Europe/Belgrade",
+  SE: "Europe/Stockholm", NO: "Europe/Oslo", DK: "Europe/Copenhagen", FI: "Europe/Helsinki", LT: "Europe/Vilnius", LV: "Europe/Riga", EE: "Europe/Tallinn", UA: "Europe/Kyiv",
+  ZA: "Africa/Johannesburg", NG: "Africa/Lagos", KE: "Africa/Nairobi", EG: "Africa/Cairo", MA: "Africa/Casablanca", AE: "Asia/Dubai", SA: "Asia/Riyadh", IL: "Asia/Jerusalem",
+  IN: "Asia/Kolkata", PH: "Asia/Manila", ID: "Asia/Jakarta", MY: "Asia/Kuala_Lumpur", SG: "Asia/Singapore", TH: "Asia/Bangkok", VN: "Asia/Ho_Chi_Minh", JP: "Asia/Tokyo", AU: "Australia/Sydney", NZ: "Pacific/Auckland",
+};
+const hoyEn = (tz) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+const sumaDias = (ymd, n) => new Date(Date.parse(ymd + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+
 async function metaAdministrador(db, uid, args) {
   const hoy = hoyAR();
-  const desde = ISO.test(args.desde || "") ? args.desde : hoy;
-  const hasta = ISO.test(args.hasta || "") ? args.hasta : desde;
+  // ventana: "rango" (desde/hasta en hora Argentina), "hoy_local" (desde las 00:00 de la hora local
+  // del país de cada campaña) o "ultimas_horas" (las últimas `horas` horas, hasta ahora).
+  const ventana = ["hoy_local", "ultimas_horas"].includes(args.ventana) ? args.ventana : "rango";
+  const horas = Math.min(48, Math.max(1, parseInt(args.horas) || 2));
+  const ahora = Date.now();
+  const desde = ventana !== "rango" ? sumaDias(hoy, -1) : ISO.test(args.desde || "") ? args.desde : hoy;
+  const hasta = ventana !== "rango" ? sumaDias(hoy, 1) : ISO.test(args.hasta || "") ? args.hasta : desde;
   if (hasta < desde || difDias(desde, hasta) > 92) throw new Error("rango inválido (máximo 92 días).");
   const nivel = ["campaign", "adset", "ad"].includes(args.nivel) ? args.nivel : "campaign";
   const campId = /^\d+$/.test(String(args.campana_id || "")) ? String(args.campana_id) : null;
@@ -652,17 +671,22 @@ async function metaAdministrador(db, uid, args) {
   for (const t of tokens) {
     const editable = await tokenEditable(db, uid, t);
     let lista = [];
-    if (elegidas.length) { try { lista = (await metaTodo("me/adaccounts", { fields: "account_id,name,currency", limit: "200" }, t.access_token, 3)).map(c => ({ id: "act_" + c.account_id, nombre: c.name, moneda: c.currency })); } catch (_) {} }
-    else if (t.ad_account_id) lista = [{ id: t.ad_account_id, nombre: t.ad_account_name || t.ad_account_id, moneda: t.currency || "USD" }];
+    if (elegidas.length) { try { lista = (await metaTodo("me/adaccounts", { fields: "account_id,name,currency,timezone_name", limit: "200" }, t.access_token, 3)).map(c => ({ id: "act_" + c.account_id, nombre: c.name, moneda: c.currency, tz: c.timezone_name })); } catch (_) {} }
+    else if (t.ad_account_id) lista = [{ id: t.ad_account_id, nombre: t.ad_account_name || t.ad_account_id, moneda: t.currency || "USD", tz: t.timezone_name }];
     for (const c of lista) if (!vistas.has(c.id) && (!elegidas.length || elegidas.includes(c.id))) { vistas.add(c.id); cuentas.push({ ...c, tok: t.access_token, editable }); }
   }
   // Ventas reales por UTM (Impultienda); sin Impultienda quedan las de Meta.
   let atr = null;
   if ((cfg.secretEnc || elegidas.length)) {
     try {
+      // Índice de campañas/anuncios: completo cada 3 h y, en el medio, cada 5 min se suman los
+      // anuncios de los últimos 2 días (así una venta de un anuncio recién creado ya cruza).
       let idx = await leerIndiceUtm(db, uid);
-      if (!idx || Date.now() - (idx.ts || 0) > 3 * 3600000) idx = await construirIndiceUtm(db, uid, Math.max(60, idx?.dias || 0));
-      atr = await utmAtribucion(db, uid, desde, hasta, "America/Argentina/Buenos_Aires", idx);
+      if (!idx || ahora - (idx.ts0 || idx.ts || 0) > 3 * 3600000) { idx = await construirIndiceUtm(db, uid, Math.max(60, idx?.dias || 0)); db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").set({ ts0: idx.ts }, { merge: true }).catch(() => {}); idx.ts0 = idx.ts; }
+      else if (ahora - (idx.ts || 0) > 5 * 60000) idx = await construirIndiceUtm(db, uid, 2, idx);
+      const opts = ventana === "ultimas_horas" ? { desdeMs: ahora - horas * 3600000, hastaMs: ahora + 60000 }
+        : ventana === "hoy_local" ? { dentro: (o, t) => { const tz = PAIS_TZ[String(t?.pais || "").toUpperCase().split(/[^A-Z]+/)[0]] || "America/Argentina/Buenos_Aires"; return zonaDe(o.ev_approved, tz)?.fecha === hoyEn(tz); } } : {};
+      atr = await utmAtribucion(db, uid, desde, hasta, "America/Argentina/Buenos_Aires", idx, opts);
     } catch (_) { atr = null; }
   }
   const fx = await fxPorUsd();
@@ -670,14 +694,60 @@ async function metaAdministrador(db, uid, args) {
   const idF = nivel + "_id";
   const CHK = (a) => a.action_type === "initiate_checkout" || a.action_type === "offsite_conversion.fb_pixel_initiate_checkout";
   const COMPRA = (a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase";
-  const filas = [], errores = [];
+  const filas = [], errores = [], frescura = [];
+  // Zona del país de una campaña: la tienda donde más vendió, o el código de país del nombre.
+  const tzCampana = (campId, nombre, tzCuenta) => {
+    const ct = atr?.ct?.[campId]; const top = ct && Object.entries(ct).sort((x, y) => y[1] - x[1])[0];
+    const pT = top && String(atr.tiendas?.[top[0]]?.pais || "").toUpperCase().split(/[^A-Z]+/)[0];
+    if (pT && PAIS_TZ[pT]) return PAIS_TZ[pT];
+    const cod = String(nombre || "").toUpperCase().split(/[^A-Z]+/).find(w => w.length === 2 && PAIS_TZ[w]);
+    return cod ? PAIS_TZ[cod] : tzCuenta;
+  };
+  // Gasto de una ventana por hora (desglose horario de Meta, en la zona de la cuenta). Lo que Meta
+  // todavía no repartió por hora (el día ya lo cuenta) se suma a la fila: son las horas más recientes.
+  const insVentana = async (c, filtro) => {
+    const tzC = c.tz || "America/Los_Angeles", hoyC = hoyEn(tzC);
+    const base = { level: nivel, time_range: JSON.stringify({ since: sumaDias(hoyC, -2), until: hoyC }), limit: "500", ...filtro };
+    const [hs, dia] = await Promise.all([
+      metaTodo(`${c.id}/insights`, { ...base, fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,actions", time_increment: "1", breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone" }, c.tok, 60),
+      metaTodo(`${c.id}/insights`, { ...base, fields: `${idF},campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend`, time_range: JSON.stringify({ since: hoyC, until: hoyC }) }, c.tok, 10).catch(() => []),
+    ]);
+    const acc = {}, hoyHoras = {};
+    let ultima = null;
+    const suma = (r, x) => {
+      r.spend += parseFloat(x.spend) || 0; r.impressions += parseInt(x.impressions) || 0; r.clicks += parseInt(x.clicks) || 0;
+      for (const a of x.actions || []) r._act[a.action_type] = (r._act[a.action_type] || 0) + (parseFloat(a.value) || 0);
+    };
+    const nueva = (x) => ({ campaign_id: x.campaign_id, campaign_name: x.campaign_name, adset_id: x.adset_id, adset_name: x.adset_name, ad_id: x.ad_id, ad_name: x.ad_name, spend: 0, impressions: 0, clicks: 0, _act: {} });
+    for (const x of hs) {
+      const hh = parseInt(String(x.hourly_stats_aggregated_by_advertiser_time_zone || "").slice(0, 2), 10);
+      if (!isFinite(hh)) continue;
+      const id = String(x[idF]);
+      if (x.date_start === hoyC) hoyHoras[id] = (hoyHoras[id] || 0) + (parseFloat(x.spend) || 0);
+      const ini = utcDeLocal(x.date_start, hh, tzC);
+      if ((parseFloat(x.spend) || 0) > 0 && (!ultima || ini > ultima)) ultima = ini;
+      let ok;
+      if (ventana === "ultimas_horas") ok = ini + 3600000 > ahora - horas * 3600000 && ini <= ahora;
+      else { const tz = tzCampana(String(x.campaign_id), x.campaign_name, tzC); ok = zonaDe(new Date(ini).toISOString(), tz)?.fecha === hoyEn(tz); }
+      if (!ok) continue;
+      suma(acc[id] || (acc[id] = nueva(x)), x);
+    }
+    let sinHora = 0;
+    for (const d of dia) {
+      const id = String(d[idF]); const falta = (parseFloat(d.spend) || 0) - (hoyHoras[id] || 0);
+      if (falta > 0.01) { (acc[id] || (acc[id] = nueva(d))).spend += falta; sinHora += falta; }
+    }
+    frescura.push({ cuenta: c.nombre, zona_cuenta: tzC, ultima_hora_con_gasto: ultima ? new Date(ultima).toISOString() : null, gasto_aun_sin_hora: r2(sinHora) });
+    return Object.values(acc).map(r => ({ ...r, ctr: r.impressions ? r.clicks / r.impressions * 100 : 0, cpc: r.clicks ? r.spend / r.clicks : 0, cpm: r.impressions ? r.spend / r.impressions * 1000 : 0,
+      actions: Object.entries(r._act).map(([action_type, value]) => ({ action_type, value })) }));
+  };
   await Promise.all(cuentas.slice(0, 40).map(async c => {
     try {
       const filtro = campId ? { filtering: JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campId }]) } : {};
       const edge = nivel === "campaign" ? "campaigns" : nivel === "adset" ? "adsets" : "ads";
       const [ins, nodos] = await Promise.all([
-        metaTodo(`${c.id}/insights`, { level: nivel, fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,ctr,cpc,cpm,frequency,actions,action_values,video_avg_time_watched_actions", time_range: JSON.stringify({ since: desde, until: hasta }), limit: "500", ...filtro }, c.tok),
-        metaTodo(`${c.id}/${edge}`, { fields: `id,name,effective_status,daily_budget,lifetime_budget${nivel !== "campaign" ? ",campaign_id" : ""}`, limit: "300", ...filtro }, c.tok, 5).catch(() => []),
+        ventana !== "rango" ? insVentana(c, filtro) : metaTodo(`${c.id}/insights`, { level: nivel, fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,ctr,cpc,cpm,frequency,actions,action_values,video_avg_time_watched_actions", time_range: JSON.stringify({ since: desde, until: hasta }), limit: "500", ...filtro }, c.tok),
+        metaTodo(`${c.id}/${edge}`, { fields: `id,name,effective_status,daily_budget,lifetime_budget,bid_strategy${nivel === "adset" ? ",bid_amount" : ""}${nivel !== "campaign" ? ",campaign_id" : ""}`, limit: "300", ...filtro }, c.tok, 5).catch(() => []),
       ]);
       const nodo = Object.fromEntries(nodos.map(n => [String(n.id), n]));
       const kfx = String(c.moneda || "USD").toUpperCase() === "USD" ? 1 : Number(fx?.[String(c.moneda).toUpperCase()]) || null;
@@ -699,13 +769,14 @@ async function metaAdministrador(db, uid, args) {
           estado: n.effective_status || null,
           presupuesto_diario: n.daily_budget ? r2(n.daily_budget / 100) : null,
           presupuesto_total: n.lifetime_budget && n.lifetime_budget !== "0" ? r2(n.lifetime_budget / 100) : null,
+          ...(n.bid_strategy ? { estrategia_puja: n.bid_strategy } : {}), ...(n.bid_amount ? { puja: r2(n.bid_amount / 100) } : {}),
           tienda_id: top ? top[0] : null,
           gasto, gasto_usd: gastoUsd != null ? r2(gastoUsd) : null,
           ventas, revenue_usd: revUsd != null ? r2(revUsd) : null,
           roas: gastoUsd && revUsd != null ? r2(revUsd / gastoUsd) : null,
           cpa_usd: ventas && gastoUsd ? r2(gastoUsd / ventas) : null,
           aov_usd: ventas && revUsd != null ? r2(revUsd / ventas) : null,
-          cpc: r2(r?.cpc), ctr_pct: r2(r?.ctr), cpm: r2(r?.cpm), frecuencia: r2(r?.frequency),
+          cpc: r2(r?.cpc), ctr_pct: r2(r?.ctr), cpm: r2(r?.cpm), frecuencia: r?.frequency != null ? r2(r.frequency) : null,
           pagos_iniciados: chk, costo_pago_iniciado: chk ? r2(gasto / chk) : null,
           retencion_3s_pct: impr ? r2(v3 / impr * 100) : null,
           tiempo_prom_video_s: r2((r?.video_avg_time_watched_actions || [])[0]?.value),
@@ -730,7 +801,9 @@ async function metaAdministrador(db, uid, args) {
   const bloques = Object.values(grupos).map(g => ({ ...g, gasto_usd: r2(g.gasto_usd), revenue_usd: r2(g.revenue_usd), roas: g.gasto_usd ? r2(g.revenue_usd / g.gasto_usd) : null, cpa_usd: g.ventas && g.gasto_usd ? r2(g.gasto_usd / g.ventas) : null, filas: g.filas.slice(0, 60) }));
   const tot = bloques.reduce((t, b) => ({ g: t.g + b.gasto_usd, n: t.n + b.ventas, r: t.r + b.revenue_usd }), { g: 0, n: 0, r: 0 });
   return {
-    desde, hasta, nivel, ...(campId ? { campana_id: campId } : {}),
+    ...(ventana === "rango" ? { desde, hasta } : ventana === "hoy_local" ? { ventana: "hoy desde las 00:00 de la hora local del país de cada campaña" } : { ventana: `últimas ${horas} h`, desde_utc: new Date(ahora - horas * 3600000).toISOString(), hasta_utc: new Date(ahora).toISOString() }),
+    nivel, ...(campId ? { campana_id: campId } : {}),
+    datos: { leidos_utc: new Date(ahora).toISOString(), ventas: "en vivo (webhooks de Impultienda, llegan en segundos)", gasto: "en vivo desde la API de Meta en cada llamada (Meta lo actualiza con 15 a 60 min de atraso)", ultima_venta_recibida: atr?.ultimaVenta || null, ...(frescura.length ? { meta_por_cuenta: frescura } : {}) },
     fuente_ventas: atr ? "ventas reales de Impultienda cruzadas por UTM (las que no cruzan no se cuentan)" : "píxel de Meta (el cliente no tiene Impultienda)",
     puede_editar: cuentas.some(c => c.editable),
     cuentas: cuentas.map(c => ({ id: c.id, nombre: c.nombre, moneda: c.moneda, puede_editar: c.editable })),
@@ -744,7 +817,7 @@ async function metaAccion(db, uid, args, grantId) {
   const id = String(args.id || "").trim();
   if (!/^\d{5,25}$/.test(id)) throw new Error("id inválido: usá el id que devuelve meta_administrador.");
   const accion = args.accion;
-  if (!["pausar", "activar", "presupuesto"].includes(accion)) throw new Error("accion inválida.");
+  if (!["pausar", "activar", "presupuesto", "puja"].includes(accion)) throw new Error("accion inválida.");
   const motivo = String(args.motivo || "").trim().slice(0, 500);
   if (!motivo) throw new Error("falta el motivo.");
   // El primer token con ads_management que ve ese id.
@@ -761,7 +834,20 @@ async function metaAccion(db, uid, args, grantId) {
     return j;
   };
   let antes, despues;
-  if (accion === "presupuesto") {
+  if (accion === "puja") {
+    // Puja / costo objetivo de un CONJUNTO (bid cap o cost cap). Va en la moneda de la cuenta.
+    const nueva = Number(args.puja);
+    if (!isFinite(nueva) || nueva <= 0) throw new Error("puja inválida.");
+    let set;
+    try { set = await metaGetJ(id, { fields: "id,name,bid_amount,bid_strategy" }, tok); } catch (_) { throw new Error(`"${nodo.name}" no es un conjunto de anuncios: la puja y el cost cap se cambian en cada conjunto (usá meta_administrador con nivel=adset).`); }
+    const estrategia = ["COST_CAP", "LOWEST_COST_WITH_BID_CAP"].includes(args.estrategia) ? args.estrategia : null;
+    const actual = parseInt(set.bid_amount) || 0;
+    const cent = Math.round(nueva * 100);
+    if (!actual && !estrategia) throw new Error(`"${set.name}" no tiene puja (${set.bid_strategy || "costo más bajo"}). Para ponerle una, mandá estrategia COST_CAP o LOWEST_COST_WITH_BID_CAP.`);
+    if (actual && (cent > actual * 5 || cent < actual / 5)) throw new Error(`Cambio demasiado grande: de ${actual / 100} a ${nueva}. Por llamada se permite entre 1/5 y 5 veces la puja actual.`);
+    await post({ bid_amount: String(cent), ...(estrategia ? { bid_strategy: estrategia } : {}) });
+    antes = actual ? `${actual / 100} (${set.bid_strategy})` : set.bid_strategy || "sin puja"; despues = `${cent / 100} (${estrategia || set.bid_strategy})`;
+  } else if (accion === "presupuesto") {
     const nuevo = Number(args.presupuesto_diario);
     if (!isFinite(nuevo) || nuevo <= 0) throw new Error("presupuesto_diario inválido.");
     const actual = parseInt(nodo.daily_budget) || 0;
@@ -851,11 +937,11 @@ const TOOLS = [
     "Campañas de Meta Ads, Google Ads y TikTok Ads conectadas a Growith con métricas del período: estado, presupuesto, gasto, impresiones, clicks, CTR, CPC, conversiones o compras, valor y ROAS según cada plataforma. Cada cuenta indica su moneda. Por defecto, últimos 7 días de todas las plataformas.",
     { type: "object", properties: { plataforma: { type: "string", enum: ["todas", "meta", "google", "tiktok"], description: "Plataforma a consultar (por defecto todas)." }, ...PROPS_PERIODO }, additionalProperties: false }),
   tool("meta_administrador", "Administrador de Meta Ads con ventas reales",
-    "Todas las campañas de Meta de las cuentas publicitarias del cliente (las elegidas en Growith), agrupadas por tienda, como el Administrador de anuncios pero con ventas REALES: ventas, revenue (USD), ROAS, CPA y AOV salen de las ventas de Impultienda cruzadas por UTM; gasto, CPC, CTR, CPM, frecuencia, pagos iniciados, retención 3 s y tiempo promedio de video salen de Meta. Cada fila trae id (para meta_accion), estado, presupuesto diario y la cuenta. 'puede_editar' dice si se pueden aplicar cambios con meta_accion. nivel: campaign (default), adset o ad; con campana_id se ven solo los conjuntos/anuncios de esa campaña. desde/hasta AAAA-MM-DD (por defecto hoy, hora Argentina; Meta cuenta el gasto en la zona de cada cuenta). Pensada para revisiones periódicas (por ejemplo cada 15 minutos).",
-    { type: "object", properties: { nivel: { type: "string", enum: ["campaign", "adset", "ad"], description: "Nivel (default campaign)." }, campana_id: { type: "string", description: "Opcional: id de campaña para ver sus conjuntos o anuncios." }, desde: { type: "string", description: "AAAA-MM-DD" }, hasta: { type: "string", description: "AAAA-MM-DD" } }, additionalProperties: false }),
+    "Todas las campañas de Meta de las cuentas publicitarias del cliente (las elegidas en Growith), agrupadas por tienda, como el Administrador de anuncios pero con ventas REALES: ventas, revenue (USD), ROAS, CPA y AOV salen de las ventas de Impultienda cruzadas por UTM; gasto, CPC, CTR, CPM, frecuencia, pagos iniciados, retención 3 s y tiempo promedio de video salen de Meta. Cada fila trae id (para meta_accion), estado, presupuesto diario y la cuenta. 'puede_editar' dice si se pueden aplicar cambios con meta_accion. nivel: campaign (default), adset o ad; con campana_id se ven solo los conjuntos/anuncios de esa campaña. desde/hasta AAAA-MM-DD (por defecto hoy, hora Argentina). Con ventana=hoy_local da lo que va del día desde las 00:00 de la hora local del país de cada campaña (gasto y ventas), y con ventana=ultimas_horas las últimas N horas (por ejemplo 2). Todo se lee en vivo en cada llamada (ventas por webhook en segundos; gasto de Meta con su atraso de 15 a 60 min, el gasto que Meta todavía no repartió por hora se suma a la fila); 'datos' dice cuándo se leyó y la última hora con gasto de cada cuenta. Las filas de conjuntos traen estrategia_puja y puja. Se puede llamar cada 1 minuto.",
+    { type: "object", properties: { nivel: { type: "string", enum: ["campaign", "adset", "ad"], description: "Nivel (default campaign)." }, campana_id: { type: "string", description: "Opcional: id de campaña para ver sus conjuntos o anuncios." }, ventana: { type: "string", enum: ["rango", "hoy_local", "ultimas_horas"], description: "rango (default, usa desde/hasta en hora Argentina), hoy_local (en lo que va del día desde las 00:00 de la hora local del país de cada campaña) o ultimas_horas (las últimas 'horas' horas hasta ahora)." }, horas: { type: "number", description: "Para ventana=ultimas_horas: 1 a 48 (default 2)." }, desde: { type: "string", description: "AAAA-MM-DD" }, hasta: { type: "string", description: "AAAA-MM-DD" } }, additionalProperties: false }),
   tool("meta_accion", "Pausar, activar o cambiar presupuesto en Meta",
-    "Aplica un cambio REAL en Meta Ads: pausar o activar una campaña, conjunto o anuncio, o cambiar el presupuesto diario de una campaña (CBO) o conjunto (ABO). Solo funciona si la cuenta tiene un token con ads_management (meta_administrador → puede_editar). El presupuesto va en la moneda de la cuenta y por llamada puede ir de 1/5 a 5 veces el actual. Cada cambio queda registrado en Growith con el motivo. Usala solo cuando el usuario te pidió administrar sus campañas, y decí siempre qué cambiaste y por qué.",
-    { type: "object", properties: { accion: { type: "string", enum: ["pausar", "activar", "presupuesto"] }, id: { type: "string", description: "id de la campaña, conjunto o anuncio (de meta_administrador)." }, presupuesto_diario: { type: "number", description: "Solo para accion=presupuesto: nuevo presupuesto diario en la moneda de la cuenta." }, motivo: { type: "string", description: "Por qué se hace el cambio (queda en el registro)." } }, required: ["accion", "id", "motivo"], additionalProperties: false },
+    "Aplica un cambio REAL en Meta Ads: pausar o activar una campaña, conjunto o anuncio, cambiar el presupuesto diario de una campaña (CBO) o conjunto (ABO), o cambiar la puja / cost cap de un conjunto (accion=puja, también entre 1/5 y 5 veces la actual). Solo funciona si la cuenta tiene un token con ads_management (meta_administrador → puede_editar). El presupuesto va en la moneda de la cuenta y por llamada puede ir de 1/5 a 5 veces el actual. Cada cambio queda registrado en Growith con el motivo. Usala solo cuando el usuario te pidió administrar sus campañas, y decí siempre qué cambiaste y por qué.",
+    { type: "object", properties: { accion: { type: "string", enum: ["pausar", "activar", "presupuesto", "puja"] }, id: { type: "string", description: "id de la campaña, conjunto o anuncio (de meta_administrador)." }, presupuesto_diario: { type: "number", description: "Solo para accion=presupuesto: nuevo presupuesto diario en la moneda de la cuenta." }, puja: { type: "number", description: "Solo para accion=puja (id de un conjunto): nueva puja o costo objetivo en la moneda de la cuenta." }, estrategia: { type: "string", enum: ["COST_CAP", "LOWEST_COST_WITH_BID_CAP"], description: "Solo para accion=puja si el conjunto todavía no tiene puja: tipo de tope a poner." }, motivo: { type: "string", description: "Por qué se hace el cambio (queda en el registro)." } }, required: ["accion", "id", "motivo"], additionalProperties: false },
     { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
   // OJO: tool(name, TÍTULO, descripción, inputSchema). Un argumento de menos
   // deja la descripción como objeto y claude.ai descarta la lista ENTERA
@@ -1000,7 +1086,7 @@ async function guardarSesion(db, ctx, id, clienteUid) {
 }
 
 async function runTool(db, uid, name, args, origin, grantId) {
-  const fecha = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" });
+  const fecha = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hourCycle: "h23" });
   const sinMargenes = "SIN DATOS — los márgenes todavía no se calcularon. Pedile al usuario que abra el Dashboard de Growith (sección Márgenes) para que se generen.";
 
   if (name === "resumen_negocio") {
