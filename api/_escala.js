@@ -202,6 +202,11 @@ async function ventasRecientes(db, uid, cfg, dias) {
   return { ventas, tiendas, ultima, fx };
 }
 
+export async function esDigital(db, uid) {
+  const u = (await db.collection("users").doc(uid).get()).data() || {};
+  return (u.stores || []).some(s => s?.type === "impultienda");
+}
+
 // ── El motor ──
 // prueba: corre en simulación y no guarda nada (ni estado, ni registro, ni vuelta): devuelve lo que haría.
 export async function correrEscala(db, uid, { ahora = Date.now(), forzar = false, prueba = false } = {}) {
@@ -219,6 +224,8 @@ export async function correrEscala(db, uid, { ahora = Date.now(), forzar = false
     const m = minutosLocal(ahora, c.tz);
     if (c.desde <= c.hasta ? (m >= c.desde && m < c.hasta) : (m >= c.desde || m < c.hasta)) { vuelta.saltada = `ventana de caída de Impultienda (${hhmm(c.desde)}–${hhmm(c.hasta)})`; return cerrar(); }
   }
+  // Solo tiendas de productos digitales: sin Impultienda no hay ventas reales y bajaría todo.
+  if (!(await esDigital(db, uid))) { vuelta.saltada = "la tienda no es de productos digitales (Impultienda)"; return cerrar(); }
   const impCfg = (await uRef.collection("impultienda_cfg").doc("main").get()).data() || {};
   const { cuentas, errores } = await cuentasDe(db, uid, impCfg.metaCuentas || []);
   vuelta.errores.push(...errores);

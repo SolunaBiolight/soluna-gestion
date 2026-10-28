@@ -1111,7 +1111,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
                   flexDirection:"column",
                   gap:1,
                 }}>
-                  {(connectedStores.imp&&item.id==="margenes"?[{id:"dashboard",label:"Dashboard"},{id:"hora",label:"Por hora"},{id:"conexion",label:"Conexión"}]:item.subs).map(sub=>{
+                  {(connectedStores.imp&&item.id==="margenes"?[{id:"dashboard",label:"Dashboard"},{id:"hora",label:"Por hora"},{id:"conexion",label:"Conexión"}]:item.subs.filter(sb=>sb.id!=="escala"||connectedStores.imp)).map(sub=>{
                     // subActive solo cuando el módulo padre es el activo —
                     // antes daba highlight aún navegando otra sección, ahora
                     // que las subs son visibles siempre eso confundía.
@@ -35195,6 +35195,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (cached) setARows(cached); else setARows([]);
     try {
       const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil,tz:mtz};
+      if (typeof window!=="undefined"&&window.__ghEsDigital) params.pages = "1"; // fanpages solo para el filtro de las tiendas digitales
       if (lastParent) {
         params.parent_id = lastParent.id;
         params.parent_type = lastParent.level;
@@ -36252,7 +36253,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         {/* Tabs de la sección (visibles en mobile — en desktop la navegación va por el sidebar) */}
         <div className="mobile-only no-scrollbar" style={{overflowX:"auto",marginBottom:14}}>
           <div style={{display:"flex",gap:6,minWidth:"max-content"}}>
-            {[{id:"productos",l:"Productos"},{id:"analisis",l:"Análisis"},{id:"escala",l:"Reglas de escala"},{id:"biblioteca",l:"Biblioteca"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"reglas",l:"Reglas"},{id:"creativos",l:"Publicar"}]),{id:"cuenta",l:"Cuenta"}].map(t=>(
+            {[{id:"productos",l:"Productos"},{id:"analisis",l:"Análisis"},...(typeof window!=="undefined"&&window.__ghEsDigital?[{id:"escala",l:"Reglas de escala"}]:[]),{id:"biblioteca",l:"Biblioteca"},...(PUBLICADORES_ARCHIVADOS?[]:[{id:"reglas",l:"Reglas"},{id:"creativos",l:"Publicar"}]),{id:"cuenta",l:"Cuenta"}].map(t=>(
               <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"7px 14px",fontSize:12,fontWeight:600,border:`1px solid ${tab===t.id?T.accentSolid+"88":T.border}`,borderRadius:20,background:tab===t.id?T.accentSolid+"18":T.card,color:tab===t.id?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{t.l}</button>
             ))}
           </div>
@@ -37250,7 +37251,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           <MetaPublisher T={T} metaApi={metaApi} accId={activeAccId} cur={cur} tokenDead={tokenDead||!activeAccId} uid={uid}/>
         )}
 
-        {tab==="escala"&&<MetaEscala T={T} metaApi={metaApi} metaEditable={metaEditable}/>}
+        {tab==="escala"&&(typeof window!=="undefined"&&window.__ghEsDigital?<MetaEscala T={T} metaApi={metaApi} metaEditable={metaEditable}/>:<Card T={T}><div style={{fontSize:13,color:T.textMd}}>Las reglas de escala automática son para tiendas de productos digitales (Impultienda): usan sus ventas reales por UTM.</div></Card>)}
 
         {/* ── CUENTA ──────────────────────────────────── */}
         {tab==="cuenta"&&(

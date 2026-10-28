@@ -15,7 +15,7 @@ import { getValidDriveToken } from "./google-drive-callback.js";
 import { esDemo } from "./_demo.js";
 import { esTiendaDemo, metaDemo } from "./_demo_ads.js";
 import { utcDeLocal, zonaDe, tzValida } from "./impultienda.js";
-import { correrEscala, cronEscala, interpretarReglas, normalizarReglas, tablaReglas, resumenDiario, hoyEn } from "./_escala.js";
+import { correrEscala, cronEscala, interpretarReglas, normalizarReglas, tablaReglas, resumenDiario, hoyEn, esDigital } from "./_escala.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1093,6 +1093,9 @@ async function geminiJSON(apiKey, systemText, userText) {
   throw new Error(lastErr?.message || "Gemini falló");
 }
 
+// Fanpages por cuenta/nivel (insights?pages=1), 30 min en memoria de la instancia.
+const _fanpageCache = new Map();
+
 export default async function handler(req, res) {
   { const _o=String(req.headers.origin||""); res.setHeader("Access-Control-Allow-Origin", (["https://www.growithapp.com","https://growithapp.com","https://soluna-gestion.vercel.app"].includes(_o)||_o.endsWith("-soluna1.vercel.app")||_o.startsWith("http://localhost"))?_o:"https://www.growithapp.com"); } // allowlist CORS
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE");
@@ -1239,6 +1242,7 @@ export default async function handler(req, res) {
       const uRef = db.collection("users").doc(uid);
       const cfgRef = uRef.collection("meta_escala").doc("cfg");
       const indice = (on) => db.collection("system").doc("meta_escala").set({ uids: { [uid]: !!on } }, { merge: true });
+      if (action !== "escala_get" && !(await esDigital(db, uid))) return res.status(400).json({ error: "Las reglas de escala son solo para tiendas de productos digitales (Impultienda).", code: "escala_solo_digital" });
       if (action === "escala_get" && req.method === "GET") {
         const cfg = (await cfgRef.get()).data() || null;
         const [vs, log] = await Promise.all([
@@ -1931,9 +1935,13 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         }
 
         // Fanpage de cada fila (actor_id del creativo de sus anuncios), para filtrar por página.
+        // Solo la piden las tiendas digitales (pages=1); corre en paralelo con el resto y se
+        // guarda 30 min en memoria por cuenta, así no frena cada carga del Análisis.
         // Liviano: solo actor_id (pedir object_story_spec acá hace que Meta rechace por tamaño).
-        const pageNames = {};
-        try {
+        const fanpagesP = req.query.pages !== "1" ? Promise.resolve(null) : (async () => {
+          const ck = `${cfg.ad_account_id}|${level}|${filteringParam || ""}`;
+          const hit = _fanpageCache.get(ck);
+          if (hit && Date.now() - hit.ts < 30 * 60000) return hit;
           const adsP = { fields: "campaign_id,adset_id,creative{actor_id}", limit: 500 };
           if (filteringParam) adsP.filtering = filteringParam;
           const ads = []; let pg = await metaGet(`${cfg.ad_account_id}/ads`, adsP, cfg.access_token); ads.push(...(pg.data || []));
@@ -1943,12 +1951,16 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
           for (const ad of ads) {
             const pid = ad.creative?.actor_id; if (!pid) continue;
             const key = level === "campaign" ? ad.campaign_id : level === "adset" ? ad.adset_id : ad.id;
-            (porNodo[key] = porNodo[key] || new Set()).add(String(pid));
+            (porNodo[key] = porNodo[key] || []).includes(String(pid)) || porNodo[key].push(String(pid));
           }
-          for (const row of rows) row.pages = [...(porNodo[row.id] || [])];
-          const ids = [...new Set(Object.values(porNodo).flatMap(x => [...x]))].slice(0, 50);
+          const pageNames = {};
+          const ids = [...new Set(Object.values(porNodo).flat())].slice(0, 50);
           if (ids.length) { const j = await metaGet("", { ids: ids.join(","), fields: "name" }, cfg.access_token); for (const id of ids) if (j[id]?.name) pageNames[id] = j[id].name; }
-        } catch (_) { /* sin páginas: el filtro por fanpage no aparece */ }
+          const out = { ts: Date.now(), porNodo, pageNames };
+          if (_fanpageCache.size > 300) _fanpageCache.clear();
+          _fanpageCache.set(ck, out);
+          return out;
+        })().catch(() => null); // sin páginas: el filtro por fanpage no aparece
 
         // Horario elegido por el usuario (no el de la cuenta publicitaria): se rearma con el desglose
         // por hora de Meta y se suma solo lo que cae dentro de los días pedidos en esa zona.
@@ -1992,7 +2004,9 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             }
           } catch (e) { tzInfo = { error: e.message }; }
         }
-        return res.json({ rows, since, until, level, tz: tzInfo, page_names: pageNames });
+        const fp = await fanpagesP;
+        if (fp) for (const row of rows) row.pages = fp.porNodo[row.id] || [];
+        return res.json({ rows, since, until, level, tz: tzInfo, page_names: fp?.pageNames || {} });
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }

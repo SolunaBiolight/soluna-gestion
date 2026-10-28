@@ -41,7 +41,7 @@ import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
-import { normalizarReglas, tablaReglas, interpretarReglas } from "./_escala.js";
+import { normalizarReglas, tablaReglas, interpretarReglas, esDigital } from "./_escala.js";
 import { porHora as impPorHora, metricasDigitales, utmAtribucion, leerIndiceUtm, construirIndiceUtm, fxPorUsd, zonaDe, utcDeLocal } from "./impultienda.js";
 
 const ORIGINS = ["https://www.growithapp.com", "https://soluna-gestion.vercel.app"];
@@ -1169,6 +1169,7 @@ async function runTool(db, uid, name, args, origin, grantId) {
     return { fecha_hora_actual: fecha, configuradas: true, activas: !!c.activo, simulacion: !!c.simular, guardadas: c.actualizado, tabla: tablaReglas(R), config_aplicada: R, texto_original: c.prompt };
   }
   if (name === "escala_guardar_reglas") {
+    if (!(await esDigital(db, uid))) throw new Error("Las reglas de escala son solo para tiendas de productos digitales (Impultienda). Elegí ese cliente con seleccionar_cliente.");
     const prompt = String(args.reglas || "").trim();
     if (prompt.length < 10) throw new Error("faltan las reglas en texto.");
     const reglas = await interpretarReglas(prompt);
