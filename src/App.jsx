@@ -4575,6 +4575,49 @@ function getTipoRC(T, tipo) {
   return { bg:T.orangeBg, text:T.orange }; // Devolución
 }
 
+// Datos de un rótulo de Andreani (una página del PDF): número de seguimiento, número de pedido
+// ("N° Interno", o "ID:" en el diseño de los puntos HOP) y destinatario. Lo usan "SKU en rótulos"
+// y el envío especial del depósito.
+function ghRotuloDatos(pageText){
+  const t=String(pageText||"");
+  const trackingMatch=t.match(/(36\d{13})/)||t.match(/(?:Env[ií]o|Seguimiento|Tracking)[^\d]{0,24}(\d{15})/i);
+  const internoMatch=t.match(/N[°ºo]?\s*[°º]?\s*Interno\s*:?\s*#?\s*(\d{3,8})(?!\d)/i)||t.match(/Interno[^\d\n\r]{0,20}(\d{3,8})(?!\d)/i);
+  const destMatch=t.match(/Destinatario\s*:\s*([^\n\r]{2,60})/i);
+  return { tracking:trackingMatch?trackingMatch[1].trim():null, pedidoNum:internoMatch?internoMatch[1].trim():null, destinatario:destMatch?ghNombreRotulo(destMatch[1]):"" };
+}
+function ghOrdenPorNombre(nombre,pool,pageText,usados,tokPages){
+  const tokN=ghNomTokens(ghNombreRotulo(nombre));
+  const tokPage=new Set(ghNrmSuc(pageText||"").split(" "));
+  const porNum=new Map(); pool.forEach(o=>{ if(o.numero&&!porNum.has(o.numero)) porNum.set(o.numero,o); });
+  let best=[],bestScore=0;
+  for(const o of porNum.values()){
+    const nombres=[...new Set([o.nombreEnvio,o.comprador].filter(Boolean))];
+    let score=0;
+    for(const nm of nombres){
+      const tokO=ghNomTokens(nm); if(!tokO.length) continue;
+      if(tokN.length){
+        const setN=new Set(tokN);
+        const inter=tokO.filter(t=>setN.has(t)).length;
+        if(inter===tokO.length&&inter===tokN.length) score=Math.max(score,4);            // mismo nombre, cualquier orden
+        else if(inter>=2&&(inter===tokO.length||inter===tokN.length)) score=Math.max(score,3); // uno contiene al otro
+        else if(inter===1&&(tokO.length===1||tokN.length===1)&&tokO.find(t=>setN.has(t)).length>=6) score=Math.max(score,3);
+      }
+      // Fallback: el nombre completo del pedido está en el texto de la página
+      // (y no en todas las páginas: eso es el remitente).
+      if(score<3&&tokO.length>=2&&tokO.every(t=>tokPage.has(t))){
+        const enTodas=tokPages.length>=2&&tokPages.every(tp=>tokO.every(t=>tp.has(t)));
+        if(!enTodas) score=Math.max(score,2);
+      }
+    }
+    if(score>bestScore){ bestScore=score; best=[o]; } else if(score&&score===bestScore) best.push(o);
+  }
+  if(!bestScore) return null;
+  const masNuevo=(a,b)=>(Number(b.numero)||0)-(Number(a.numero)||0);
+  const libres=best.filter(o=>!usados.has(o.numero)).sort(masNuevo);
+  const elegido=libres[0]||best.sort(masNuevo)[0];
+  return {order:elegido,empate:best.length>1};
+}
+
 function buildOrdersFromAPI(data) {
   if(!Array.isArray(data)) return [];
   return data.map(o=>{
@@ -12654,38 +12697,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // se busca en TODO el texto de la página. Un nombre que aparece en todas
   // las páginas es el remitente y se ignora. Cliente con varios pedidos:
   // se reparte un pedido distinto por página, del más nuevo al más viejo.
-  function ordenPorNombre(nombre,pool,pageText,usados,tokPages){
-    const tokN=ghNomTokens(ghNombreRotulo(nombre));
-    const tokPage=new Set(ghNrmSuc(pageText||"").split(" "));
-    const porNum=new Map(); pool.forEach(o=>{ if(o.numero&&!porNum.has(o.numero)) porNum.set(o.numero,o); });
-    let best=[],bestScore=0;
-    for(const o of porNum.values()){
-      const nombres=[...new Set([o.nombreEnvio,o.comprador].filter(Boolean))];
-      let score=0;
-      for(const nm of nombres){
-        const tokO=ghNomTokens(nm); if(!tokO.length) continue;
-        if(tokN.length){
-          const setN=new Set(tokN);
-          const inter=tokO.filter(t=>setN.has(t)).length;
-          if(inter===tokO.length&&inter===tokN.length) score=Math.max(score,4);            // mismo nombre, cualquier orden
-          else if(inter>=2&&(inter===tokO.length||inter===tokN.length)) score=Math.max(score,3); // uno contiene al otro
-          else if(inter===1&&(tokO.length===1||tokN.length===1)&&tokO.find(t=>setN.has(t)).length>=6) score=Math.max(score,3);
-        }
-        // Fallback: el nombre completo del pedido está en el texto de la página
-        // (y no en todas las páginas: eso es el remitente).
-        if(score<3&&tokO.length>=2&&tokO.every(t=>tokPage.has(t))){
-          const enTodas=tokPages.length>=2&&tokPages.every(tp=>tokO.every(t=>tp.has(t)));
-          if(!enTodas) score=Math.max(score,2);
-        }
-      }
-      if(score>bestScore){ bestScore=score; best=[o]; } else if(score&&score===bestScore) best.push(o);
-    }
-    if(!bestScore) return null;
-    const masNuevo=(a,b)=>(Number(b.numero)||0)-(Number(a.numero)||0);
-    const libres=best.filter(o=>!usados.has(o.numero)).sort(masNuevo);
-    const elegido=libres[0]||best.sort(masNuevo)[0];
-    return {order:elegido,empate:best.length>1};
-  }
+  const ordenPorNombre=ghOrdenPorNombre;
   // El usuario escribe el número de pedido de una página que no se pudo
   // identificar sola (sin N° Interno o pedido no encontrado).
   async function asignarPedidoSku(pagina,numeroRaw){
@@ -12843,18 +12855,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // portal de Andreani muchas veces no lo traen. Esas páginas se matchean
       // por el nombre del destinatario o el usuario escribe el pedido en la tabla.
       const pageData=pages.map((pageText,i)=>{
-        const trackingMatch=pageText.match(/(36\d{13})/)||pageText.match(/(?:Env[ií]o|Seguimiento|Tracking)[^\d]{0,24}(\d{15})/i);
-        const internoMatch=pageText.match(/N[°ºo]?\s*[°º]?\s*Interno\s*:?\s*#?\s*(\d{3,8})(?!\d)/i)||pageText.match(/Interno[^\d\n\r]{0,20}(\d{3,8})(?!\d)/i);
-        const destMatch=pageText.match(/Destinatario\s*:\s*([^\n\r]{2,60})/i);
-        if(!trackingMatch) return null;
-        return {
-          pagina:i+1,
-          tracking:trackingMatch[1].trim(),
-          pedidoNum:internoMatch?internoMatch[1].trim():null,
-          destinatario:destMatch?ghNombreRotulo(destMatch[1]):"",
-          sinInterno:!internoMatch,
-          texto:pageText,
-        };
+        const d=ghRotuloDatos(pageText);
+        if(!d.tracking) return null;
+        return { pagina:i+1, ...d, sinInterno:!d.pedidoNum, texto:pageText };
       });
       const descartadas=pageData.map((p,i)=>p?null:i+1).filter(Boolean);
       const pageOk=pageData.filter(Boolean);
@@ -21687,28 +21690,53 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const espNrm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
   const espHitsDe=q=>{ const toks=espNrm(q).split(/\s+/).filter(Boolean); return (catalogo||[]).filter(o=>{ const n=espNrm(o.l+" "+o.v); return toks.every(t=>n.includes(t)); }).slice(0,8); };
   const espVal=espItems.filter(x=>String(x.sku).trim()).map(x=>({sku:String(x.sku).trim(),cant:Math.max(1,Math.round(Number(x.cant)||1))}));
-  // Traer los productos de un pedido de la tienda por su número (28/oct/2026): se suman como renglones
-  // (después se pueden agregar más) y el pedido queda anotado en las instrucciones.
-  const [espPed,setEspPed]=useState(""); const [espPeds,setEspPeds]=useState([]); const [espBusc,setEspBusc]=useState(false);
+  // Productos del pedido desde la ETIQUETA (28/oct/2026, igual que "SKU en rótulos"): al subir la etiqueta de
+  // Andreani se lee el N° de pedido (o el destinatario) de cada página, se busca el pedido en la tienda y sus SKU
+  // entran solos como renglones de Productos; después se pueden sumar más. Si no se reconoce, se escribe el número.
+  const [espPed,setEspPed]=useState(""); const [espPeds,setEspPeds]=useState([]); const [espBusc,setEspBusc]=useState(false); const [espLeido,setEspLeido]=useState(null); // {ok,n,sin}
+  const bulkRef=React.useRef(null);
+  async function pedidosTienda(){
+    if(bulkRef.current) return bulkRef.current;
+    const ds=await Promise.all([1,2,3,4].map(async pg=>{ try{ const r=await authFetch(`/api/orders?uid=${tiendaUid}&tab=bulk_lookup&page=${pg}`); const d=r.ok?await r.json():[]; return Array.isArray(d)?d:[]; }catch(_){ return []; } }));
+    bulkRef.current=buildOrdersFromAPI(ds.flat()); return bulkRef.current;
+  }
+  async function pedidoPorNumero(num){
+    let o=(await pedidosTienda()).find(x=>x.numero===num); if(o) return o;
+    try{ const r=await authFetch(`/api/orders?uid=${tiendaUid}&q=${encodeURIComponent(num)}`); const d=r.ok?await r.json():[]; o=buildOrdersFromAPI(Array.isArray(d)?d:[]).find(x=>x.numero===num); }catch(_){ }
+    return o||null;
+  }
+  // Suma los productos de un pedido (ya encontrado) a los renglones. Devuelve cuántos sumó.
+  function sumarPedido(o){
+    if(!o||espPeds.some(p=>p.num===o.numero)) return 0;
+    const lin=[...(o.productos||[]).map(p=>({sku:String(p.sku||p.nombre||"").trim(),cant:Math.max(1,Math.round(Number(p.cantidad)||1))})),
+      ...(o.notaDepo||[]).map(x=>{ const m=String(x).match(/^(\d+)\s*x\s+(.+)$/i); return m?{sku:m[2].trim(),cant:Number(m[1])}:{sku:String(x).trim(),cant:1}; })].filter(p=>p.sku);
+    const t0=Date.now()+Math.floor(Math.random()*1000);
+    setEspItems(l=>[...l.filter(x=>String(x.sku).trim()),...lin.map((p,i)=>({k:t0+i,sku:p.sku,cant:p.cant,q:""}))]);
+    const comp=o.nombreEnvio||o.comprador||"";
+    setEspPeds(l=>l.some(p=>p.num===o.numero)?l:[...l,{num:o.numero,comp}]);
+    setEsp(s=>s.titulo?s:{...s,titulo:`Pedido #${o.numero}${comp?` · ${comp}`:""}`});
+    return lin.length;
+  }
+  async function leerEtiqueta(bytes){
+    if(!tiendaUid) return; setEspBusc(true); setEspLeido(null);
+    try{
+      const pags=await ghDepLineasPaginas(bytes); const datos=pags.map(ghRotuloDatos).filter(d=>d.tracking||d.pedidoNum||d.destinatario);
+      let n=0, sin=0; const usados=new Set(); const tokPages=pags.map(t=>new Set(ghNrmSuc(t).split(" ")));
+      for(let i=0;i<pags.length;i++){ const d=ghRotuloDatos(pags[i]); if(!d.tracking&&!d.pedidoNum&&!d.destinatario) continue;
+        let o=d.pedidoNum?await pedidoPorNumero(d.pedidoNum):null;
+        if(!o){ const m=ghOrdenPorNombre(d.destinatario,await pedidosTienda(),pags[i],usados,tokPages); if(m&&!m.empate) o=m.order; }
+        if(o){ if(!usados.has(o.numero)){ usados.add(o.numero); if(sumarPedido(o)) n++; } } else sin++; }
+      setEspLeido({ok:n>0,n,sin:datos.length?sin:pags.length});
+    }catch(e){ console.error("leer etiqueta (especial):",e); setEspLeido({ok:false,n:0,sin:1}); }
+    finally{ setEspBusc(false); }
+  }
   async function traerPedido(){
     const num=String(espPed||"").replace(/[^0-9]/g,""); if(!num){ toast("Escribí el número de pedido","warning"); return; }
     if(espPeds.some(p=>p.num===num)){ toast(`El pedido #${num} ya está agregado`,"info"); return; }
     setEspBusc(true);
-    try{
-      const r=await authFetch(`/api/orders?uid=${tiendaUid}&q=${encodeURIComponent(num)}`); const data=r.ok?await r.json():[];
-      const lista=Array.isArray(data)?data:[]; const numDe=o=>String(o.number??o.order_number??o.name??"").replace(/[^0-9]/g,"");
-      const o=lista.find(x=>numDe(x)===num);
+    try{ const o=await pedidoPorNumero(num);
       if(!o){ toast(`No encontramos el pedido #${num} en tu tienda. Fijate que sea el número del pedido, no el de seguimiento.`,"warning",7000); return; }
-      const prods=(o.products||[]).map(p=>({sku:String(p.sku||p.name||"").trim(),cant:Math.max(1,Math.round(Number(p.quantity)||1))})).filter(p=>p.sku);
-      const extra=ghNotaDepo(o.owner_note).map(x=>{ const m=String(x).match(/^(\d+)\s*x\s+(.+)$/i); return m?{sku:m[2].trim(),cant:Number(m[1])}:{sku:String(x).trim(),cant:1}; });
-      const nuevos=[...prods,...extra];
-      if(!nuevos.length){ toast(`El pedido #${num} no tiene productos con SKU`,"warning"); return; }
-      const t0=Date.now();
-      setEspItems(l=>[...l.filter(x=>String(x.sku).trim()),...nuevos.map((p,i)=>({k:t0+i,sku:p.sku,cant:p.cant,q:""}))]);
-      const comp=[o.customer?.name,o.shipping_address?.name].find(Boolean)||"";
-      setEspPeds(l=>[...l,{num,comp}]); setEspPed("");
-      setEsp(s=>s.titulo?s:{...s,titulo:`Pedido #${num}${comp?` · ${comp}`:""}`});
-      toast(`Pedido #${num}: ${nuevos.length} producto${nuevos.length!==1?"s":""} agregado${nuevos.length!==1?"s":""}`,"success");
+      const k=sumarPedido(o); setEspPed(""); toast(k?`Pedido #${num}: ${k} producto${k!==1?"s":""} agregado${k!==1?"s":""}`:`El pedido #${num} no tiene productos con SKU`,k?"success":"warning");
     }catch(e){ toast("No se pudo buscar el pedido: "+(e.message||"error de conexión"),"error"); }
     finally{ setEspBusc(false); }
   }
@@ -21737,7 +21765,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     try{ const bytes=await leer(f); let pages=0, resumen=0; let resumenIdx=[]; try{ const c=await ghDepContarEtiquetas(bytes); pages=c.pages; resumen=c.resumen; resumenIdx=c.resumenIdx; }catch(_){}
       // Mercado Libre: los productos de cada paquete vienen impresos en la etiqueta → se leen para el picking del depósito.
       let mlPeds=[]; if(!resumen){ try{ mlPeds=ghDepMlPedidos(await ghDepLineasPaginas(bytes)); if(!mlPeds.length) mlPeds=ghDepMlPedidos(await ghDepTextoPaginas(bytes,"\n")); }catch(_){ } }
-      setPdf({bytes,nombre:f.name,pages,resumen,resumenIdx,mlPeds}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); } }catch(e){ toast(e.message,"error"); }
+      setPdf({bytes,nombre:f.name,pages,resumen,resumenIdx,mlPeds}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); }
+      if(tipo==="especial"&&tiendaUid) leerEtiqueta(bytes); }catch(e){ toast(e.message,"error"); }
   }
   async function enviar(){
     if(prog) return;
@@ -21811,12 +21840,16 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         {tipo==="especial"&&(<>
           <div>{lbl("Qué es")}<input style={iS} placeholder="Ej.: Pedido mayorista Óptica Sur" value={esp.titulo} onChange={e=>setEsp(s=>({...s,titulo:e.target.value}))}/></div>
-          {tiendaUid&&(<div>{lbl("Traer los productos de un pedido (opcional)")}
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <input style={{...iS,marginBottom:0,flex:1,minWidth:0}} inputMode="numeric" placeholder="Número de pedido de tu tienda, ej.: 7406" value={espPed} onChange={e=>setEspPed(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); traerPedido(); } }}/>
-              <DepBtn T={T} ico="search" disabled={espBusc||!espPed.trim()} onClick={traerPedido}>{espBusc?"Buscando…":"Traer productos"}</DepBtn>
-            </div>
+          {tiendaUid&&(<div>
+            {espBusc?<div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.base,color:T.textMd}}><Spinner size={14} color={T.accent}/>Buscando los productos del pedido…</div>
+              :espLeido?.ok?<div style={{fontSize:DS.font.base,color:T.green,fontWeight:600}}>Productos traídos de la etiqueta{espLeido.sin?<span style={{color:T.yellow}}> · {espLeido.sin} etiqueta{espLeido.sin!==1?"s":""} sin reconocer</span>:null}</div>
+              :espLeido?<div style={{fontSize:DS.font.base,color:T.yellow,fontWeight:600}}>No reconocimos el pedido en la etiqueta. Escribí el número y lo traemos.</div>
+              :!pdf?<div style={{fontSize:DS.font.md,color:T.textSm}}>Subí la etiqueta de Andreani y traemos solos los productos del pedido.</div>:null}
             {espPeds.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{espPeds.map(p=>(<span key={p.num} style={{display:"inline-flex",alignItems:"center",gap:6,height:28,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,fontSize:DS.font.md,color:T.text,fontWeight:600}}>#{p.num}{p.comp&&<span style={{color:T.textMd,fontWeight:500}}>{p.comp}</span>}<button title="Sacar el pedido de las instrucciones (los productos quedan)" onClick={()=>setEspPeds(l=>l.filter(y=>y.num!==p.num))} style={{width:22,height:22,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button></span>))}</div>}
+            {pdf&&!espBusc&&<div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
+              <input style={{...iS,marginBottom:0,flex:1,minWidth:0}} inputMode="numeric" placeholder={espPeds.length?"Sumar otro pedido por número":"Número de pedido de tu tienda"} value={espPed} onChange={e=>setEspPed(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); traerPedido(); } }}/>
+              <DepBtn T={T} ico="search" disabled={!espPed.trim()} onClick={traerPedido}>Traer productos</DepBtn>
+            </div>}
           </div>)}
           <div>{lbl("Productos")}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
