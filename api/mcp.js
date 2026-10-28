@@ -41,6 +41,7 @@ import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
+import { normalizarReglas, tablaReglas } from "./_escala.js";
 import { porHora as impPorHora, metricasDigitales, utmAtribucion, leerIndiceUtm, construirIndiceUtm, fxPorUsd, zonaDe, utcDeLocal } from "./impultienda.js";
 
 const ORIGINS = ["https://www.growithapp.com", "https://soluna-gestion.vercel.app"];
@@ -939,6 +940,12 @@ const TOOLS = [
   tool("meta_administrador", "Administrador de Meta Ads con ventas reales",
     "Todas las campañas de Meta de las cuentas publicitarias del cliente (las elegidas en Growith), agrupadas por tienda, como el Administrador de anuncios pero con ventas REALES: ventas, revenue (USD), ROAS, CPA y AOV salen de las ventas de Impultienda cruzadas por UTM; gasto, CPC, CTR, CPM, frecuencia, pagos iniciados, retención 3 s y tiempo promedio de video salen de Meta. Cada fila trae id (para meta_accion), estado, presupuesto diario y la cuenta. 'puede_editar' dice si se pueden aplicar cambios con meta_accion. nivel: campaign (default), adset o ad; con campana_id se ven solo los conjuntos/anuncios de esa campaña. desde/hasta AAAA-MM-DD (por defecto hoy, hora Argentina). Con ventana=hoy_local da lo que va del día desde las 00:00 de la hora local del país de cada campaña (gasto y ventas), y con ventana=ultimas_horas las últimas N horas (por ejemplo 2). Todo se lee en vivo en cada llamada (ventas por webhook en segundos; gasto de Meta con su atraso de 15 a 60 min, el gasto que Meta todavía no repartió por hora se suma a la fila); 'datos' dice cuándo se leyó y la última hora con gasto de cada cuenta. Las filas de conjuntos traen estrategia_puja y puja. Se puede llamar cada 1 minuto.",
     { type: "object", properties: { nivel: { type: "string", enum: ["campaign", "adset", "ad"], description: "Nivel (default campaign)." }, campana_id: { type: "string", description: "Opcional: id de campaña para ver sus conjuntos o anuncios." }, ventana: { type: "string", enum: ["rango", "hoy_local", "ultimas_horas"], description: "rango (default, usa desde/hasta en hora Argentina), hoy_local (en lo que va del día desde las 00:00 de la hora local del país de cada campaña) o ultimas_horas (las últimas 'horas' horas hasta ahora)." }, horas: { type: "number", description: "Para ventana=ultimas_horas: 1 a 48 (default 2)." }, desde: { type: "string", description: "AAAA-MM-DD" }, hasta: { type: "string", description: "AAAA-MM-DD" } }, additionalProperties: false }),
+  tool("escala_reglas", "Reglas de escala automática de Meta",
+    "Las reglas de escala automática que el cliente guardó en Growith (Meta → Reglas de escala) TAL COMO GROWITH LAS INTERPRETÓ: tabla condición → acción → nivel → horario, la config exacta que aplica el motor, si están activas o en simulación y el texto original. Growith las corre solo cada 15 min (:00 :15 :30 :45 en la hora local del país de cada campaña).",
+    SIN_ARGS),
+  tool("escala_registro", "Vueltas y cambios de la escala automática",
+    "Para verificar que la escala automática corre: cada vuelta de 15 min (ok, saltada con motivo, o con errores: una vuelta con errores no toca nada), los cambios aplicados o simulados (hora, cuenta, campaña o conjunto, qué cambió, cuánto, qué regla y con qué números) y el resumen del día (21:30 hora Argentina). 'faltantes' lista los cuartos de hora sin vuelta registrada en la ventana pedida. horas: 1 a 72 (default 6).",
+    { type: "object", properties: { horas: { type: "number", description: "Ventana hacia atrás en horas (1 a 72, default 6)." } }, additionalProperties: false }),
   tool("meta_accion", "Pausar, activar o cambiar presupuesto en Meta",
     "Aplica un cambio REAL en Meta Ads: pausar o activar una campaña, conjunto o anuncio, cambiar el presupuesto diario de una campaña (CBO) o conjunto (ABO), o cambiar la puja / cost cap de un conjunto (accion=puja, también entre 1/5 y 5 veces la actual). Solo funciona si la cuenta tiene un token con ads_management (meta_administrador → puede_editar). El presupuesto va en la moneda de la cuenta y por llamada puede ir de 1/5 a 5 veces el actual. Cada cambio queda registrado en Growith con el motivo. Usala solo cuando el usuario te pidió administrar sus campañas, y decí siempre qué cambiaste y por qué.",
     { type: "object", properties: { accion: { type: "string", enum: ["pausar", "activar", "presupuesto", "puja"] }, id: { type: "string", description: "id de la campaña, conjunto o anuncio (de meta_administrador)." }, presupuesto_diario: { type: "number", description: "Solo para accion=presupuesto: nuevo presupuesto diario en la moneda de la cuenta." }, puja: { type: "number", description: "Solo para accion=puja (id de un conjunto): nueva puja o costo objetivo en la moneda de la cuenta." }, estrategia: { type: "string", enum: ["COST_CAP", "LOWEST_COST_WITH_BID_CAP"], description: "Solo para accion=puja si el conjunto todavía no tiene puja: tipo de tope a poner." }, motivo: { type: "string", description: "Por qué se hace el cambio (queda en el registro)." } }, required: ["accion", "id", "motivo"], additionalProperties: false },
@@ -1151,6 +1158,28 @@ async function runTool(db, uid, name, args, origin, grantId) {
     };
   }
   if (name === "meta_administrador") return { fecha_hora_actual: fecha, ...(await metaAdministrador(db, uid, args)) };
+  if (name === "escala_reglas") {
+    const c = (await db.collection("users").doc(uid).collection("meta_escala").doc("cfg").get()).data();
+    if (!c?.reglas) return { fecha_hora_actual: fecha, configuradas: false, aviso: "El cliente no guardó reglas de escala (Meta → Reglas de escala en Growith)." };
+    const R = normalizarReglas(c.reglas);
+    return { fecha_hora_actual: fecha, configuradas: true, activas: !!c.activo, simulacion: !!c.simular, guardadas: c.actualizado, tabla: tablaReglas(R), config_aplicada: R, texto_original: c.prompt };
+  }
+  if (name === "escala_registro") {
+    const horas = Math.min(72, Math.max(1, parseInt(args.horas) || 6));
+    const desde = new Date(Date.now() - horas * 3600000).toISOString();
+    const u = db.collection("users").doc(uid);
+    const [vs, log, cfg] = await Promise.all([
+      u.collection("meta_escala_vueltas").where("ts", ">=", desde).get(),
+      u.collection("meta_escala_log").where("ts", ">=", desde).get(),
+      u.collection("meta_escala").doc("cfg").get(),
+    ]);
+    const vueltas = vs.docs.map(d => d.data()).sort((a, b) => b.ts.localeCompare(a.ts));
+    const hechas = new Set(vueltas.map(v => v.ts.slice(0, 16)));
+    const faltantes = [];
+    if (cfg.data()?.activo) for (let t = Math.ceil(Date.parse(desde) / 900000) * 900000; t < Date.now() - 5 * 60000; t += 900000) { const k = new Date(t).toISOString().slice(0, 16); if (!hechas.has(k)) faltantes.push(k + "Z"); }
+    const resumen = (await u.collection("meta_escala_resumen").doc(hoyAR()).get()).data() || null;
+    return { fecha_hora_actual: fecha, activas: !!cfg.data()?.activo, simulacion: !!cfg.data()?.simular, horas, vueltas: vueltas.slice(0, 300), faltantes, cambios: log.docs.map(d => d.data()).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 500), resumen_hoy: resumen };
+  }
   if (name === "meta_accion") return { fecha_hora_actual: fecha, ...(await metaAccion(db, uid, args, grantId)) };
   if (name === "campanas_publicidad") {
     const { since, until } = rangoDe(args, "ultimos_7_dias");

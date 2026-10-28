@@ -16,7 +16,7 @@
       "maxDuration": 90
     },
     "api/meta.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/copilot.js": {
       "maxDuration": 60
@@ -159,6 +159,10 @@
     {
       "path": "/api/inventory?action=cron_sync_ventas",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/meta?action=escala_cron",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

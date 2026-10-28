@@ -15,6 +15,7 @@ import { getValidDriveToken } from "./google-drive-callback.js";
 import { esDemo } from "./_demo.js";
 import { esTiendaDemo, metaDemo } from "./_demo_ads.js";
 import { utcDeLocal, zonaDe, tzValida } from "./impultienda.js";
+import { correrEscala, cronEscala, interpretarReglas, normalizarReglas, tablaReglas, resumenDiario, hoyEn } from "./_escala.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1102,6 +1103,13 @@ export default async function handler(req, res) {
 
   const db = initAdmin();
 
+  // ── CRON: reglas de escala automática, cada 15 min (api/_escala.js) ──
+  if (action === "escala_cron" && req.method === "GET") {
+    if (!guardCron(req, res)) return;
+    try { return res.json(await cronEscala(db)); }
+    catch (e) { console.error("[escala_cron]", e.message); return res.status(500).json({ error: e.message }); }
+  }
+
   // ── CRON: reglas + mantenimiento de tokens para TODOS los users ──
   // Lo dispara Vercel Cron (Bearer CRON_SECRET) sin uid.
   if (action === "cron_run_all" && req.method === "GET") {
@@ -1225,6 +1233,55 @@ export default async function handler(req, res) {
   }
 
   try {
+
+    // ── REGLAS DE ESCALA AUTOMÁTICA (api/_escala.js) ──
+    if (action && action.startsWith("escala_")) {
+      const uRef = db.collection("users").doc(uid);
+      const cfgRef = uRef.collection("meta_escala").doc("cfg");
+      const indice = (on) => db.collection("system").doc("meta_escala").set({ uids: { [uid]: !!on } }, { merge: true });
+      if (action === "escala_get" && req.method === "GET") {
+        const cfg = (await cfgRef.get()).data() || null;
+        const [vs, log] = await Promise.all([
+          uRef.collection("meta_escala_vueltas").orderBy("ts", "desc").limit(40).get(),
+          uRef.collection("meta_escala_log").orderBy("ts", "desc").limit(200).get(),
+        ]);
+        const resumen = (await uRef.collection("meta_escala_resumen").doc(hoyEn("America/Argentina/Buenos_Aires")).get()).data() || null;
+        return res.json({ cfg, tabla: cfg?.reglas ? tablaReglas(normalizarReglas(cfg.reglas)) : [], vueltas: vs.docs.map(d => d.data()), log: log.docs.map(d => ({ id: d.id, ...d.data() })), resumen });
+      }
+      if (action === "escala_interpretar" && req.method === "POST") {
+        const prompt = String(req.body?.prompt || "").trim();
+        if (prompt.length < 10) return res.status(400).json({ error: "Escribí tus reglas." });
+        const reglas = await interpretarReglas(prompt);
+        return res.json({ reglas, tabla: tablaReglas(normalizarReglas(reglas)), no_entendido: reglas.no_entendido || [] });
+      }
+      if (action === "escala_guardar" && req.method === "POST") {
+        const { prompt, reglas, activo = true, simular = false } = req.body || {};
+        if (!reglas || typeof reglas !== "object") return res.status(400).json({ error: "Faltan las reglas interpretadas." });
+        normalizarReglas(reglas);
+        const cfg = { prompt: String(prompt || "").slice(0, 12000), reglas, activo: !!activo, simular: !!simular, actualizado: new Date().toISOString() };
+        await cfgRef.set(cfg);
+        await indice(cfg.activo);
+        return res.json({ ok: true, cfg, tabla: tablaReglas(normalizarReglas(reglas)) });
+      }
+      if (action === "escala_estado" && req.method === "POST") {
+        const b = req.body || {};
+        const patch = {};
+        if (typeof b.activo === "boolean") patch.activo = b.activo;
+        if (typeof b.simular === "boolean") patch.simular = b.simular;
+        await cfgRef.set({ ...patch, actualizado: new Date().toISOString() }, { merge: true });
+        const cfg = (await cfgRef.get()).data() || {};
+        await indice(cfg.activo && cfg.reglas);
+        return res.json({ ok: true, cfg });
+      }
+      if (action === "escala_probar" && req.method === "POST") {
+        // Corre una vuelta YA en simulación y sin guardar nada: muestra qué haría ahora.
+        const cfg = (await cfgRef.get()).data();
+        if (!cfg?.reglas) return res.status(400).json({ error: "Guardá las reglas primero." });
+        return res.json(await correrEscala(db, uid, { forzar: true, prueba: true }));
+      }
+      if (action === "escala_resumen" && req.method === "POST") return res.json(await resumenDiario(db, uid, hoyEn("America/Argentina/Buenos_Aires")));
+      return res.status(400).json({ error: "Acción de escala desconocida" });
+    }
 
     // ── PUBLICADOR CONVERSACIONAL (IA) ───────────────────
     // publisher_plan: charla con el usuario y arma el plan del anuncio (Gemini).

@@ -99,7 +99,7 @@ export async function fxPorUsd() {
 }
 // Monedas que se pueden elegir en el Dashboard (cotización por 1 USD).
 const MONEDAS_VISTA = ["USD","ARS","EUR","GBP","RON","MDL","PLN","TRY","ZAR","BRL","MXN","CLP","COP","UYU","PEN","PYG","BOB","CAD","AUD","CHF","JPY","CNY","INR","HUF","CZK","SEK","NOK","DKK","AED","ILS"];
-const aUsd = (monto, cur, fx) => { const c = String(cur || "USD").toUpperCase(); if (c === "USD") return monto; const r = fx?.[c]; return r ? monto / r : null; };
+export const aUsd = (monto, cur, fx) => { const c = String(cur || "USD").toUpperCase(); if (c === "USD") return monto; const r = fx?.[c]; return r ? monto / r : null; };
 
 // ── Webhook ──
 async function webhook(req, res, db) {
@@ -453,7 +453,7 @@ export function atribuirUtm(utm, idx) {
 // principal; el post-compra suma facturación a la campaña de su orden original.
 // Tiendas de Impultienda (manuales + las que aparecen en las ventas) con su país.
 // Ojo: normaliza o.store_id de las ventas a la tienda manual con el mismo nombre.
-function armarTiendas(cfg, ordenes) {
+export function armarTiendas(cfg, ordenes) {
   const paises = cfg.paises || {};
   const tiendasMap = {};
   for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendasMap[id] = { id, nombre: t.nombre || id, pais: paises[id] || t.pais || null, votos: {} };
