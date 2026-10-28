@@ -308,7 +308,7 @@ function tandaPublica(id, t, { paraCliente = false } = {}) {
     estado: t.estado, nota: t.nota || "", notaDeposito: t.notaDeposito || "", fueraDeCorte: !!t.fueraDeCorte,
     pago: { estado: t.pago?.estado || "sin_informar", comp: t.pago?.comp ? { nombre: t.pago.comp.nombre, mime: t.pago.comp.mime, chunks: t.pago.comp.chunks } : null, informadoAt: ms(t.pago?.informadoAt), verificadoAt: ms(t.pago?.verificadoAt), nota: t.pago?.nota || "" },
     pdf: t.pdf ? { chunks: t.pdf.chunks, pages: t.pdf.pages || 0, purgado: !!t.pdf.purgado } : null,
-    especial: t.especial ? { titulo: t.especial.titulo, instrucciones: t.especial.instrucciones, urgente: !!t.especial.urgente, bultos: t.especial.bultos || 1, adj: (t.especial.adj || []).map(a => ({ kind: a.kind, nombre: a.nombre, mime: a.mime, chunks: a.chunks })) } : null,
+    especial: t.especial ? { titulo: t.especial.titulo, instrucciones: t.especial.instrucciones, urgente: !!t.especial.urgente, canje: !!t.especial.canje, bultos: t.especial.bultos || 1, adj: (t.especial.adj || []).map(a => ({ kind: a.kind, nombre: a.nombre, mime: a.mime, chunks: a.chunks })) } : null,
     pedidos: (t.pedidos || []).map(p => ({ numero: p.numero, comprador: p.comprador, items: p.items || [], pags: p.pags || [], tracking: p.tracking || "", armado: p.armado ? { porNombre: paraCliente ? "depósito" : p.armado.porNombre, at: p.armado.at } : null, apartado: p.apartado ? { nota: p.apartado.nota, porNombre: p.apartado.porNombre, at: p.apartado.at } : null, cancelado: p.cancelado ? { porNombre: p.cancelado.porNombre, at: p.cancelado.at, nota: p.cancelado.nota || "" } : null })),
     hist: paraCliente ? (t.hist || []).map(h => ({ at: h.at, a: h.a })) : (t.hist || []),
     createdAt: ms(t.createdAt),
@@ -514,7 +514,7 @@ export default async function handler(req, res) {
           fechaDespacho: fecha, n, precioUnit: num(cli.precio), extraItems: extra.monto, extraDetalle: extra, ajuste: 0, total: 0,
           estado: "borrador", nota: txt(body.nota, 600), pedidos,
           pdf: null, pago: { estado: "sin_informar" },
-          especial: tipo === "especial" ? { titulo: txt(body.especial?.titulo, 120) || "Envío especial", instrucciones: txt(body.especial?.instrucciones, 2000), urgente: body.especial?.urgente === true, bultos: Math.max(1, Math.min(99, Math.round(num(body.especial?.bultos)) || 1)), adj: [] } : null,
+          especial: tipo === "especial" ? { titulo: txt(body.especial?.titulo, 120) || "Envío especial", instrucciones: txt(body.especial?.instrucciones, 2000), urgente: body.especial?.urgente === true, canje: body.especial?.canje === true, bultos: Math.max(1, Math.min(99, Math.round(num(body.especial?.bultos)) || 1)), adj: [] } : null,
           hist: [], createdAt: FieldValue.serverTimestamp(), createdBy: cx.por, createdByNombre: txt(cx.porNombre, 80), pagesDeclaradas: pages,
         };
         t.total = totalDe(t);

@@ -21678,7 +21678,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   // sus productos, así que NO se pide ni se imprime qué va en cada paquete (solo nota); eso es de Andreani.
   // `prefill.canalFijo` (botones por canal del cliente) quita además el selector "Lo retira".
   const esML=canal==="ml"&&!especial; const canalFijo=!!prefill?.canalFijo&&!especial; const lista=esML?"":listaTxt;
-  const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,bultos:1});
+  const [esp,setEsp]=useState({titulo:"",instrucciones:"",urgente:false,canje:false,bultos:1});
   // Envío especial: renglones de producto (cantidad + producto elegido del catálogo de la tienda). Se suman con "+".
   // Viajan dentro de las instrucciones ("Productos: 2x ROJ-NN …") y se imprimen en la etiqueta; no cambian lo que se cobra.
   const hayCat=(catalogo||[]).length>0;
@@ -21815,6 +21815,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
           <div>{lbl("Instrucciones para el depósito (opcional)")}<textarea style={{...iS,minHeight:74,resize:"vertical"}} placeholder="Cómo embalar, qué documentación va adentro…" value={esp.instrucciones} onChange={e=>setEsp(s=>({...s,instrucciones:e.target.value}))}/></div>
           <div style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
             <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setEsp(s=>({...s,urgente:!s.urgente}))}><DSToggle T={T} active={esp.urgente} onToggle={()=>{}}/><span>Urgente</span></label>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.md,color:T.text,cursor:"pointer"}} onClick={()=>setEsp(s=>({...s,canje:!s.canje}))}><DSToggle T={T} active={esp.canje} onToggle={()=>{}}/><span>Es un canje (regalo para un influencer)</span></label>
           </div>
         </>)}
         {/* PDF de etiquetas: es LO principal del formulario. Zona grande para elegir o arrastrar. */}
@@ -21989,12 +21990,15 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={c}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
     const items=[...new Set(peds.filter(p=>!p.cancelado).flatMap(p=>p.items||[]))];
-    return (<div key={t.id} style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${c}${pendiente?"1c":"12"} 0%, transparent 42%)`,border:`1px solid ${c}${open?"77":"33"}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
-      <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
+    const canje=esp&&!!t.especial?.canje;
+    return (<div key={t.id} style={{position:"relative",backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${c}${pendiente?"1c":"12"} 0%, transparent 42%)`,border:canje?`2px solid ${GH_DEP_CANJE}`:`1px solid ${c}${open?"77":"33"}`,borderRadius:DS.r["2xl"],overflow:"hidden",opacity:cancelada?0.6:1,transition:"border-color .15s"}}>
+      {canje&&<DepCinta/>}
+      <div onClick={()=>setAbierta(open?null:t.id)} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",paddingLeft:canje?40:18,cursor:"pointer",position:"relative"}}>
         <span style={{width:44,height:44,borderRadius:DS.r.xl,background:c+"1a",border:`1px solid ${c}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 200px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{esp?(t.especial?.titulo||"Envío especial"):(GH_DEP_CANAL[t.canal]||t.canal)}</span>
+            {canje&&<DSBadge T={T} color={GH_DEP_CANJE} size="sm">Canje</DSBadge>}
             {ap>0&&<DSBadge T={T} color={T.red} size="sm">{ap} apartado{ap!==1?"s":""}</DSBadge>}
             {canc>0&&<DSBadge T={T} color={T.textSm} size="sm">{canc} cancelado{canc!==1?"s":""}</DSBadge>}
             {t.fueraDeCorte&&pendiente&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
@@ -22222,7 +22226,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
   const [sonidoOk,setSonidoOk]=useState(false);
   const [notifPerm,setNotifPerm]=useState(()=>{ try{ return typeof Notification!=="undefined"?Notification.permission:"no"; }catch(_){ return "no"; } });
   const dispararAlerta=nuevas=>{
-    const texto=nuevas.length===1?`Tanda nueva de ${nuevas[0].clienteNombre||"un cliente"}${nuevas[0].tipo==="especial"?`: ${nuevas[0].especial?.titulo||"envío especial"}`:` · ${nuevas[0].n} pedido${nuevas[0].n!==1?"s":""}`}${nuevas[0].urgente?" · URGENTE":""}`:`${nuevas.length} tandas nuevas: ${[...new Set(nuevas.map(t=>t.clienteNombre))].join(", ")}`;
+    const texto=nuevas.length===1?`Tanda nueva de ${nuevas[0].clienteNombre||"un cliente"}${nuevas[0].tipo==="especial"?`: ${nuevas[0].especial?.canje?"CANJE · ":""}${nuevas[0].especial?.titulo||"envío especial"}`:` · ${nuevas[0].n} pedido${nuevas[0].n!==1?"s":""}`}${nuevas[0].urgente?" · URGENTE":""}`:`${nuevas.length} tandas nuevas: ${[...new Set(nuevas.map(t=>t.clienteNombre))].join(", ")}`;
     setAlerta(a=>({texto,n:(a?.n||0)+nuevas.length}));
     setSonidoOk(ghDepAlarma());
     try{ if(typeof Notification!=="undefined"&&Notification.permission==="granted"){ const nt=new Notification("Growith · Depósito",{body:texto,tag:"growith-deposito",renotify:true,requireInteraction:true,icon:"/logo-color.png"}); nt.onclick=()=>{ try{ window.focus(); }catch(_){} nt.close(); }; } }catch(_){}
@@ -22338,6 +22342,25 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
 // números alineados a la derecha y tabulares; tablas con borde fino, sin sombras.
 const ghDepCol=T=>({pendiente:T.textMd,impresa:T.accent,armada:T.yellow,entregada:T.green,cancelada:T.red});
 // Íconos de línea (24x24) del depósito.
+
+// Canje (envío especial marcado "Es un canje", 28/oct/2026): la tarjeta de la tanda va "envuelta para regalo":
+// cinta vertical a la izquierda + cinta a lo ancho arriba + moño en el cruce, para que se distinga al imprimir.
+const GH_DEP_CANJE="#e11d74";
+function DepCinta(){
+  const c=GH_DEP_CANJE, raya=`repeating-linear-gradient(45deg, ${c} 0 7px, #f0468f 7px 14px)`;
+  return (<>
+    <div style={{position:"absolute",left:14,top:0,bottom:0,width:12,background:raya,pointerEvents:"none"}}/>
+    <div style={{position:"absolute",left:0,right:0,top:12,height:6,background:raya,opacity:0.85,pointerEvents:"none"}}/>
+    <svg width="44" height="34" viewBox="0 0 44 34" style={{position:"absolute",left:-2,top:-2,pointerEvents:"none",filter:"drop-shadow(0 1px 1px rgba(0,0,0,.35))"}}>
+      <path d="M22 15 C12 2 2 4 4 12 C5 18 14 18 22 15Z" fill={c}/>
+      <path d="M22 15 C32 2 42 4 40 12 C39 18 30 18 22 15Z" fill={c}/>
+      <path d="M22 15 L13 31 L17 30 L19 33 Z" fill="#c0135f"/>
+      <path d="M22 15 L31 31 L27 30 L25 33 Z" fill="#c0135f"/>
+      <circle cx="22" cy="15" r="4.5" fill="#f0468f" stroke="#c0135f" strokeWidth="1.2"/>
+    </svg>
+  </>);
+}
+
 const GH_DEP_ICO={
   eye:"M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 100-6 3 3 0 000 6z",
   box:"M21 8l-9-5-9 5v8l9 5 9-5V8zM3.3 8.3L12 13l8.7-4.7M12 13v9",
@@ -22680,7 +22703,7 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
       // Siempre separado por CANAL: una carpeta por correo ("Andreani/", "Mercado_Libre/") y adentro
       // "01_Cliente_25-09_16etiquetas.pdf", numerados en el orden de la cola dentro de cada carpeta.
       const carpeta=t=>limpio(GH_DEP_CANAL[t.canal]||t.canal||"Otro"); const cuenta={}; const numDe=lista.map(t=>(cuenta[carpeta(t)]=(cuenta[carpeta(t)]||0)+1));
-      const nombre=(t,i)=>`${String(numDe[i]).padStart(2,"0")}_${limpio(t.clienteNombre)}_${ghDepFechaLinda(t.fechaDespacho).replace("/","-")}_${t.n}etiquetas.pdf`;
+      const nombre=(t,i)=>`${String(numDe[i]).padStart(2,"0")}_${t.especial?.canje?"CANJE_":""}${limpio(t.clienteNombre)}_${ghDepFechaLinda(t.fechaDespacho).replace("/","-")}_${t.n}etiquetas.pdf`;
       const bajar=(blob,archivo)=>{ const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=archivo; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000); };
       if(una) bajar(new Blob([bajados[0]],{type:"application/pdf"}),`${carpeta(lista[0])}_${nombre(lista[0],0)}`);
       else {
@@ -22785,13 +22808,16 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
       {t.notaDeposito&&<div style={{fontSize:DS.font.md,color:T.textMd,whiteSpace:"pre-wrap",lineHeight:1.5}}><span style={{color:T.blue,fontWeight:700}}>Tu nota al cliente: </span>{t.notaDeposito}</div>}</>;
     const logo=esp?<DepIco d="bag" size={20} color={T.purple}/>:t.canal==="andreani"?<img src="/brand/andreani-iso.png" alt="" style={{width:30,height:"auto",display:"block"}}/>:t.canal==="ml"?<BrandIcon name="ml" size={28}/>:<DepIco d={t.canal==="retiro"?"hand":"truck"} size={20} color={cCanal}/>;
     const chip=(txt,cc,fuerte)=>(<span style={{display:"inline-flex",alignItems:"center",gap:7,fontSize:DS.font.base,fontWeight:600,color:fuerte&&cc===T.red?T.red:T.text,whiteSpace:"nowrap"}}><span style={{width:8,height:8,borderRadius:99,background:cc,flexShrink:0}}/>{txt}</span>);
+    const canje=esp&&!!t.especial?.canje;
     return (
-    <div style={{backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"1c"} 0%, transparent 42%)`,border:`1px solid ${urg(t)||atras?T.red+"66":cCanal+(open?"77":"33")}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
-      <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",cursor:"pointer"}}>
+    <div style={{position:"relative",backgroundColor:T.card,backgroundImage:`linear-gradient(100deg, ${cCanal}${entregada?"12":"1c"} 0%, transparent 42%)`,border:canje?`2px solid ${GH_DEP_CANJE}`:`1px solid ${urg(t)||atras?T.red+"66":cCanal+(open?"77":"33")}`,borderRadius:DS.r["2xl"],overflow:"hidden",transition:"border-color .15s"}}>
+      {canje&&<DepCinta/>}
+      <div onClick={toggle} style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",padding:"14px 18px",paddingLeft:canje?40:18,cursor:"pointer",position:"relative"}}>
         <span style={{width:44,height:44,borderRadius:DS.r.xl,background:cCanal+"1a",border:`1px solid ${cCanal}3d`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{logo}</span>
         <div style={{flex:"1 1 220px",minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:DS.font.xl,fontWeight:800,color:T.text,letterSpacing:-0.2}}>{t.clienteNombre}</span>
+            {canje&&<DSBadge T={T} color={GH_DEP_CANJE} size="sm">Canje · regalo</DSBadge>}
             {urg(t)&&<DSBadge T={T} color={T.red} size="sm">Urgente</DSBadge>}
             {t.fueraDeCorte&&!entregada&&<DSBadge T={T} color={T.yellow} size="sm">Fuera de corte</DSBadge>}
             {t.revisarCantidad&&!entregada&&<span title={`El cliente declaró ${t.revisarCantidad.n} pedidos y el PDF tiene ${t.revisarCantidad.pages} páginas`}><DSBadge T={T} color={T.orange} size="sm">Revisar cantidad: PDF de {t.revisarCantidad.pages} pág.</DSBadge></span>}
