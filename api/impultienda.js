@@ -150,6 +150,9 @@ async function webhook(req, res, db) {
   // Venta nueva: se borran los reportes en caché para que el Dashboard la muestre al instante.
   try { const cs = await db.collection("users").doc(uid).collection("impultienda_cfg").get(); const bd = db.batch(); let k = 0;
     for (const x of cs.docs) if (x.id.startsWith("cache_")) { bd.delete(x.ref); k++; } if (k) await bd.commit(); } catch (_) {}
+  // Campaña / conjunto / anuncio nuevos (ids que el índice no conoce): se agregan ya, por id, para que
+  // la venta salga con nombre y cruce en todos lados sin esperar la reconstrucción.
+  try { await completarIndicePorIds(db, uid, orden.utm); } catch (_) {}
   // Pulso para el front: el Dashboard escucha este campo y recarga en el momento.
   await db.collection("users").doc(uid).set({ imp_pulso: Date.now() }, { merge: true }).catch(() => {});
   return res.status(200).json({ ok: true });
@@ -350,9 +353,13 @@ export function paisDeUtm(utm) {
   const m = /(?:^|[_\-\s|])([a-z]{2})$/i.exec(String(utm?.utm_campaign || "").trim());
   return m ? m[1].toUpperCase() : null;
 }
+const esIdMeta = (v) => /^\d{10,}$/.test(String(v || "").trim());
 export function campanaDeVenta(utm, campanas) {
   if (!utm) return null;
   if (utm.utm_id) { const c = campanas.find(c => c.id && String(c.id) === String(utm.utm_id)); if (c) return c.key; }
+  // Con un id de campaña en la UTM la venta es de ESA campaña (aunque su cuenta no esté elegida en Growith):
+  // jamás se adivina por país, que es lo que mandaba todas las ventas a una sola campaña.
+  if (esIdMeta(utm.utm_id)) return String(utm.utm_id).trim();
   if (utm.utm_campaign) {
     const u = norm(utm.utm_campaign);
     const c = campanas.find(c => norm(c.nombre) === u) || campanas.find(c => c.id && String(c.id) === String(utm.utm_campaign));
@@ -404,6 +411,24 @@ export async function construirIndiceUtm(db, uid, dias = 60, base = null) {
   await db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").set(idx);
   return idx;
 }
+// Suma al índice los ids de una UTM que no conoce, leyendo cada nodo de Meta por id (cualquier token sirve).
+export async function completarIndicePorIds(db, uid, utm) {
+  if (!utm) return;
+  const u = {}; for (const [k, v] of Object.entries(utm)) if (v != null) u[String(k).toLowerCase()] = String(v).trim();
+  const cId = ["utm_id", "campaign_id", "utm_campaign_id"].map(k => u[k]).find(esIdMeta), sId = ["utm_term", "adset_id", "utm_adset_id"].map(k => u[k]).find(esIdMeta), aId = ["utm_content", "ad_id", "utm_ad_id"].map(k => u[k]).find(esIdMeta);
+  if (!cId && !sId && !aId) return;
+  const ref = db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx");
+  const idx = (await ref.get()).data() || { c: {}, s: {}, a: {} };
+  if ((!cId || idx.c?.[cId] !== undefined) && (!sId || idx.s?.[sId]) && (!aId || idx.a?.[aId])) return;
+  const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
+  const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
+  const leer = async (id, fields) => { for (const tk of tokens) { try { const j = await (await fetch(`https://graph.facebook.com/v23.0/${id}?fields=${fields}&access_token=${encodeURIComponent(tk)}`, { signal: AbortSignal.timeout(8000) })).json(); if (!j.error) return j; } catch (_) {} } return null; };
+  const patch = {};
+  if (aId && !idx.a?.[aId]) { const j = await leer(aId, "name,adset_id,campaign_id"); if (j) { patch[`a.${aId}`] = [j.name || "", j.adset_id || null, j.campaign_id || null]; } }
+  if (sId && !idx.s?.[sId]) { const j = await leer(sId, "name,campaign_id"); if (j) patch[`s.${sId}`] = [j.name || "", j.campaign_id || null]; }
+  if (cId && idx.c?.[cId] === undefined) { const j = await leer(cId, "name"); if (j) patch[`c.${cId}`] = j.name || ""; }
+  if (Object.keys(patch).length) await ref.set({ c: {}, s: {}, a: {} }, { merge: true }).then(() => ref.update(patch)).catch(() => {});
+}
 export async function leerIndiceUtm(db, uid) {
   const d = await db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").get();
   return d.exists ? d.data() : null;
@@ -425,18 +450,23 @@ export function atribuirUtm(utm, idx) {
   };
   const buscar = (mapa, claves, campDe, camp) => {
     for (const k of claves) { const v = u[k]; if (!v) continue; if (mapa[v] !== undefined) return v; }
+    // Un id de Meta vale aunque el índice todavía no lo conozca (campaña recién creada o de una cuenta no elegida).
+    for (const k of claves) { const v = u[k]; if (esIdMeta(v)) return v; }
     for (const k of claves) { const v = u[k]; if (!v || /^\d{6,}$/.test(v)) continue; const id = porNombre(mapa, v, campDe, camp); if (id) return id; }
     return null;
   };
   let c = buscar(idx.c || {}, ["utm_id", "campaign_id", "utm_campaign_id", "utm_campaign"]);
   let a = buscar(idx.a || {}, ["ad_id", "utm_ad_id", "utm_content", "utm_ad"], (id) => idx.a[id]?.[2], c);
-  let s = a ? idx.a[a][1] : buscar(idx.s || {}, ["adset_id", "utm_adset_id", "utm_term", "utm_adset"], (id) => idx.s[id]?.[1], c);
-  if (!c && a) c = idx.a[a][2];
+  let s = a ? (idx.a[a]?.[1] || null) : buscar(idx.s || {}, ["adset_id", "utm_adset_id", "utm_term", "utm_adset"], (id) => idx.s[id]?.[1], c);
+  if (!s && a && !idx.a[a]) s = ["adset_id", "utm_adset_id", "utm_term", "utm_adset"].map(k => u[k]).find(esIdMeta) || null;
+  if (!c && a) c = idx.a[a]?.[2] || null;
   if (!c && s) c = idx.s[s]?.[1] || null;
+  // Con ids en la UTM nunca se adivina por país: si no cruzan, la venta queda sin campaña (y se ve).
+  const conIds = ["utm_id", "campaign_id", "utm_term", "adset_id", "utm_content", "ad_id"].some(k => esIdMeta(u[k]));
   // Último recurso, como antes: el código de país al final de utm_campaign contra UNA sola campaña con ese país.
   // Con UTM fija tipo "lumea_ro": entre las campañas de ese país, la que además tiene en el nombre
   // las otras palabras de la UTM ("lumea") — así "claude_ro" no se mezcla con "lumea_ro".
-  if (!c) {
+  if (!c && !conIds) {
     const pais = paisDeUtm(u);
     if (pais) {
       const conPais = Object.keys(idx.c || {}).filter(id => norm(idx.c[id]).split(" ").includes(pais.toLowerCase()));
@@ -444,7 +474,7 @@ export function atribuirUtm(utm, idx) {
       const conTodo = resto.length ? conPais.filter(id => { const ws = norm(idx.c[id]).split(" "); return resto.every(t => ws.some(w => w.startsWith(t))); }) : [];
       c = unico(conTodo) || unico(conPais);
       // Ya con la campaña, el anuncio por nombre dentro de ella ("v2", "img1"…).
-      if (c && !a) { a = buscar(idx.a || {}, ["ad_id", "utm_ad_id", "utm_content", "utm_ad"], (id) => idx.a[id]?.[2], c); if (a && idx.a[a][2] !== c) a = null; if (a) s = idx.a[a][1]; }
+      if (c && !a) { a = buscar(idx.a || {}, ["ad_id", "utm_ad_id", "utm_content", "utm_ad"], (id) => idx.a[id]?.[2], c); if (a && idx.a[a]?.[2] !== c) a = null; if (a) s = idx.a[a][1]; }
     }
   }
   if (!c && !s && !a) return null;
@@ -578,7 +608,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
     if (camp) { const key = cid || camp; const c = campanas[key] || (campanas[key] = { key, id: cid || null, nombre: camp, tienda: tid, gasto: 0 }); c.gasto += usd; }
   }
   for (const [ck, v] of Object.entries(ventasCamp)) {
-    const c = campanas[ck] || (campanas[ck] = { key: ck, id: null, nombre: ck === "SIN_CAMPANA" ? "Sin campaña (venta sin UTM que cruce)" : ck, tienda: null, gasto: 0 });
+    const c = campanas[ck] || (campanas[ck] = { key: ck, id: esIdMeta(ck) ? ck : null, nombre: ck === "SIN_CAMPANA" ? "Sin campaña (venta sin UTM que cruce)" : esIdMeta(ck) ? `${idxUtm?.c?.[ck] || `Campaña ${ck}`} (sin gasto leído: cuenta no elegida en Meta → Configuración)` : ck, tienda: null, gasto: 0 });
     c.ventas = v.ventas; c.n = v.n; c.comisiones = v.comisiones;
     c.anuncios = Object.values(v.anuncios).sort((a, b) => b.ventas - a.ventas);
   }
@@ -810,7 +840,8 @@ export default async function handler(req, res) {
       if (!cfgMain.secretEnc && !hayVentas) return res.json({ activo: false });
       // El índice se rehace solo cada 3 h (o con "Reprocesar 60 días").
       let idx = await leerIndiceUtm(db, uid);
-      if (!idx || Date.now() - (idx.ts || 0) > 3 * 3600000) idx = await construirIndiceUtm(db, uid, Math.max(60, idx?.dias || 0));
+      if (!idx || Date.now() - (idx.ts0 || idx.ts || 0) > 3 * 3600000) { idx = await construirIndiceUtm(db, uid, Math.max(60, idx?.dias || 0)); await db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").set({ ts0: idx.ts }, { merge: true }).catch(() => {}); }
+      else if (Date.now() - (idx.ts || 0) > 5 * 60000) idx = await construirIndiceUtm(db, uid, 2, idx);
       const out = await utmAtribucion(db, uid, desde, hasta, tz, idx);
       return res.json({ activo: true, moneda: "USD", desde, hasta, ...out, indice: { ts: idx.ts, dias: idx.dias, cuentas: idx.cuentas || 0, campanas: Object.keys(idx.c || {}).length, anuncios: Object.keys(idx.a || {}).length, errores: idx.errores || [] } });
     }
