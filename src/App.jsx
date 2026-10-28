@@ -10356,6 +10356,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [exportSingleOrder,setExportSingleOrder]=useState(null);
   const [exporting,setExporting]=useState(false);
   const [exportProgress,setExportProgress]=useState({step:"",pct:0,current:0,total:0});
+  // Último Excel generado (28/oct/2026): si Chrome tiene bloqueadas las descargas automáticas de la página
+  // (cartel "este sitio quiere descargar varios archivos" → Bloquear), el a.click() no baja nada aunque
+  // digamos "Descargado". Queda una tarjeta con un link real: un clic de la persona sí descarga siempre.
+  const [excelListo,setExcelListo]=useState(null); // {url, nombre, n}
   const [exportDone,setExportDone]=useState(null); // marcador del último export exitoso (refresca exportadoMap; el resultado se avisa por toast)
   const [exportCfg,setExportCfg]=useState(()=>{
     try {
@@ -11894,7 +11898,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const a=document.createElement('a');
       a.href=URL.createObjectURL(b);
       a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';
+      a.style.display="none"; document.body.appendChild(a);
       a.click();
+      setTimeout(()=>{ try{ a.remove(); }catch(_){} },1000);
+      setExcelListo(prev=>{ if(prev?.url&&prev.url!==a.href){ try{ URL.revokeObjectURL(prev.url); }catch(_){} } return {url:a.href,nombre:a.download,n:finalOrders.length}; });
       try{
         const hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]");
         hist.unshift({fecha:new Date().toISOString(),cantidad:finalOrders.length,pedidos:finalOrders.map(o=>o.numero)});
@@ -13216,6 +13223,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                 </div>
               </>
           </div>
+        </div>,
+        document.body
+      )}
+
+      {excelListo&&!exporting&&ReactDOM.createPortal(
+        <div style={{position:"fixed",right:20,bottom:20,zIndex:9000,width:"min(360px,calc(100vw - 40px))",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r["2xl"],padding:"16px 18px",boxShadow:"0 12px 40px rgba(0,0,0,0.35)",fontFamily:"'Inter',system-ui,sans-serif"}}>
+          <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text}}>Excel listo · {excelListo.n} etiqueta{excelListo.n!==1?"s":""}</div>
+              <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:3,lineHeight:1.5}}>Si no se bajó solo, tocá el botón. Si Chrome dice que bloqueó descargas, tocá el ícono de la barra de direcciones y elegí permitir descargas de este sitio.</div>
+            </div>
+            <ModalCloseBtn T={T} onClick={()=>{ try{ URL.revokeObjectURL(excelListo.url); }catch(_){} setExcelListo(null); }}/>
+          </div>
+          <a href={excelListo.url} download={excelListo.nombre} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:12,height:42,borderRadius:DS.r.full,background:T.accentSolid,color:"#fff",fontSize:DS.font.base,fontWeight:700,textDecoration:"none"}}><GhI n="download" size={15}/> Descargar el Excel</a>
         </div>,
         document.body
       )}
