@@ -21665,7 +21665,7 @@ function ghDepListaAPedidos(texto,etiquetas){
   if(n===1) return {pedidos:[{numero:filas.find(f=>f.numero)?.numero||"",comprador:filas.find(f=>f.comprador)?.comprador||"",items:filas.flatMap(f=>f.items),pags:[],tracking:""}],modo:"un_pedido",filas:filas.length};
   return {pedidos:[],modo:"nota",filas:filas.length};
 }
-function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extraCfg=null,catalogo=null,onClose,onDone}){
+function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extraCfg=null,catalogo=null,tiendaUid=null,onClose,onDone}){
   const iS=InputStyle(T);
   const [tipo]=useState(especial?"especial":"tanda");
   const [canal,setCanal]=useState(especial?"andreani":prefill?.canal||"andreani"); // el envío especial sale siempre por Andreani
@@ -21687,7 +21687,32 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const espNrm=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
   const espHitsDe=q=>{ const toks=espNrm(q).split(/\s+/).filter(Boolean); return (catalogo||[]).filter(o=>{ const n=espNrm(o.l+" "+o.v); return toks.every(t=>n.includes(t)); }).slice(0,8); };
   const espVal=espItems.filter(x=>String(x.sku).trim()).map(x=>({sku:String(x.sku).trim(),cant:Math.max(1,Math.round(Number(x.cant)||1))}));
-  const espInstr=[esp.instrucciones.trim(),espVal.length?"Productos:\n"+espVal.map(x=>`${x.cant}x ${x.sku}`).join("\n"):""].filter(Boolean).join("\n\n");
+  // Traer los productos de un pedido de la tienda por su número (28/oct/2026): se suman como renglones
+  // (después se pueden agregar más) y el pedido queda anotado en las instrucciones.
+  const [espPed,setEspPed]=useState(""); const [espPeds,setEspPeds]=useState([]); const [espBusc,setEspBusc]=useState(false);
+  async function traerPedido(){
+    const num=String(espPed||"").replace(/[^0-9]/g,""); if(!num){ toast("Escribí el número de pedido","warning"); return; }
+    if(espPeds.some(p=>p.num===num)){ toast(`El pedido #${num} ya está agregado`,"info"); return; }
+    setEspBusc(true);
+    try{
+      const r=await authFetch(`/api/orders?uid=${tiendaUid}&q=${encodeURIComponent(num)}`); const data=r.ok?await r.json():[];
+      const lista=Array.isArray(data)?data:[]; const numDe=o=>String(o.number??o.order_number??o.name??"").replace(/[^0-9]/g,"");
+      const o=lista.find(x=>numDe(x)===num);
+      if(!o){ toast(`No encontramos el pedido #${num} en tu tienda. Fijate que sea el número del pedido, no el de seguimiento.`,"warning",7000); return; }
+      const prods=(o.products||[]).map(p=>({sku:String(p.sku||p.name||"").trim(),cant:Math.max(1,Math.round(Number(p.quantity)||1))})).filter(p=>p.sku);
+      const extra=ghNotaDepo(o.owner_note).map(x=>{ const m=String(x).match(/^(\d+)\s*x\s+(.+)$/i); return m?{sku:m[2].trim(),cant:Number(m[1])}:{sku:String(x).trim(),cant:1}; });
+      const nuevos=[...prods,...extra];
+      if(!nuevos.length){ toast(`El pedido #${num} no tiene productos con SKU`,"warning"); return; }
+      const t0=Date.now();
+      setEspItems(l=>[...l.filter(x=>String(x.sku).trim()),...nuevos.map((p,i)=>({k:t0+i,sku:p.sku,cant:p.cant,q:""}))]);
+      const comp=[o.customer?.name,o.shipping_address?.name].find(Boolean)||"";
+      setEspPeds(l=>[...l,{num,comp}]); setEspPed("");
+      setEsp(s=>s.titulo?s:{...s,titulo:`Pedido #${num}${comp?` · ${comp}`:""}`});
+      toast(`Pedido #${num}: ${nuevos.length} producto${nuevos.length!==1?"s":""} agregado${nuevos.length!==1?"s":""}`,"success");
+    }catch(e){ toast("No se pudo buscar el pedido: "+(e.message||"error de conexión"),"error"); }
+    finally{ setEspBusc(false); }
+  }
+  const espInstr=[espPeds.length?`Pedido${espPeds.length>1?"s":""}: ${espPeds.map(p=>`#${p.num}${p.comp?` (${p.comp})`:""}`).join(", ")}`:"",esp.instrucciones.trim(),espVal.length?"Productos:\n"+espVal.map(x=>`${x.cant}x ${x.sku}`).join("\n"):""].filter(Boolean).join("\n\n");
   const [prog,setProg]=useState(null);
   const [drag,setDrag]=useState(false); const [verCant,setVerCant]=useState(false); const [verLista,setVerLista]=useState(!prefill?.pedidos?.length&&!especial);
   const estRef=React.useRef(null); // PDF con los productos ya escritos (se reusa si hay que reintentar)
@@ -21786,6 +21811,13 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
         {tipo==="especial"&&(<>
           <div>{lbl("Qué es")}<input style={iS} placeholder="Ej.: Pedido mayorista Óptica Sur" value={esp.titulo} onChange={e=>setEsp(s=>({...s,titulo:e.target.value}))}/></div>
+          {tiendaUid&&(<div>{lbl("Traer los productos de un pedido (opcional)")}
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <input style={{...iS,marginBottom:0,flex:1,minWidth:0}} inputMode="numeric" placeholder="Número de pedido de tu tienda, ej.: 7406" value={espPed} onChange={e=>setEspPed(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); traerPedido(); } }}/>
+              <DepBtn T={T} ico="search" disabled={espBusc||!espPed.trim()} onClick={traerPedido}>{espBusc?"Buscando…":"Traer productos"}</DepBtn>
+            </div>
+            {espPeds.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>{espPeds.map(p=>(<span key={p.num} style={{display:"inline-flex",alignItems:"center",gap:6,height:28,padding:"0 6px 0 12px",borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:T.surface,fontSize:DS.font.md,color:T.text,fontWeight:600}}>#{p.num}{p.comp&&<span style={{color:T.textMd,fontWeight:500}}>{p.comp}</span>}<button title="Sacar el pedido de las instrucciones (los productos quedan)" onClick={()=>setEspPeds(l=>l.filter(y=>y.num!==p.num))} style={{width:22,height:22,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button></span>))}</div>}
+          </div>)}
           <div>{lbl("Productos")}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {espItems.map(x=>{ const hits=hayCat&&!x.sku&&espAct===x.k?espHitsDe(x.q):[]; const elegido=(catalogo||[]).find(o=>o.v===x.sku); return (<div key={x.k}>
@@ -22145,7 +22177,7 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
         ]}/>
         <div style={{fontSize:DS.font.md,color:T.textSm,marginTop:8}}>Cada tanda suma su importe y cada pago verificado lo descuenta. Las transferencias "en verificación" todavía no bajan el saldo.</div>
       </div>)}
-      {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo.tipo==="especial"} prefill={nuevo.prefill} corte={corte} extraCfg={extraCfg} catalogo={catalogo} onClose={()=>setNuevo(null)} onDone={cargar}/>}
+      {nuevo&&<DepositoEnvioModal T={T} api={api} cliente={st.cliente} especial={nuevo.tipo==="especial"} prefill={nuevo.prefill} corte={corte} extraCfg={extraCfg} catalogo={catalogo} tiendaUid={tiendaUid} onClose={()=>setNuevo(null)} onDone={cargar}/>}
       {pago&&<DepositoPagoModal T={T} api={api} cuenta={st.cuenta} datosPago={st.datosPago} onClose={()=>setPago(false)} onDone={cargar}/>}
     </div>
   );
