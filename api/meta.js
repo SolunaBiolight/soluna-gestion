@@ -1871,6 +1871,26 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
           }
         }
 
+        // Fanpage de cada fila (actor_id del creativo de sus anuncios), para filtrar por página.
+        // Liviano: solo actor_id (pedir object_story_spec acá hace que Meta rechace por tamaño).
+        const pageNames = {};
+        try {
+          const adsP = { fields: "campaign_id,adset_id,creative{actor_id}", limit: 500 };
+          if (filteringParam) adsP.filtering = filteringParam;
+          const ads = []; let pg = await metaGet(`${cfg.ad_account_id}/ads`, adsP, cfg.access_token); ads.push(...(pg.data || []));
+          let nx = pg.paging?.next || null, sf = 0;
+          while (nx && sf < 10) { sf++; try { const j = await (await fetch(nx)).json(); if (j.error) break; ads.push(...(j.data || [])); nx = j.paging?.next || null; } catch (_) { break; } }
+          const porNodo = {};
+          for (const ad of ads) {
+            const pid = ad.creative?.actor_id; if (!pid) continue;
+            const key = level === "campaign" ? ad.campaign_id : level === "adset" ? ad.adset_id : ad.id;
+            (porNodo[key] = porNodo[key] || new Set()).add(String(pid));
+          }
+          for (const row of rows) row.pages = [...(porNodo[row.id] || [])];
+          const ids = [...new Set(Object.values(porNodo).flatMap(x => [...x]))].slice(0, 50);
+          if (ids.length) { const j = await metaGet("", { ids: ids.join(","), fields: "name" }, cfg.access_token); for (const id of ids) if (j[id]?.name) pageNames[id] = j[id].name; }
+        } catch (_) { /* sin páginas: el filtro por fanpage no aparece */ }
+
         // Horario elegido por el usuario (no el de la cuenta publicitaria): se rearma con el desglose
         // por hora de Meta y se suma solo lo que cae dentro de los días pedidos en esa zona.
         const tzQ = String(req.query.tz || "");
@@ -1913,7 +1933,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             }
           } catch (e) { tzInfo = { error: e.message }; }
         }
-        return res.json({ rows, since, until, level, tz: tzInfo });
+        return res.json({ rows, since, until, level, tz: tzInfo, page_names: pageNames });
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }

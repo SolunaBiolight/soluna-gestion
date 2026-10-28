@@ -34452,7 +34452,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[]}); }catch(_){} };
   useEffect(()=>{ if(activeAccId) cargarCtasMeta(); /* eslint-disable-next-line */ },[activeAccId]); // espera a que esté la tienda activa (window.__ghTiendaUid)
   const ctasElegidas=(ctasMeta?.cuentas||[]).filter(c=>(ctasMeta?.elegidas||[]).includes(c.id));
-  const ctasJuntas=(()=>{ const v=ctasElegidas.filter(c=>selCtas.includes(c.id)); return v.length?v:ctasElegidas; })();
+  // Se ven todas las cuentas elegidas; cuáles son se configura en Cuenta (para ver una sola, el filtro del Análisis).
+  const ctasJuntas=ctasElegidas;
   const verJuntas=ctasElegidas.length>0;
 
   // Estado del tab Análisis (Ads Manager)
@@ -34482,6 +34483,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
   const [aFilterStatus,setAFilterStatus]=useState("active"); // all | active | paused — arranca en "Solo activos"
+  const [aFiltCta,setAFiltCta]=useState("");     // "" = todas las cuentas publicitarias
+  const [aFiltTienda,setAFiltTienda]=useState(""); // "" = todas las tiendas
+  const [aFiltPage,setAFiltPage]=useState("");   // "" = todas las fanpages
+  const [aPageNames,setAPageNames]=useState({}); // id de página → nombre
   const [aBusyIds,setABusyIds]=useState({}); // ids siendo pausadas/activadas
   // Breakdown (segmentación por edad/género/ubicación/hora)
   const [aBreakdown,setABreakdown]=useState(""); // "" | age | gender | placement | hour
@@ -34962,8 +34967,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         const res = await Promise.all(ctasJuntas.map(c=>metaApi("insights","GET",null,{...params,ad_account:c.id}).then(x=>({c,x})).catch(e=>({c,x:{error:e.message}}))));
         const errs = res.filter(r=>r.x?.error).map(r=>`${r.c.nombre}: ${r.x.error}`);
         const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...convFila(row,r.c.moneda),_moneda:(mmon&&fxM)?mmon:(r.c.moneda||"USD"),_act:r.c.id,_cuenta:r.c.nombre})));
+        setAPageNames(Object.assign({}, ...res.map(r=>r.x?.page_names||{})));
         d = rows.length||!errs.length ? {rows} : {error:errs.join(" | ")};
-      } else { d = await metaApi("insights","GET",null,params); if (d?.rows) { const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency; d={...d,rows:d.rows.map(r=>({...convFila(r,de),_moneda:(mmon&&fxM)?mmon:(de||"USD")}))}; } }
+      } else { d = await metaApi("insights","GET",null,params); if (d?.page_names) setAPageNames(d.page_names); if (d?.rows) { const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency; d={...d,rows:d.rows.map(r=>({...convFila(r,de),_moneda:(mmon&&fxM)?mmon:(de||"USD")}))}; } }
       // Si dispararon otra carga después de esta, descartamos.
       if (myReqId !== loadInsightsReqIdRef.current) return;
       if(d.error) { setAError(d.error); if(!cached) setARows([]); }
@@ -35969,38 +35975,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           metaApi("accounts").then(d=>{ if(d.accounts) setAccounts(d.accounts); });
         }}/>
       )}
-      {/* Selector compacto para cambiar entre cuentas (CP5/CP7) del mismo token */}
-      {conCuentaAds && ctasElegidas.length>0 && (
-        <div style={{maxWidth:"100%",padding:"16px 24px 0",boxSizing:"border-box"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px",position:"relative"}}>
-            <BrandIcon name="meta" size={18}/>
-            <span style={{fontSize:12,fontWeight:700,color:T.textSm,marginRight:4}}>Cuentas</span>
-            {ctasJuntas.map(c=>(
-              <span key={c.id} style={{display:"inline-flex",alignItems:"center",gap:6,height:30,padding:"0 6px 0 12px",borderRadius:DS.r.full,background:T.accent+"18",border:`1px solid ${T.accent}44`,color:T.text,fontSize:12.5,fontWeight:600}}>
-                {c.nombre}<span style={{fontSize:10,color:T.textSm,fontWeight:500}}>{c.moneda}</span>
-                {ctasJuntas.length>1 && <button onClick={()=>setSelCtas(ctasJuntas.filter(x=>x.id!==c.id).map(x=>x.id))} title="Sacar de la vista" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,lineHeight:1,padding:"0 4px"}}>×</button>}
-              </span>))}
-            {ctasElegidas.length>ctasJuntas.length && (
-              <div style={{position:"relative"}}>
-                <button onClick={()=>setSelOpen(v=>!v)} style={{height:30,padding:"0 12px",borderRadius:DS.r.full,border:`1px dashed ${T.border}`,background:"transparent",color:T.accent,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar cuenta</button>
-                {selOpen && (
-                  <div className="gh-dropdown" style={{position:"absolute",top:36,left:0,zIndex:90,minWidth:260,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,boxShadow:"0 16px 48px rgba(0,0,0,0.28)",padding:6}}>
-                    {ctasElegidas.filter(c=>!ctasJuntas.some(x=>x.id===c.id)).map(c=>(
-                      <button key={c.id} onClick={()=>{ setSelCtas([...ctasJuntas.map(x=>x.id),c.id]); setSelOpen(false); }} className="gh-hover-surface" style={{display:"flex",width:"100%",justifyContent:"space-between",gap:10,padding:"8px 10px",background:"transparent",border:"none",borderRadius:DS.r.md,color:T.text,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textAlign:"left"}}>
-                        {c.nombre}<span style={{color:T.textSm,fontWeight:500}}>{c.moneda}</span>
-                      </button>))}
-                  </div>)}
-              </div>)}
-            <button onClick={()=>setTab(tab==="config"?"analisis":"config")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>{tab==="config"?"← Ir al Análisis":"Configurar cuentas"}</button>
-          </div>
-        </div>
-      )}
       {conCuentaAds && tab==="analisis" && (
         <div style={{maxWidth:"100%",padding:"12px 24px 0",boxSizing:"border-box"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
             <GhFiltroPill T={T} icon={<GhI n="calendar" size={14}/>} label="Período"><DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/></GhFiltroPill>
             <GhTzSelect T={T} value={mtz} onChange={setMtz}/>
             <GhMonSelect T={T} value={mmon} onChange={setMmon} extra={<option value="">{`Moneda de la cuenta${activeAcc?.currency?` (${activeAcc.currency})`:""}`}</option>}/>
+            {ctasElegidas.length>0 && <button onClick={()=>setTab("config")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>Configurar cuentas</button>}
           </div>
         </div>
       )}
@@ -36245,6 +36226,25 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   }
                   if (aFilterStatus === "active") filtered = filtered.filter(r => r.effective_status === "ACTIVE");
                   if (aFilterStatus === "paused") filtered = filtered.filter(r => r.effective_status === "PAUSED");
+                  // Tienda de cada fila: adonde fueron sus ventas por UTM o, sin ventas, el país del nombre ("FR | ...").
+                  const tiendas = utmAtr?.tiendas || {};
+                  const porPais = {};
+                  for (const t of Object.values(tiendas)) if (t.pais) (porPais[t.pais] = porPais[t.pais] || []).push(t.id);
+                  const tiendaDe = (r) => {
+                    const ct = utmAtr?.ct?.[aLevel==="campaign" ? r.id : r.campaign_id];
+                    const top = ct && Object.entries(ct).sort((x,y)=>y[1]-x[1])[0];
+                    if (top) return top[0];
+                    const cods = String(r.name||"").toUpperCase().split(/[^A-Z]+/).filter(w=>w.length===2&&porPais[w]?.length===1);
+                    return cods.length ? porPais[cods[0]][0] : null;
+                  };
+                  const ctaDe = (r) => r._act || aDrill[0]?.act || activeAcc?.ad_account_id || "";
+                  // Opciones de los filtros (de lo que trajo Meta, antes de filtrar por ellos)
+                  const optCtas = [...new Map(filtered.map(r=>[ctaDe(r), r._cuenta || ctasElegidas.find(c=>c.id===ctaDe(r))?.nombre || activeAcc?.ad_account_name || ctaDe(r)])).entries()];
+                  const optTiendas = Object.keys(tiendas).length ? [...new Set(filtered.map(r=>tiendaDe(r)||"_"))].map(k=>[k, k==="_"?"Sin tienda":(tiendas[k]?.nombre||k)]) : [];
+                  const optPages = [...new Set(filtered.flatMap(r=>r.pages||[]))].map(id=>[id, aPageNames[id]||id]);
+                  if (aFiltCta) filtered = filtered.filter(r => ctaDe(r) === aFiltCta);
+                  if (aFiltTienda) filtered = filtered.filter(r => (tiendaDe(r)||"_") === aFiltTienda);
+                  if (aFiltPage) filtered = filtered.filter(r => (r.pages||[]).includes(aFiltPage));
                   filtered = [...filtered].sort((a,b) => {
                     const k = aSort.key; const dir = aSort.dir === "asc" ? 1 : -1;
                     if (typeof a[k] === "string") return (a[k]||"").localeCompare(b[k]||"") * dir;
@@ -36256,6 +36256,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
                         <div style={{fontSize:13,color:T.textSm}}>No hay {aLevel === "campaign" ? "campañas" : aLevel === "adset" ? "adsets" : "ads"} en este rango.</div>
+                        {(aFiltCta||aFiltTienda||aFiltPage||aFilterStatus!=="all"||aQuery) && <button onClick={()=>{setAFiltCta("");setAFiltTienda("");setAFiltPage("");setAFilterStatus("all");setAQuery("");}} style={{marginTop:12,background:"transparent",border:`1px solid ${T.border}`,color:T.accent,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar filtros</button>}
                       </div>
                     );
                   }
@@ -36357,6 +36358,19 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <option value="active">Solo activos</option>
                       <option value="paused">Solo pausados</option>
                     </select>
+                    {/* Filtros por cuenta publicitaria, tienda y fanpage */}
+                    {(optCtas.length>1||aFiltCta) && <select value={aFiltCta} onChange={e=>setAFiltCta(e.target.value)} style={{background:T.input,border:`1px solid ${aFiltCta?T.accent:T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aFiltCta?T.accent:T.text,fontWeight:aFiltCta?600:400,fontFamily:"'Inter',system-ui,sans-serif",maxWidth:200}}>
+                      <option value="">Todas las cuentas</option>
+                      {optCtas.map(([id,n])=><option key={id} value={id}>{n}</option>)}
+                    </select>}
+                    {(optTiendas.length>1||aFiltTienda) && <select value={aFiltTienda} onChange={e=>setAFiltTienda(e.target.value)} style={{background:T.input,border:`1px solid ${aFiltTienda?T.accent:T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aFiltTienda?T.accent:T.text,fontWeight:aFiltTienda?600:400,fontFamily:"'Inter',system-ui,sans-serif",maxWidth:200}}>
+                      <option value="">Todas las tiendas</option>
+                      {optTiendas.map(([id,n])=><option key={id} value={id}>{n}</option>)}
+                    </select>}
+                    {(optPages.length>1||aFiltPage) && <select value={aFiltPage} onChange={e=>setAFiltPage(e.target.value)} style={{background:T.input,border:`1px solid ${aFiltPage?T.accent:T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aFiltPage?T.accent:T.text,fontWeight:aFiltPage?600:400,fontFamily:"'Inter',system-ui,sans-serif",maxWidth:200}}>
+                      <option value="">Todas las fanpages</option>
+                      {optPages.map(([id,n])=><option key={id} value={id}>{n}</option>)}
+                    </select>}
                     {/* Segmentar por breakdown — retirado del toolbar (2026-09-12) */}
                     {false && <select value={aBreakdown} onChange={e=>setABreakdown(e.target.value)} title="Segmentar las métricas del rango por audiencia/ubicación/hora" style={{background:T.input,border:`1px solid ${T.inputBorder}`,borderRadius:8,padding:"6px 10px",fontSize:12,color:aBreakdown?T.accent:T.text,fontFamily:"'Inter',system-ui,sans-serif",fontWeight:aBreakdown?600:400}}>
                       <option value="">Sin segmentar</option>
@@ -36391,16 +36405,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {(() => {
                       // Un bloque por tienda de Impultienda: la tienda adonde fueron las ventas de la campaña
                       // y, si todavía no vendió, la tienda del país que dice el nombre ("FR | ...").
-                      const tiendas = utmAtr?.tiendas || {};
-                      const porPais = {};
-                      for (const t of Object.values(tiendas)) if (t.pais) (porPais[t.pais] = porPais[t.pais] || []).push(t.id);
-                      const tiendaDe = (r) => {
-                        const ct = utmAtr?.ct?.[aLevel==="campaign" ? r.id : r.campaign_id];
-                        const top = ct && Object.entries(ct).sort((x,y)=>y[1]-x[1])[0];
-                        if (top) return top[0];
-                        const cods = String(r.name||"").toUpperCase().split(/[^A-Z]+/).filter(w=>w.length===2&&porPais[w]?.length===1);
-                        return cods.length ? porPais[cods[0]][0] : null;
-                      };
                       const grupos = {};
                       for (const r of filtered) { const k = Object.keys(tiendas).length ? (tiendaDe(r)||"_") : "_"; (grupos[k] = grupos[k] || []).push(r); }
                       const orden = Object.keys(grupos).sort((x,y)=> x==="_" ? 1 : y==="_" ? -1 : sumas(grupos[y]).spend - sumas(grupos[x]).spend);
