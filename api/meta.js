@@ -2772,41 +2772,28 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
     // blocked". Se corta acá con un mensaje claro (el front ya no ofrece estas
     // acciones; esto cubre Copilot, clientes viejos y llamadas directas).
     // Cuando Meta apruebe ads_management: quitar este bloque y sumar el scope en oauth_start.
-    if ((action === "set_status" || action === "set_budget") && req.method === "POST" && !(await puedeEditar(db, uid, await loadMetaAccount(db, uid, acc_id || req.query.acc_id)))) {
-      return res.status(403).json({ error: "Esta cuenta está conectada solo para mirar. Para pausar, activar o cambiar presupuestos desde Growith, conectá Meta con un token de usuario del sistema con el permiso ads_management (Meta → Configuración → Conectar con token).", code: "meta_solo_lectura" });
-    }
-    if (action === "set_status" && req.method === "POST") {
-      const { node_id, status } = req.body || {};
-      if (!node_id || !status) return res.status(400).json({ error: "Faltan node_id o status" });
-      if (!["ACTIVE", "PAUSED"].includes(status)) return res.status(400).json({ error: "status inválido" });
-      const accIdQ = acc_id || req.query.acc_id;
-      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
-      const cfg = await loadMetaAccount(db, uid, accIdQ);
-      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
-      try {
-        await metaPost(node_id, { status }, cfg.access_token);
-        return res.json({ ok: true, node_id, status });
-      } catch (e) {
-        return res.status(500).json({ error: e.message });
-      }
-    }
-
-    // Cambiar presupuesto diario de una campaña/ad set (lo usa el Copilot).
-    // Meta espera daily_budget en CENTAVOS de la moneda de la cuenta.
-    if (action === "set_budget" && req.method === "POST") {
-      const { node_id, daily_budget } = req.body || {};
+    // La conexión activa puede ser la de Facebook (solo lectura) y el token con ads_management
+    // otra conexión del mismo usuario: se prueba primero el token propio y después los demás editables.
+    if ((action === "set_status" || action === "set_budget") && req.method === "POST") {
+      const { node_id, status, daily_budget } = req.body || {};
       const monto = parseFloat(daily_budget);
-      if (!node_id || !isFinite(monto) || monto <= 0) return res.status(400).json({ error: "Faltan node_id o daily_budget válido" });
+      if (action === "set_status" && (!node_id || !["ACTIVE", "PAUSED"].includes(status))) return res.status(400).json({ error: "Faltan node_id o status válido" });
+      if (action === "set_budget" && (!node_id || !isFinite(monto) || monto <= 0)) return res.status(400).json({ error: "Faltan node_id o daily_budget válido" });
       const accIdQ = acc_id || req.query.acc_id;
-      if (!accIdQ) return res.status(400).json({ error: "Falta acc_id" });
-      const cfg = await loadMetaAccount(db, uid, accIdQ);
-      if (!cfg?.access_token) return res.status(400).json({ error: "Cuenta Meta sin token" });
-      try {
-        await metaPost(node_id, { daily_budget: Math.round(monto * 100) }, cfg.access_token);
-        return res.json({ ok: true, node_id, daily_budget: monto });
-      } catch (e) {
-        return res.status(500).json({ error: e.message });
+      const todas = await listMetaAccounts(db, uid);
+      const orden = [...todas.filter(a => String(a.id) === String(accIdQ)), ...todas.filter(a => String(a.id) !== String(accIdQ))];
+      const tokens = [];
+      for (const a of orden) if (await puedeEditar(db, uid, a)) tokens.push(a.access_token);
+      if (!tokens.length) return res.status(403).json({ error: "Esta cuenta está conectada solo para mirar. Para pausar, activar o cambiar presupuestos desde Growith, conectá Meta con un token de usuario del sistema con el permiso ads_management (Meta → Cuenta → System User Token).", code: "meta_solo_lectura" });
+      const body = action === "set_status" ? { status } : { daily_budget: Math.round(monto * 100) };
+      let ultimo;
+      for (const t of tokens) {
+        try {
+          await metaPost(node_id, body, t);
+          return res.json(action === "set_status" ? { ok: true, node_id, status } : { ok: true, node_id, daily_budget: monto });
+        } catch (e) { ultimo = e; }
       }
+      return res.status(500).json({ error: tokens.length > 1 ? `Ningún token con permiso de edición pudo cambiarlo: ${ultimo.message}` : ultimo.message });
     }
 
     if (action === "resources" && req.method === "GET") {

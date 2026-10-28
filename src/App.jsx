@@ -35107,7 +35107,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const rev=m.rev*k;
     return {...o, purchases:m.n, purchase_value:rev, roas:r.spend?rev/r.spend:0, cpa:m.n&&r.spend?r.spend/m.n:0, aov:m.n?rev/m.n:0};
   };
-  const metaEditable=!!activeAcc?.puede_editar;
+  // Con que una conexión tenga ads_management alcanza: el server edita con ese token aunque la activa sea de solo lectura.
+  const metaEditable=!!activeAcc?.puede_editar||accounts.some(a=>a.puede_editar);
   async function cambiarPresupuesto(row, v) {
     setABudgetEdit(null);
     if(v==null||v==="") return;
