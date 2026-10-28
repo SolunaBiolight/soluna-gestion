@@ -34639,10 +34639,11 @@ function MetaEscala({T, metaApi, metaEditable}) {
   const tabla=(filas)=>(
     <div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:F}}>
-        <thead><tr>{["Regla","Condición","Acción","Nivel","Horario"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 10px",color:T.textSm,fontWeight:600,fontSize:11,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+        <thead><tr>{["Regla","Aplica en","Condición","Acción","Nivel","Horario"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 10px",color:T.textSm,fontWeight:600,fontSize:11,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
         <tbody>{filas.map((f,i)=><tr key={i} style={{borderBottom:`1px solid ${T.border}`}}>
-          <td style={{padding:"8px 10px",fontWeight:700,color:T.text,whiteSpace:"nowrap",verticalAlign:"top"}}>{f.regla}</td>
-          <td style={{padding:"8px 10px",color:T.text,verticalAlign:"top"}}>{f.condicion}</td>
+          <td style={{padding:"8px 10px",fontWeight:700,color:T.text,whiteSpace:"nowrap",verticalAlign:"top"}}>{f.regla}{f.nombre&&<div style={{fontWeight:400,fontSize:11,color:T.textSm}}>{f.nombre}</div>}</td>
+          <td style={{padding:"8px 10px",color:f.alcance&&f.alcance!=="Todas"?T.text:T.textSm,verticalAlign:"top",minWidth:120}}>{f.alcance||"Todas"}</td>
+          <td style={{padding:"8px 10px",color:T.text,verticalAlign:"top"}}>{f.condicion}{f.aviso&&<div style={{color:T.red,fontSize:11,marginTop:3}}>⚠ {f.aviso}</div>}</td>
           <td style={{padding:"8px 10px",color:T.text,verticalAlign:"top"}}>{f.accion}</td>
           <td style={{padding:"8px 10px",color:T.textMd,verticalAlign:"top"}}>{f.nivel}</td>
           <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap",verticalAlign:"top"}}>{f.horario}</td>
