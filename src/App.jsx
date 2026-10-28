@@ -22194,8 +22194,38 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
   // Tiempo real: cada 6 s se consulta el contador de cambios del depósito (una lectura);
   // si cambió, se recargan la cola y los contadores, estés en la pestaña que estés.
   const [ver,setVer]=useState(null); const [enVivo,setEnVivo]=useState(null); const verRef=React.useRef(null); const conocidasRef=React.useRef(null);
+  // Alerta de tanda nueva: alarma fuerte que se repite cada 20 s (hasta 15 veces) hasta que alguien toca
+  // "Entendido", cartel grande arriba, título de la pestaña titilando y aviso del sistema operativo
+  // (Notification) si se dio permiso, que aparece aunque el navegador esté minimizado.
+  const [alerta,setAlerta]=useState(null); // {texto, n}
+  const [sonidoOk,setSonidoOk]=useState(false);
+  const [notifPerm,setNotifPerm]=useState(()=>{ try{ return typeof Notification!=="undefined"?Notification.permission:"no"; }catch(_){ return "no"; } });
+  const dispararAlerta=nuevas=>{
+    const texto=nuevas.length===1?`Tanda nueva de ${nuevas[0].clienteNombre||"un cliente"}${nuevas[0].tipo==="especial"?`: ${nuevas[0].especial?.titulo||"envío especial"}`:` · ${nuevas[0].n} pedido${nuevas[0].n!==1?"s":""}`}${nuevas[0].urgente?" · URGENTE":""}`:`${nuevas.length} tandas nuevas: ${[...new Set(nuevas.map(t=>t.clienteNombre))].join(", ")}`;
+    setAlerta(a=>({texto,n:(a?.n||0)+nuevas.length}));
+    setSonidoOk(ghDepAlarma());
+    try{ if(typeof Notification!=="undefined"&&Notification.permission==="granted"){ const nt=new Notification("Growith · Depósito",{body:texto,tag:"growith-deposito",renotify:true,requireInteraction:true,icon:"/logo-color.png"}); nt.onclick=()=>{ try{ window.focus(); }catch(_){} nt.close(); }; } }catch(_){}
+  };
+  useEffect(()=>{ if(!esDep) return; const u=()=>{ ghDepAudio(); setTimeout(()=>setSonidoOk(ghDepSonidoListo()),50); };
+    window.addEventListener("pointerdown",u,true); window.addEventListener("keydown",u,true);
+    return ()=>{ window.removeEventListener("pointerdown",u,true); window.removeEventListener("keydown",u,true); }; },[esDep]);
+  // Pantalla encendida (28/oct/2026): si la PC del depósito se suspende, no hay forma de que suene nada.
+  // Con el panel abierto y visible se pide al navegador que no apague la pantalla (Wake Lock), lo que
+  // también evita que la PC se suspenda por inactividad. Se vuelve a pedir al volver a la pestaña.
+  const [pantallaOn,setPantallaOn]=useState(null); // true | false (no soportado o rechazado) | null
+  useEffect(()=>{ if(!esDep) return; let lock=null, vivo=true;
+    const pedir=async()=>{ try{ if(!("wakeLock" in navigator)){ setPantallaOn(false); return; } if(document.visibilityState!=="visible") return; lock=await navigator.wakeLock.request("screen"); if(!vivo){ lock.release().catch(()=>{}); return; } setPantallaOn(true); lock.addEventListener("release",()=>{ if(vivo) setPantallaOn(document.visibilityState==="visible"?false:null); }); }catch(_){ setPantallaOn(false); } };
+    pedir(); const vis=()=>{ if(document.visibilityState==="visible") pedir(); }; document.addEventListener("visibilitychange",vis);
+    return ()=>{ vivo=false; document.removeEventListener("visibilitychange",vis); try{ lock&&lock.release(); }catch(_){} }; },[esDep]);
+  useEffect(()=>{ if(!alerta) return; let veces=0; const titulo=document.title; let par=false;
+    const rep=setInterval(()=>{ veces++; if(veces<=15) setSonidoOk(ghDepAlarma()); },20000);
+    const tit=setInterval(()=>{ par=!par; document.title=par?`● ${alerta.n===1?"Tanda nueva":`${alerta.n} tandas nuevas`}`:titulo; },1000);
+    return ()=>{ clearInterval(rep); clearInterval(tit); document.title=titulo; }; },[alerta]);
   useEffect(()=>{ if(!esDep) return; let vivo=true, ocupado=false;
-    const mirar=async()=>{ if(ocupado||document.visibilityState!=="visible") return; ocupado=true;
+    let ultimo=0;
+    // Con la pestaña oculta o el navegador minimizado también se consulta (antes se cortaba y la tanda
+    // nueva no se enteraba nadie hasta volver a mirar), pero cada 15 s.
+    const mirar=async()=>{ if(ocupado) return; if(document.visibilityState!=="visible"&&Date.now()-ultimo<15000) return; ocupado=true; ultimo=Date.now();
       try{ const r=await apiDep("cola_ver"); if(!vivo) return; setEnVivo(true); if(r&&typeof r.v==="number"&&r.v!==verRef.current){ verRef.current=r.v; setVer(r.v); } }catch(_){ if(vivo) setEnVivo(false); }
       ocupado=false; };
     mirar(); const iv=setInterval(mirar,6000); const vis=()=>mirar(); document.addEventListener("visibilitychange",vis); window.addEventListener("focus",vis);
@@ -22204,7 +22234,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     apiDep("cola").then(d=>{ if(!vivo) return; const vivas=(d.tandas||[]).filter(t=>t.estado==="pendiente"); const n=vivas.filter(t=>t.fechaDespacho<=d.hoy).length; setBadges(b=>({...b,cola:n}));
       // Aviso de tanda NUEVA (sonido + cartel), también si estás en otra pestaña del panel.
       const antes=conocidasRef.current; conocidasRef.current=new Set(vivas.map(t=>t.id));
-      if(antes){ const nuevas=vivas.filter(t=>!antes.has(t.id)&&t.estado==="pendiente"); if(nuevas.length){ ghDepBeep(); toast(nuevas.length===1?`Tanda nueva de ${nuevas[0].clienteNombre}: ${nuevas[0].tipo==="especial"?(nuevas[0].especial?.titulo||"envío especial"):`${nuevas[0].n} pedido${nuevas[0].n!==1?"s":""}`}`:`${nuevas.length} tandas nuevas: ${[...new Set(nuevas.map(t=>t.clienteNombre))].join(", ")}`,"success",9000); } }
+      if(antes){ const nuevas=vivas.filter(t=>!antes.has(t.id)&&t.estado==="pendiente"); if(nuevas.length){ dispararAlerta(nuevas); toast(nuevas.length===1?`Tanda nueva de ${nuevas[0].clienteNombre}: ${nuevas[0].tipo==="especial"?(nuevas[0].especial?.titulo||"envío especial"):`${nuevas[0].n} pedido${nuevas[0].n!==1?"s":""}`}`:`${nuevas.length} tandas nuevas: ${[...new Set(nuevas.map(t=>t.clienteNombre))].join(", ")}`,"success",9000); } }
     }).catch(()=>{});
     if(owner) apiDep("pagos_cc").then(d=>{ if(vivo) setBadges(b=>({...b,clientes:(d.pagos||[]).filter(p=>p.estado==="a_verificar").length})); }).catch(()=>{});
     return ()=>{ vivo=false; }; },[tab,esDep,owner,ver]);
@@ -22259,6 +22289,17 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
             <li><strong>Avisale a cada cliente:</strong> los que usan Growith ya tienen "Enviar al depósito" en Envíos; a los demás pasales su link privado desde Ver cliente → Datos y acceso → Copiar.</li>
           </ol>
         </Card>)}
+        {esDep&&alerta&&(<div role="alert" style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",background:T.accentSolid,color:"#fff",borderRadius:DS.r["2xl"],padding:"16px 20px",marginBottom:16,animation:"gh-dep-alerta 1s ease-in-out infinite alternate"}}>
+          <style>{`@keyframes gh-dep-alerta{from{box-shadow:0 0 0 0 rgba(124,58,237,.0)}to{box-shadow:0 0 0 6px rgba(124,58,237,.35)}}`}</style>
+          <GhI n="bell" size={26}/>
+          <div style={{flex:"1 1 240px",minWidth:0}}><div style={{fontSize:DS.font.xl,fontWeight:800}}>{alerta.n===1?"Llegó una tanda nueva":`Llegaron ${alerta.n} tandas nuevas`}</div><div style={{fontSize:DS.font.base,opacity:0.9,marginTop:2}}>{alerta.texto}</div></div>
+          <button onClick={()=>{ setAlerta(null); setTab("cola"); }} style={{background:"#fff",color:T.accentSolid,border:"none",borderRadius:DS.r.full,height:44,padding:"0 22px",fontSize:DS.font.lg,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Entendido</button>
+        </div>)}
+        {esDep&&(!sonidoOk||notifPerm==="default"||pantallaOn===false)&&(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:DS.r.xl,padding:"10px 14px",marginBottom:14,fontSize:DS.font.base,color:T.text}}>
+          <span style={{flex:"1 1 220px"}}>{pantallaOn===false&&sonidoOk&&notifPerm!=="default"?"Este navegador no deja mantener la pantalla encendida: en la configuración de energía de la PC poné Suspender en Nunca, si no, mientras está suspendida no suena nada.":!sonidoOk?"Para que suene cuando llega una tanda, tocá \"Probar sonido\" una vez (el navegador no deja sonar una página que nadie tocó).":"Activá los avisos de la PC para enterarte aunque el navegador esté minimizado."}</span>
+          <DepBtn T={T} size="sm" onClick={()=>setSonidoOk(ghDepAlarma())}>Probar sonido</DepBtn>
+          {notifPerm==="default"&&<DepBtn T={T} size="sm" onClick={async()=>{ try{ setNotifPerm(await Notification.requestPermission()); }catch(_){ } }}>Activar avisos de la PC</DepBtn>}
+        </div>)}
         {!esDep? <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>
           : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner} ver={ver} enVivo={enVivo}/>
           : tab==="historial"? (owner? <><div style={{marginBottom:14}}><DepSeg T={T} size="md" value={mov} onChange={setMov} items={[["tandas","Tandas del mes"],["ingresos","Mercadería recibida"]]}/></div>{mov==="tandas"?<DepositoHistorial T={T} api={apiDep}/>:<DepositoIngresos T={T} api={apiDep} owner={owner}/>}</> : <DepositoIngresos T={T} api={apiDep} owner={owner}/>)
@@ -22505,7 +22546,20 @@ function DepPosponerModal({T,tanda,hoy,onClose,onDone}){
   </Modal>);
 }
 // Dos tonos cortos: llegó una tanda nueva. (El navegador puede silenciarlo si nadie tocó la página todavía.)
-function ghDepBeep(){ try{ const ac=new (window.AudioContext||window.webkitAudioContext)(); [[660,0],[990,0.16]].forEach(([f,t])=>{ const o=ac.createOscillator(), g=ac.createGain(); o.connect(g); g.connect(ac.destination); o.frequency.value=f; g.gain.value=0.09; o.start(ac.currentTime+t); o.stop(ac.currentTime+t+0.14); }); setTimeout(()=>ac.close(),700); }catch(_){ } }
+// Sonido del depósito (28/oct/2026, "llegan las tandas pero no suena nada"): un solo AudioContext que
+// se desbloquea con el primer clic o tecla en el panel (el navegador no deja sonar una página que nadie
+// tocó, por ejemplo después de recargarse sola). ghDepBeep = pitido corto (lector); ghDepAlarma = alarma
+// fuerte de tanda nueva: tres tonos que suben, tres veces seguidas, con onda cuadrada y compresor.
+let _ghDepAc=null;
+function ghDepAudio(){ try{ if(!_ghDepAc) _ghDepAc=new (window.AudioContext||window.webkitAudioContext)(); if(_ghDepAc.state==="suspended") _ghDepAc.resume().catch(()=>{}); return _ghDepAc; }catch(_){ return null; } }
+function ghDepSonidoListo(){ return !!_ghDepAc&&_ghDepAc.state==="running"; }
+function ghDepTonos(notas,vol){ const ac=ghDepAudio(); if(!ac) return false;
+  try{ const comp=ac.createDynamicsCompressor(); comp.connect(ac.destination); const master=ac.createGain(); master.gain.value=1; master.connect(comp); const t0=ac.currentTime+0.05;
+    notas.forEach(([f,t,d,tipo])=>{ const o=ac.createOscillator(), g=ac.createGain(); o.type=tipo||"square"; o.frequency.value=f; g.gain.setValueAtTime(0.0001,t0+t); g.gain.exponentialRampToValueAtTime(vol,t0+t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t0+t+d); o.connect(g); g.connect(master); o.start(t0+t); o.stop(t0+t+d+0.02); });
+  }catch(_){ return false; }
+  return ac.state==="running"; }
+function ghDepBeep(){ return ghDepTonos([[880,0,0.12,"sine"],[1320,0.14,0.14,"sine"]],0.35); }
+function ghDepAlarma(){ const n=[]; for(let r=0;r<3;r++) [880,1175,1568].forEach((f,i)=>n.push([f,r*0.78+i*0.17,0.15])); return ghDepTonos(n,0.6); }
 function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const iS=InputStyle(T);
   const [st,setSt]=useState(null); const [err,setErr]=useState("");
