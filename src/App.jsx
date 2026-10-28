@@ -34470,8 +34470,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // ROAS break-even configurable (persiste en localStorage)
   const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem(ghKey("growith_meta_roas_be")))||2; } catch(_) { return 2; } });
   // Columnas visibles (persiste)
-  const DEFAULT_COLS = ["roas","cpa","aov","purchase_value","purchases","spend","cpc","ctr","cpm","frequency","hook","avg_watch"];
-  const [aCols,setACols]=useState(()=>{ try { const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v2"))||"null"); return Array.isArray(s)&&s.length?s:DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
+  const DEFAULT_COLS = ["roas","cpa","aov","purchase_value","purchases","checkouts","spend","cpc","ctr","cpm","frequency","hook","avg_watch"];
+  const [aCols,setACols]=useState(()=>{ try {
+    const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v3"))||"null"); if(Array.isArray(s)&&s.length) return s;
+    // Columnas guardadas antes de "Pagos iniciados": se agrega después de Ventas.
+    const v2=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v2"))||"null");
+    if(Array.isArray(v2)&&v2.length){ const i=v2.indexOf("purchases"); return v2.includes("checkouts")?v2:[...v2.slice(0,i+1),"checkouts",...v2.slice(i+1)]; }
+    return DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
+  const [aBudgetEdit,setABudgetEdit]=useState(null); // {id, val} mientras se edita un presupuesto en la tabla
   const [aColsOpen,setAColsOpen]=useState(false);
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
@@ -34999,11 +35005,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     return {...o, purchases:m.n, purchase_value:rev, roas:r.spend?rev/r.spend:0, cpa:m.n&&r.spend?r.spend/m.n:0, aov:m.n?rev/m.n:0};
   };
   const metaEditable=!!activeAcc?.puede_editar;
-  async function cambiarPresupuesto(row) {
-    const v=await appPrompt(`Presupuesto diario nuevo para "${row.name||row.id}" (en la moneda de la cuenta):`, String(row.daily_budget||""), {title:"Cambiar presupuesto"});
+  async function cambiarPresupuesto(row, v) {
+    setABudgetEdit(null);
     if(v==null||v==="") return;
     const n=parseFloat(String(v).replace(",","."));
     if(!isFinite(n)||n<=0) return toast("Monto inválido","warning");
+    if(n===row.daily_budget) return;
     setABusyIds(b=>({...b,[row.id]:true}));
     try {
       const d=await metaApi("set_budget","POST",{node_id:row.id,daily_budget:n},{acc_id:activeAccId});
@@ -35033,7 +35040,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Persistir ROAS BE y columnas
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_roas_be"), String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
-  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v2"), JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v3"), JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
@@ -36251,44 +36258,46 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     );
                   }
 
-                  // Totales
-                  const sumSpend = filtered.reduce((s,r)=>s+r.spend,0);
-                  const sumPurchaseValue = filtered.reduce((s,r)=>s+r.purchase_value,0);
-                  const sumPurchases = filtered.reduce((s,r)=>s+r.purchases,0);
-                  const sumImpr = filtered.reduce((s,r)=>s+r.impressions,0);
-                  const sumClicks = filtered.reduce((s,r)=>s+r.clicks,0);
-                  const totalRoas = sumSpend > 0 ? sumPurchaseValue / sumSpend : 0;
-                  const totalCpa = sumPurchases > 0 ? sumSpend / sumPurchases : 0;
-                  const totalCtr = sumImpr > 0 ? (sumClicks / sumImpr) * 100 : 0;
-                  const totalAov = sumPurchases > 0 ? sumPurchaseValue / sumPurchases : 0;
-                  const sumV3 = filtered.reduce((s,r)=>s+(r.video_3s||0),0);
-                  const totalHook = sumImpr > 0 ? sumV3 / sumImpr * 100 : 0;
+                  // Totales (de lo filtrado y de cada bloque de tienda)
+                  const sumas = (rows) => {
+                    const t = { spend:0, rev:0, n:0, impr:0, clicks:0, v3:0, chk:0 };
+                    for (const r of rows) { t.spend+=r.spend||0; t.rev+=r.purchase_value||0; t.n+=r.purchases||0; t.impr+=r.impressions||0; t.clicks+=r.clicks||0; t.v3+=r.video_3s||0; t.chk+=r.checkouts||0; }
+                    t.roas = t.spend>0 ? t.rev/t.spend : 0; t.cpa = t.n>0 ? t.spend/t.n : 0; t.aov = t.n>0 ? t.rev/t.n : 0;
+                    t.ctr = t.impr>0 ? t.clicks/t.impr*100 : 0; t.cpm = t.impr>0 ? t.spend/t.impr*1000 : 0; t.cpc = t.clicks>0 ? t.spend/t.clicks : 0;
+                    t.hook = t.impr>0 ? t.v3/t.impr*100 : 0; t.cpChk = t.chk>0 ? t.spend/t.chk : 0;
+                    return t;
+                  };
+                  const tot = sumas(filtered);
+                  const sumSpend = tot.spend, sumPurchaseValue = tot.rev, sumPurchases = tot.n, sumClicks = tot.clicks;
+                  const totalRoas = tot.roas, totalCpa = tot.cpa, totalCtr = tot.ctr, totalAov = tot.aov;
 
                   const fmt = (n) => n.toLocaleString("es-AR",{minimumFractionDigits:2, maximumFractionDigits:2});
                   const fmtInt = (n) => Math.round(n).toLocaleString("es-AR");
                   const headerCell = (key, label, align="right") => (
-                    <th onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{padding:"10px 12px",textAlign:align,fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,cursor:"pointer",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap",userSelect:"none"}}>
+                    <th key={key} onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{padding:"10px 12px",textAlign:align,fontSize:11,fontWeight:600,color:T.textMd,cursor:"pointer",borderBottom:`1px solid ${T.border}`,whiteSpace:"normal",lineHeight:1.25,userSelect:"none",verticalAlign:"bottom"}}>
                       {label} {aSort.key===key && (aSort.dir==="desc"?"▼":"▲")}
                     </th>
                   );
 
-                  // Mapa de columnas configurables
+                  // Mapa de columnas configurables (total recibe las sumas del bloque)
                   const COL_META = {
-                    spend:          { label:"Gasto",          render: r => cur+fmt(r.spend),            total: () => cur+fmt(sumSpend), bold:true },
-                    purchases:      { label:"Ventas",         render: r => r.purchases,                 total: () => sumPurchases },
-                    purchase_value: { label:"Revenue",        render: r => cur+fmt(r.purchase_value),   total: () => cur+fmt(sumPurchaseValue) },
-                    aov:            { label:"AOV",            render: r => r.aov ? cur+fmt(r.aov) : "—", total: () => totalAov ? cur+fmt(totalAov) : "—" },
-                    hook:           { label:"Retención 3 s",  render: r => r.hook ? fmt(r.hook)+"%" : "—", total: () => totalHook ? fmt(totalHook)+"%" : "—" },
+                    spend:          { label:"Gasto",          render: r => cur+fmt(r.spend),            total: t => cur+fmt(t.spend), bold:true },
+                    purchases:      { label:"Ventas",         render: r => r.purchases,                 total: t => t.n },
+                    checkouts:      { label:"Pagos iniciados", render: r => r.checkouts ? fmtInt(r.checkouts) : "—", total: t => t.chk ? fmtInt(t.chk) : "—" },
+                    cost_checkout:  { label:"Costo por pago iniciado", render: r => r.checkouts&&r.spend ? cur+fmt(r.spend/r.checkouts) : "—", total: t => t.cpChk ? cur+fmt(t.cpChk) : "—" },
+                    purchase_value: { label:"Revenue",        render: r => cur+fmt(r.purchase_value),   total: t => cur+fmt(t.rev) },
+                    aov:            { label:"AOV",            render: r => r.aov ? cur+fmt(r.aov) : "—", total: t => t.aov ? cur+fmt(t.aov) : "—" },
+                    hook:           { label:"Retención 3 s",  render: r => r.hook ? fmt(r.hook)+"%" : "—", total: t => t.hook ? fmt(t.hook)+"%" : "—" },
                     avg_watch:      { label:"Tiempo prom.",   render: r => r.avg_watch ? fmt(r.avg_watch)+" s" : "—", total: () => "—" },
-                    roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x", total: () => fmt(totalRoas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
-                    cpa:            { label:"CPA",            render: r => r.cpa ? cur+fmt(r.cpa) : "—", total: () => totalCpa ? cur+fmt(totalCpa) : "—" },
-                    ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: () => fmt(totalCtr)+"%" },
-                    cpm:            { label:"CPM",            render: r => cur+fmt(r.cpm),              total: () => "—" },
-                    cpc:            { label:"CPC",            render: r => cur+fmt(r.cpc),              total: () => "—" },
+                    roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x", total: t => fmt(t.roas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
+                    cpa:            { label:"CPA",            render: r => r.cpa ? cur+fmt(r.cpa) : "—", total: t => t.cpa ? cur+fmt(t.cpa) : "—" },
+                    ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: t => fmt(t.ctr)+"%" },
+                    cpm:            { label:"CPM",            render: r => cur+fmt(r.cpm),              total: t => t.cpm ? cur+fmt(t.cpm) : "—" },
+                    cpc:            { label:"CPC",            render: r => cur+fmt(r.cpc),              total: t => t.cpc ? cur+fmt(t.cpc) : "—" },
                     frequency:      { label:"Frec.",          render: r => fmt(r.frequency),            total: () => "—" },
-                    impressions:    { label:"Impr.",          render: r => fmtInt(r.impressions),       total: () => fmtInt(sumImpr) },
+                    impressions:    { label:"Impr.",          render: r => fmtInt(r.impressions),       total: t => fmtInt(t.impr) },
                     reach:          { label:"Alcance",        render: r => fmtInt(r.reach),             total: () => "—" },
-                    clicks:         { label:"Clicks",          render: r => fmtInt(r.clicks),            total: () => fmtInt(sumClicks) },
+                    clicks:         { label:"Clicks",          render: r => fmtInt(r.clicks),            total: t => fmtInt(t.clicks) },
                   };
                   const visibleCols = aCols.filter(k => COL_META[k]);
                   const canDrill = aLevel !== "ad";
@@ -36298,7 +36307,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {/* Resumen ejecutivo del rango (sobre lo filtrado) */}
                     <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
                       <KPI T={T} label="Gasto" value={cur+fmt(sumSpend)} sub={`${filtered.length} ${aLevel==="campaign"?"campañas":aLevel==="adset"?"adsets":"ads"}`} color={T.accent}/>
-                      <KPI T={T} label="Ventas" value={String(sumPurchases)} sub={utmAtr?(utmAtr.sinAtribuir?.n?`${utmAtr.sinAtribuir.n} del período sin UTM que cruce`:"todas cruzadas por UTM"):(sumClicks?`${fmtInt(sumClicks)} clicks`:"")} color={T.text}/>
+                      <KPI T={T} label="Ventas" value={String(sumPurchases)} sub={utmAtr?"cruzadas por UTM":(sumClicks?`${fmtInt(sumClicks)} clicks`:"")} color={T.text}/>
                       <KPI T={T} label="Revenue" value={cur+fmt(sumPurchaseValue)} sub={utmAtr?"ventas reales por UTM":"según píxel de Meta"} color={T.text}/>
                       <KPI T={T} label="AOV" value={totalAov?cur+fmt(totalAov):"—"} sub="revenue por venta" color={T.text}/>
                       <KPI T={T} label="ROAS" value={fmt(totalRoas)+"x"} sub={aRoasBe>0?`BE de referencia ${aRoasBe}x`:""} color={totalRoas>=aRoasBe?T.green:(totalRoas>0?T.red:T.textSm)}/>
@@ -36325,7 +36334,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       {aColsOpen && (
                         <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
                           {[
-                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"aov",l:"AOV"},{k:"purchase_value",l:"Revenue"},{k:"purchases",l:"Ventas"},
+                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"aov",l:"AOV"},{k:"purchase_value",l:"Revenue"},{k:"purchases",l:"Ventas"},{k:"checkouts",l:"Pagos iniciados"},{k:"cost_checkout",l:"Costo por pago iniciado"},
                             {k:"spend",l:"Gasto"},{k:"cpc",l:"CPC"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},
                             {k:"frequency",l:"Frecuencia"},{k:"hook",l:"Retención 3 s"},{k:"avg_watch",l:"Tiempo prom. de video"},
                             {k:"impressions",l:"Impresiones"},{k:"reach",l:"Alcance"},{k:"clicks",l:"Clicks"},
@@ -36377,92 +36386,145 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </button>
                   </div>
                 </div>
-                    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
-                      <div style={{overflowX:"auto"}}>
-                        <table style={{width:"100%",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                          <thead style={{background:T.bg,position:"sticky",top:0,zIndex:1}}>
-                            <tr>
-                              <th style={{padding:"10px 12px",textAlign:"left",fontSize:10,fontWeight:700,color:T.textSm,textTransform:"uppercase",letterSpacing:0.5,borderBottom:`1px solid ${T.border}`,width:54}}>Acción</th>
-                              {headerCell("name", aLevel==="campaign"?"Campaña":aLevel==="adset"?"AdSet":"Ad", "left")}
-                              {visibleCols.map(k => headerCell(k, COL_META[k].label))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filtered.map(r => {
-                              const busy = !!aBusyIds[r.id];
-                              const isActive = r.effective_status === "ACTIVE";
-                              const drillLabel = aLevel==="campaign" ? "adsets" : aLevel==="adset" ? "ads" : null;
-                              return (
-                                <tr key={r.id} style={{borderBottom:`1px solid ${T.borderL}`,opacity:isActive?1:0.6}}>
-                                  <td style={{padding:"10px 12px",display:"flex",gap:4}}>
-                                    {PUBLICADORES_ARCHIVADOS && !metaEditable ? (
-                                      // Sin ads_management Growith no puede pausar ni activar: se muestra el
-                                      // estado como un punto, no como un interruptor que fallaría al tocarlo.
-                                      <span title={isActive?"Activa (se pausa desde el Administrador de anuncios de Meta)":"Pausada"} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:isActive?T.green:T.textSm,fontWeight:600,whiteSpace:"nowrap"}}>
-                                        <span style={{width:8,height:8,borderRadius:"50%",background:isActive?T.green:(T.textSm+"88"),flexShrink:0}}/>{isActive?"Activa":"Pausada"}
-                                      </span>
-                                    ) : (
-                                    <button onClick={()=>toggleStatus(r)} disabled={busy} title={isActive?"Pausar":"Activar"} role="switch" aria-checked={isActive} style={{width:34,height:18,borderRadius:9,border:"none",padding:0,cursor:busy?"wait":"pointer",background:isActive?"#1877f2":(T.textSm+"55"),position:"relative",transition:"background .15s",flexShrink:0,opacity:busy?0.6:1}}>
-                                      <span style={{position:"absolute",top:2,left:isActive?18:2,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?"#1877f2":T.textSm}/>}</span>
-                                    </button>
-                                    )}
-                                  </td>
-                                  <td style={{padding:"10px 12px",fontSize:12,color:T.text,maxWidth:320,overflow:"hidden",whiteSpace:"nowrap"}}>
-                                    <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
-                                      {drillLabel ? (
-                                        <button onClick={()=>drillInto(r)} title={`Click para ver sus ${drillLabel}`} style={{flex:1,minWidth:0,background:"transparent",border:"none",color:T.text,fontSize:13,fontWeight:600,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
-                                          onMouseEnter={e=>{e.currentTarget.style.color=T.accent;e.currentTarget.style.textDecoration="underline";}}
-                                          onMouseLeave={e=>{e.currentTarget.style.color=T.text;e.currentTarget.style.textDecoration="none";}}>
-                                          {r.name||"(sin nombre)"} <span style={{fontSize:10,color:T.accent,fontWeight:700}}>{drillLabel} →</span>
-                                        </button>
-                                      ) : (
-                                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{r.name||"(sin nombre)"}</span>
-                                      )}
-                                    </div>
-                                    <div style={{fontSize:10,color:T.textSm,marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                                      <span style={{padding:"1px 6px",borderRadius:4,background:aLevel==="campaign"?T.accent+"22":aLevel==="adset"?T.green+"22":T.yellow+"22",color:aLevel==="campaign"?T.accent:aLevel==="adset"?T.green:T.yellow,fontWeight:700}}>{aLevel==="campaign"?"Camp":aLevel==="adset"?"Adset":"Ad"}</span>
-                                      <span style={{padding:"1px 6px",borderRadius:4,background:isActive?T.green+"22":T.red+"22",color:isActive?T.green:T.red,fontWeight:600}}>{r.effective_status||"—"}</span>
-                                      {r.daily_budget && (metaEditable
-                                        ? <button onClick={()=>cambiarPresupuesto(r)} disabled={busy} title="Cambiar presupuesto diario" style={{background:"transparent",border:"none",padding:0,fontSize:10,color:T.accent,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline dotted"}}>· {cur}{fmt(r.daily_budget)}/día ✎</button>
-                                        : <span>· {cur}{fmt(r.daily_budget)}/día</span>)}
-                                      {(() => {
-                                        const prods = productsForRow(r, aLevel);
-                                        if (prods.length === 0) return null;
-                                        const avgBe = prods.filter(p=>p.roas_be>0).reduce((s,p,_,arr)=>s+p.roas_be/arr.length,0);
-                                        return <>
-                                          <span style={{color:T.borderL}}>·</span>
-                                          {prods.slice(0,2).map(p => <span key={p.id} style={{padding:"1px 6px",borderRadius:4,background:T.accent+"15",color:T.accent,fontWeight:600,fontSize:9,letterSpacing:0.2}}>{p.name}</span>)}
-                                          {prods.length > 2 && <span style={{color:T.textSm,fontSize:9}}>+{prods.length-2}</span>}
-                                          {avgBe > 0 && <span style={{padding:"1px 6px",borderRadius:4,background:T.green+"15",color:T.green,fontWeight:700,fontSize:9,letterSpacing:0.2}}>BE {avgBe.toFixed(2)}x{prods.length>1?" (avg)":""}</span>}
-                                        </>;
-                                      })()}
-                                    </div>
-                                  </td>
-                                  {visibleCols.map(k => {
-                                    const col = COL_META[k];
-                                    const color = col.color ? col.color(r) : T.text;
+                    {(() => {
+                      // Un bloque por tienda de Impultienda: la tienda adonde fueron las ventas de la campaña
+                      // y, si todavía no vendió, la tienda del país que dice el nombre ("FR | ...").
+                      const tiendas = utmAtr?.tiendas || {};
+                      const porPais = {};
+                      for (const t of Object.values(tiendas)) if (t.pais) (porPais[t.pais] = porPais[t.pais] || []).push(t.id);
+                      const tiendaDe = (r) => {
+                        const ct = utmAtr?.ct?.[aLevel==="campaign" ? r.id : r.campaign_id];
+                        const top = ct && Object.entries(ct).sort((x,y)=>y[1]-x[1])[0];
+                        if (top) return top[0];
+                        const cods = String(r.name||"").toUpperCase().split(/[^A-Z]+/).filter(w=>w.length===2&&porPais[w]?.length===1);
+                        return cods.length ? porPais[cods[0]][0] : null;
+                      };
+                      const grupos = {};
+                      for (const r of filtered) { const k = Object.keys(tiendas).length ? (tiendaDe(r)||"_") : "_"; (grupos[k] = grupos[k] || []).push(r); }
+                      const orden = Object.keys(grupos).sort((x,y)=> x==="_" ? 1 : y==="_" ? -1 : sumas(grupos[y]).spend - sumas(grupos[x]).spend);
+                      const separar = orden.length > 1 || orden[0] !== "_";
+                      const nivelTxt = aLevel==="campaign" ? "campañas" : aLevel==="adset" ? "conjuntos" : "anuncios";
+                      const LINK = "#4599ff"; // azul de los nombres en el Administrador de anuncios
+                      const colW = 104;
+                      const anchoMin = 64 + 300 + 130 + visibleCols.length*colW;
+                      const bloque = (k, rows) => {
+                        const t = sumas(rows);
+                        const tienda = tiendas[k];
+                        return (
+                          <div key={k} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0}}>
+                            {separar && (
+                              <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+                                <span style={{fontSize:14,fontWeight:700,color:T.text}}>{k==="_" ? "Sin tienda" : (tienda?.nombre || k)}</span>
+                                {tienda?.pais && <span style={{fontSize:10,fontWeight:700,color:T.textMd,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:5,padding:"2px 6px",letterSpacing:0.4}}>{tienda.pais}</span>}
+                                <span style={{fontSize:11,color:T.textSm}}>{rows.length} {nivelTxt}</span>
+                                <span style={{flex:1}}/>
+                                <span style={{fontSize:12,color:T.textMd}}>Gasto <b style={{color:T.text}}>{cur}{fmt(t.spend)}</b></span>
+                                <span style={{fontSize:12,color:T.textMd}}>Ventas <b style={{color:T.text}}>{t.n}</b></span>
+                                <span style={{fontSize:12,color:T.textMd}}>ROAS <b style={{color:aRoasBe>0&&t.spend?(t.roas>=aRoasBe?T.green:T.red):T.text}}>{fmt(t.roas)}x</b></span>
+                              </div>
+                            )}
+                            <div style={{overflowX:"auto"}}>
+                              <table style={{width:"100%",minWidth:anchoMin,tableLayout:"fixed",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                <colgroup><col style={{width:64}}/><col style={{width:300}}/><col style={{width:130}}/>{visibleCols.map(c=><col key={c} style={{width:colW}}/>)}</colgroup>
+                                <thead style={{background:T.bg}}>
+                                  <tr>
+                                    <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,fontWeight:600,color:T.textMd,borderBottom:`1px solid ${T.border}`,verticalAlign:"bottom"}}>Act.</th>
+                                    {headerCell("name", aLevel==="campaign"?"Campaña":aLevel==="adset"?"Conjunto de anuncios":"Anuncio", "left")}
+                                    {headerCell("daily_budget", "Presupuesto")}
+                                    {visibleCols.map(c => headerCell(c, COL_META[c].label))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {rows.map(r => {
+                                    const busy = !!aBusyIds[r.id];
+                                    const isActive = r.effective_status === "ACTIVE";
+                                    const drillLabel = aLevel==="campaign" ? "conjuntos" : aLevel==="adset" ? "anuncios" : null;
+                                    const editando = aBudgetEdit?.id === r.id;
+                                    const puedeSwitch = metaEditable && !busy;
                                     return (
-                                      <td key={k} style={{padding:"10px 12px",textAlign:"right",fontSize:12,color,fontWeight:col.bold?700:400,whiteSpace:"nowrap"}}>{col.render(r)}</td>
+                                      <tr key={r.id} className="gh-meta-row" style={{borderBottom:`1px solid ${T.borderL}`}}>
+                                        <td style={{padding:"10px 12px",verticalAlign:"top"}}>
+                                          <button onClick={()=>puedeSwitch&&toggleStatus(r)} disabled={!puedeSwitch} role="switch" aria-checked={isActive}
+                                            title={!metaEditable ? `${isActive?"Activa":"Pausada"}. Solo lectura: para activar o pausar desde Growith conectá un token con ads_management (pestaña Cuenta).` : isActive?"Desactivar":"Activar"}
+                                            style={{width:34,height:18,borderRadius:9,border:"none",padding:0,cursor:busy?"wait":metaEditable?"pointer":"not-allowed",background:isActive?"#1877f2":(T.textSm+"55"),position:"relative",transition:"background .15s",flexShrink:0,opacity:metaEditable?(busy?0.6:1):0.45}}>
+                                            <span style={{position:"absolute",top:2,left:isActive?18:2,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?"#1877f2":T.textSm}/>}</span>
+                                          </button>
+                                        </td>
+                                        <td style={{padding:"10px 12px",fontSize:13,color:T.text,overflow:"hidden",verticalAlign:"top"}}>
+                                          {drillLabel ? (
+                                            <button onClick={()=>drillInto(r)} title={`Ver sus ${drillLabel}`} style={{display:"block",width:"100%",background:"transparent",border:"none",color:LINK,fontSize:13,fontWeight:500,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
+                                              onMouseEnter={e=>{e.currentTarget.style.textDecoration="underline";}}
+                                              onMouseLeave={e=>{e.currentTarget.style.textDecoration="none";}}>
+                                              {r.name||"(sin nombre)"}
+                                            </button>
+                                          ) : (
+                                            <div style={{color:LINK,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||"(sin nombre)"}</div>
+                                          )}
+                                          <div style={{fontSize:11,color:T.textSm,marginTop:3,display:"flex",alignItems:"center",gap:6,overflow:"hidden",whiteSpace:"nowrap"}}>
+                                            <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:isActive?T.green:(T.textSm+"88")}}/>{isActive?"Activa":r.effective_status==="PAUSED"?"Desactivada":(r.effective_status||"—").toLowerCase().replace(/_/g," ")}</span>
+                                            {(() => {
+                                              const prods = productsForRow(r, aLevel);
+                                              if (prods.length === 0) return null;
+                                              const avgBe = prods.filter(p=>p.roas_be>0).reduce((s,p,_,arr)=>s+p.roas_be/arr.length,0);
+                                              return <>
+                                                <span style={{color:T.borderL}}>·</span>
+                                                {prods.slice(0,2).map(p => <span key={p.id} style={{padding:"1px 6px",borderRadius:4,background:T.accent+"15",color:T.accent,fontWeight:600,fontSize:9,letterSpacing:0.2}}>{p.name}</span>)}
+                                                {prods.length > 2 && <span style={{color:T.textSm,fontSize:9}}>+{prods.length-2}</span>}
+                                                {avgBe > 0 && <span style={{padding:"1px 6px",borderRadius:4,background:T.green+"15",color:T.green,fontWeight:700,fontSize:9,letterSpacing:0.2}}>BE {avgBe.toFixed(2)}x{prods.length>1?" (avg)":""}</span>}
+                                              </>;
+                                            })()}
+                                          </div>
+                                        </td>
+                                        <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,verticalAlign:"top",whiteSpace:"nowrap"}}>
+                                          {!r.daily_budget ? (
+                                            <span style={{fontSize:11,color:T.textSm,whiteSpace:"normal"}}>{aLevel==="ad"?"—":aLevel==="campaign"?"Del conjunto":"De la campaña"}</span>
+                                          ) : editando ? (
+                                            <input autoFocus type="number" min="1" step="0.01" value={aBudgetEdit.val}
+                                              onChange={e=>setABudgetEdit({id:r.id,val:e.target.value})}
+                                              onKeyDown={e=>{ if(e.key==="Enter") cambiarPresupuesto(r, aBudgetEdit.val); if(e.key==="Escape") setABudgetEdit(null); }}
+                                              onBlur={()=>cambiarPresupuesto(r, aBudgetEdit.val)}
+                                              style={{width:"100%",boxSizing:"border-box",background:T.input,border:`1px solid ${LINK}`,borderRadius:6,padding:"4px 6px",fontSize:12,color:T.text,textAlign:"right",fontFamily:"inherit",outline:"none"}}/>
+                                          ) : (
+                                            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"flex-end",gap:6}}>
+                                              <div>
+                                                <div>{cur}{fmt(r.daily_budget)}</div>
+                                                <div style={{fontSize:10,color:T.textSm,marginTop:2}}>Diario</div>
+                                              </div>
+                                              {metaEditable && <button onClick={()=>setABudgetEdit({id:r.id,val:String(r.daily_budget)})} disabled={busy} title="Editar presupuesto diario" style={{background:"transparent",border:"none",padding:2,cursor:"pointer",color:T.textSm,lineHeight:0}}
+                                                onMouseEnter={e=>{e.currentTarget.style.color=LINK;}} onMouseLeave={e=>{e.currentTarget.style.color=T.textSm;}}>
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+                                              </button>}
+                                            </div>
+                                          )}
+                                        </td>
+                                        {visibleCols.map(c => {
+                                          const col = COL_META[c];
+                                          const color = col.color ? col.color(r) : T.text;
+                                          return <td key={c} style={{padding:"10px 12px",textAlign:"right",fontSize:12,color,fontWeight:col.bold?700:400,whiteSpace:"nowrap",verticalAlign:"top"}}>{col.render(r)}</td>;
+                                        })}
+                                      </tr>
                                     );
                                   })}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                          <tfoot style={{background:T.bg}}>
-                            <tr>
-                              <td style={{padding:"10px 12px"}}></td>
-                              <td style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:T.textSm}}>Totales · {filtered.length} {aLevel}{filtered.length===1?"":"s"}</td>
-                              {visibleCols.map(k => {
-                                const col = COL_META[k];
-                                const color = col.totalColor ? col.totalColor() : T.text;
-                                return <td key={k} style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color,whiteSpace:"nowrap"}}>{col.total()}</td>;
-                              })}
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
+                                </tbody>
+                                <tfoot style={{background:T.bg}}>
+                                  <tr>
+                                    <td style={{padding:"10px 12px"}}></td>
+                                    <td style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:T.textSm}}>Resultados de {rows.length} {nivelTxt}</td>
+                                    <td></td>
+                                    {visibleCols.map(c => {
+                                      const col = COL_META[c];
+                                      const color = col.totalColor ? col.totalColor() : T.text;
+                                      return <td key={c} style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color,whiteSpace:"nowrap"}}>{col.total(t)}</td>;
+                                    })}
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      };
+                      return orden.map(k => bloque(k, grupos[k]));
+                    })()}
                     </>
                   );
                 })()}

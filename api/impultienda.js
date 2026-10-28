@@ -90,7 +90,7 @@ export function utcDeLocal(fecha, hora, tz) {
 
 // ── Monedas → USD (open.er-api.com, sin clave, caché 6 h en memoria) ──
 let _fx = null, _fxAt = 0;
-async function fxPorUsd() {
+export async function fxPorUsd() {
   if (_fx && Date.now() - _fxAt < 6 * 3600000) return _fx;
   try { const j = await (await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(6000) })).json(); if (j?.rates) { _fx = { ...j.rates }; _fxAt = Date.now(); } } catch (_) {}
   // Pesos argentinos: dólar cripto (venta), no el oficial. El resto de las monedas, oficial.
@@ -401,7 +401,7 @@ export async function construirIndiceUtm(db, uid, dias = 60) {
   await db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").set(idx);
   return idx;
 }
-async function leerIndiceUtm(db, uid) {
+export async function leerIndiceUtm(db, uid) {
   const d = await db.collection("users").doc(uid).collection("impultienda_cfg").doc("utm_idx").get();
   return d.exists ? d.data() : null;
 }
@@ -450,14 +450,32 @@ export function atribuirUtm(utm, idx) {
 
 // Ventas reales por campaña / conjunto / anuncio en el rango (USD). Una venta = la compra
 // principal; el post-compra suma facturación a la campaña de su orden original.
+// Tiendas de Impultienda (manuales + las que aparecen en las ventas) con su país.
+// Ojo: normaliza o.store_id de las ventas a la tienda manual con el mismo nombre.
+function armarTiendas(cfg, ordenes) {
+  const paises = cfg.paises || {};
+  const tiendasMap = {};
+  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendasMap[id] = { id, nombre: t.nombre || id, pais: paises[id] || t.pais || null, votos: {} };
+  const porNombre = {};
+  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) if (id.startsWith("n_")) porNombre[norm(t.nombre)] = id;
+  for (const o of ordenes) { if (o.store_id && !tiendasMap[o.store_id] && porNombre[norm(o.store_nombre)]) o.store_id = porNombre[norm(o.store_nombre)]; }
+  for (const o of ordenes) if (o.store_id && !tiendasMap[o.store_id]) tiendasMap[o.store_id] = { id: o.store_id, nombre: o.store_nombre || o.store_id, pais: paises[o.store_id] || null, votos: {} };
+  // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
+  for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
+  for (const t of Object.values(tiendasMap)) { if (!t.pais) { const top = Object.entries(t.votos).sort((a, b) => b[1] - a[1])[0]; if (top) { t.pais = top[0]; t.paisAuto = true; } } delete t.votos; }
+  return tiendasMap;
+}
+
 export async function utmAtribucion(db, uid, desde, hasta, tz, idx) {
   const desdeMs = utcDeLocal(desde, 0, tz), hastaMs = utcDeLocal(addDias(hasta, 1), 0, tz);
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 2 * 86400000).toISOString()).get();
   const todas = snap.docs.map(d => d.data());
   const delWebhook = new Set(todas.filter(o => !o.importado && o.orden != null).map(o => String(o.orden)));
   const ordenes = todas.filter(o => !o.importado || !delWebhook.has(String(o.orden)));
-  const fx = await fxPorUsd();
-  const out = { c: {}, s: {}, a: {}, total: { n: 0, rev: 0 }, sinAtribuir: { n: 0, rev: 0 }, sinUtm: 0, importadas: 0 };
+  const [fx, cfgSnap] = await Promise.all([fxPorUsd(), db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()]);
+  const tiendasMap = armarTiendas(cfgSnap.data() || {}, ordenes);
+  // ct: por campaña, cuántas ventas fueron a cada tienda (para agrupar campañas por tienda).
+  const out = { c: {}, s: {}, a: {}, ct: {}, tiendas: tiendasMap, total: { n: 0, rev: 0 }, sinAtribuir: { n: 0, rev: 0 }, sinUtm: 0, importadas: 0 };
   const atr = {};
   for (const o of ordenes) if (!o.post_compra) atr[o.order_id] = atribuirUtm(o.utm, idx);
   for (const o of ordenes) {
@@ -469,6 +487,7 @@ export async function utmAtribucion(db, uid, desde, hasta, tz, idx) {
     out.total.n += n; out.total.rev += usd;
     if (!o.post_compra) { if (o.importado) out.importadas++; else if (!o.utm) out.sinUtm++; }
     if (!x) { out.sinAtribuir.n += n; out.sinAtribuir.rev += usd; continue; }
+    if (x.c && o.store_id) { const m = out.ct[x.c] || (out.ct[x.c] = {}); m[o.store_id] = (m[o.store_id] || 0) + 1; }
     for (const nivel of ["c", "s", "a"]) if (x[nivel]) { const m = out[nivel][x[nivel]] || (out[nivel][x[nivel]] = { n: 0, rev: 0 }); m.n += n; m.rev += usd; }
   }
   return out;
@@ -500,16 +519,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   }
   const feePct = pctReal ?? Number(cfg.feePct ?? 2.9), feeFijo = pctReal != null ? 0 : Number(cfg.feeFijo ?? 0.3);
   const ventasLista = [];
-  const paises = cfg.paises || {};
-  const tiendasMap = {};
-  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendasMap[id] = { id, nombre: t.nombre || id, pais: paises[id] || t.pais || null, votos: {} };
-  const porNombre = {};
-  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) if (id.startsWith("n_")) porNombre[norm(t.nombre)] = id;
-  for (const o of ordenes) { if (o.store_id && !tiendasMap[o.store_id] && porNombre[norm(o.store_nombre)]) o.store_id = porNombre[norm(o.store_nombre)]; }
-  for (const o of ordenes) if (o.store_id && !tiendasMap[o.store_id]) tiendasMap[o.store_id] = { id: o.store_id, nombre: o.store_nombre || o.store_id, pais: paises[o.store_id] || null, votos: {} };
-  // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
-  for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
-  for (const t of Object.values(tiendasMap)) { if (!t.pais) { const top = Object.entries(t.votos).sort((a, b) => b[1] - a[1])[0]; if (top) { t.pais = top[0]; t.paisAuto = true; } } delete t.votos; }
+  const tiendasMap = armarTiendas(cfg, ordenes);
   const filas = {}; // "fecha|hora|tienda"
   const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
   const ventasCamp = {};

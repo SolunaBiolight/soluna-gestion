@@ -1815,6 +1815,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
           }
         } catch (e) { /* seguimos sin status */ }
 
+        const esCheckout = (a) => a.action_type === "initiate_checkout" || a.action_type === "offsite_conversion.fb_pixel_initiate_checkout";
         const rows = (data.data || []).map(r => {
           const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
           const id = r[idField];
@@ -1848,6 +1849,8 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             // Reproducciones de 3 s (actions.video_view) y tiempo promedio de reproducción (segundos).
             video_3s: parseInt((r.actions || []).find(a => a.action_type === "video_view")?.value) || 0,
             avg_watch: parseFloat((r.video_avg_time_watched_actions || [])[0]?.value) || 0,
+            // Pagos iniciados (InitiateCheckout del píxel).
+            checkouts: parseInt((r.actions || []).find(esCheckout)?.value) || 0,
           };
         });
 
@@ -1859,7 +1862,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             rows.push({
               id, name: n.name || "", status: n.status, effective_status: n.effective_status,
               spend: 0, impressions: 0, clicks: 0, ctr: 0, cpm: 0, cpc: 0, frequency: 0, reach: 0,
-              purchases: 0, purchase_value: 0, roas: 0, cpa: 0, video_3s: 0, avg_watch: 0,
+              purchases: 0, purchase_value: 0, roas: 0, cpa: 0, video_3s: 0, avg_watch: 0, checkouts: 0,
               daily_budget: n.daily_budget ? parseFloat(n.daily_budget) / 100 : null,
               objective: n.objective || null,
               creative: n.creative || null,
@@ -1893,13 +1896,14 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
                 if (!isFinite(h) || !r.date_start) continue;
                 const z = zonaDe(new Date(utcDeLocal(r.date_start, h, accTz)).toISOString(), tzQ);
                 if (z.fecha < since || z.fecha > until) continue;
-                const a = acc[r[idField]] || (acc[r[idField]] = { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0 });
+                const a = acc[r[idField]] || (acc[r[idField]] = { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0, checkouts: 0 });
                 a.spend += parseFloat(r.spend) || 0; a.impressions += parseInt(r.impressions) || 0; a.clicks += parseInt(r.clicks) || 0;
                 a.video_3s += parseInt((r.actions || []).find(x => x.action_type === "video_view")?.value) || 0;
+                a.checkouts += parseInt((r.actions || []).find(esCheckout)?.value) || 0;
                 a.purchases += parseInt((r.actions || []).find(isP)?.value) || 0; a.purchase_value += parseFloat((r.action_values || []).find(isP)?.value) || 0;
               }
               for (const row of rows) {
-                const a = acc[row.id] || { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0 };
+                const a = acc[row.id] || { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0, checkouts: 0 };
                 Object.assign(row, a, {
                   ctr: a.impressions ? a.clicks / a.impressions * 100 : 0, cpm: a.impressions ? a.spend / a.impressions * 1000 : 0,
                   cpc: a.clicks ? a.spend / a.clicks : 0, roas: a.spend ? a.purchase_value / a.spend : 0, cpa: a.purchases ? a.spend / a.purchases : 0,
