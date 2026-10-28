@@ -18933,13 +18933,20 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   const [editCards,setEditCards]=useState(false);
   const [mon,setMonS]=useState(()=>{ try{ return localStorage.getItem("growith_imp_moneda")||"USD"; }catch(_){ return "USD"; } });
   const setMon=(v)=>{ setMonS(v); try{ localStorage.setItem("growith_imp_moneda",v); }catch(_){} };
+  const enCurso=useRef(false);
   const cargar = async(fresh=false)=>{
-    if(!uid) return; setCargando(true); setErr(null);
+    if(!uid) return; if(enCurso.current){ enCurso.pend=true; return; } enCurso.current=true; setCargando(true); setErr(null);
     try{ const r=await authFetch(`/api/impultienda?action=por_hora&uid=${uid}&desde=${desde}&hasta=${hasta}&tz=${encodeURIComponent(tz)}${fresh?"&fresh=1":""}`); const j=await r.json(); if(j.error) throw new Error(j.error); setData(j); }
-    catch(e){ setErr(e.message); } finally{ setCargando(false); }
+    catch(e){ setErr(e.message); } finally{ enCurso.current=false; setCargando(false); if(enCurso.pend){ enCurso.pend=false; setTimeout(()=>cargarRef.current(true),0); } }
   };
+  const cargarRef=useRef(cargar); cargarRef.current=cargar;
   useEffect(()=>{ if(vista!=="conexion") cargar(); /* eslint-disable-next-line */ },[uid,desde,hasta,vista,tz]);
-  useEffect(()=>{ const id=setInterval(()=>{ if(document.visibilityState!=="hidden"&&hasta===hoy&&vista!=="conexion") cargar(); },2*60000); return ()=>clearInterval(id); /* eslint-disable-next-line */ },[desde,hasta,vista]);
+  // Gasto casi en vivo: cada 30 s mientras el rango incluye hoy (el server cachea 30 s).
+  useEffect(()=>{ const id=setInterval(()=>{ if(document.visibilityState!=="hidden"&&hasta===hoy&&vista!=="conexion") cargarRef.current(); },30000); return ()=>clearInterval(id); /* eslint-disable-next-line */ },[desde,hasta,vista,hoy]);
+  // Venta al instante: el webhook escribe users/{uid}.imp_pulso y acá se recarga en el momento.
+  useEffect(()=>{ if(!uid) return; let prev=null;
+    const unsub=onSnapshot(doc(db,"users",uid),snap=>{ const p=snap.data()?.imp_pulso||0; if(prev!==null&&p!==prev&&document.visibilityState!=="hidden") cargarRef.current(); prev=p; },()=>{});
+    return ()=>unsub(); },[uid]);
   const rMon = mon==="USD" ? 1 : Number(data?.fx?.[mon])||null;
   ghImpMon.cod = rMon ? mon : "USD"; ghImpMon.r = rMon || 1;
   const filas=data?.filas||[];

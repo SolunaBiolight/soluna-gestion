@@ -150,6 +150,8 @@ async function webhook(req, res, db) {
   // Venta nueva: se borran los reportes en caché para que el Dashboard la muestre al instante.
   try { const cs = await db.collection("users").doc(uid).collection("impultienda_cfg").get(); const bd = db.batch(); let k = 0;
     for (const x of cs.docs) if (x.id.startsWith("cache_")) { bd.delete(x.ref); k++; } if (k) await bd.commit(); } catch (_) {}
+  // Pulso para el front: el Dashboard escucha este campo y recarga en el momento.
+  await db.collection("users").doc(uid).set({ imp_pulso: Date.now() }, { merge: true }).catch(() => {});
   return res.status(200).json({ ok: true });
 }
 
@@ -830,11 +832,12 @@ export default async function handler(req, res) {
       const desde = /^\d{4}-\d{2}-\d{2}$/.test(req.query.desde || "") ? req.query.desde : hoy;
       const hasta = /^\d{4}-\d{2}-\d{2}$/.test(req.query.hasta || "") ? req.query.hasta : desde;
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
-      // Caché de 10 minutos por rango (fresh=1 la saltea).
+      // Caché por rango (fresh=1 la saltea): 30 s si incluye hoy, para que el gasto se vea casi en vivo; 10 min si es pasado.
+      const ttl = hasta >= hoy ? 30000 : 10 * 60000;
       const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v10_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
-        if (c.exists && Date.now() - (c.data().ts || 0) < 10 * 60000) return res.json({ ...JSON.parse(c.data().body), cache: true });
+        if (c.exists && Date.now() - (c.data().ts || 0) < ttl) return res.json({ ...JSON.parse(c.data().body), cache: true });
       }
       const out = await porHora(db, uid, desde, hasta, tz);
       await cacheRef.set({ ts: Date.now(), body: JSON.stringify(out) }).catch(() => {});
