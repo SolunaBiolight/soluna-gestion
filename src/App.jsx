@@ -34961,7 +34961,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         // Todas las cuentas elegidas en paralelo, unidas en una sola lista (cada fila sabe de qué cuenta es).
         const res = await Promise.all(ctasJuntas.map(c=>metaApi("insights","GET",null,{...params,ad_account:c.id}).then(x=>({c,x})).catch(e=>({c,x:{error:e.message}}))));
         const errs = res.filter(r=>r.x?.error).map(r=>`${r.c.nombre}: ${r.x.error}`);
-        const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...convFila(row,r.c.moneda),_moneda:(mmon&&fxM)?mmon:(r.c.moneda||"USD"),_act:r.c.id,_cuenta:r.c.nombre,name:`${row.name||""}  ·  ${r.c.nombre}`})));
+        const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...convFila(row,r.c.moneda),_moneda:(mmon&&fxM)?mmon:(r.c.moneda||"USD"),_act:r.c.id,_cuenta:r.c.nombre})));
         d = rows.length||!errs.length ? {rows} : {error:errs.join(" | ")};
       } else { d = await metaApi("insights","GET",null,params); if (d?.rows) { const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency; d={...d,rows:d.rows.map(r=>({...convFila(r,de),_moneda:(mmon&&fxM)?mmon:(de||"USD")}))}; } }
       // Si dispararon otra carga después de esta, descartamos.
@@ -36464,6 +36464,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                           )}
                                           <div style={{fontSize:11,color:T.textSm,marginTop:3,display:"flex",alignItems:"center",gap:6,overflow:"hidden",whiteSpace:"nowrap"}}>
                                             <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:isActive?T.green:(T.textSm+"88")}}/>{isActive?"Activa":r.effective_status==="PAUSED"?"Desactivada":(r.effective_status||"—").toLowerCase().replace(/_/g," ")}</span>
+                                            {(() => { const cp = r._cuenta || (aDrill[0]?.act && ctasElegidas.find(c=>c.id===aDrill[0].act)?.nombre) || activeAcc?.ad_account_name; return cp ? <span title="Cuenta publicitaria" style={{color:T.green,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}}>CP: {cp}</span> : null; })()}
                                             {(() => {
                                               const prods = productsForRow(r, aLevel);
                                               if (prods.length === 0) return null;
