@@ -22559,7 +22559,27 @@ function ghDepTonos(notas,vol){ const ac=ghDepAudio(); if(!ac) return false;
   }catch(_){ return false; }
   return ac.state==="running"; }
 function ghDepBeep(){ return ghDepTonos([[880,0,0.12,"sine"],[1320,0.14,0.14,"sine"]],0.35); }
-function ghDepAlarma(){ const n=[]; for(let r=0;r<3;r++) [880,1175,1568].forEach((f,i)=>n.push([f,r*0.78+i*0.17,0.15])); return ghDepTonos(n,0.6); }
+// "Ka-ching" de caja registradora (28/oct/2026, pedido de Lautaro: como el aviso de venta de Tienda Nube
+// o Shopify): "ka" = golpe mecánico corto (ruido filtrado) y "ching" = campana brillante con parciales
+// inarmónicos que decae lento. Suena dos veces seguidas para que llame la atención.
+function ghDepKaChing(ac,dest,t){
+  // ka: ráfaga de ruido con filtro pasa-banda, 60 ms
+  const len=Math.floor(ac.sampleRate*0.07), buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
+  const ns=ac.createBufferSource(); ns.buffer=buf; const bp=ac.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=2400; bp.Q.value=1.2;
+  const gk=ac.createGain(); gk.gain.value=0.9; ns.connect(bp); bp.connect(gk); gk.connect(dest); ns.start(t);
+  // ching: campana (fundamental + parciales inarmónicos), ataque instantáneo y cola larga
+  const tc=t+0.09;
+  [[2093,0.55,1.4],[2637,0.35,1.1],[3520,0.25,0.8],[5274,0.15,0.5],[6645,0.08,0.35]].forEach(([f,v,dur])=>{
+    const o=ac.createOscillator(), g=ac.createGain(); o.type="sine"; o.frequency.setValueAtTime(f*1.004,tc); o.frequency.exponentialRampToValueAtTime(f,tc+0.05);
+    g.gain.setValueAtTime(0.0001,tc); g.gain.exponentialRampToValueAtTime(v,tc+0.004); g.gain.exponentialRampToValueAtTime(0.0001,tc+dur);
+    o.connect(g); g.connect(dest); o.start(tc); o.stop(tc+dur+0.05); });
+}
+function ghDepAlarma(){ const ac=ghDepAudio(); if(!ac) return false;
+  try{ const comp=ac.createDynamicsCompressor(); comp.threshold.value=-18; comp.ratio.value=6; comp.connect(ac.destination); const master=ac.createGain(); master.gain.value=1.4; master.connect(comp);
+    const t0=ac.currentTime+0.05; ghDepKaChing(ac,master,t0); ghDepKaChing(ac,master,t0+0.55);
+  }catch(_){ return false; }
+  return ac.state==="running"; }
 function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   const iS=InputStyle(T);
   const [st,setSt]=useState(null); const [err,setErr]=useState("");
