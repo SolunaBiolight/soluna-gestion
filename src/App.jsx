@@ -34671,6 +34671,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     }catch(e){ setStudioDriveBusy(false); toast("Drive: "+e.message,"error"); }
   }
   const activeAcc=accounts.find(a=>a.id===activeAccId)||null;
+  // Con cuentas elegidas (productos digitales) no hace falta una cuenta publicitaria "principal" en la conexión.
+  const conCuentaAds=!!activeAcc&&(!!activeAcc.ad_account_id||ctasElegidas.length>0);
   useEffect(()=>{
     if(!activeAccId){ setKnownUrls([]); return; }
     let alive=true; let local=[];
@@ -35962,13 +35964,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       {/* Tabs internos REMOVIDOS — navegación va por el sidebar izquierdo */}
 
       {/* Banner si la cuenta esta conectada pero falta seleccionar ad_account_id */}
-      {activeAcc && !activeAcc.ad_account_id && (
+      {activeAcc && !conCuentaAds && (
         <AdAccountPicker T={T} accId={activeAccId} activeAcc={activeAcc} metaApi={metaApi} onPicked={()=>{
           metaApi("accounts").then(d=>{ if(d.accounts) setAccounts(d.accounts); });
         }}/>
       )}
       {/* Selector compacto para cambiar entre cuentas (CP5/CP7) del mismo token */}
-      {activeAcc && activeAcc.ad_account_id && ctasElegidas.length>0 && (
+      {conCuentaAds && ctasElegidas.length>0 && (
         <div style={{maxWidth:"100%",padding:"16px 24px 0",boxSizing:"border-box"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px",position:"relative"}}>
             <BrandIcon name="meta" size={18}/>
@@ -35993,7 +35995,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
           </div>
         </div>
       )}
-      {activeAcc && activeAcc.ad_account_id && tab==="analisis" && (
+      {conCuentaAds && tab==="analisis" && (
         <div style={{maxWidth:"100%",padding:"12px 24px 0",boxSizing:"border-box"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
             <GhFiltroPill T={T} icon={<GhI n="calendar" size={14}/>} label="Período"><DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/></GhFiltroPill>
