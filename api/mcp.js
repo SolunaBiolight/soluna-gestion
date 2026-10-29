@@ -450,6 +450,7 @@ const INSTRUCCIONES = `Growith es la app de gestión del e-commerce del usuario 
 - Las herramientas devuelven cifras REALES calculadas por Growith. Citá solo esos números: no estimes ni inventes datos del negocio. Si un dato no está, decilo e indicá en qué sección de Growith verlo (https://www.growithapp.com).
 - Los montos están en pesos argentinos (ARS) salvo que el campo diga USD. "datos_al" indica cuándo se calcularon las cifras: aclaralo si te preguntan por lo más reciente.
 - Respondé en el idioma del usuario (por defecto, español rioplatense con voseo).
+- Además de los números: referencias (competencia y materiales de marca), canjes (influencers y su contenido), reclamos (voz del cliente, sin datos del comprador) y tareas (del equipo). Son de lectura: los cambios los hace el usuario en Growith.
 - El acceso es de solo lectura, con DOS excepciones: reglas_crear / reglas_editar / reglas_borrar (y escala_guardar_reglas) cargan las reglas de escala automática de Meta que el usuario te dicte (Growith las corre solo cada 15 min), y meta_accion pausa, activa y cambia presupuestos y pujas (cost cap / bid cap) de Meta cuando la cuenta tiene un token con ads_management (meta_administrador lo indica en "puede_editar"). Sin ese token, cualquier cambio lo hace el usuario desde Growith. Stock, precios y lo demás siempre los cambia el usuario.
 - Para revisar o administrar Meta usá meta_administrador: las ventas, revenue, ROAS, CPA y AOV salen de las ventas reales cruzadas por UTM (no del píxel); gasto, CPC, CTR, CPM, frecuencia, pagos iniciados y retención salen de Meta. Antes de cada meta_accion, explicá el motivo con esos números; nunca actúes sobre campañas que el usuario no te pidió administrar.
 - La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente; si tiene varios y no eligió, se responde sobre la tienda que tiene abierta en Growith (cada respuesta lo aclara en "cliente"). seleccionar_cliente y cliente_id aceptan el NOMBRE de la tienda (sin distinguir mayúsculas) o el cliente_id. Los números de ventas y rentabilidad se recalculan en vivo si la caché tiene más de 5 minutos: son los mismos que ve el usuario en su Dashboard en ese momento. NO llames a seleccionar_cliente y a una consulta en la misma tanda (en paralelo): primero seleccioná, esperá la respuesta y recién después consultá; o mandá cliente_id directamente en la consulta. Cada respuesta trae el campo "cliente" (id y nombre): verificá que sea el que el usuario pidió. Cuando respondas, aclará de qué cliente son los números.`;
@@ -916,6 +917,143 @@ async function tiktokCampanas(u, since, until) {
   return { conectado: true, cuentas };
 }
 
+// ─── Referencias, canjes, reclamos y tareas (solo lectura) ───────────────
+// Salen de las mismas colecciones que leen las secciones de la app. Nunca
+// devuelven datos de contacto: ni de compradores (reclamos) ni de influencers
+// ni del equipo (mails, teléfonos, DNI, direcciones, tokens de portal). Los
+// textos libres pasan por sinContacto() por si alguien pegó un mail o un
+// teléfono en la descripción.
+const DIA_MS = 86400000;
+function fechaIso(v) {
+  if (!v) return null;
+  if (typeof v === "string") return v;
+  if (typeof v.toDate === "function") return v.toDate().toISOString();
+  if (v instanceof Date) return isNaN(v) ? null : v.toISOString();
+  const s = v._seconds ?? v.seconds;
+  return typeof s === "number" ? new Date(s * 1000).toISOString() : null;
+}
+const msDe = (v) => { const f = fechaIso(v); const t = f ? Date.parse(f) : NaN; return isNaN(t) ? 0 : t; };
+function sinContacto(s, max = 1500) {
+  if (!s) return "";
+  return String(s)
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[mail]")
+    // 8 a 13 dígitos es un teléfono; no las fechas (2026-10-28) ni los montos (12.500.000).
+    .replace(/(\+?\d[\d\s().-]{7,}\d)/g, (m) => {
+      const n = m.replace(/\D/g, "").length;
+      if (n < 8 || n > 13 || /^\d{4}-\d{2}-\d{2}$/.test(m.trim()) || /^\d{1,3}(\.\d{3})+$/.test(m.trim())) return m;
+      return "[teléfono]";
+    })
+    .slice(0, max);
+}
+const REF_TIPO_LABEL = { web: "Website", meta: "Meta Ads (Ad Library)", instagram: "Instagram", tiktok: "TikTok", youtube: "YouTube", drive: "Drive", otro: "Link" };
+const REC_CERRADOS = ["Resuelto", "Rechazado"];
+// Mismos pasos que ghRecPasos() de AppReclamos (src/App.jsx).
+function pasosReclamo(tipo) {
+  if (tipo === "Cambio") return ["Nuevo", "Contactado", "Esperando producto", "Producto recibido", "Envío en camino", "Resuelto"];
+  if (tipo === "Devolución") return ["Nuevo", "Contactado", "Esperando producto", "Producto recibido", "Resuelto"];
+  return ["Nuevo", "Contactado", "Resuelto"];
+}
+const TAREA_ESTADO_LABEL = { pendiente: "Pendiente", en_proceso: "En proceso", bloqueada: "Bloqueada", revision: "En revisión", entregado: "Entregado", aprobado: "Aprobado" };
+const contar = (arr, f) => arr.reduce((o, x) => { const k = f(x) || "sin dato"; o[k] = (o[k] || 0) + 1; return o; }, {});
+const productosDe = (arr) => (Array.isArray(arr) ? arr : []).map(p => (typeof p === "string" ? { producto: p, cantidad: 1 } : { producto: p?.producto || p?.nombre || "", cantidad: Number(p?.cantidad) || 1 })).filter(p => p.producto);
+
+async function leerReferencias(db, uid) {
+  const d = (await db.collection("general").doc(uid).get()).data() || {};
+  const referencias = (d.referencias || []).map(r => {
+    const links = (Array.isArray(r.links) ? r.links : []).filter(l => l?.url).map(l => ({ tipo: REF_TIPO_LABEL[l.tipo] || l.tipo || "Link", descripcion: l.label || "", url: l.url }));
+    // Referencias viejas (addReferencia) guardaban web / metaAds / ig sueltos.
+    for (const [k, tipo] of [["web", "Website"], ["metaAds", "Meta Ads (Ad Library)"], ["ig", "Instagram"]]) if (r[k]) links.push({ tipo, descripcion: "", url: r[k] });
+    return { id: r.id, nombre: r.nombre || "", categoria: r.categoria || r.tipo || null, notas: sinContacto(r.notas || r.nota || ""), links, creada: r.createdAt || null };
+  });
+  const materiales = (d.materiales || []).map(m => ({ id: m.id, nombre: m.nombre || "", categoria: m.cat || null, tipo: m.tipo || null, url: m.url || "", nota: sinContacto(m.nota || "") }));
+  const tablon = (d.posts || []).map(p => ({ texto: sinContacto(p.texto || ""), tipo: p.tipo || "aviso", fijado: !!p.pinned, fecha: p.createdAt || null }));
+  return { referencias, materiales, tablon };
+}
+
+async function leerCanjes(db, uid) {
+  const ahora = Date.now();
+  const [cs, is] = await Promise.all([
+    db.collection("canjes").where("ownerId", "==", uid).get(),
+    db.collection("influencers").where("ownerId", "==", uid).get(),
+  ]);
+  const todos = cs.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Abiertos todos; cerrados, los de los últimos 90 días.
+  const vigentes = todos.filter(c => c.estado !== "Cerrado" || ahora - msDe(c.finalizadoAt || c.updatedAt || c.createdAt) <= 90 * DIA_MS)
+    .sort((a, b) => msDe(b.updatedAt || b.createdAt) - msDe(a.updatedAt || a.createdAt)).slice(0, 300);
+  const canjes = vigentes.map(c => {
+    const piezas = (Array.isArray(c.piezas) && c.piezas.length ? c.piezas
+      : (c.contenido || []).flatMap(x => Array.from({ length: Number(x.acordados) || 0 }, (_, i) => ({ tipo: x.tipo, estado: i < (Number(x.entregados) || 0) ? "entregada" : "pendiente" }))))
+      .map(p => ({ tipo: p.tipo || "", estado: p.estado || "pendiente", fecha_limite: p.fechaLimite || null, vencida: p.estado === "pendiente" && !!p.fechaLimite && p.fechaLimite < hoyAR(), link: p.link || "" }));
+    return {
+      id: c.id, influencer: c.influencer || "", usuario: c.usuario || "", red: c.red || "", link_perfil: c.linkInstagram || "", seguidores: c.seguidores || "", nicho: c.nicho || "",
+      estado: c.estado || "", productos: productosDe(c.productosCanje).length ? productosDe(c.productosCanje) : (c.producto ? [{ producto: c.producto, cantidad: 1 }] : []),
+      fecha_envio: c.fechaEnvio || null, envio_programado: c.fechaEnvioProgr || null, envio_estado: c.trackingEstado || c.trackingCat || (c.tracking ? "con seguimiento" : "sin despachar"),
+      contenido_vence: c.contenidoVence || null, piezas,
+      piezas_resumen: { total: piezas.length, pendientes: piezas.filter(p => p.estado === "pendiente").length, entregadas: piezas.filter(p => p.estado === "entregada").length, publicadas: piezas.filter(p => p.estado === "publicada").length, vencidas: piezas.filter(p => p.vencida).length },
+      codigo_descuento: c.codigoDescuento || "", comision_pct: c.comisionPct || null, carpeta_drive: c.driveFolder || "", notas: sinContacto(c.notas || ""),
+      creado: fechaIso(c.createdAt), actualizado: fechaIso(c.updatedAt), cerrado: fechaIso(c.finalizadoAt),
+    };
+  });
+  const influencers = is.docs.map(d => d.data()).map(i => ({ nombre: i.nombre || "", usuario: i.usuario || "", red: i.red || "", seguidores: i.seguidores || "", nicho: i.nicho || "", codigo_descuento: i.codigoDescuento || "", descuento_pct: i.descuentoPct ?? null, comision_pct: i.comisionPct ?? null, carpeta_drive: i.driveFolder || "", notas: sinContacto(i.notas || "") }));
+  return { resumen: { canjes_total: todos.length, por_estado: contar(todos, c => c.estado), piezas_pendientes: canjes.reduce((s, c) => s + c.piezas_resumen.pendientes, 0), piezas_vencidas: canjes.reduce((s, c) => s + c.piezas_resumen.vencidas, 0) }, canjes, influencers };
+}
+
+async function leerReclamos(db, uid) {
+  const ahora = Date.now();
+  const s = await db.collection("reclamos").where("ownerId", "==", uid).get();
+  const todos = s.docs.map(d => ({ id: d.id, ...d.data() }));
+  const elegidos = todos.filter(r => !REC_CERRADOS.includes(r.estado) || ahora - msDe(r.resolvedAt || r.updatedAt || r.createdAt) <= 60 * DIA_MS)
+    .sort((a, b) => msDe(b.createdAt) - msDe(a.createdAt)).slice(0, 400);
+  const reclamos = elegidos.map(r => {
+    const abierto = !REC_CERRADOS.includes(r.estado);
+    const pasos = pasosReclamo(r.tipo);
+    const i = pasos.indexOf(r.estado);
+    return {
+      id: r.id, pedido: r.orderNum || null, tipo: r.tipo || "", abierto, paso_actual: r.estado || "", siguiente_paso: abierto ? (i >= 0 ? pasos[i + 1] || null : "Resuelto") : null, pasos,
+      motivo: r.motivo || "", descripcion: sinContacto(r.descripcion), resolucion: sinContacto(r.resolucion), notas_equipo: sinContacto([r.notasInternas, r.notas].filter(Boolean).join("\n")),
+      origen: r.fuente || (r.origen === "mp" ? "Mercado Pago" : r.origen === "ml" ? "Mercado Libre" : "Tienda"), incidente: r.incidente || "",
+      responsable: r.asignadoNombre || null, productos_devuelve: productosDe(r.productosRecibe), productos_cambio: productosDe(r.productosEnvia),
+      estado_recepcion: r.estadoRecepcion || "", estado_reembolso: r.estadoReembolso || "", correo_devolucion: r.devolEmpresa || "",
+      con_seguimiento_devolucion: !!r.trackingDevolucion, con_seguimiento_cambio: !!r.trackingCambio,
+      creado: fechaIso(r.createdAt), actualizado: fechaIso(r.updatedAt), resuelto: fechaIso(r.resolvedAt),
+      dias_abierto: abierto && msDe(r.createdAt) ? Math.floor((ahora - msDe(r.createdAt)) / DIA_MS) : null,
+      historial: (r.historial || []).slice(-20).map(h => ({ accion: sinContacto(h.accion, 200), fecha: h.fecha || null })),
+    };
+  });
+  const ab = reclamos.filter(r => r.abierto), ce = reclamos.filter(r => !r.abierto);
+  return { resumen: { abiertos: ab.length, cerrados_60_dias: ce.length, abiertos_por_paso: contar(ab, r => r.paso_actual), por_tipo: contar(reclamos, r => r.tipo), por_motivo: contar(reclamos, r => r.motivo) }, reclamos };
+}
+
+async function leerTareas(db, uid) {
+  const ahora = Date.now();
+  const [ts, cs] = await Promise.all([
+    db.collection("tareas").where("uid", "==", uid).get(),
+    db.collection("colaboradores").where("uid", "==", uid).get(),
+  ]);
+  // Mail → nombre del equipo, para nombrar a los asignados sin devolver mails.
+  const nombrePor = {}; cs.docs.forEach(d => { const c = d.data(); if (c.email) nombrePor[String(c.email).toLowerCase()] = c.nombre || null; });
+  const todas = ts.docs.map(d => ({ id: d.id, ...d.data() }));
+  const terminada = (t) => t.estado === "aprobado" || t.estado === "entregado";
+  // Abiertas todas; terminadas, las tocadas en los últimos 60 días.
+  const elegidas = todas.filter(t => !terminada(t) || ahora - msDe(t.updatedAt || t.createdAt) <= 60 * DIA_MS)
+    .sort((a, b) => (msDe(a.deadline) || Infinity) - (msDe(b.deadline) || Infinity)).slice(0, 300);
+  const tareas = elegidas.map(t => {
+    const emails = (t.asignadosEmails || [t.asignadoEmail]).filter(Boolean).map(e => String(e).toLowerCase());
+    const deadline = fechaIso(t.deadline);
+    return {
+      id: t.id, numero: t.tareaNumStr || null, titulo: t.titulo || "", estado: TAREA_ESTADO_LABEL[t.estado] || t.estado || "", prioridad: t.prioridad || "normal",
+      responsable: t.asignadoNombre || nombrePor[emails[0]] || null, asignados: emails.map(e => nombrePor[e] || (e === String(t.asignadoEmail || "").toLowerCase() ? t.asignadoNombre : null) || "sin nombre"),
+      fecha_limite: deadline ? deadline.slice(0, 10) : null, hora_limite: t.deadlineHora || null, vencida: !!deadline && !terminada(t) && Date.parse(deadline) < ahora,
+      descripcion: sinContacto(t.descripcion), brief: sinContacto(t.brief), es_campana: !!t.esCampaña, correcciones: t.correcciones || 0,
+      checklist: (t.checklist || []).map(c => ({ item: c.text || c.texto || "", hecho: !!c.done })),
+      links: (t.links || []).map(l => (typeof l === "string" ? l : l?.url)).filter(Boolean),
+      entregas: (t.deliverables || []).map(d => ({ link: d.link || "", detalle: d.label || "", version: d.version || null, fecha: fechaIso(d.fecha) })),
+      creada_por: t.creadoPor?.nombre || null, creada: fechaIso(t.createdAt), actualizada: fechaIso(t.updatedAt),
+    };
+  });
+  return { resumen: { total: tareas.length, por_estado: contar(tareas, t => t.estado), vencidas: tareas.filter(t => t.vencida).length, por_responsable: contar(tareas.filter(t => t.estado !== "Aprobado"), t => t.responsable) }, tareas };
+}
+
 const SEC = [{ type: "oauth2", scopes: [SCOPE] }];
 const ANN = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const SIN_ARGS = { type: "object", properties: {}, additionalProperties: false };
@@ -990,6 +1128,14 @@ const TOOLS = [
     "Aplica un cambio REAL en Meta Ads: pausar o activar una campaña, conjunto o anuncio, cambiar el presupuesto diario de una campaña (CBO) o conjunto (ABO), o cambiar la puja / cost cap de un conjunto (accion=puja, también entre 1/5 y 5 veces la actual). Solo funciona si la cuenta tiene un token con ads_management (meta_administrador → puede_editar). El presupuesto va en la moneda de la cuenta y por llamada puede ir de 1/5 a 5 veces el actual. Cada cambio queda registrado en Growith con el motivo. Usala solo cuando el usuario te pidió administrar sus campañas, y decí siempre qué cambiaste y por qué.",
     { type: "object", properties: { accion: { type: "string", enum: ["pausar", "activar", "presupuesto", "puja"] }, id: { type: "string", description: "id de la campaña, conjunto o anuncio (de meta_administrador)." }, presupuesto_diario: { type: "number", description: "Solo para accion=presupuesto: nuevo presupuesto diario en la moneda de la cuenta." }, puja: { type: "number", description: "Solo para accion=puja (id de un conjunto): nueva puja o costo objetivo en la moneda de la cuenta." }, estrategia: { type: "string", enum: ["COST_CAP", "LOWEST_COST_WITH_BID_CAP"], description: "Solo para accion=puja si el conjunto todavía no tiene puja: tipo de tope a poner." }, motivo: { type: "string", description: "Por qué se hace el cambio (queda en el registro)." } }, required: ["accion", "id", "motivo"], additionalProperties: false },
     { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }),
+  tool("referencias", "Referencias: competencia y materiales",
+    "Las referencias que el equipo cargó en Tareas y Equipo → Referencias: cada marca (competidores, inspiración) con sus links por tipo (Website/landing, Meta Ads = link a la Ad Library, Instagram, TikTok, YouTube, Drive u otro, con su descripción), más los materiales de marca (links a Drive, Figma, Canva…) y los avisos del tablón del equipo. Usala para saber qué competidores seguir y dónde mirar sus anuncios y landings."),
+  tool("canjes", "Influencers y canjes",
+    "Canjes con influencers (sección Canjes): influencer, @usuario, red, seguidores, nicho, estado del canje (Por enviar, Enviado, Contenido pendiente, Cerrado), productos enviados, estado del envío, código de descuento y comisión, carpeta de Drive y cada pieza de contenido acordada (tipo, estado pendiente/entregada/publicada, fecha límite, si está vencida y link). Incluye todos los abiertos y los cerrados de los últimos 90 días, más la lista de influencers. Sin mails, teléfonos ni direcciones."),
+  tool("reclamos", "Reclamos de clientes",
+    "Cambios, devoluciones, reclamos y contracargos (sección Reclamos): los abiertos y los cerrados de los últimos 60 días, con número de pedido, tipo, paso actual y el siguiente, motivo, descripción y resolución, origen (tienda, Mercado Pago, Mercado Libre), responsable, productos, días abierto e historial, más un resumen por paso, tipo y motivo. Es la voz del cliente: qué se rompe, qué no gusta, qué se cambia. NO trae datos del comprador (ni nombre, ni teléfono, ni mail, ni dirección)."),
+  tool("tareas", "Tareas del equipo",
+    "Tareas del equipo (Tareas y Equipo, kanban y calendario): número, título, estado (Pendiente, En proceso, Bloqueada, En revisión, Entregado, Aprobado), prioridad, responsable y asignados (por nombre), fecha límite y si está vencida, descripción, brief, checklist, links y entregas. Incluye todas las abiertas y las terminadas de los últimos 60 días, ordenadas por fecha límite."),
   // OJO: tool(name, TÍTULO, descripción, inputSchema). Un argumento de menos
   // deja la descripción como objeto y claude.ai descarta la lista ENTERA
   // ("Este conector no tiene herramientas disponibles"), ver testTools abajo.
@@ -1311,6 +1457,10 @@ async function runTool(db, uid, name, args, origin, grantId) {
     }));
     return out;
   }
+  if (name === "referencias") return { fecha_hora_actual: fecha, ...(await leerReferencias(db, uid)) };
+  if (name === "canjes") return { fecha_hora_actual: fecha, ...(await leerCanjes(db, uid)) };
+  if (name === "reclamos") return { fecha_hora_actual: fecha, ...(await leerReclamos(db, uid)) };
+  if (name === "tareas") return { fecha_hora_actual: fecha, ...(await leerTareas(db, uid)) };
   return null;
 }
 
