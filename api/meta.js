@@ -15,7 +15,7 @@ import { getValidDriveToken } from "./google-drive-callback.js";
 import { esDemo } from "./_demo.js";
 import { esTiendaDemo, metaDemo } from "./_demo_ads.js";
 import { utcDeLocal, zonaDe, tzValida } from "./impultienda.js";
-import { correrEscala, cronEscala, interpretarReglas, normalizarReglas, tablaReglas, resumenDiario, hoyEn, esDigital } from "./_escala.js";
+import { correrEscala, cronEscala, interpretarReglas, normalizarReglas, tablaReglas, resumenDiario, hoyEn, esDigital, compilarReglas } from "./_escala.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1262,10 +1262,12 @@ export default async function handler(req, res) {
         const { prompt, reglas, activo = true, simular = false } = req.body || {};
         if (!reglas || typeof reglas !== "object") return res.status(400).json({ error: "Faltan las reglas interpretadas." });
         normalizarReglas(reglas);
-        const cfg = { prompt: String(prompt || "").slice(0, 12000), reglas, activo: !!activo, simular: !!simular, actualizado: new Date().toISOString() };
-        await cfgRef.set(cfg);
-        await indice(cfg.activo);
-        return res.json({ ok: true, cfg, tabla: tablaReglas(normalizarReglas(reglas)) });
+        // Lo escrito en la pantalla es UNA regla más ("ui"); la config que corre se compila con las del MCP.
+        const ahoraIso = new Date().toISOString();
+        await uRef.collection("meta_escala_reglas").doc("ui").set({ nombre: "Reglas escritas en Growith", texto: String(prompt || "").slice(0, 12000), alcance: null, reglas, activo: true, creado: ahoraIso, actualizado: ahoraIso, por: "ui" }, { merge: true });
+        await cfgRef.set({ activo: !!activo, simular: !!simular }, { merge: true });
+        const { cfg } = await compilarReglas(db, uid);
+        return res.json({ ok: true, cfg, tabla: tablaReglas(normalizarReglas(cfg.reglas || reglas)) });
       }
       if (action === "escala_estado" && req.method === "POST") {
         const b = req.body || {};

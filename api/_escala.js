@@ -531,6 +531,7 @@ export async function correrEscala(db, uid, { ahora = Date.now(), forzar = false
         if (u.tipo === "adset" && u.caps.length && !capsFijos.has(n.id)) continue;
         if (slot < Ru.horario.desde || slot > Ru.horario.hasta) continue;
         vuelta.evaluadas++;
+        if (!(vuelta.campanas = vuelta.campanas || []).some(x => x.id === camp.id) && vuelta.campanas.length < 150) vuelta.campanas.push({ id: camp.id, nombre: camp.name, cuenta: d.c.nombre });
         const dia = met(u.nivel, n.id, iniDia);
         const w2 = Ru.bajada ? met(u.nivel, n.id, ahora - Ru.bajada.ventana * 60000) : null;
         const w4 = Ru.media ? met(u.nivel, n.id, ahora - Ru.media.ventana * 60000) : null;
@@ -665,4 +666,61 @@ export async function cronEscala(db, { deadline = Date.now() + 270000 } = {}) {
   const mArt = minutosLocal(ahora, ART);
   if (mArt >= 1290 && mArt < 1305) for (const uid of uids) await resumenDiario(db, uid, hoyEn(ART, ahora)).catch(() => {});
   return { tiendas: uids.length, resultados: out };
+}
+
+// ── Reglas como documentos (MCP reglas_* y la pantalla): users/{uid}/meta_escala_reglas/{id} ──
+// {nombre, texto, alcance, reglas (JSON interpretado), activo, creado, actualizado, por}. La config que
+// corre el motor (meta_escala/cfg) se COMPILA juntando todas las reglas activas: cada bloque de cada regla
+// entra como variante con el alcance de la regla (y el propio del bloque, si lo tiene).
+const CLAVES_RAW = ["horario", "subida", "puja", "bajada", "zona_media", "cierre", "pausa", "adsets_nuevos", "excepciones"];
+// Alcance simple {cuenta:[…], pixel:[…], tipo:"CBO", …} → árbol (Y entre campos, O dentro de cada uno). Un árbol ya hecho pasa igual.
+export function alcanceDesdeSimple(a) {
+  if (!a || typeof a !== "object") return null;
+  if (a.y || a.o || a.no || a.campo) return a;
+  const conds = [];
+  for (const [k, v] of Object.entries(a)) { const vals = (Array.isArray(v) ? v : [v]).map(x => String(x ?? "").trim()).filter(Boolean); if (vals.length) conds.push({ campo: k, valores: vals }); }
+  return conds.length ? { y: conds } : null;
+}
+export function compilarDocsReglas(docs) {
+  const merged = { caidas: [], no_entendido: [] };
+  for (const k of CLAVES_RAW) merged[k] = [];
+  const textos = [];
+  for (const d of docs.filter(d => d.activo !== false)) {
+    const raw = d.reglas || {}, alc = normAlcance(alcanceDesdeSimple(d.alcance));
+    for (const k of CLAVES_RAW) for (const item of (Array.isArray(raw[k]) ? raw[k] : raw[k] ? [raw[k]] : [])) {
+      if (!item || typeof item !== "object" || item.activo === false) continue;
+      const propio = normAlcance(alcanceDesdeSimple(item.alcance));
+      merged[k].push({ ...item, nombre: item.nombre || d.nombre || null, alcance: alc && propio ? { y: [alc, propio] } : alc || propio || null });
+    }
+    for (const c of (Array.isArray(raw.caidas) ? raw.caidas : [])) merged.caidas.push(c);
+    for (const t of (Array.isArray(raw.no_entendido) ? raw.no_entendido : [])) merged.no_entendido.push(`${d.nombre || d.id}: ${t}`);
+    if (d.texto) textos.push(`### ${d.nombre || d.id}\n${d.texto}`);
+  }
+  for (const k of CLAVES_RAW) if (!merged[k].length) merged[k] = null;
+  return { reglas: merged, prompt: textos.join("\n\n").slice(0, 12000) };
+}
+export async function leerDocsReglas(db, uid) {
+  const snap = await db.collection("users").doc(uid).collection("meta_escala_reglas").get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.creado || "").localeCompare(String(b.creado || "")));
+}
+// Recompila la config del motor a partir de los documentos y actualiza el índice del cron.
+export async function compilarReglas(db, uid) {
+  const uRef = db.collection("users").doc(uid), cfgRef = uRef.collection("meta_escala").doc("cfg");
+  const docs = await leerDocsReglas(db, uid);
+  const { reglas, prompt } = compilarDocsReglas(docs);
+  const prev = (await cfgRef.get()).data() || {};
+  const hay = CLAVES_RAW.some(k => reglas[k]) || reglas.caidas.length;
+  const cfg = { ...prev, prompt, reglas: hay ? reglas : null, activo: prev.activo !== false, simular: !!prev.simular, actualizado: new Date().toISOString(), por: "reglas", n_reglas: docs.length, n_activas: docs.filter(d => d.activo !== false).length };
+  await cfgRef.set(cfg);
+  await db.collection("system").doc("meta_escala").set({ uids: { [uid]: !!(cfg.activo && hay) } }, { merge: true });
+  return { cfg, docs };
+}
+// Cómo quedó UNA regla (sola), para mostrarla tal como se interpretó.
+export function vistaRegla(d) {
+  const { reglas } = compilarDocsReglas([{ ...d, activo: true }]);
+  const R = normalizarReglas(reglas);
+  return { regla_id: d.id, nombre: d.nombre || null, estado: d.activo === false ? "pausada" : "activa", alcance: textoAlcance(normAlcance(alcanceDesdeSimple(d.alcance))) || "Todas las campañas", texto: d.texto || null,
+    tabla: tablaReglas(R).filter(f => !["Definiciones"].includes(f.regla) && !(f.regla === "Excepciones" && !d.reglas?.excepciones) && !(f.regla === "Horario" && !d.reglas?.horario)),
+    logica: logicaReglas(R), config_json: d.reglas || null, no_entendido: d.reglas?.no_entendido || [], creada: d.creado || null, actualizada: d.actualizado || null, por: d.por || null,
+    zona_horaria: "Las horas son locales del país de la tienda donde vende la campaña (la tienda a la que lleva su link, por las ventas reales de Impultienda); antes de la primera venta, el código de país del nombre de la campaña; si no, la zona de la cuenta publicitaria." };
 }

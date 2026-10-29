@@ -41,7 +41,7 @@ import { getValidMLToken } from "./integrations.js";
 import { snapshotMargenes, snapshotEnvios, snapshotStock, snapshotCuentas, estadoConfiguracion } from "./_snapshot.js";
 import { gadsCuentas, gadsReporteCampanas } from "./google-ads.js";
 import { ttReporteCampanas } from "./tiktok-ads.js";
-import { normalizarReglas, tablaReglas, interpretarReglas, esDigital, logicaReglas, LOGICA_MOTOR } from "./_escala.js";
+import { normalizarReglas, tablaReglas, interpretarReglas, esDigital, logicaReglas, LOGICA_MOTOR, leerDocsReglas, compilarReglas, vistaRegla, alcanceDesdeSimple, normAlcance } from "./_escala.js";
 import { porHora as impPorHora, metricasDigitales, utmAtribucion, leerIndiceUtm, construirIndiceUtm, fxPorUsd, zonaDe, utcDeLocal } from "./impultienda.js";
 
 const ORIGINS = ["https://www.growithapp.com", "https://soluna-gestion.vercel.app"];
@@ -434,7 +434,7 @@ const INSTRUCCIONES = `Growith es la app de gestión del e-commerce del usuario 
 - Las herramientas devuelven cifras REALES calculadas por Growith. Citá solo esos números: no estimes ni inventes datos del negocio. Si un dato no está, decilo e indicá en qué sección de Growith verlo (https://www.growithapp.com).
 - Los montos están en pesos argentinos (ARS) salvo que el campo diga USD. "datos_al" indica cuándo se calcularon las cifras: aclaralo si te preguntan por lo más reciente.
 - Respondé en el idioma del usuario (por defecto, español rioplatense con voseo).
-- El acceso es de solo lectura, con DOS excepciones: escala_guardar_reglas carga las reglas de escala automática de Meta que el usuario te dicte (Growith las corre solo cada 15 min), y meta_accion pausa, activa y cambia presupuestos y pujas (cost cap / bid cap) de Meta cuando la cuenta tiene un token con ads_management (meta_administrador lo indica en "puede_editar"). Sin ese token, cualquier cambio lo hace el usuario desde Growith. Stock, precios y lo demás siempre los cambia el usuario.
+- El acceso es de solo lectura, con DOS excepciones: reglas_crear / reglas_editar / reglas_borrar (y escala_guardar_reglas) cargan las reglas de escala automática de Meta que el usuario te dicte (Growith las corre solo cada 15 min), y meta_accion pausa, activa y cambia presupuestos y pujas (cost cap / bid cap) de Meta cuando la cuenta tiene un token con ads_management (meta_administrador lo indica en "puede_editar"). Sin ese token, cualquier cambio lo hace el usuario desde Growith. Stock, precios y lo demás siempre los cambia el usuario.
 - Para revisar o administrar Meta usá meta_administrador: las ventas, revenue, ROAS, CPA y AOV salen de las ventas reales cruzadas por UTM (no del píxel); gasto, CPC, CTR, CPM, frecuencia, pagos iniciados y retención salen de Meta. Antes de cada meta_accion, explicá el motivo con esos números; nunca actúes sobre campañas que el usuario no te pidió administrar.
 - La conexión es por USUARIO y cubre todos sus clientes (tiendas). Cada chat tiene UN cliente activo: si el usuario tiene varios y todavía no eligió, llamá a listar_clientes y preguntale cuál (o elegilo vos si lo nombra), y fijalo con seleccionar_cliente. Si tiene uno solo, se usa ese automáticamente; si tiene varios y no eligió, se responde sobre la tienda que tiene abierta en Growith (cada respuesta lo aclara en "cliente"). seleccionar_cliente y cliente_id aceptan el NOMBRE de la tienda (sin distinguir mayúsculas) o el cliente_id. Los números de ventas y rentabilidad se recalculan en vivo si la caché tiene más de 5 minutos: son los mismos que ve el usuario en su Dashboard en ese momento. NO llames a seleccionar_cliente y a una consulta en la misma tanda (en paralelo): primero seleccioná, esperá la respuesta y recién después consultá; o mandá cliente_id directamente en la consulta. Cada respuesta trae el campo "cliente" (id y nombre): verificá que sea el que el usuario pidió. Cuando respondas, aclará de qué cliente son los números.`;
 
@@ -947,6 +947,26 @@ const TOOLS = [
     "Guarda en Growith las reglas de escala automática de Meta escritas en lenguaje natural (el mismo texto que el usuario pondría en Meta → Reglas de escala). Growith las interpreta, las guarda y quedan ACTIVAS: corren solas cada 15 min sobre todas las campañas. Cada regla puede limitarse por contexto (cuenta, fanpage, píxel, dominio o link, país, campaña, estrategia de puja, CBO/ABO, con Y/O/NO) y tener variantes distintas por contexto; incluye la regla de adsets nuevos (sube la CBO en N CPA cuando arranca un conjunto con creativo nuevo o con [NUEVO]; tiene que limitarse a una cuenta). En vez del texto podés mandar 'config' con el JSON exacto (mismo formato que config_json de escala_reglas) y Growith lo usa tal cual, sin interpretar. Devuelve la tabla, la lógica (SI … → …) y lo que no pudo usar: mostrásela al usuario. Reemplaza las reglas anteriores. simular=true: registra lo que haría sin tocar Meta. activo=false: guardarlas apagadas. Usala solo cuando el usuario te pidió cargar o cambiar sus reglas.",
     { type: "object", properties: { reglas: { type: "string", description: "Las reglas completas en texto (horario, subida, bajada, pausa, adsets nuevos, excepciones, ventanas sin tocar, y a qué cuentas/píxeles/dominios/etc. aplica cada una)." }, config: { type: "object", description: "Opcional: la config exacta en JSON (formato de config_json de escala_reglas). Si viene, se usa tal cual y 'reglas' queda solo como texto de referencia." }, simular: { type: "boolean", description: "true = solo simular (default false)." }, activo: { type: "boolean", description: "false = guardarlas apagadas (default true)." } }, additionalProperties: false },
     { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }),
+  tool("reglas_crear", "Crear una regla de escala automática",
+    "Crea UNA regla de escala de Meta a partir de texto en lenguaje natural (subida, bajada, pausa, bid/cost cap, zona media, cierre, adsets nuevos, excepciones, ventanas sin tocar…). 'alcance' la limita por cuenta publicitaria, fanpage, píxel, dominio o link, país de la tienda, campaña (nombre o id), estrategia de puja y CBO/ABO. Queda ACTIVA y Growith la corre cada 15 min (:00 :15 :30 :45) junto con las demás reglas, con ventas reales, y actúa en Meta. Devuelve la regla tal como Growith la interpretó (condiciones, acciones, nivel, horarios, zona horaria, config JSON): mostrásela al usuario y, si algo quedó en no_entendido, corregila con reglas_editar.",
+    { type: "object", properties: { ...CLIENTE_OPC, nombre: { type: "string", description: "Nombre corto de la regla." }, texto_regla: { type: "string", description: "La regla en texto." }, alcance: { type: "object", description: "Opcional. Simple: {cuenta:[…], fanpage:[…], pixel:[…], dominio:[…], link:[…], pais:[…], campana:[…], estrategia:[…], tipo:\"CBO\"|\"ABO\"} (Y entre campos, O dentro de cada uno; nombres o ids; * como comodín). O un árbol {y:[…]}, {o:[…]}, {no:…}, {campo, op, valores}." }, config: { type: "object", description: "Opcional: en vez de interpretar el texto, la config exacta en JSON (formato config_json)." } }, required: ["nombre", "texto_regla"], additionalProperties: false },
+    { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }),
+  tool("reglas_listar", "Listar las reglas de escala automática",
+    "Todas las reglas de escala del cliente con regla_id, estado (activa o pausada), alcance e interpretación (tabla, lógica SI … → …, config JSON), más el estado global (activas / simulación) y la lógica del motor. Es lo que el motor corre.",
+    { type: "object", properties: { ...CLIENTE_OPC }, additionalProperties: false }),
+  tool("reglas_editar", "Editar una regla de escala automática",
+    "Cambia una regla: texto (se reinterpreta), alcance, nombre, estado (activa | pausada) o la config JSON exacta. Devuelve cómo quedó.",
+    { type: "object", properties: { ...CLIENTE_OPC, regla_id: { type: "string" }, nombre: { type: "string" }, texto_regla: { type: "string" }, alcance: { type: "object", description: "Opcional. Simple: {cuenta:[…], fanpage:[…], pixel:[…], dominio:[…], link:[…], pais:[…], campana:[…], estrategia:[…], tipo:\"CBO\"|\"ABO\"} (Y entre campos, O dentro de cada uno; nombres o ids; * como comodín). O un árbol {y:[…]}, {o:[…]}, {no:…}, {campo, op, valores}." }, estado: { type: "string", enum: ["activa", "pausada"] }, config: { type: "object", description: "Config JSON exacta (reemplaza la interpretación del texto)." } }, required: ["regla_id"], additionalProperties: false },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }),
+  tool("reglas_borrar", "Borrar una regla de escala automática", "Borra la regla y recompila el resto.",
+    { type: "object", properties: { ...CLIENTE_OPC, regla_id: { type: "string" } }, required: ["regla_id"], additionalProperties: false },
+    { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true }),
+  tool("reglas_ejecuciones", "Registro de vueltas y acciones de las reglas",
+    "Cada vuelta de 15 min entre desde y hasta (fechas en hora Argentina; default hoy): hora, campañas evaluadas, ok / saltada (motivo) / errores (una vuelta con errores no actúa), y cada acción tomada o simulada con la regla que se cumplió, los números usados (gasto, ventas, ROAS, CPA ref, presupuesto, piso), antes/después, hora local y zona. campana_id filtra una campaña.",
+    { type: "object", properties: { ...CLIENTE_OPC, desde: { type: "string", description: "AAAA-MM-DD (hora Argentina)" }, hasta: { type: "string", description: "AAAA-MM-DD" }, campana_id: { type: "string" } }, additionalProperties: false }),
+  tool("reglas_estado", "Estado del motor de reglas",
+    "Última vuelta que corrió (hora, resultado), la próxima (cuarto de hora siguiente), vueltas salteadas o con error y cuartos de hora sin vuelta en las últimas 24 h, y si las reglas están activas o en simulación.",
+    { type: "object", properties: { ...CLIENTE_OPC }, additionalProperties: false }),
   tool("escala_registro", "Vueltas y cambios de la escala automática",
     "Para verificar que la escala automática corre: cada vuelta de 15 min (ok, saltada con motivo, o con errores: una vuelta con errores no toca nada), los cambios aplicados o simulados (hora, cuenta, campaña o conjunto, qué cambió, cuánto, qué regla y con qué números) y el resumen del día (21:30 hora Argentina). 'faltantes' lista los cuartos de hora sin vuelta registrada en la ventana pedida. horas: 1 a 72 (default 6).",
     { type: "object", properties: { horas: { type: "number", description: "Ventana hacia atrás en horas (1 a 72, default 6)." } }, additionalProperties: false }),
@@ -1174,10 +1194,78 @@ async function runTool(db, uid, name, args, origin, grantId) {
     let reglas;
     if (args.config && typeof args.config === "object") reglas = { ...args.config, no_entendido: [] };
     else { if (prompt.length < 10) throw new Error("faltan las reglas en texto (o la config en JSON)."); reglas = await interpretarReglas(prompt); }
-    const cfg = { prompt: (prompt || "(config en JSON cargada desde el asistente de IA)").slice(0, 12000), reglas, activo: args.activo !== false, simular: !!args.simular, actualizado: new Date().toISOString(), por: "mcp", grantId: grantId || null };
-    await db.collection("users").doc(uid).collection("meta_escala").doc("cfg").set(cfg);
-    await db.collection("system").doc("meta_escala").set({ uids: { [uid]: cfg.activo } }, { merge: true });
+    const uRef = db.collection("users").doc(uid);
+    const ahoraIso = new Date().toISOString();
+    await uRef.collection("meta_escala_reglas").doc("mcp").set({ nombre: "Reglas cargadas por el asistente de IA", texto: prompt.slice(0, 12000), alcance: null, reglas, activo: true, creado: ahoraIso, actualizado: ahoraIso, por: "mcp", grantId: grantId || null });
+    await uRef.collection("meta_escala").doc("cfg").set({ activo: args.activo !== false, simular: !!args.simular }, { merge: true });
+    const { cfg } = await compilarReglas(db, uid);
     return { fecha_hora_actual: fecha, ok: true, activas: cfg.activo, simulacion: cfg.simular, tabla: tablaReglas(normalizarReglas(reglas)), logica: logicaReglas(normalizarReglas(reglas)), config_json: reglas, no_entendido: reglas.no_entendido || [], proxima_vuelta: "en el próximo cuarto de hora (:00 :15 :30 :45)" };
+  }
+  if (name.startsWith("reglas_")) {
+    const uRef = db.collection("users").doc(uid), col = uRef.collection("meta_escala_reglas");
+    const soloDigital = async () => { if (!(await esDigital(db, uid))) throw new Error("Las reglas de escala son solo para tiendas de productos digitales (Impultienda)."); };
+    const ahoraIso = new Date().toISOString();
+    const interpretar = async (texto, config) => { const r = config && typeof config === "object" ? { ...config } : await interpretarReglas(texto); delete r.alcance_global; normalizarReglas(r); return r; };
+    if (name === "reglas_crear") {
+      await soloDigital();
+      const texto = String(args.texto_regla || "").trim(); if (texto.length < 5 && !args.config) throw new Error("falta texto_regla.");
+      const reglas = await interpretar(texto, args.config);
+      const alcance = alcanceDesdeSimple(args.alcance) || reglas.alcance || null; delete reglas.alcance;
+      const ref = col.doc();
+      const d = { nombre: String(args.nombre || "Regla").slice(0, 80), texto: texto.slice(0, 12000), alcance: normAlcance(alcance), reglas, activo: true, creado: ahoraIso, actualizado: ahoraIso, por: "mcp", grantId: grantId || null };
+      await ref.set(d);
+      const { cfg } = await compilarReglas(db, uid);
+      return { fecha_hora_actual: fecha, ok: true, regla: vistaRegla({ id: ref.id, ...d }), motor: { activas: !!cfg.activo, simulacion: !!cfg.simular, reglas_activas: cfg.n_activas, proxima_vuelta: "el próximo cuarto de hora (:00 :15 :30 :45)" } };
+    }
+    if (name === "reglas_listar") {
+      const docs = await leerDocsReglas(db, uid);
+      const cfg = (await uRef.collection("meta_escala").doc("cfg").get()).data() || {};
+      return { fecha_hora_actual: fecha, motor: { activas: !!cfg.activo && !!cfg.reglas, simulacion: !!cfg.simular, compilado: cfg.actualizado || null }, reglas: docs.map(vistaRegla), logica_del_motor: LOGICA_MOTOR, config_compilada: cfg.reglas ? tablaReglas(normalizarReglas(cfg.reglas)) : [] };
+    }
+    if (name === "reglas_editar") {
+      await soloDigital();
+      const ref = col.doc(String(args.regla_id || "")); const cur = (await ref.get()).data();
+      if (!cur) throw new Error("no existe esa regla_id (ver reglas_listar).");
+      const patch = { actualizado: ahoraIso };
+      if (args.nombre) patch.nombre = String(args.nombre).slice(0, 80);
+      if (args.texto_regla || args.config) { const texto = String(args.texto_regla || cur.texto || "").trim(); const reglas = await interpretar(texto, args.config); if (reglas.alcance && args.alcance === undefined) patch.alcance = normAlcance(reglas.alcance); delete reglas.alcance; patch.reglas = reglas; patch.texto = texto.slice(0, 12000); }
+      if (args.alcance !== undefined) patch.alcance = args.alcance === null ? null : normAlcance(alcanceDesdeSimple(args.alcance));
+      if (args.estado) patch.activo = args.estado === "activa";
+      await ref.set(patch, { merge: true });
+      await compilarReglas(db, uid);
+      return { fecha_hora_actual: fecha, ok: true, regla: vistaRegla({ id: ref.id, ...cur, ...patch }) };
+    }
+    if (name === "reglas_borrar") {
+      await soloDigital();
+      const ref = col.doc(String(args.regla_id || "")); if (!(await ref.get()).exists) throw new Error("no existe esa regla_id.");
+      await ref.delete(); const { cfg } = await compilarReglas(db, uid);
+      return { fecha_hora_actual: fecha, ok: true, borrada: args.regla_id, reglas_restantes: cfg.n_reglas };
+    }
+    if (name === "reglas_ejecuciones") {
+      const ok = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+      const desdeD = ok(args.desde) ? args.desde : hoyAR(), hastaD = ok(args.hasta) ? args.hasta : desdeD;
+      const AR = "America/Argentina/Buenos_Aires";
+      const dIso = new Date(utcDeLocal(desdeD, 0, AR)).toISOString(), hIso = new Date(utcDeLocal(hastaD, 0, AR) + 86400000).toISOString();
+      const [vs, lg] = await Promise.all([uRef.collection("meta_escala_vueltas").where("ts", ">=", dIso).where("ts", "<", hIso).get(), uRef.collection("meta_escala_log").where("ts", ">=", dIso).where("ts", "<", hIso).get()]);
+      const cid = args.campana_id ? String(args.campana_id) : null;
+      const acciones = lg.docs.map(d => d.data()).filter(x => !cid || x.campana_id === cid).sort((a, b) => a.ts.localeCompare(b.ts));
+      const porVuelta = {}; for (const a of acciones) (porVuelta[a.vuelta] = porVuelta[a.vuelta] || []).push(a);
+      const vueltas = vs.docs.map(d => d.data()).filter(v => !cid || (v.campanas || []).some(c => c.id === cid) || porVuelta[v.ts.slice(0, 16)]).sort((a, b) => a.ts.localeCompare(b.ts))
+        .map(v => ({ hora_utc: v.ts, hora_argentina: new Date(v.ts).toLocaleString("es-AR", { timeZone: AR, hourCycle: "h23", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }), resultado: v.saltada ? `saltada: ${v.saltada}` : v.errores?.length ? "con errores (no actuó)" : "ok", simulacion: !!v.simular, campanas_evaluadas: v.evaluadas ?? 0, campanas: cid ? (v.campanas || []).filter(c => c.id === cid) : (v.campanas || []), cambios: v.cambios ?? 0, errores: v.errores || [], acciones: porVuelta[v.ts.slice(0, 16)] || [] }));
+      return { fecha_hora_actual: fecha, desde: desdeD, hasta: hastaD, zona: "hora Argentina", vueltas: vueltas.slice(0, 400), total_acciones: acciones.length };
+    }
+    if (name === "reglas_estado") {
+      const cfg = (await uRef.collection("meta_escala").doc("cfg").get()).data() || {};
+      const desde = new Date(Date.now() - 24 * 3600000).toISOString();
+      const vs = (await uRef.collection("meta_escala_vueltas").where("ts", ">=", desde).get()).docs.map(d => d.data()).sort((a, b) => b.ts.localeCompare(a.ts));
+      const hechas = new Set(vs.map(v => v.ts.slice(0, 16))); const faltantes = [];
+      const activo = !!cfg.activo && !!cfg.reglas;
+      if (activo) for (let t = Math.ceil(Date.parse(desde) / 900000) * 900000; t < Date.now() - 5 * 60000; t += 900000) { const k = new Date(t).toISOString().slice(0, 16); if (!hechas.has(k)) faltantes.push(k + "Z"); }
+      const prox = new Date(Math.ceil((Date.now() + 1000) / 900000) * 900000).toISOString();
+      const u = vs[0];
+      return { fecha_hora_actual: fecha, activas: activo, simulacion: !!cfg.simular, reglas_activas: cfg.n_activas ?? null, ultima_vuelta: u ? { hora_utc: u.ts, resultado: u.saltada ? `saltada: ${u.saltada}` : u.errores?.length ? "con errores (no actuó)" : "ok", campanas_evaluadas: u.evaluadas ?? 0, cambios: u.cambios ?? 0, errores: u.errores || [] } : null,
+        proxima_vuelta_utc: activo ? prox : null, ultimas_24h: { vueltas: vs.length, saltadas: vs.filter(v => v.saltada).map(v => ({ hora_utc: v.ts, motivo: v.saltada })), con_error: vs.filter(v => v.errores?.length).map(v => ({ hora_utc: v.ts, errores: v.errores })), cuartos_sin_vuelta: faltantes } };
+    }
   }
   if (name === "escala_registro") {
     const horas = Math.min(72, Math.max(1, parseInt(args.horas) || 6));
