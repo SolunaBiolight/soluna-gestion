@@ -1776,6 +1776,49 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         };
         if (filteringParam) insightsParams.filtering = filteringParam;
         if (breakdownParam) insightsParams.breakdowns = breakdownParam;
+        // Velocidad (29/oct/2026): nodos, zona horaria de la cuenta y desglose por hora se piden A LA VEZ
+        // que los insights (antes iban uno detrás del otro y "Hoy" tardaba 10-20 s por cuenta).
+        const tzQ = String(req.query.tz || "");
+        const quiereTz = !!(tzQ && tzValida(tzQ)) && !breakdownParam;
+        const pAccTz = quiereTz ? metaGet(cfg.ad_account_id, { fields: "timezone_name" }, cfg.access_token).then(x => x?.timezone_name || null).catch(() => null) : Promise.resolve(null);
+        const pHoras = quiereTz ? (async () => {
+          const dd = (f, n) => new Date(Date.parse(f + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
+          const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
+          const hp = { level, "time_range[since]": dd(since, -1), "time_range[until]": dd(until, 1), time_increment: 1,
+            breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone", fields: `${idField},spend,impressions,clicks,inline_link_clicks,actions,action_values`, limit: 500,
+            action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]) };
+          if (filteringParam) hp.filtering = filteringParam;
+          const all = []; let pg = await metaGet(`${cfg.ad_account_id}/insights`, hp, cfg.access_token); all.push(...(pg.data || []));
+          let nx = pg.paging?.next || null, sf = 0;
+          while (nx && sf < 40) { sf++; try { const j = await (await fetch(nx, { signal: AbortSignal.timeout(25000) })).json(); if (j.error) break; all.push(...(j.data || [])); nx = j.paging?.next || null; } catch (_) { break; } }
+          return all;
+        })().catch(e => ({ error: e.message })) : null;
+        const pNodes = breakdownParam ? Promise.resolve({}) : (async () => {
+          const nodeMap = {};
+          const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
+                           : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
+                           : "id,name,status,effective_status,adset_id,campaign_id";
+          try {
+            const nodesParams = { fields: nodeFields, limit: 200 };
+            if (filteringParam) nodesParams.filtering = filteringParam;
+            const edge = level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads";
+            let nodePage = await metaGet(`${cfg.ad_account_id}/${edge}`, nodesParams, cfg.access_token);
+            for (const n of (nodePage.data || [])) nodeMap[n.id] = n;
+            let nNext = nodePage.paging?.next || null;
+            let nSafety = 0;
+            while (nNext && nSafety < 20) {
+              nSafety++;
+              try {
+                const r = await fetch(nNext, { signal: AbortSignal.timeout(25000) });
+                const j = await r.json();
+                if (!r.ok || j.error) break;
+                for (const n of (j.data || [])) nodeMap[n.id] = n;
+                nNext = j.paging?.next || null;
+              } catch (_) { break; }
+            }
+          } catch (e) { /* seguimos sin status */ }
+          return nodeMap;
+        })();
         // Paginar insights — sin esto, accounts con > 500 nodos cortan los datos
         // y los nodos sobrantes caían como "sin gasto" aunque hayan gastado.
         const insightsAll = [];
@@ -1831,35 +1874,9 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
           return res.json({ rows, since, until, level, breakdown: breakdownKey });
         }
 
-        // También necesitamos el status de cada nodo (que insights no devuelve).
-        // Filtrar la lista de nodos por parent si aplica.
-        // OJO: NO pedir creative{} acá — con limit:500 + object_story_spec Meta
-        // rechaza con "Please reduce the amount of data" y nodeMap queda vacío,
-        // lo que deja todas las rows con effective_status:null y el filtro
-        // "Solo activos" del front las oculta a todas (bug todos-los-ads vacíos).
-        const nodeMap = {};
-        const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
-                         : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
-                         : "id,name,status,effective_status,adset_id,campaign_id";
-        try {
-          const nodesParams = { fields: nodeFields, limit: 200 };
-          if (filteringParam) nodesParams.filtering = filteringParam;
-          const edge = level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads";
-          let nodePage = await metaGet(`${cfg.ad_account_id}/${edge}`, nodesParams, cfg.access_token);
-          for (const n of (nodePage.data || [])) nodeMap[n.id] = n;
-          let nNext = nodePage.paging?.next || null;
-          let nSafety = 0;
-          while (nNext && nSafety < 20) {
-            nSafety++;
-            try {
-              const r = await fetch(nNext);
-              const j = await r.json();
-              if (!r.ok || j.error) break;
-              for (const n of (j.data || [])) nodeMap[n.id] = n;
-              nNext = j.paging?.next || null;
-            } catch (_) { break; }
-          }
-        } catch (e) { /* seguimos sin status */ }
+        // Status de cada nodo (insights no lo devuelve): ya se pidió en paralelo.
+        // OJO: NO pedir creative{} ahí — con limit:500 + object_story_spec Meta rechaza con "Please reduce the amount of data".
+        const nodeMap = await pNodes;
 
         const esCheckout = (a) => a.action_type === "initiate_checkout" || a.action_type === "offsite_conversion.fb_pixel_initiate_checkout";
         // Columnas del Administrador de anuncios: visitas a la página de destino, lista de deseos y carritos.
@@ -1957,22 +1974,14 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
 
         // Horario elegido por el usuario (no el de la cuenta publicitaria): se rearma con el desglose
         // por hora de Meta y se suma solo lo que cae dentro de los días pedidos en esa zona.
-        const tzQ = String(req.query.tz || "");
         let tzInfo = null;
-        if (tzQ && tzValida(tzQ)) {
+        if (quiereTz) {
           try {
-            const accInfo = await metaGet(cfg.ad_account_id, { fields: "timezone_name" }, cfg.access_token);
-            const accTz = accInfo?.timezone_name;
+            const accTz = await pAccTz;
             if (accTz && accTz !== tzQ) {
-              const dd = (f, n) => new Date(Date.parse(f + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
               const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
-              const hp = { level, "time_range[since]": dd(since, -1), "time_range[until]": dd(until, 1), time_increment: 1,
-                breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone", fields: `${idField},spend,impressions,clicks,inline_link_clicks,actions,action_values`, limit: 500,
-                action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]) };
-              if (filteringParam) hp.filtering = filteringParam;
-              const all = []; let pg = await metaGet(`${cfg.ad_account_id}/insights`, hp, cfg.access_token); all.push(...(pg.data || []));
-              let nx = pg.paging?.next || null, sf = 0;
-              while (nx && sf < 40) { sf++; try { const j = await (await fetch(nx)).json(); if (j.error) break; all.push(...(j.data || [])); nx = j.paging?.next || null; } catch (_) { break; } }
+              const all = await pHoras;
+              if (all?.error) throw new Error(all.error);
               const isP = (a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase";
               const acc = {};
               for (const r of all) {

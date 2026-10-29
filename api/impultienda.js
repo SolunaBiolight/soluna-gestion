@@ -88,6 +88,8 @@ export function utcDeLocal(fecha, hora, tz) {
   return t;
 }
 
+// Cálculos del Dashboard en vuelo por clave de caché: dos pedidos iguales al mismo tiempo comparten uno.
+const _enVuelo = new Map();
 // ── Monedas → USD (open.er-api.com, sin clave, caché 6 h en memoria) ──
 let _fx = null, _fxAt = 0;
 export async function fxPorUsd() {
@@ -159,6 +161,29 @@ async function webhook(req, res, db) {
 }
 
 // ── Meta: gasto por hora ART ──
+// Lista de cuentas publicitarias por token, 10 min en memoria (cambia muy poco y antes se pedía en cada carga).
+const _ctasPorToken = new Map();
+async function cuentasDelToken(tk) {
+  const k = crypto.createHash("sha1").update(tk).digest("hex");
+  const hit = _ctasPorToken.get(k);
+  if (hit && Date.now() - hit.ts < 10 * 60000) return hit.cuentas;
+  const r = await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id,currency,timezone_name&limit=200&access_token=${encodeURIComponent(tk)}`, { signal: AbortSignal.timeout(20000) })).json();
+  if (r.error) throw new Error(r.error.message);
+  const cuentas = r.data || [];
+  _ctasPorToken.set(k, { ts: Date.now(), cuentas });
+  return cuentas;
+}
+// Corre fn sobre items de a `n` a la vez.
+async function enParalelo(items, n, fn) {
+  const res = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; res[k] = await fn(items[k], k); } }));
+  return res;
+}
+const fetchJson = (url) => fetch(url, { signal: AbortSignal.timeout(25000) }).then(r => r.json());
+
+// Gasto de Meta por hora. Antes iba token por token y cuenta por cuenta, con tres pedidos en serie por cuenta
+// (con 10 cuentas eran ~30 pedidos encadenados y el Dashboard tardaba 20-30 s). Ahora las cuentas van de a 6
+// en paralelo y los tres pedidos de cada cuenta salen juntos.
 async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/Argentina/Buenos_Aires") {
   const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
   const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
@@ -168,24 +193,27 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
   const vistas = new Set();
   const metaDice = {}; // campaign_id → {compras, valor} según el píxel de Meta (su atribución, su zona horaria)
   const fx = await fxPorUsd();
-  for (const tk of tokens) {
-    let cuentas = [];
+  // Qué cuentas hay que consultar (cada una con su token; una cuenta visible desde dos tokens se consulta una vez).
+  const trabajos = [];
+  const listas = await Promise.all(tokens.map(tk => cuentasDelToken(tk).then(cuentas => ({ tk, cuentas })).catch(e => { errores.push(e.message); return { tk, cuentas: [] }; })));
+  for (const { tk, cuentas } of listas) for (const c of cuentas) {
+    const id = "act_" + c.account_id;
+    if (vistas.has(id)) continue; vistas.add(id);
+    if (elegidas.length && !elegidas.includes(id)) continue;
+    trabajos.push({ tk, c, id });
+  }
+  const since = addDias(desde, -1), until = addDias(hasta, 1);
+  await enParalelo(trabajos, 6, async ({ tk, c, id }) => {
+    const tz = c.timezone_name || "America/Los_Angeles";
+    const hoyLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+    const porDiaLocal = {};
+    const filas = {};
     try {
-      const r = await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id,currency,timezone_name&limit=200&access_token=${encodeURIComponent(tk)}`)).json();
-      cuentas = r.data || [];
-    } catch (e) { errores.push(e.message); }
-    for (const c of cuentas) {
-      const id = "act_" + c.account_id;
-      if (vistas.has(id)) continue; vistas.add(id);
-      if (elegidas.length && !elegidas.includes(id)) continue;
-      const tz = c.timezone_name || "America/Los_Angeles";
-      // El día ART empieza en otra hora de la zona de la cuenta: se pide un día de margen.
-      const since = addDias(desde, -1), until = addDias(hasta, 1);
-      let url = `https://graph.facebook.com/v23.0/${id}/insights?level=campaign&fields=spend,campaign_name,campaign_id&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
-      const porDiaLocal = {};
-      try {
+      const pHoras = (async () => {
+        // El día ART empieza en otra hora de la zona de la cuenta: se pide un día de margen.
+        let url = `https://graph.facebook.com/v23.0/${id}/insights?level=campaign&fields=spend,campaign_name,campaign_id&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
         for (let i = 0; url && i < 20; i++) {
-          const r = await (await fetch(url)).json();
+          const r = await fetchJson(url);
           if (r.error) { errores.push(`${id}: ${r.error.message}`); break; }
           for (const row of r.data || []) {
             const hh = parseInt(String(row.hourly_stats_aggregated_by_advertiser_time_zone || "").slice(0, 2), 10);
@@ -193,33 +221,31 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
             if (!isFinite(hh) || usd == null) continue;
             const a = zonaDe(new Date(utcDeLocal(row.date_start, hh, tz)).toISOString(), tzU);
             const k = `${a.fecha}|${a.hora}|${String(row.campaign_name || "").replace(/\|/g, "/")}|${row.campaign_id || ""}`;
-            out[k] = (out[k] || 0) + usd;
+            filas[k] = (filas[k] || 0) + usd;
             porDiaLocal[row.date_start] = (porDiaLocal[row.date_start] || 0) + usd;
           }
           url = r.paging?.next || null;
         }
-        // Lo que Meta dice que vendió cada campaña (píxel), para comparar con la venta real.
-        try {
-          const rr = await (await fetch(`https://graph.facebook.com/v23.0/${id}/insights?level=campaign&fields=campaign_id,actions,action_values&time_range=${encodeURIComponent(JSON.stringify({ since: desde, until: hasta }))}&limit=500&access_token=${encodeURIComponent(tk)}`)).json();
-          for (const row of rr.data || []) {
-            const pick = (arr) => { const a = (arr || []).find(x => x.action_type === "purchase") || (arr || []).find(x => x.action_type === "offsite_conversion.fb_pixel_purchase"); return a ? Number(a.value) || 0 : 0; };
-            metaDice[row.campaign_id] = { compras: pick(row.actions), valor: aUsd(pick(row.action_values), c.currency, fx) || 0 };
-          }
-        } catch (_) {}
-        // Trampa conocida: el desglose horario puede no traer todavía las horas de HOY
-        // (zona de la cuenta). Se compara con el gasto del día y la diferencia va a la
-        // hora ART actual, marcada como "sin hora exacta".
-        const hoyLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
-        const r2 = await (await fetch(`https://graph.facebook.com/v23.0/${id}/insights?level=account&fields=spend&time_range=${encodeURIComponent(JSON.stringify({ since: hoyLocal, until: hoyLocal }))}&access_token=${encodeURIComponent(tk)}`)).json();
-        const totalHoy = aUsd(Number(r2.data?.[0]?.spend) || 0, c.currency, fx) || 0;
-        const falta = totalHoy - (porDiaLocal[hoyLocal] || 0);
-        if (falta > 0.01) {
-          const a = zonaDe(new Date().toISOString(), tzU);
-          if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}||`; out[k] = (out[k] || 0) + falta; sinHora += falta; }
-        }
-      } catch (e) { errores.push(`${id}: ${e.message}`); }
-    }
-  }
+      })();
+      // Lo que Meta dice que vendió cada campaña (píxel), para comparar con la venta real.
+      const pPixel = fetchJson(`https://graph.facebook.com/v23.0/${id}/insights?level=campaign&fields=campaign_id,actions,action_values&time_range=${encodeURIComponent(JSON.stringify({ since: desde, until: hasta }))}&limit=500&access_token=${encodeURIComponent(tk)}`).catch(() => ({}));
+      // Trampa conocida: el desglose horario puede no traer todavía las horas de HOY (zona de la cuenta).
+      // Se compara con el gasto del día y la diferencia va a la hora ART actual, marcada como "sin hora exacta".
+      const pHoy = fetchJson(`https://graph.facebook.com/v23.0/${id}/insights?level=account&fields=spend&time_range=${encodeURIComponent(JSON.stringify({ since: hoyLocal, until: hoyLocal }))}&access_token=${encodeURIComponent(tk)}`).catch(() => ({}));
+      const [, rr, r2] = await Promise.all([pHoras, pPixel, pHoy]);
+      for (const [k, v] of Object.entries(filas)) out[k] = (out[k] || 0) + v;
+      for (const row of rr.data || []) {
+        const pick = (arr) => { const a = (arr || []).find(x => x.action_type === "purchase") || (arr || []).find(x => x.action_type === "offsite_conversion.fb_pixel_purchase"); return a ? Number(a.value) || 0 : 0; };
+        metaDice[row.campaign_id] = { compras: pick(row.actions), valor: aUsd(pick(row.action_values), c.currency, fx) || 0 };
+      }
+      const totalHoy = aUsd(Number(r2.data?.[0]?.spend) || 0, c.currency, fx) || 0;
+      const falta = totalHoy - (porDiaLocal[hoyLocal] || 0);
+      if (falta > 0.01) {
+        const a = zonaDe(new Date().toISOString(), tzU);
+        if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}||`; out[k] = (out[k] || 0) + falta; sinHora += falta; }
+      }
+    } catch (e) { errores.push(`${id}: ${e.message}`); }
+  });
   return { porHora: out, sinHora, cuentas: vistas.size, errores, metaDice };
 }
 
@@ -536,6 +562,10 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
   // El día va de 00:00 a 00:00 en la zona elegida.
   const desdeMs = utcDeLocal(desde, 0, tz), hastaMs = utcDeLocal(addDias(hasta, 1), 0, tz);
+  // Todo lo que no depende de otra cosa sale a la vez: órdenes, cotizaciones, gasto de Meta e índice UTM
+  // (antes iba en serie y Meta esperaba a Stripe y a Mercado Pago).
+  const pMeta = metaPorHora(db, uid, desde, hasta, cfg.metaCuentas || [], tz);
+  const pIdx = leerIndiceUtm(db, uid).catch(() => null);
   // Órdenes tocadas en el rango o un poco antes (un reembolso de hoy puede ser de una venta vieja).
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 40 * 86400000).toISOString()).get();
   // Una orden importada se descarta si el webhook ya trajo la misma (tienda + número).
@@ -561,11 +591,11 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
   const ventasCamp = {};
   const enRango = (iso) => { const t = Date.parse(iso || ""); return isFinite(t) && t >= desdeMs && t < hastaMs; };
-  const meta = await metaPorHora(db, uid, desde, hasta, cfg.metaCuentas || [], tz);
+  const meta = await pMeta;
   const campIdx = {};
   for (const k of Object.keys(meta.porHora)) { const [, , nombre, id] = k.split("|"); if (nombre) campIdx[id || nombre] = { key: id || nombre, id: id || null, nombre }; }
   const campLista = Object.values(campIdx);
-  const idxUtm = await leerIndiceUtm(db, uid).catch(() => null);
+  const idxUtm = await pIdx;
   const campDeIdx = (utm) => { const x = atribuirUtm(utm, idxUtm); return x?.c && campIdx[x.c] ? x.c : null; };
   for (const o of ordenes) {
     const tid = o.store_id || "SIN_TIENDA";
@@ -870,7 +900,10 @@ export default async function handler(req, res) {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < ttl) return res.json({ ...JSON.parse(c.data().body), cache: true });
       }
-      const out = await porHora(db, uid, desde, hasta, tz);
+      const vk = cacheRef.path;
+      let pr = _enVuelo.get(vk);
+      if (!pr) { pr = porHora(db, uid, desde, hasta, tz).finally(() => _enVuelo.delete(vk)); _enVuelo.set(vk, pr); }
+      const out = await pr;
       await cacheRef.set({ ts: Date.now(), body: JSON.stringify(out) }).catch(() => {});
       return res.json(out);
     }

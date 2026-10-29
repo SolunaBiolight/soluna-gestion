@@ -35263,6 +35263,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     if (cached) setARows(cached); else setARows([]);
     try {
       const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil,tz:mtz};
+      cargarUtm(); // las ventas por UTM se piden a la vez que Meta, no después
       if (typeof window!=="undefined"&&window.__ghEsDigital) params.pages = "1"; // fanpages solo para el filtro de las tiendas digitales
       if (lastParent) {
         params.parent_id = lastParent.id;
@@ -35282,7 +35283,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if (myReqId !== loadInsightsReqIdRef.current) return;
       if(d.error) { setAError(d.error); if(!cached) setARows([]); }
       else { setARows(d.rows||[]); ghSwrSet(swrKey, d.rows||[]); }
-      cargarUtm();
     } catch(e) {
       if (myReqId !== loadInsightsReqIdRef.current) return;
       if(!cached) setAError(e.message || "Error de red");
