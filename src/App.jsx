@@ -34763,8 +34763,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aCols,setACols]=useState(()=>{ try {
     const s5=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v5"))||"null"); if(Array.isArray(s5)&&s5.length) return ordenarCols(s5);
     return DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
+  // Selección con casilla por fila, como en Meta: lo tildado en Campañas filtra la pestaña Conjuntos; lo tildado en
+  // Conjuntos filtra Anuncios (sin nada tildado se ven todos). Es un filtro del navegador: no vuelve a pedir a Meta.
+  const [aSel,setASel]=useState({campaign:new Set(), adset:new Set(), ad:new Set()});
+  const selTog = (lvl, id) => setASel(p=>{ const n=new Set(p[lvl]); n.has(id)?n.delete(id):n.add(id); return {...p,[lvl]:n}; });
+  const selLimpiar = (lvl) => setASel(p=>({...p, [lvl]:new Set(), ...(lvl==="campaign"?{adset:new Set(),ad:new Set()}:lvl==="adset"?{ad:new Set()}:{})}));
   // Anchos de columna (se arrastran desde el divisor del encabezado, como en Meta) — localStorage growith_meta_colw
-  const META_W0 = { act:56, name:320, ent:118, pres:118, col:122 };
+  const META_W0 = { sel:38, act:56, name:320, ent:118, pres:118, col:122 };
   const [aColW,setAColW]=useState(()=>{ try { const v=JSON.parse(localStorage.getItem(ghKey("growith_meta_colw"))||"null"); return v&&typeof v==="object"?v:{}; } catch(_) { return {}; } });
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_colw"), JSON.stringify(aColW)); } catch(_) {} }, [aColW]);
   const anchoCol = (k) => aColW[k] || META_W0[k] || META_W0.col;
@@ -35333,12 +35338,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Drill down: cuando se hace click en una row, entrar a sus hijos
   function drillInto(row) {
+    // Como en Meta: tocar el nombre deja ESA fila tildada y pasa a la pestaña de sus hijos.
     if (aLevel === "campaign") {
-      setADrill([{level:"campaign", id:row.id, name:row.name, act:row._act||null}]);
-      setALevel("adset");
+      setASel(p=>({...p, campaign:new Set([String(row.id)]), adset:new Set(), ad:new Set()}));
+      setADrill([]); setALevel("adset");
     } else if (aLevel === "adset") {
-      setADrill(prev=>[...prev, {level:"adset", id:row.id, name:row.name, act:prev[prev.length-1]?.act||null}]);
-      setALevel("ad");
+      setASel(p=>({...p, adset:new Set([String(row.id)]), ad:new Set()}));
+      setADrill([]); setALevel("ad");
     }
   }
   // Volver a un nivel del breadcrumb
@@ -36532,6 +36538,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   }
                   if (aFilterStatus === "active") filtered = filtered.filter(r => r.effective_status === "ACTIVE");
                   if (aFilterStatus === "paused") filtered = filtered.filter(r => r.effective_status === "PAUSED");
+                  // Solo los hijos de lo tildado en la pestaña de arriba (sin nada tildado, todos).
+                  if (aLevel === "adset" && aSel.campaign.size) filtered = filtered.filter(r => aSel.campaign.has(String(r.campaign_id)));
+                  if (aLevel === "ad") {
+                    if (aSel.adset.size) filtered = filtered.filter(r => aSel.adset.has(String(r.adset_id)));
+                    else if (aSel.campaign.size) filtered = filtered.filter(r => aSel.campaign.has(String(r.campaign_id)));
+                  }
                   // Tienda de cada fila: adonde fueron sus ventas por UTM o, sin ventas, el país del nombre ("FR | ...").
                   const tiendas = utmAtr?.tiendas || {};
                   const porPais = {};
@@ -36562,7 +36574,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
                         <div style={{fontSize:13,color:T.textSm}}>No hay {aLevel === "campaign" ? "campañas" : aLevel === "adset" ? "adsets" : "ads"} en este rango.</div>
-                        {(aFiltCta||aFiltTienda||aFiltPage||aFilterStatus!=="all"||aQuery) && <button onClick={()=>{setAFiltCta("");setAFiltTienda("");setAFiltPage("");setAFilterStatus("all");setAQuery("");}} style={{marginTop:12,background:"transparent",border:`1px solid ${T.border}`,color:T.accent,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar filtros</button>}
+                        {(aFiltCta||aFiltTienda||aFiltPage||aFilterStatus!=="all"||aQuery||aSel.campaign.size||aSel.adset.size) && <button onClick={()=>{setAFiltCta("");setAFiltTienda("");setAFiltPage("");setAFilterStatus("all");setAQuery("");selLimpiar("campaign");}} style={{marginTop:12,background:"transparent",border:`1px solid ${T.border}`,color:T.accent,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar filtros</button>}
                       </div>
                     );
                   }
@@ -36625,23 +36637,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                       {[{id:"campaign",label:"Campañas",icon:"folder"},{id:"adset",label:"Conjuntos de anuncios",icon:"box"},{id:"ad",label:"Anuncios",icon:"play"}].map(l=>{
                         const act = aLevel===l.id;
-                        const selIdx = aDrill.findIndex(b=>b.level===l.id); // qué objeto de este nivel está "seleccionado" (drill)
-                        const sel = selIdx>=0 ? aDrill[selIdx] : null;
-                        const ir = () => {
-                          if (act) return;
-                          if (l.id==="campaign") { setADrill([]); setALevel("campaign"); return; }
-                          const padre = l.id==="adset" ? "campaign" : "adset";
-                          const pi = aDrill.findIndex(b=>b.level===padre);
-                          if (pi>=0) drillTo(pi); else { setADrill([]); setALevel(l.id); }
-                        };
+                        const n = aSel[l.id].size;
                         return (
-                          <div key={l.id} onClick={ir} role="tab" aria-selected={act} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:10,border:`1px solid ${act?T.accent:T.border}`,background:act?T.accent+"1a":T.card,cursor:act?"default":"pointer",userSelect:"none"}}>
+                          <div key={l.id} onClick={()=>{ if(!act){ setADrill([]); setALevel(l.id); } }} role="tab" aria-selected={act} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:10,border:`1px solid ${act?T.accent:T.border}`,background:act?T.accent+"1a":T.card,cursor:act?"default":"pointer",userSelect:"none"}}>
                             <span style={{color:act?T.accent:T.textMd,display:"inline-flex"}}><GhI n={l.icon} size={14}/></span>
                             <span style={{fontSize:13,fontWeight:700,color:act?T.accent:T.text,whiteSpace:"nowrap"}}>{l.label}</span>
-                            {sel && (
-                              <span title={sel.name} style={{display:"inline-flex",alignItems:"center",gap:6,background:T.accent+"26",color:T.accent,borderRadius:6,padding:"2px 6px 2px 8px",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
-                                1 seleccionado
-                                <button onClick={e=>{e.stopPropagation(); drillTo(selIdx-1);}} title="Quitar la selección" style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",padding:0,lineHeight:0,fontFamily:"inherit"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                            {n>0 && (
+                              <span style={{display:"inline-flex",alignItems:"center",gap:6,background:T.accent+"26",color:T.accent,borderRadius:6,padding:"2px 6px 2px 8px",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
+                                {n} seleccionado{n>1?"s":""}
+                                <button onClick={e=>{e.stopPropagation(); selLimpiar(l.id);}} title="Quitar la selección" style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",padding:0,lineHeight:0,fontFamily:"inherit"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                               </span>
                             )}
                           </div>
@@ -36727,8 +36731,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       // misma fila de totales con su leyenda; en violeta y negro en vez de azul y blanco.
                       const LINK = T.accent;
                       const nivelTit = aLevel==="campaign" ? "Campaña" : aLevel==="adset" ? "Conjunto de anuncios" : "Anuncio";
-                      const W = { act:anchoCol("act"), name:anchoCol("name"), ent:anchoCol("ent"), pres:anchoCol("pres") };
-                      const anchoTotal = W.act + W.name + W.ent + W.pres + visibleCols.reduce((a,c)=>a+anchoCol(c),0);
+                      const W = { sel:META_W0.sel, act:anchoCol("act"), name:anchoCol("name"), ent:anchoCol("ent"), pres:anchoCol("pres") };
+                      const anchoTotal = W.sel + W.act + W.name + W.ent + W.pres + visibleCols.reduce((a,c)=>a+anchoCol(c),0);
+                      const selSet = aSel[aLevel];
+                      const Casilla = ({on, mixto, onChange, title}) => (
+                        <button onClick={e=>{e.stopPropagation(); onChange();}} role="checkbox" aria-checked={mixto?"mixed":on} title={title} style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${on||mixto?T.accentSolid:T.textSm}`,background:on||mixto?T.accentSolid:"transparent",padding:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",lineHeight:0}}>
+                          {on ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> : mixto ? <span style={{width:8,height:2,background:"#fff",borderRadius:1}}/> : null}
+                        </button>
+                      );
                       const TH = { padding:"8px 10px", fontSize:11, fontWeight:600, color:T.textMd, background:T.surface, borderBottom:`2px solid ${T.border}`, borderRight:`1px solid ${T.borderL}`, verticalAlign:"middle", lineHeight:1.25, whiteSpace:"normal", overflow:"hidden", position:"relative" };
                       const TD = { padding:"9px 10px", fontSize:12, color:T.text, borderRight:`1px solid ${T.borderL}`, borderBottom:`1px solid ${T.borderL}`, verticalAlign:"middle", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" };
                       const stickyL = (left, bg) => ({ position:"sticky", left, zIndex:1, background:bg });
@@ -36764,11 +36774,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                             )}
                             <div style={{overflowX:"auto"}}>
                               <table style={{width:anchoTotal,minWidth:anchoTotal,tableLayout:"fixed",borderCollapse:"separate",borderSpacing:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                <colgroup><col style={{width:W.act}}/><col style={{width:W.name}}/><col style={{width:W.ent}}/><col style={{width:W.pres}}/>{visibleCols.map(c=><col key={c} style={{width:anchoCol(c)}}/>)}</colgroup>
+                                <colgroup><col style={{width:W.sel}}/><col style={{width:W.act}}/><col style={{width:W.name}}/><col style={{width:W.ent}}/><col style={{width:W.pres}}/>{visibleCols.map(c=><col key={c} style={{width:anchoCol(c)}}/>)}</colgroup>
                                 <thead>
                                   <tr>
-                                    <th style={{...TH,textAlign:"left",...stickyL(0,T.surface),zIndex:3}}>Act.{grip("act")}</th>
-                                    <th onClick={()=>setASort(s=>({key:"name", dir: s.key==="name" && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:"left",cursor:"pointer",userSelect:"none",...stickyL(W.act,T.surface),zIndex:3,boxShadow:`1px 0 0 ${T.border}`}}>
+                                    <th style={{...TH,padding:"8px 0 8px 10px",...stickyL(0,T.surface),zIndex:3}}>
+                                      {(() => { const ids=rows.map(r=>String(r.id)); const nOn=ids.filter(id=>selSet.has(id)).length; const todos=nOn===ids.length&&ids.length>0;
+                                        return <Casilla on={todos} mixto={!todos&&nOn>0} title={todos?"Destildar todo":"Tildar todo"} onChange={()=>setASel(p=>{ const n=new Set(p[aLevel]); if(todos) ids.forEach(id=>n.delete(id)); else ids.forEach(id=>n.add(id)); return {...p,[aLevel]:n}; })}/>; })()}
+                                    </th>
+                                    <th style={{...TH,textAlign:"left",...stickyL(W.sel,T.surface),zIndex:3}}>Act.{grip("act")}</th>
+                                    <th onClick={()=>setASort(s=>({key:"name", dir: s.key==="name" && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:"left",cursor:"pointer",userSelect:"none",...stickyL(W.sel+W.act,T.surface),zIndex:3,boxShadow:`1px 0 0 ${T.border}`}}>
                                       <span style={{display:"flex",alignItems:"flex-end",gap:4}}><span>{nivelTit}</span><span style={{color:aSort.key==="name"?T.accent:T.textSm,fontSize:10}}>{aSort.key==="name"?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span></span>
                                       {grip("name")}
                                     </th>
@@ -36790,16 +36804,19 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     const drillLabel = aLevel==="campaign" ? "conjuntos de anuncios" : aLevel==="adset" ? "anuncios" : null;
                                     const editando = aBudgetEdit?.id === r.id;
                                     const puedeSwitch = metaEditable && !busy;
+                                    const tildada = selSet.has(String(r.id));
+                                    const bgFila = tildada ? T.accent+"14" : T.card;
                                     return (
-                                      <tr key={r.id} className="gh-meta-row">
-                                        <td style={{...TD,...stickyL(0,T.card)}}>
+                                      <tr key={r.id} className="gh-meta-row" style={tildada?{background:bgFila}:undefined}>
+                                        <td style={{...TD,padding:"9px 0 9px 10px",...stickyL(0,bgFila)}}><Casilla on={tildada} onChange={()=>selTog(aLevel,String(r.id))} title={tildada?"Destildar":"Tildar"}/></td>
+                                        <td style={{...TD,...stickyL(W.sel,bgFila)}}>
                                           <button onClick={()=>puedeSwitch&&toggleStatus(r)} disabled={!puedeSwitch} role="switch" aria-checked={isActive}
                                             title={!metaEditable ? `${isActive?"Activa":"Desactivada"}. Solo lectura: para activar o pausar desde Growith conectá un token con ads_management (pestaña Cuenta).` : isActive?"Desactivar":"Activar"}
                                             style={{width:36,height:20,borderRadius:10,border:"none",padding:0,cursor:busy?"wait":metaEditable?"pointer":"not-allowed",background:isActive?T.accentSolid:(T.textSm+"66"),position:"relative",transition:"background .15s",flexShrink:0,opacity:metaEditable?(busy?0.6:1):0.55,display:"block"}}>
                                             <span style={{position:"absolute",top:2,left:isActive?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?T.accentSolid:T.textSm}/>}</span>
                                           </button>
                                         </td>
-                                        <td style={{...TD,overflow:"hidden",...stickyL(W.act,T.card),boxShadow:`1px 0 0 ${T.borderL}`}}>
+                                        <td style={{...TD,overflow:"hidden",...stickyL(W.sel+W.act,bgFila),boxShadow:`1px 0 0 ${T.borderL}`}}>
                                           {drillLabel ? (
                                             <button onClick={()=>drillInto(r)} title={`Ver sus ${drillLabel}`} style={{display:"block",width:"100%",background:"transparent",border:"none",color:LINK,fontSize:13,fontWeight:500,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
                                               onMouseEnter={e=>{e.currentTarget.style.textDecoration="underline";}}
@@ -36850,7 +36867,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <tfoot>
                                   <tr>
                                     <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,...stickyL(0,T.surface),background:T.surface}}></td>
-                                    <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text,...stickyL(W.act,T.surface),background:T.surface,boxShadow:`1px 0 0 ${T.borderL}`}}>Resultados de {rows.length} {nivelTxt}</td>
+                                    <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,...stickyL(W.sel,T.surface),background:T.surface}}></td>
+                                    <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text,...stickyL(W.sel+W.act,T.surface),background:T.surface,boxShadow:`1px 0 0 ${T.borderL}`}}>Resultados de {rows.length} {nivelTxt}</td>
                                     <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,background:T.surface}}></td>
                                     <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,background:T.surface}}></td>
                                     {visibleCols.map(c => {
