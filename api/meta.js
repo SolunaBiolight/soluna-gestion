@@ -15,7 +15,7 @@ import { getValidDriveToken } from "./google-drive-callback.js";
 import { esDemo } from "./_demo.js";
 import { esTiendaDemo, metaDemo } from "./_demo_ads.js";
 import { utcDeLocal, zonaDe, tzValida } from "./impultienda.js";
-import { correrEscala, cronEscala, interpretarReglas, normalizarReglas, tablaReglas, resumenDiario, hoyEn, esDigital, compilarReglas } from "./_escala.js";
+import { correrReglas, cronReglas, resumenDiario, hoyEn, esDigital, leerReglas, textoRegla, actualizarIndice, LOGICA_MOTOR } from "./_reglas.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -1106,10 +1106,10 @@ export default async function handler(req, res) {
 
   const db = initAdmin();
 
-  // ── CRON: reglas de escala automática, cada 15 min (api/_escala.js) ──
+  // ── CRON: reglas de escala automática, cada 15 min (api/_reglas.js) ──
   if (action === "escala_cron" && req.method === "GET") {
     if (!guardCron(req, res)) return;
-    try { return res.json(await cronEscala(db)); }
+    try { return res.json(await cronReglas(db)); }
     catch (e) { console.error("[escala_cron]", e.message); return res.status(500).json({ error: e.message }); }
   }
 
@@ -1237,37 +1237,19 @@ export default async function handler(req, res) {
 
   try {
 
-    // ── REGLAS DE ESCALA AUTOMÁTICA (api/_escala.js) ──
+    // ── REGLAS DE ESCALA AUTOMÁTICA (api/_reglas.js) ──
     if (action && action.startsWith("escala_")) {
       const uRef = db.collection("users").doc(uid);
       const cfgRef = uRef.collection("meta_escala").doc("cfg");
-      const indice = (on) => db.collection("system").doc("meta_escala").set({ uids: { [uid]: !!on } }, { merge: true });
       if (action !== "escala_get" && !(await esDigital(db, uid))) return res.status(400).json({ error: "Las reglas de escala son solo para tiendas de productos digitales (Impultienda).", code: "escala_solo_digital" });
       if (action === "escala_get" && req.method === "GET") {
-        const cfg = (await cfgRef.get()).data() || null;
-        const [vs, log] = await Promise.all([
+        const [cfgS, reglas, vs, log] = await Promise.all([
+          cfgRef.get(), leerReglas(db, uid),
           uRef.collection("meta_escala_vueltas").orderBy("ts", "desc").limit(40).get(),
           uRef.collection("meta_escala_log").orderBy("ts", "desc").limit(200).get(),
         ]);
         const resumen = (await uRef.collection("meta_escala_resumen").doc(hoyEn("America/Argentina/Buenos_Aires")).get()).data() || null;
-        return res.json({ cfg, tabla: cfg?.reglas ? tablaReglas(normalizarReglas(cfg.reglas)) : [], vueltas: vs.docs.map(d => d.data()), log: log.docs.map(d => ({ id: d.id, ...d.data() })), resumen });
-      }
-      if (action === "escala_interpretar" && req.method === "POST") {
-        const prompt = String(req.body?.prompt || "").trim();
-        if (prompt.length < 10) return res.status(400).json({ error: "Escribí tus reglas." });
-        const reglas = await interpretarReglas(prompt);
-        return res.json({ reglas, tabla: tablaReglas(normalizarReglas(reglas)), no_entendido: reglas.no_entendido || [] });
-      }
-      if (action === "escala_guardar" && req.method === "POST") {
-        const { prompt, reglas, activo = true, simular = false } = req.body || {};
-        if (!reglas || typeof reglas !== "object") return res.status(400).json({ error: "Faltan las reglas interpretadas." });
-        normalizarReglas(reglas);
-        // Lo escrito en la pantalla es UNA regla más ("ui"); la config que corre se compila con las del MCP.
-        const ahoraIso = new Date().toISOString();
-        await uRef.collection("meta_escala_reglas").doc("ui").set({ nombre: "Reglas escritas en Growith", texto: String(prompt || "").slice(0, 12000), alcance: null, reglas, activo: true, creado: ahoraIso, actualizado: ahoraIso, por: "ui" }, { merge: true });
-        await cfgRef.set({ activo: !!activo, simular: !!simular }, { merge: true });
-        const { cfg } = await compilarReglas(db, uid);
-        return res.json({ ok: true, cfg, tabla: tablaReglas(normalizarReglas(cfg.reglas || reglas)) });
+        return res.json({ cfg: cfgS.data() || null, reglas: reglas.map(r => ({ ...r, texto: textoRegla(r) })), logica: LOGICA_MOTOR, vueltas: vs.docs.map(d => d.data()), log: log.docs.map(d => ({ id: d.id, ...d.data() })), resumen });
       }
       if (action === "escala_estado" && req.method === "POST") {
         const b = req.body || {};
@@ -1275,15 +1257,13 @@ export default async function handler(req, res) {
         if (typeof b.activo === "boolean") patch.activo = b.activo;
         if (typeof b.simular === "boolean") patch.simular = b.simular;
         await cfgRef.set({ ...patch, actualizado: new Date().toISOString() }, { merge: true });
-        const cfg = (await cfgRef.get()).data() || {};
-        await indice(cfg.activo && cfg.reglas);
-        return res.json({ ok: true, cfg });
+        await actualizarIndice(db, uid);
+        return res.json({ ok: true, cfg: (await cfgRef.get()).data() || {} });
       }
       if (action === "escala_probar" && req.method === "POST") {
         // Corre una vuelta YA en simulación y sin guardar nada: muestra qué haría ahora.
-        const cfg = (await cfgRef.get()).data();
-        if (!cfg?.reglas) return res.status(400).json({ error: "Guardá las reglas primero." });
-        return res.json(await correrEscala(db, uid, { forzar: true, prueba: true }));
+        if (!(await leerReglas(db, uid)).some(r => r.activa !== false)) return res.status(400).json({ error: "No hay reglas activas. Se cargan desde tu asistente de IA (conector de Growith)." });
+        return res.json(await correrReglas(db, uid, { forzar: true, prueba: true }));
       }
       if (action === "escala_resumen" && req.method === "POST") return res.json(await resumenDiario(db, uid, hoyEn("America/Argentina/Buenos_Aires")));
       return res.status(400).json({ error: "Acción de escala desconocida" });

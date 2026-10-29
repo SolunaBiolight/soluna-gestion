@@ -34609,120 +34609,92 @@ function MetaPublisher({ T, metaApi, accId, cur, tokenDead, uid: uidProp }) {
   );
 }
 
-// ── Reglas de escala automática (Meta → Reglas de escala). Motor en api/_escala.js ──
-// El usuario escribe sus reglas como un prompt; la IA las pasa a una tabla; al guardar quedan
-// activas y Growith corre cada 15 min (:00 :15 :30 :45) sobre todas las campañas activas.
-const GH_ESCALA_EJEMPLO = `Horario: de 06:00 a 21:00 hora local del país.
-Subida: ROAS del día ≥ 1,9 y al menos 2 ventas → +15 %. Después, cada 2 h, si en ese tramo entraron 2 ventas o más con ROAS ≥ 1,9 → +15 % otra vez. En horas pico (10 a 12 y 18 a 20) ese intervalo pasa a 15 min. Sin tope.
-Bajada: ROAS de las últimas 2 h < 1,4 → −15 %. Nunca bajar algo que no gastó al menos 1 CPA en el día. Después de una bajada no volver a bajar por 2 h. Piso: el presupuesto con el que arrancó.
-Pausa: 6 bajadas, o llegó al piso y sigue mal, o los últimos 4 días con ROAS < 1,4 habiendo gastado 3 CPA.
-No tocar nada entre las 03:00 y las 04:30 hora Argentina.`;
+// ── Reglas de escala automática (Meta → Reglas de escala). Motor en api/_reglas.js ──
+// Las reglas son JSON que escribe el asistente de IA del usuario por el conector (reglas_crear / reglas_editar).
+// Acá solo se MUESTRAN (texto legible + JSON), se prenden/apagan en bloque, se simulan y se ve el registro.
 function MetaEscala({T, metaApi, metaEditable}) {
   const [d,setD]=useState(null); const [cargando,setCargando]=useState(true);
-  const [prompt,setPrompt]=useState(""); const [borrador,setBorrador]=useState(null);
-  const [busy,setBusy]=useState(""); const [prueba,setPrueba]=useState(null); const [verPrompt,setVerPrompt]=useState(false);
-  const cargar=async()=>{ const r=await metaApi("escala_get"); if(!r.error){ setD(r); if(!prompt&&r.cfg?.prompt) setPrompt(r.cfg.prompt); } setCargando(false); };
+  const [busy,setBusy]=useState(""); const [prueba,setPrueba]=useState(null); const [verJson,setVerJson]=useState({}); const [verLogica,setVerLogica]=useState(false);
+  const cargar=async()=>{ const r=await metaApi("escala_get"); if(!r.error) setD(r); setCargando(false); };
   useEffect(()=>{ cargar(); const t=setInterval(cargar,60000); return ()=>clearInterval(t); },[]);
-  const cfg=d?.cfg;
-  async function interpretar(){
-    setBusy("interpretar"); const r=await metaApi("escala_interpretar","POST",{prompt}); setBusy("");
-    if(r.error) return toast(r.error,"error"); setBorrador(r);
-  }
-  async function guardar(){
-    setBusy("guardar"); const r=await metaApi("escala_guardar","POST",{prompt,reglas:borrador.reglas,activo:true,simular:!!cfg?.simular}); setBusy("");
-    if(r.error) return toast(r.error,"error"); setBorrador(null); setVerPrompt(false); toast("Reglas guardadas y activas","success"); cargar();
-  }
+  const cfg=d?.cfg||{}; const reglas=d?.reglas||[];
   async function estado(patch){ const r=await metaApi("escala_estado","POST",patch); if(r.error) return toast(r.error,"error"); cargar(); }
   async function probar(){ setBusy("probar"); const r=await metaApi("escala_probar","POST",{}); setBusy(""); if(r.error) return toast(r.error,"error"); setPrueba(r); }
   const F="'Inter',system-ui,sans-serif";
   const hora=(iso)=>{ try{ return new Date(iso).toLocaleString("es-AR",{timeZone:"America/Argentina/Buenos_Aires",hourCycle:"h23",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }catch{ return iso; } };
-  const tabla=(filas)=>(
-    <div style={{overflowX:"auto"}}>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,fontFamily:F}}>
-        <thead><tr>{["Regla","Aplica en","Condición","Acción","Nivel","Horario"].map(h=><th key={h} style={{textAlign:"left",padding:"8px 10px",color:T.textSm,fontWeight:600,fontSize:11,borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-        <tbody>{filas.map((f,i)=><tr key={i} style={{borderBottom:`1px solid ${T.border}`}}>
-          <td style={{padding:"8px 10px",fontWeight:700,color:T.text,whiteSpace:"nowrap",verticalAlign:"top"}}>{f.regla}{f.nombre&&<div style={{fontWeight:400,fontSize:11,color:T.textSm}}>{f.nombre}</div>}</td>
-          <td style={{padding:"8px 10px",color:f.alcance&&f.alcance!=="Todas"?T.text:T.textSm,verticalAlign:"top",minWidth:120}}>{f.alcance||"Todas"}</td>
-          <td style={{padding:"8px 10px",color:T.text,verticalAlign:"top"}}>{f.condicion}{f.aviso&&<div style={{color:T.red,fontSize:11,marginTop:3}}>⚠ {f.aviso}</div>}</td>
-          <td style={{padding:"8px 10px",color:T.text,verticalAlign:"top"}}>{f.accion}</td>
-          <td style={{padding:"8px 10px",color:T.textMd,verticalAlign:"top"}}>{f.nivel}</td>
-          <td style={{padding:"8px 10px",color:T.textMd,whiteSpace:"nowrap",verticalAlign:"top"}}>{f.horario}</td>
-        </tr>)}</tbody>
-      </table>
-    </div>);
-  const accTxt=(x)=>x.accion==="presupuesto"?`Presupuesto ${x.antes} → ${x.despues}${x.pct!=null?` (${x.pct>0?"+":""}${x.pct} %)`:""}`:x.accion==="puja"?`Tope ${x.antes} → ${x.despues}`:x.accion==="pausar"?"Pausado":x.accion==="manual"?`Cambio a mano: ${x.antes} → ${x.despues}`:"Aviso";
-  const nums=(x)=>{ const m=x.datos?.dia; const w=x.datos?.ultimas_2h; return [m&&`día: gasto ${m.gasto} · ${m.ventas} ventas · ROAS ${m.roas??"-"}`, w&&`2 h: gasto ${w.gasto} · ${w.ventas} ventas · ROAS ${w.roas??"-"}`, x.datos?.cpa_ref!=null&&`CPA ref ${x.datos.cpa_ref}`].filter(Boolean).join(" · "); };
+  const accTxt=(x)=>x.accion==="presupuesto"?`Presupuesto ${x.antes} → ${x.despues}${x.pct!=null?` (${x.pct>0?"+":""}${x.pct} %)`:""}`:x.accion==="puja"?`Tope de puja ${x.antes} → ${x.despues}`:x.accion==="pausar"?"Pausado":x.accion==="manual"?`Cambio a mano: ${x.antes} → ${x.despues}`:"Aviso";
+  const entradasTxt=(x)=>(x.datos?.entradas||[]).map(e=>`${e.metrica} (${e.ventana}) = ${e.valor_actual??"—"} ${e.op} ${e.valor}`).join(" · ");
   const filaLog=(x,i)=>(
     <div key={x.id||i} style={{display:"grid",gridTemplateColumns:"96px 1fr",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.border}`,fontSize:12,fontFamily:F}}>
       <div style={{color:T.textSm}}>{hora(x.ts)}<div style={{fontSize:11}}>{x.hora_local} local</div></div>
       <div>
         <div style={{color:T.text,fontWeight:600}}>{accTxt(x)} <span style={{color:T.textSm,fontWeight:400}}>· {x.nivel==="campaign"?"Campaña":"Conjunto"} {x.nombre}</span>{x.simulado&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.yellow}}>SIMULADO</span>}{x.ok===false&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red}}>FALLÓ</span>}</div>
-        <div style={{color:T.textMd,marginTop:2}}>{x.regla}</div>
-        <div style={{color:T.textSm,marginTop:2}}>{x.cuenta} · {x.campana}{nums(x)?` · ${nums(x)}`:""}</div>
+        <div style={{color:T.textMd,marginTop:2}}>Regla: {x.regla}{x.calculo?` · ${x.calculo}`:""}</div>
+        <div style={{color:T.textSm,marginTop:2}}>{x.cuenta} · {x.campana}{entradasTxt(x)?` · ${entradasTxt(x)}`:""}</div>
         {x.error&&<div style={{color:T.red,marginTop:2}}>{x.error}</div>}
       </div>
     </div>);
   if(cargando) return <Card T={T}><div style={{color:T.textSm,fontSize:13}}>Cargando reglas…</div></Card>;
-  const editando=!cfg||verPrompt||borrador;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
       <Card T={T}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
           <div>
             <div style={{fontSize:16,fontWeight:700,color:T.text}}>Reglas de escala automática</div>
-            <div style={{fontSize:12,color:T.textMd,marginTop:4,maxWidth:640}}>Escribilas acá o pedíselas a Claude con el conector de Growith (las carga solo). Growith revisa cada 15 minutos (:00, :15, :30 y :45, en la hora local de cada país) todas las campañas activas de tus cuentas publicitarias, con el gasto de Meta y tus ventas reales, y sube, baja o pausa según tus reglas. Lo que cambiás a mano manda, y nada pausado se vuelve a activar.</div>
+            <div style={{fontSize:12,color:T.textMd,marginTop:4,maxWidth:680}}>Las reglas las carga tu asistente de IA con el conector de Growith (<code>reglas_crear</code>, <code>reglas_editar</code>, <code>reglas_simular</code>); acá se ven tal cual las ejecuta el motor. Growith las corre cada 15 minutos (:00, :15, :30 y :45, en la hora local del país de cada tienda) sobre todas las campañas activas, con el gasto de Meta y tus ventas reales. Es código determinístico, sin IA: con los mismos datos hace siempre lo mismo. Si una vuelta trae errores, no toca nada. Lo que cambies a mano pasa a ser el nuevo punto de partida y piso.</div>
           </div>
-          {cfg&&<div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-            <label style={{display:"flex",gap:8,alignItems:"center",fontSize:12,color:T.text,fontWeight:600}}><DSToggle T={T} active={!!cfg.activo} onToggle={()=>estado({activo:!cfg.activo})}/>{cfg.activo?"Activas":"Apagadas"}</label>
+          <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+            <label style={{display:"flex",gap:8,alignItems:"center",fontSize:12,color:T.text,fontWeight:600}}><DSToggle T={T} active={cfg.activo!==false} onToggle={()=>estado({activo:cfg.activo===false})}/>{cfg.activo!==false?"Motor activo":"Motor apagado"}</label>
             <label style={{display:"flex",gap:8,alignItems:"center",fontSize:12,color:T.text,fontWeight:600}} title="En simulación registra lo que haría sin tocar Meta"><DSToggle T={T} active={!!cfg.simular} onToggle={()=>estado({simular:!cfg.simular})}/>Solo simular</label>
-            <Btn T={T} variant="secondary" size="sm" onClick={probar} disabled={busy==="probar"}>{busy==="probar"?"Revisando…":"Probar ahora"}</Btn>
-          </div>}
+            <Btn T={T} variant="secondary" size="sm" onClick={probar} disabled={busy==="probar"||!reglas.some(r=>r.activa!==false)}>{busy==="probar"?"Revisando…":"Probar ahora"}</Btn>
+          </div>
         </div>
-        {cfg&&!metaEditable&&!cfg.simular&&<div style={{marginTop:12,fontSize:12,color:T.yellow}}>Ninguna conexión de Meta tiene un token con ads_management: las vueltas van a fallar hasta que cargues uno en Cuenta (o activá "Solo simular").</div>}
+        {reglas.length>0&&!metaEditable&&!cfg.simular&&<div style={{marginTop:12,fontSize:12,color:T.yellow}}>Ninguna conexión de Meta tiene un token con ads_management: las vueltas van a fallar hasta que cargues uno en Cuenta (o activá "Solo simular").</div>}
       </Card>
 
       {prueba&&<Card T={T}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{fontSize:14,fontWeight:700,color:T.text}}>Qué haría ahora (simulación, no se guardó nada)</div><Btn T={T} variant="ghost" size="sm" onClick={()=>setPrueba(null)}>Cerrar</Btn></div>
-        <div style={{fontSize:12,color:T.textMd,marginTop:6}}>{prueba.saltada?`No correría: ${prueba.saltada}.`:`${prueba.evaluadas} campañas o conjuntos revisados, ${(prueba.acciones||[]).length} cambios.`}</div>
+        <div style={{fontSize:12,color:T.textMd,marginTop:6}}>{prueba.saltada?`No correría: ${prueba.saltada}.`:`${prueba.evaluadas} campañas revisadas, ${(prueba.acciones||[]).length} acciones.`}</div>
         {(prueba.errores||[]).map((e,i)=><div key={i} style={{fontSize:12,color:T.red,marginTop:4}}>{e}</div>)}
         {(prueba.acciones||[]).map(filaLog)}
+        {(prueba.evaluaciones||[]).filter(e=>!e.aplica).length>0&&<details style={{marginTop:10}}><summary style={{fontSize:12,color:T.textMd,cursor:"pointer"}}>Por qué no aplicó en el resto ({(prueba.evaluaciones||[]).filter(e=>!e.aplica).length})</summary>
+          <div style={{marginTop:6}}>{(prueba.evaluaciones||[]).filter(e=>!e.aplica).slice(0,150).map((e,i)=><div key={i} style={{fontSize:11,color:T.textSm,padding:"3px 0",fontFamily:F}}>{e.regla} · {e.objeto}: {e.motivo}{(e.entradas||[]).length?` (${e.entradas.map(x=>`${x.metrica} ${x.valor_actual??"—"} ${x.op} ${x.valor}`).join(", ")})`:""}</div>)}</div></details>}
       </Card>}
 
       <Card T={T}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div style={{fontSize:14,fontWeight:700,color:T.text}}>{cfg?"Tus reglas":"Escribí tus reglas"}</div>
-          {cfg&&!editando&&<Btn T={T} variant="secondary" size="sm" onClick={()=>setVerPrompt(true)}>Editar reglas</Btn>}
+          <div style={{fontSize:14,fontWeight:700,color:T.text}}>Reglas ({reglas.filter(r=>r.activa!==false).length} activas de {reglas.length})</div>
+          <Btn T={T} variant="ghost" size="sm" onClick={()=>setVerLogica(v=>!v)}>{verLogica?"Ocultar cómo decide el motor":"Cómo decide el motor"}</Btn>
         </div>
-        {editando&&<>
-          <textarea value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder={GH_ESCALA_EJEMPLO} rows={10} style={{...InputStyle(T),width:"100%",marginTop:10,resize:"vertical",fontFamily:F,fontSize:13,lineHeight:1.5,boxSizing:"border-box"}}/>
-          <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
-            <Btn T={T} variant="primary" onClick={interpretar} disabled={busy==="interpretar"||prompt.trim().length<10}>{busy==="interpretar"?"Interpretando…":"Interpretar reglas"}</Btn>
-            {!prompt&&<Btn T={T} variant="ghost" onClick={()=>setPrompt(GH_ESCALA_EJEMPLO)}>Usar el ejemplo</Btn>}
-            {cfg&&<Btn T={T} variant="ghost" onClick={()=>{setVerPrompt(false);setBorrador(null);setPrompt(cfg.prompt||"");}}>Cancelar</Btn>}
-          </div>
-        </>}
-        {borrador&&<div style={{marginTop:14}}>
-          <div style={{fontSize:12,color:T.textMd,marginBottom:8}}>Así las entendió Growith. Revisalas antes de guardar: al guardar quedan activas.</div>
-          {tabla(borrador.tabla)}
-          {(borrador.no_entendido||[]).length>0&&<div style={{marginTop:10,fontSize:12,color:T.yellow}}>No se pudo usar: {borrador.no_entendido.join(" · ")}</div>}
-          <div style={{display:"flex",gap:8,marginTop:12}}><Btn T={T} variant="success" onClick={guardar} disabled={busy==="guardar"}>{busy==="guardar"?"Guardando…":"Guardar y activar"}</Btn></div>
-        </div>}
-        {cfg&&!borrador&&<div style={{marginTop:12}}>{tabla(d.tabla||[])}<div style={{fontSize:11,color:T.textSm,marginTop:8}}>Guardadas el {hora(cfg.actualizado)}{cfg.por==="mcp"?" desde tu asistente de IA (conector de Growith)":""}.</div></div>}
+        {verLogica&&<ol style={{margin:"10px 0 0",paddingLeft:18,fontSize:12,color:T.textMd,lineHeight:1.6,fontFamily:F}}>{(d?.logica||[]).map((l,i)=><li key={i}>{l}</li>)}</ol>}
+        {reglas.length===0&&<div style={{fontSize:12,color:T.textSm,marginTop:10}}>Todavía no hay reglas. Pedile a tu asistente de IA (con el conector de Growith conectado) que las cree con <code>reglas_crear</code>; antes puede probarlas con <code>reglas_simular</code>.</div>}
+        {reglas.map(r=>(
+          <div key={r.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,fontFamily:F}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{r.nombre}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:999,background:r.activa===false?T.textSm+"22":T.green+"22",color:r.activa===false?T.textSm:T.green}}>{r.activa===false?"PAUSADA":"ACTIVA"}</span>
+              <span style={{fontSize:11,color:T.textSm}}>prioridad {r.prioridad} · v{r.version||1}{r.creada_por?` · ${r.creada_por}`:""}{r.actualizada?` · ${hora(r.actualizada)}`:""}</span>
+              <Btn T={T} variant="ghost" size="sm" onClick={()=>setVerJson(v=>({...v,[r.id]:!v[r.id]}))}>{verJson[r.id]?"Ocultar JSON":"Ver JSON"}</Btn>
+            </div>
+            <div style={{fontSize:12,color:T.textMd,marginTop:4,lineHeight:1.5}}>{r.texto}</div>
+            {r.texto_original&&<div style={{fontSize:11,color:T.textSm,marginTop:3}}>Dicho por Claude: {r.texto_original}</div>}
+            {verJson[r.id]&&<pre style={{marginTop:6,fontSize:11,color:T.text,background:T.bgSoft||T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:10,overflowX:"auto"}}>{JSON.stringify({nombre:r.nombre,prioridad:r.prioridad,activa:r.activa,alcance:r.alcance,horario:r.horario,condiciones:r.condiciones,accion:r.accion,limites:r.limites},null,2)}</pre>}
+          </div>))}
       </Card>
 
-      {cfg&&<Card T={T}>
+      {reglas.length>0&&<Card T={T}>
         <div style={{fontSize:14,fontWeight:700,color:T.text}}>Vueltas de cada 15 minutos</div>
         {d.resumen&&<div style={{fontSize:12,color:T.textMd,marginTop:6}}>Hoy: {d.resumen.subidas} subidas, {d.resumen.bajadas} bajadas, {d.resumen.cambios_de_puja} cambios de puja, {d.resumen.pausas} pausas, {d.resumen.fallidos} fallidos.</div>}
         <div style={{marginTop:8}}>{(d.vueltas||[]).length===0?<div style={{fontSize:12,color:T.textSm}}>Todavía no corrió ninguna vuelta. La próxima es en el próximo cuarto de hora.</div>:(d.vueltas||[]).slice(0,12).map((v,i)=>(
           <div key={i} style={{display:"flex",gap:10,padding:"6px 0",borderBottom:`1px solid ${T.border}`,fontSize:12,fontFamily:F}}>
             <span style={{color:T.textSm,width:96,flexShrink:0}}>{hora(v.ts)}</span>
-            <span style={{color:v.errores?.length?T.red:v.saltada?T.textMd:T.text}}>{v.errores?.length?`No tocó nada: ${v.errores.join(" · ")}`:v.saltada?`Saltada: ${v.saltada}`:`${v.evaluadas} revisadas · ${v.cambios} cambios${v.simular?" (simulado)":""}`}</span>
+            <span style={{color:v.errores?.length?T.red:v.saltada?T.textMd:T.text}}>{v.errores?.length?`No tocó nada: ${v.errores.join(" · ")}`:v.saltada?`Saltada: ${v.saltada}`:`${v.evaluadas} campañas revisadas · ${v.cambios} acciones${v.simular?" (simulado)":""}`}</span>
           </div>))}</div>
       </Card>}
 
-      {cfg&&<Card T={T}>
-        <div style={{fontSize:14,fontWeight:700,color:T.text}}>Registro de cambios</div>
-        <div>{(d.log||[]).length===0?<div style={{fontSize:12,color:T.textSm,marginTop:8}}>Sin cambios todavía.</div>:(d.log||[]).map(filaLog)}</div>
+      {reglas.length>0&&<Card T={T}>
+        <div style={{fontSize:14,fontWeight:700,color:T.text}}>Registro de acciones</div>
+        <div>{(d.log||[]).length===0?<div style={{fontSize:12,color:T.textSm,marginTop:8}}>Sin acciones todavía.</div>:(d.log||[]).map(filaLog)}</div>
       </Card>}
     </div>
   );
