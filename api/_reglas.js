@@ -617,11 +617,4 @@ export async function cronReglas(db, { deadline = Date.now() + 270000 } = {}) {
   return { tiendas: uids.length, resultados: out };
 }
 
-// ── Reglas como documentos (MCP reglas_* y la pantalla): users/{uid}/meta_escala_reglas/{id} ──
-// {nombre, texto, alcance, reglas (JSON interpretado), activo, creado, actualizado, por}. La config que
-// corre el motor (meta_escala/cfg) se COMPILA juntando todas las reglas activas: cada bloque de cada regla
-// entra como variante con el alcance de la regla (y el propio del bloque, si lo tiene).
-const CLAVES_RAW = ["horario", "subida", "puja", "bajada", "zona_media", "cierre", "pausa", "adsets_nuevos", "excepciones"];
-// Alcance simple {cuenta:[…], pixel:[…], tipo:"CBO", …} → árbol (Y entre campos, O dentro de cada uno). Un árbol ya hecho pasa igual.
-
 export { correrReglas as correrEscala, cronReglas as cronEscala };
