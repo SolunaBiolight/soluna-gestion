@@ -24,6 +24,12 @@
     <!-- Inter: antes lo agregaba App.jsx al montar; ahora la landing puede cargar sin la app (src/main.jsx) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Firebase: resolver y conectar antes de que la app los pida (con un DNS lento cada dominio nuevo cuesta segundos) -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin />
+    <link rel="dns-prefetch" href="https://www.googleapis.com" />
+    <link rel="dns-prefetch" href="https://graph.facebook.com" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
     <style>
       /* Pantalla de carga: mismo fondo oscuro y logo que el splash de la app, así

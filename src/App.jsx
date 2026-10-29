@@ -36626,6 +36626,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   return (
                     <>
+                {/* Período / horario / moneda / cuentas, arriba del selector de campañas y conjuntos */}
+                {barraFiltros}
                 {/* Header con controles */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -36714,7 +36716,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </button>
                   </div>
                 </div>
-                    {barraFiltros}
                     {(() => {
                       // Un bloque por CUENTA PUBLICITARIA (como el Administrador de anuncios); la tienda queda como filtro.
                       const grupos = {};
