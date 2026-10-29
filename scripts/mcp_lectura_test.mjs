@@ -52,15 +52,16 @@ const db = crearDb({
   },
   influencers: { i1: { ownerId: UID, nombre: "Chiara", usuario: "chiara.ok", red: "Instagram", email: "chiara@mail.com", telefono: "1155554444", codigoDescuento: "CHIARA10" } },
   reclamos: {
-    r1: { ownerId: UID, orderNum: "5012", tipo: "Cambio", motivo: "Talle incorrecto", estado: "Contactado", descripcion: "Me escribió al 221 455-9252 o a juan@gmail.com el 2026-10-20, pagó 12.500.000", clienteNombre: "Juan Pérez", clienteEmail: "juan@gmail.com", clienteTelefono: "2214559252", direccion: "Calle 1", asignadoNombre: "Nico", productosRecibe: [{ producto: "Anteojo amarillo", cantidad: 1 }], historial: [{ accion: "Reclamo creado", fecha: iso(3) }], createdAt: tsF(3), updatedAt: tsF(1) },
+    r1: { ownerId: UID, orderNum: "5012", tipo: "Cambio", motivo: "Talle incorrecto", estado: "Contactado", descripcion: "Me escribió al 221 455-9252 o a juan@gmail.com el 2026-10-20, pagó 12.500.000. Pago MP 12345678901, pedido #98765432", clienteNombre: "Juan Pérez", clienteEmail: "juan@gmail.com", clienteTelefono: "2214559252", direccion: "Calle 1", asignadoNombre: "Nico", productosRecibe: [{ producto: "Anteojo amarillo", cantidad: 1 }], historial: [{ accion: "Reclamo creado", fecha: iso(3) }], createdAt: tsF(3), updatedAt: tsF(1) },
     r2: { ownerId: UID, orderNum: "4900", tipo: "Devolución", motivo: "No es lo que esperaba", estado: "Resuelto", clienteEmail: "x@y.com", createdAt: tsF(40), updatedAt: tsF(30), resolvedAt: tsF(30) },
     r3: { ownerId: UID, orderNum: "4000", tipo: "Reclamo", motivo: "Demora", estado: "Rechazado", createdAt: tsF(120), updatedAt: tsF(100), resolvedAt: tsF(100) },
     r4: { ownerId: OTRA, orderNum: "1", tipo: "Reclamo", motivo: "Ajeno", estado: "Nuevo", createdAt: tsF(1) },
   },
   tareas: {
-    t1: { uid: UID, titulo: "Guion Chiara", estado: "en_proceso", prioridad: "alta", asignadoEmail: "nico@soluna.com", asignadoNombre: "Nico", asignadosEmails: ["nico@soluna.com", "lau@soluna.com"], deadline: tsF(1), checklist: [{ id: "a", text: "Hook", done: true }], links: [{ name: "", url: "https://doc" }], deliverables: [], tareaNumStr: "007", createdAt: tsF(5), updatedAt: tsF(1) },
+    t1: { uid: UID, titulo: "Guion Chiara", estado: "en_proceso", prioridad: "alta", asignadoEmail: "nico@soluna.com", asignadoNombre: "Nico", asignadosEmails: ["nico@soluna.com", "lau@soluna.com"], deadline: new Date(new Date(ahora - 2 * DIA).toISOString().slice(0, 10) + "T00:00:00Z"), checklist: [{ id: "a", text: "Hook", done: true }], links: [{ name: "", url: "https://doc" }], deliverables: [], tareaNumStr: "007", createdAt: tsF(5), updatedAt: tsF(1) },
     t2: { uid: UID, titulo: "Placa vieja", estado: "aprobado", asignadoEmail: "lau@soluna.com", deadline: tsF(200), createdAt: tsF(210), updatedAt: tsF(200) },
     t3: { uid: UID, titulo: "Placa nueva", estado: "pendiente", asignadoEmail: "lau@soluna.com", deadline: new Date(ahora + 5 * DIA), createdAt: tsF(1), updatedAt: tsF(1) },
+    t5: { uid: UID, titulo: "Vence mañana", estado: "pendiente", asignadoEmail: "lau@soluna.com", deadline: new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(ahora + DIA)) + "T00:00:00Z"), createdAt: tsF(1), updatedAt: tsF(1) },
     t4: { uid: OTRA, titulo: "Ajena", estado: "pendiente", createdAt: tsF(1) },
   },
   colaboradores: { k1: { uid: UID, nombre: "Lautaro", email: "lau@soluna.com", token: "secreto" }, k2: { uid: UID, nombre: "Nico", email: "nico@soluna.com", token: "secreto2" } },
@@ -117,17 +118,19 @@ ok(ab.abierto && ab.paso_actual === "Contactado" && ab.siguiente_paso === "Esper
 ok(ab.dias_abierto === 3 && ab.responsable === "Nico" && ab.motivo === "Talle incorrecto", "reclamos: días abierto, responsable, motivo");
 ok(ab.descripcion.includes("[teléfono]") && ab.descripcion.includes("[mail]"), "reclamos: teléfono y mail de la descripción tapados");
 ok(ab.descripcion.includes("2026-10-20") && ab.descripcion.includes("12.500.000"), "reclamos: fechas y montos no se tapan");
+ok(ab.descripcion.includes("Pago MP 12345678901") && ab.descripcion.includes("#98765432"), "reclamos: números de pago y de pedido no se tapan");
 ok(d.resumen.abiertos === 1 && d.resumen.cerrados_60_dias === 1, "reclamos: resumen");
 sinPII(d, "reclamos");
 
 // tareas
 r = await llamar("tareas"); d = r.structuredContent;
 ok(!r.isError, "tareas: responde");
-ok(d.tareas.length === 2 && d.tareas.every(t => t.titulo !== "Ajena" && t.titulo !== "Placa vieja"), "tareas: abiertas de esta tienda, sin la aprobada hace 200 días");
+ok(d.tareas.length === 3 && d.tareas.every(t => t.titulo !== "Ajena" && t.titulo !== "Placa vieja"), "tareas: abiertas de esta tienda, sin la aprobada hace 200 días");
 const t1 = d.tareas[0];
 ok(t1.titulo === "Guion Chiara" && t1.vencida && t1.estado === "En proceso", "tareas: ordenadas por fecha límite, vencida, estado legible");
-ok(t1.asignados.join(",") === "Nico,Lautaro" && d.tareas[1].responsable === "Lautaro", "tareas: responsables por nombre (desde colaboradores)");
+ok(t1.asignados.join(",") === "Nico,Lautaro" && d.tareas.find(t => t.titulo === "Placa nueva").responsable === "Lautaro", "tareas: responsables por nombre (desde colaboradores)");
 ok(t1.checklist[0].item === "Hook" && t1.checklist[0].hecho && t1.links[0] === "https://doc", "tareas: checklist y links");
+ok(d.tareas.find(t => t.titulo === "Vence mañana").vencida === false, "tareas: la que vence mañana no figura vencida (zona horaria)");
 sinPII(d, "tareas");
 
 // cliente_id ajeno: mismo control que las demás herramientas

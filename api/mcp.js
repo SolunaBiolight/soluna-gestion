@@ -937,10 +937,12 @@ function sinContacto(s, max = 1500) {
   if (!s) return "";
   return String(s)
     .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, "[mail]")
-    // 8 a 13 dígitos es un teléfono; no las fechas (2026-10-28) ni los montos (12.500.000).
-    .replace(/(\+?\d[\d\s().-]{7,}\d)/g, (m) => {
+    // 8 a 13 dígitos es un teléfono; no las fechas (2026-10-28), los montos
+    // (12.500.000) ni los números de pago, pedido u operación ("Pago MP 12345678901").
+    .replace(/(\+?\d[\d\s().-]{7,}\d)/g, (m, _g, i, txt) => {
       const n = m.replace(/\D/g, "").length;
       if (n < 8 || n > 13 || /^\d{4}-\d{2}-\d{2}$/.test(m.trim()) || /^\d{1,3}(\.\d{3})+$/.test(m.trim())) return m;
+      if (/(pago|operaci[oó]n|pedido|orden|venta|reclamo|env[ií]o|tracking|seguimiento|id|#|n[º°o]\.?)(\s+(de\s+)?(mp|ml|mercado\s*(pago|libre)))?\s*[:#nº°]*\s*$/i.test(txt.slice(Math.max(0, i - 30), i))) return m;
       return "[teléfono]";
     })
     .slice(0, max);
@@ -1024,6 +1026,15 @@ async function leerReclamos(db, uid) {
   return { resumen: { abiertos: ab.length, cerrados_60_dias: ce.length, abiertos_por_paso: contar(ab, r => r.paso_actual), por_tipo: contar(reclamos, r => r.tipo), por_motivo: contar(reclamos, r => r.motivo) }, reclamos };
 }
 
+// La fecha límite es un DÍA (se guarda como 00:00 UTC): vence cuando ese día
+// ya pasó en Argentina, o hoy si tiene hora y la hora ya pasó.
+function vencioTarea(dia, hora) {
+  const hoy = hoyAR();
+  if (dia !== hoy) return dia < hoy;
+  if (!/^\d{2}:\d{2}$/.test(hora || "")) return false;
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date()) > hora;
+}
+
 async function leerTareas(db, uid) {
   const ahora = Date.now();
   const [ts, cs] = await Promise.all([
@@ -1043,7 +1054,7 @@ async function leerTareas(db, uid) {
     return {
       id: t.id, numero: t.tareaNumStr || null, titulo: t.titulo || "", estado: TAREA_ESTADO_LABEL[t.estado] || t.estado || "", prioridad: t.prioridad || "normal",
       responsable: t.asignadoNombre || nombrePor[emails[0]] || null, asignados: emails.map(e => nombrePor[e] || (e === String(t.asignadoEmail || "").toLowerCase() ? t.asignadoNombre : null) || "sin nombre"),
-      fecha_limite: deadline ? deadline.slice(0, 10) : null, hora_limite: t.deadlineHora || null, vencida: !!deadline && !terminada(t) && Date.parse(deadline) < ahora,
+      fecha_limite: deadline ? deadline.slice(0, 10) : null, hora_limite: t.deadlineHora || null, vencida: !!deadline && !terminada(t) && vencioTarea(deadline.slice(0, 10), t.deadlineHora),
       descripcion: sinContacto(t.descripcion), brief: sinContacto(t.brief), es_campana: !!t.esCampaña, correcciones: t.correcciones || 0,
       checklist: (t.checklist || []).map(c => ({ item: c.text || c.texto || "", hecho: !!c.done })),
       links: (t.links || []).map(l => (typeof l === "string" ? l : l?.url)).filter(Boolean),
