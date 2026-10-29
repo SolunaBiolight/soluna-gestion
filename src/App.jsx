@@ -36256,6 +36256,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     </div>
   );
 
+  // Barra de período / horario / moneda / cuentas: va ENTRE la tabla de controles y los bloques por cuenta (pedido 29/oct/2026).
+  const barraFiltros = conCuentaAds ? (
+    <div style={{marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
+            <GhFiltroPill T={T} icon={<GhI n="calendar" size={14}/>} label="Período"><DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/></GhFiltroPill>
+            <GhTzSelect T={T} value={mtz} onChange={setMtz}/>
+            <GhMonSelect T={T} value={mmon} onChange={setMmon} extra={<option value="">{`Moneda de la cuenta${activeAcc?.currency?` (${activeAcc.currency})`:""}`}</option>}/>
+            {ctasElegidas.length>0 && <button onClick={()=>setTab("config")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>Configurar cuentas</button>}
+          </div>
+    </div>
+  ) : null;
+
   return(
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",background:T.bg,minHeight:"100vh",display:"flex",flexDirection:"column"}}>
       <AppTopbar T={T} section="Meta Ads" sectionId="meta" onHome={onHome}
@@ -36278,16 +36290,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
         <AdAccountPicker T={T} accId={activeAccId} activeAcc={activeAcc} metaApi={metaApi} onPicked={()=>{
           metaApi("accounts").then(d=>{ if(d.accounts) setAccounts(d.accounts); });
         }}/>
-      )}
-      {conCuentaAds && tab==="analisis" && (
-        <div style={{maxWidth:"100%",padding:"12px 24px 0",boxSizing:"border-box"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"10px 12px"}}>
-            <GhFiltroPill T={T} icon={<GhI n="calendar" size={14}/>} label="Período"><DateRangePicker T={T} since={aSince} until={aUntil} onChange={(s,u)=>{setASince(s);setAUntil(u);}}/></GhFiltroPill>
-            <GhTzSelect T={T} value={mtz} onChange={setMtz}/>
-            <GhMonSelect T={T} value={mmon} onChange={setMmon} extra={<option value="">{`Moneda de la cuenta${activeAcc?.currency?` (${activeAcc.currency})`:""}`}</option>}/>
-            {ctasElegidas.length>0 && <button onClick={()=>setTab("config")} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>Configurar cuentas</button>}
-          </div>
-        </div>
       )}
       {activeAcc && activeAcc.ad_account_id && ctasElegidas.length===0 && (
         <AdAccountPicker T={T} accId={activeAccId} activeAcc={activeAcc} metaApi={metaApi} compact onPicked={()=>{
@@ -36577,8 +36579,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     return t;
                   };
                   const tot = sumas(filtered);
-                  const sumSpend = tot.spend, sumPurchaseValue = tot.rev, sumPurchases = tot.n, sumClicks = tot.clicks;
-                  const totalRoas = tot.roas, totalCpa = tot.cpa, totalCtr = tot.ctr, totalAov = tot.aov;
 
                   const fmt = (n) => n.toLocaleString("es-AR",{minimumFractionDigits:2, maximumFractionDigits:2});
                   const fmtInt = (n) => Math.round(n).toLocaleString("es-AR");
@@ -36618,15 +36618,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   return (
                     <>
-                    {/* Resumen ejecutivo del rango (sobre lo filtrado) */}
-                    <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
-                      <KPI T={T} label="Gasto" value={cur+fmt(sumSpend)} sub={`${filtered.length} ${aLevel==="campaign"?"campañas":aLevel==="adset"?"adsets":"ads"}`} color={T.accent}/>
-                      <KPI T={T} label="Ventas" value={String(sumPurchases)} sub={utmAtr?"cruzadas por UTM":(sumClicks?`${fmtInt(sumClicks)} clicks`:"")} color={T.text}/>
-                      <KPI T={T} label="Revenue" value={cur+fmt(sumPurchaseValue)} sub={utmAtr?"ventas reales por UTM":"según píxel de Meta"} color={T.text}/>
-                      <KPI T={T} label="AOV" value={totalAov?cur+fmt(totalAov):"—"} sub="revenue por venta" color={T.text}/>
-                      <KPI T={T} label="ROAS" value={fmt(totalRoas)+"x"} sub={aRoasBe>0?`BE de referencia ${aRoasBe}x`:""} color={totalRoas>=aRoasBe?T.green:(totalRoas>0?T.red:T.textSm)}/>
-                      <KPI T={T} label="CPA" value={totalCpa?cur+fmt(totalCpa):"—"} sub={totalCtr?`CTR ${fmt(totalCtr)}%`:""} color={T.text}/>
-                    </div>
                 {/* Header con controles */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -36723,6 +36714,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     </button>
                   </div>
                 </div>
+                    {barraFiltros}
                     {(() => {
                       // Un bloque por CUENTA PUBLICITARIA (como el Administrador de anuncios); la tienda queda como filtro.
                       const grupos = {};
