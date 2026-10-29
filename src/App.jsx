@@ -34745,7 +34745,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [utmAtr,setUtmAtr]=useState(null);
   const [utmBusy,setUtmBusy]=useState(false);
   const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad
-  const [aSince,setASince]=useState(()=>fechaAR(new Date(Date.now()-7*86400000)));
+  const [aSince,setASince]=useState(()=>hoyAR()); // por defecto "Hoy", como el Dashboard
   const [aUntil,setAUntil]=useState(()=>hoyAR());
   const [aRows,setARows]=useState([]);
   const [aLoading,setALoading]=useState(false);
@@ -34755,15 +34755,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // ROAS break-even configurable (persiste en localStorage)
   const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem(ghKey("growith_meta_roas_be")))||2; } catch(_) { return 2; } });
   // Columnas visibles (persiste)
-  const DEFAULT_COLS = ["spend","roas","cpa","checkouts","purchases","purchase_value","aov","cpc","ctr","cpm","frequency","hook","avg_watch"];
-  // Gasto siempre primero y Pagos iniciados justo después del CPA (como pidió el usuario), aunque vengan guardadas en otro orden.
-  const ordenarCols = (c) => { const l=c.filter(k=>k!=="spend"&&k!=="checkouts"); if(c.includes("checkouts")){ const i=l.indexOf("cpa"); l.splice(i>=0?i+1:0,0,"checkouts"); } return c.includes("spend")?["spend",...l]:l; };
+  // Columnas en el MISMO orden que la vista del Administrador de anuncios del usuario (29/oct/2026).
+  // El usuario elige cuáles ver; el orden es fijo, como en Meta.
+  const META_COL_ORDER = ["spend","roas","cpa","purchases","checkouts","cost_checkout","wishlist","cost_cart","link_ctr","link_cpc","cpm","link_clicks","lpv","reach","frequency","hook","avg_watch","purchase_value","aov","ctr","cpc","impressions","clicks"];
+  const DEFAULT_COLS = META_COL_ORDER.slice(0,17);
+  const ordenarCols = (c) => META_COL_ORDER.filter(k=>c.includes(k));
   const [aCols,setACols]=useState(()=>{ try {
-    const s4=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v4"))||"null"); if(Array.isArray(s4)&&s4.length) return ordenarCols(s4);
-    const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v3"))||"null"); if(Array.isArray(s)&&s.length) return ordenarCols(s);
-    // Columnas guardadas antes de "Pagos iniciados": se agrega después de Ventas.
-    const v2=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v2"))||"null");
-    if(Array.isArray(v2)&&v2.length){ const i=v2.indexOf("purchases"); return ordenarCols(v2.includes("checkouts")?v2:[...v2.slice(0,i+1),"checkouts",...v2.slice(i+1)]); }
+    const s5=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v5"))||"null"); if(Array.isArray(s5)&&s5.length) return ordenarCols(s5);
     return DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
   const [aBudgetEdit,setABudgetEdit]=useState(null); // {id, val} mientras se edita un presupuesto en la tabla
   const [aColsOpen,setAColsOpen]=useState(false);
@@ -35337,7 +35335,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Persistir ROAS BE y columnas
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_roas_be"), String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
-  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v4"), JSON.stringify(ordenarCols(aCols))); } catch(_) {} }, [aCols]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v5"), JSON.stringify(ordenarCols(aCols))); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
@@ -36552,11 +36550,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   // Totales (de lo filtrado y de cada bloque de tienda)
                   const sumas = (rows) => {
-                    const t = { spend:0, rev:0, n:0, impr:0, clicks:0, v3:0, chk:0 };
-                    for (const r of rows) { t.spend+=r.spend||0; t.rev+=r.purchase_value||0; t.n+=r.purchases||0; t.impr+=r.impressions||0; t.clicks+=r.clicks||0; t.v3+=r.video_3s||0; t.chk+=r.checkouts||0; }
+                    const t = { spend:0, rev:0, n:0, impr:0, clicks:0, v3:0, chk:0, lc:0, lpv:0, wish:0, carts:0, reach:0, watchW:0, watchN:0 };
+                    for (const r of rows) { t.spend+=r.spend||0; t.rev+=r.purchase_value||0; t.n+=r.purchases||0; t.impr+=r.impressions||0; t.clicks+=r.clicks||0; t.v3+=r.video_3s||0; t.chk+=r.checkouts||0; t.lc+=r.link_clicks||0; t.lpv+=r.lpv||0; t.wish+=r.wishlist||0; t.carts+=r.carts||0; t.reach+=r.reach||0; if(r.avg_watch>0&&r.impressions>0){ t.watchW+=r.avg_watch*r.impressions; t.watchN+=r.impressions; } }
                     t.roas = t.spend>0 ? t.rev/t.spend : 0; t.cpa = t.n>0 ? t.spend/t.n : 0; t.aov = t.n>0 ? t.rev/t.n : 0;
                     t.ctr = t.impr>0 ? t.clicks/t.impr*100 : 0; t.cpm = t.impr>0 ? t.spend/t.impr*1000 : 0; t.cpc = t.clicks>0 ? t.spend/t.clicks : 0;
                     t.hook = t.impr>0 ? t.v3/t.impr*100 : 0; t.cpChk = t.chk>0 ? t.spend/t.chk : 0;
+                    t.linkCtr = t.impr>0 ? t.lc/t.impr*100 : 0; t.linkCpc = t.lc>0 ? t.spend/t.lc : 0; t.cpCart = t.carts>0 ? t.spend/t.carts : 0;
+                    t.freq = t.reach>0 ? t.impr/t.reach : 0; t.watch = t.watchN>0 ? t.watchW/t.watchN : 0;
                     return t;
                   };
                   const tot = sumas(filtered);
@@ -36565,31 +36565,36 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   const fmt = (n) => n.toLocaleString("es-AR",{minimumFractionDigits:2, maximumFractionDigits:2});
                   const fmtInt = (n) => Math.round(n).toLocaleString("es-AR");
-                  const headerCell = (key, label, align="right") => (
-                    <th key={key} onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{padding:"10px 12px",textAlign:align,fontSize:11,fontWeight:600,color:T.textMd,cursor:"pointer",borderBottom:`1px solid ${T.border}`,whiteSpace:"normal",lineHeight:1.25,userSelect:"none",verticalAlign:"bottom"}}>
-                      {label} {aSort.key===key && (aSort.dir==="desc"?"▼":"▲")}
-                    </th>
-                  );
 
                   // Mapa de columnas configurables (total recibe las sumas del bloque)
+                  // Columnas tal cual el Administrador de anuncios (label = encabezado, sub = lo que Meta pone bajo el total).
+                  const mmss = (sec) => { const t=Math.round(sec||0); return String(Math.floor(t/60)).padStart(2,"0")+":"+String(t%60).padStart(2,"0"); };
+                  const cnt = (n) => n ? fmtInt(n) : "—";
+                  const money = (n) => n ? cur+fmt(n) : "—";
                   const COL_META = {
-                    spend:          { label:"Gasto",          render: r => cur+fmt(r.spend),            total: t => cur+fmt(t.spend), bold:true },
-                    purchases:      { label:"Ventas",         render: r => r.purchases,                 total: t => t.n },
-                    checkouts:      { label:"Pagos iniciados", render: r => r.checkouts ? fmtInt(r.checkouts) : "—", total: t => t.chk ? fmtInt(t.chk) : "—" },
-                    cost_checkout:  { label:"Costo por pago iniciado", render: r => r.checkouts&&r.spend ? cur+fmt(r.spend/r.checkouts) : "—", total: t => t.cpChk ? cur+fmt(t.cpChk) : "—" },
-                    purchase_value: { label:"Revenue",        render: r => cur+fmt(r.purchase_value),   total: t => cur+fmt(t.rev) },
-                    aov:            { label:"AOV",            render: r => r.aov ? cur+fmt(r.aov) : "—", total: t => t.aov ? cur+fmt(t.aov) : "—" },
-                    hook:           { label:"Retención 3 s",  render: r => r.hook ? fmt(r.hook)+"%" : "—", total: t => t.hook ? fmt(t.hook)+"%" : "—" },
-                    avg_watch:      { label:"Tiempo prom.",   render: r => r.avg_watch ? fmt(r.avg_watch)+" s" : "—", total: () => "—" },
-                    roas:           { label:"ROAS",           render: r => fmt(r.roas)+"x", total: t => fmt(t.roas)+"x", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0) return T.text; return r.roas>=be?T.green:(r.roas>0?T.red:T.textSm);}, totalColor: () => T.text, bold:true },
-                    cpa:            { label:"CPA",            render: r => r.cpa ? cur+fmt(r.cpa) : "—", total: t => t.cpa ? cur+fmt(t.cpa) : "—" },
-                    ctr:            { label:"CTR",            render: r => fmt(r.ctr)+"%",              total: t => fmt(t.ctr)+"%" },
-                    cpm:            { label:"CPM",            render: r => cur+fmt(r.cpm),              total: t => t.cpm ? cur+fmt(t.cpm) : "—" },
-                    cpc:            { label:"CPC",            render: r => cur+fmt(r.cpc),              total: t => t.cpc ? cur+fmt(t.cpc) : "—" },
-                    frequency:      { label:"Frec.",          render: r => fmt(r.frequency),            total: () => "—" },
-                    impressions:    { label:"Impr.",          render: r => fmtInt(r.impressions),       total: t => fmtInt(t.impr) },
-                    reach:          { label:"Alcance",        render: r => fmtInt(r.reach),             total: () => "—" },
-                    clicks:         { label:"Clicks",          render: r => fmtInt(r.clicks),            total: t => fmtInt(t.clicks) },
+                    spend:          { label:"Monto gastado", sub:"Gasto total", render: r => cur+fmt(r.spend), total: t => cur+fmt(t.spend) },
+                    roas:           { label:"ROAS de resultados", sub:"Valor,compra", render: r => r.roas ? fmt(r.roas) : "—", total: t => t.roas ? fmt(t.roas) : "—", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0||!r.roas) return T.text; return r.roas>=be?T.green:T.red;} },
+                    cpa:            { label:"Costo por resultado", sub:"Por compra", rowSub:"Por compra", render: r => money(r.cpa), total: t => money(t.cpa), dotted:true },
+                    purchases:      { label:"Compras", sub:"Total", render: r => cnt(r.purchases), total: t => cnt(t.n), dotted:true },
+                    checkouts:      { label:"Pagos iniciados", sub:"Total", render: r => cnt(r.checkouts), total: t => cnt(t.chk), dotted:true },
+                    cost_checkout:  { label:"Costo por pago iniciado", sub:"Por acción", render: r => r.checkouts&&r.spend ? cur+fmt(r.spend/r.checkouts) : "—", total: t => money(t.cpChk), dotted:true },
+                    wishlist:       { label:"Artículos agregados a la lista de deseos", sub:"Total", render: r => cnt(r.wishlist), total: t => cnt(t.wish), dotted:true },
+                    cost_cart:      { label:"Costo por carrito", sub:"Por acción", render: r => r.carts&&r.spend ? cur+fmt(r.spend/r.carts) : "—", total: t => money(t.cpCart), dotted:true },
+                    link_ctr:       { label:"CTR (porcentaje de clics en el enlace)", sub:"Por impresiones", render: r => r.link_ctr ? fmt(r.link_ctr)+"%" : "—", total: t => t.linkCtr ? fmt(t.linkCtr)+"%" : "—" },
+                    link_cpc:       { label:"CPC (costo por clic en el enlace)", sub:"Por acción", render: r => money(r.link_cpc), total: t => money(t.linkCpc) },
+                    cpm:            { label:"CPM (costo por mil impresiones)", sub:"Por mil impresiones", render: r => money(r.cpm), total: t => money(t.cpm) },
+                    link_clicks:    { label:"Clics en el enlace", sub:"Total", render: r => cnt(r.link_clicks), total: t => cnt(t.lc), dotted:true },
+                    lpv:            { label:"Visitas a la página de destino", sub:"Total", render: r => cnt(r.lpv), total: t => cnt(t.lpv), dotted:true },
+                    reach:          { label:"Alcance", sub:"Cuentas de Meta", render: r => cnt(r.reach), total: t => cnt(t.reach) },
+                    frequency:      { label:"Frecuencia", sub:"Por cuenta de Meta", render: r => r.frequency ? fmt(r.frequency) : "—", total: t => t.freq ? fmt(t.freq) : "—" },
+                    hook:           { label:"Porcentaje de retención del video", sub:"Promedio", render: r => r.hook ? fmt(r.hook)+"%" : "—", total: t => t.hook ? fmt(t.hook)+"%" : "—" },
+                    avg_watch:      { label:"Tiempo promedio de reproducción del video", sub:"Promedio", render: r => r.avg_watch ? mmss(r.avg_watch) : "—", total: t => t.watch ? mmss(t.watch) : "—" },
+                    purchase_value: { label:"Valor de conversión de compras", sub:"Total", render: r => money(r.purchase_value), total: t => money(t.rev) },
+                    aov:            { label:"Valor promedio por compra", sub:"Por compra", render: r => money(r.aov), total: t => money(t.aov) },
+                    ctr:            { label:"CTR (todos)", sub:"Por impresiones", render: r => r.ctr ? fmt(r.ctr)+"%" : "—", total: t => t.ctr ? fmt(t.ctr)+"%" : "—" },
+                    cpc:            { label:"CPC (todos)", sub:"Por acción", render: r => money(r.cpc), total: t => money(t.cpc) },
+                    impressions:    { label:"Impresiones", sub:"Total", render: r => cnt(r.impressions), total: t => cnt(t.impr) },
+                    clicks:         { label:"Clics (todos)", sub:"Total", render: r => cnt(r.clicks), total: t => cnt(t.clicks) },
                   };
                   const visibleCols = aCols.filter(k => COL_META[k]);
                   const canDrill = aLevel !== "ad";
@@ -36608,29 +36613,39 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Header con controles */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    {/* Sub-tabs nivel (solo cambia si NO hay drill activo, sino se desactivan) */}
-                    {aDrill.length === 0 ? (
-                      <div style={{display:"flex",gap:2,background:T.bg,padding:3,borderRadius:8,border:`1px solid ${T.borderL}`}}>
-                        {[{id:"campaign",label:"Campañas"},{id:"adset",label:"Todos los adsets"},{id:"ad",label:"Todos los ads"}].map(l=>(
-                          <button key={l.id} onClick={()=>{setALevel(l.id);setADrill([]);}} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:aLevel===l.id?T.card:"transparent",color:aLevel===l.id?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l.label}</button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{padding:"6px 12px",background:T.bg,borderRadius:8,border:`1px solid ${T.borderL}`,fontSize:12,fontWeight:600,color:T.text}}>
-                        {aLevel === "adset" ? "Adsets" : "Ads"} de {aDrill[aDrill.length-1].name.slice(0,30)}{aDrill[aDrill.length-1].name.length>30?"…":""}
-                      </div>
-                    )}
+                    {/* Pestañas Campañas / Conjuntos de anuncios / Anuncios, con el chip "1 seleccionado" como en el Administrador de anuncios */}
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {[{id:"campaign",label:"Campañas",icon:"folder"},{id:"adset",label:"Conjuntos de anuncios",icon:"box"},{id:"ad",label:"Anuncios",icon:"play"}].map(l=>{
+                        const act = aLevel===l.id;
+                        const selIdx = aDrill.findIndex(b=>b.level===l.id); // qué objeto de este nivel está "seleccionado" (drill)
+                        const sel = selIdx>=0 ? aDrill[selIdx] : null;
+                        const ir = () => {
+                          if (act) return;
+                          if (l.id==="campaign") { setADrill([]); setALevel("campaign"); return; }
+                          const padre = l.id==="adset" ? "campaign" : "adset";
+                          const pi = aDrill.findIndex(b=>b.level===padre);
+                          if (pi>=0) drillTo(pi); else { setADrill([]); setALevel(l.id); }
+                        };
+                        return (
+                          <div key={l.id} onClick={ir} role="tab" aria-selected={act} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:10,border:`1px solid ${act?T.accent:T.border}`,background:act?T.accent+"1a":T.card,cursor:act?"default":"pointer",userSelect:"none"}}>
+                            <span style={{color:act?T.accent:T.textMd,display:"inline-flex"}}><GhI n={l.icon} size={14}/></span>
+                            <span style={{fontSize:13,fontWeight:700,color:act?T.accent:T.text,whiteSpace:"nowrap"}}>{l.label}</span>
+                            {sel && (
+                              <span title={sel.name} style={{display:"inline-flex",alignItems:"center",gap:6,background:T.accent+"26",color:T.accent,borderRadius:6,padding:"2px 6px 2px 8px",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
+                                1 seleccionado
+                                <button onClick={e=>{e.stopPropagation(); drillTo(selIdx-1);}} title="Quitar la selección" style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",padding:0,lineHeight:0,fontFamily:"inherit"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                     {/* Columnas */}
                     <div style={{position:"relative"}}>
                       <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg> Columnas</button>
                       {aColsOpen && (
                         <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
-                          {[
-                            {k:"roas",l:"ROAS"},{k:"cpa",l:"CPA"},{k:"aov",l:"AOV"},{k:"purchase_value",l:"Revenue"},{k:"purchases",l:"Ventas"},{k:"checkouts",l:"Pagos iniciados"},{k:"cost_checkout",l:"Costo por pago iniciado"},
-                            {k:"spend",l:"Gasto"},{k:"cpc",l:"CPC"},{k:"ctr",l:"CTR"},{k:"cpm",l:"CPM"},
-                            {k:"frequency",l:"Frecuencia"},{k:"hook",l:"Retención 3 s"},{k:"avg_watch",l:"Tiempo prom. de video"},
-                            {k:"impressions",l:"Impresiones"},{k:"reach",l:"Alcance"},{k:"clicks",l:"Clicks"},
-                          ].map(c=>(
+                          {META_COL_ORDER.map(k=>({k, l:COL_META[k].label})).map(c=>(
                             <label key={c.k} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",fontSize:11,color:T.text,cursor:"pointer"}}>
                               <input type="checkbox" checked={aCols.includes(c.k)} onChange={e=>{
                                 setACols(prev=>e.target.checked?[...prev,c.k]:prev.filter(x=>x!==c.k));
@@ -36699,9 +36714,30 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const separar = orden.length > 1;
                       const nombreCta = (k) => optCtas.find(([id])=>id===k)?.[1] || k;
                       const nivelTxt = aLevel==="campaign" ? "campañas" : aLevel==="adset" ? "conjuntos" : "anuncios";
-                      const LINK = "#4599ff"; // azul de los nombres en el Administrador de anuncios
-                      const colW = 104;
-                      const anchoMin = 64 + 300 + 130 + visibleCols.length*colW;
+                      // Tabla calcada del Administrador de anuncios (29/oct/2026): mismas columnas, mismo orden,
+                      // misma fila de totales con su leyenda; en violeta y negro en vez de azul y blanco.
+                      const LINK = T.accent;
+                      const nivelTit = aLevel==="campaign" ? "Campaña" : aLevel==="adset" ? "Conjunto de anuncios" : "Anuncio";
+                      const W = { act:56, name:320, ent:118, pres:118, col:122 };
+                      const anchoMin = W.act + W.name + W.ent + W.pres + visibleCols.length*W.col;
+                      const TH = { padding:"8px 10px", fontSize:11, fontWeight:600, color:T.textMd, background:T.surface, borderBottom:`2px solid ${T.border}`, borderRight:`1px solid ${T.borderL}`, verticalAlign:"middle", lineHeight:1.25, whiteSpace:"normal" };
+                      const TD = { padding:"9px 10px", fontSize:12, color:T.text, borderRight:`1px solid ${T.borderL}`, borderBottom:`1px solid ${T.borderL}`, verticalAlign:"middle", whiteSpace:"nowrap" };
+                      const stickyL = (left, bg) => ({ position:"sticky", left, zIndex:1, background:bg });
+                      const hdr = (key, label, align="right") => (
+                        <th key={key} onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:align,cursor:"pointer",userSelect:"none"}}>
+                          <span style={{display:"flex",alignItems:"flex-end",gap:4,justifyContent:align==="right"?"flex-end":"flex-start"}}>
+                            <span>{label}</span>
+                            <span style={{color:aSort.key===key?T.accent:T.textSm,fontSize:10,flexShrink:0}}>{aSort.key===key?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span>
+                          </span>
+                        </th>
+                      );
+                      const entrega = (r) => {
+                        const st = r.effective_status;
+                        const on = st==="ACTIVE";
+                        const txt = on ? "Activa" : st==="PAUSED" ? "Desactivado" : st==="CAMPAIGN_PAUSED" ? "Campaña desactivada" : st==="ADSET_PAUSED" ? "Conjunto desactivado" : st==="IN_PROCESS" ? "En proceso" : st==="WITH_ISSUES" ? "Con problemas" : st==="PENDING_REVIEW" ? "En revisión" : st==="DISAPPROVED" ? "Rechazado" : st==="SCHEDULED" ? "Programado" : (st||"—").toLowerCase().replace(/_/g," ");
+                        const col = on ? T.green : st==="WITH_ISSUES"||st==="DISAPPROVED" ? T.red : T.textSm;
+                        return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:on?T.text:T.textMd}}><span style={{width:8,height:8,borderRadius:"50%",background:on?col:"transparent",border:`2px solid ${col}`,boxSizing:"border-box",flexShrink:0}}/>{txt}</span>;
+                      };
                       const bloque = (k, rows) => {
                         const t = sumas(rows);
                         return (
@@ -36712,38 +36748,41 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <span style={{fontSize:11,color:T.textSm}}>{rows.length} {nivelTxt}</span>
                                 <span style={{flex:1}}/>
                                 <span style={{fontSize:12,color:T.textMd}}>Gasto <b style={{color:T.text}}>{cur}{fmt(t.spend)}</b></span>
-                                <span style={{fontSize:12,color:T.textMd}}>Ventas <b style={{color:T.text}}>{t.n}</b></span>
-                                <span style={{fontSize:12,color:T.textMd}}>ROAS <b style={{color:aRoasBe>0&&t.spend?(t.roas>=aRoasBe?T.green:T.red):T.text}}>{fmt(t.roas)}x</b></span>
+                                <span style={{fontSize:12,color:T.textMd}}>Compras <b style={{color:T.text}}>{t.n}</b></span>
+                                <span style={{fontSize:12,color:T.textMd}}>ROAS <b style={{color:aRoasBe>0&&t.spend?(t.roas>=aRoasBe?T.green:T.red):T.text}}>{fmt(t.roas)}</b></span>
                               </div>
                             )}
                             <div style={{overflowX:"auto"}}>
-                              <table style={{width:"100%",minWidth:anchoMin,tableLayout:"fixed",borderCollapse:"collapse",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                <colgroup><col style={{width:64}}/><col style={{width:300}}/><col style={{width:130}}/>{visibleCols.map(c=><col key={c} style={{width:colW}}/>)}</colgroup>
-                                <thead style={{background:T.bg}}>
+                              <table style={{width:"100%",minWidth:anchoMin,tableLayout:"fixed",borderCollapse:"separate",borderSpacing:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                <colgroup><col style={{width:W.act}}/><col style={{width:W.name}}/><col style={{width:W.ent}}/><col style={{width:W.pres}}/>{visibleCols.map(c=><col key={c} style={{width:W.col}}/>)}</colgroup>
+                                <thead>
                                   <tr>
-                                    <th style={{padding:"10px 12px",textAlign:"left",fontSize:11,fontWeight:600,color:T.textMd,borderBottom:`1px solid ${T.border}`,verticalAlign:"bottom"}}>Act.</th>
-                                    {headerCell("name", aLevel==="campaign"?"Campaña":aLevel==="adset"?"Conjunto de anuncios":"Anuncio", "left")}
-                                    {headerCell("daily_budget", "Presupuesto")}
-                                    {visibleCols.map(c => headerCell(c, COL_META[c].label))}
+                                    <th style={{...TH,textAlign:"left",...stickyL(0,T.surface),zIndex:3}}>Act.</th>
+                                    <th onClick={()=>setASort(s=>({key:"name", dir: s.key==="name" && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:"left",cursor:"pointer",userSelect:"none",...stickyL(W.act,T.surface),zIndex:3,boxShadow:`1px 0 0 ${T.border}`}}>
+                                      <span style={{display:"flex",alignItems:"flex-end",gap:4}}><span>{nivelTit}</span><span style={{color:aSort.key==="name"?T.accent:T.textSm,fontSize:10}}>{aSort.key==="name"?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span></span>
+                                    </th>
+                                    {hdr("effective_status","Entrega","left")}
+                                    {hdr("daily_budget","Presupuesto")}
+                                    {visibleCols.map(c => hdr(c, COL_META[c].label))}
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {rows.map(r => {
                                     const busy = !!aBusyIds[r.id];
                                     const isActive = r.effective_status === "ACTIVE";
-                                    const drillLabel = aLevel==="campaign" ? "conjuntos" : aLevel==="adset" ? "anuncios" : null;
+                                    const drillLabel = aLevel==="campaign" ? "conjuntos de anuncios" : aLevel==="adset" ? "anuncios" : null;
                                     const editando = aBudgetEdit?.id === r.id;
                                     const puedeSwitch = metaEditable && !busy;
                                     return (
-                                      <tr key={r.id} className="gh-meta-row" style={{borderBottom:`1px solid ${T.borderL}`}}>
-                                        <td style={{padding:"10px 12px",verticalAlign:"top"}}>
+                                      <tr key={r.id} className="gh-meta-row">
+                                        <td style={{...TD,...stickyL(0,T.card)}}>
                                           <button onClick={()=>puedeSwitch&&toggleStatus(r)} disabled={!puedeSwitch} role="switch" aria-checked={isActive}
-                                            title={!metaEditable ? `${isActive?"Activa":"Pausada"}. Solo lectura: para activar o pausar desde Growith conectá un token con ads_management (pestaña Cuenta).` : isActive?"Desactivar":"Activar"}
-                                            style={{width:34,height:18,borderRadius:9,border:"none",padding:0,cursor:busy?"wait":metaEditable?"pointer":"not-allowed",background:isActive?"#1877f2":(T.textSm+"55"),position:"relative",transition:"background .15s",flexShrink:0,opacity:metaEditable?(busy?0.6:1):0.45}}>
-                                            <span style={{position:"absolute",top:2,left:isActive?18:2,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?"#1877f2":T.textSm}/>}</span>
+                                            title={!metaEditable ? `${isActive?"Activa":"Desactivada"}. Solo lectura: para activar o pausar desde Growith conectá un token con ads_management (pestaña Cuenta).` : isActive?"Desactivar":"Activar"}
+                                            style={{width:36,height:20,borderRadius:10,border:"none",padding:0,cursor:busy?"wait":metaEditable?"pointer":"not-allowed",background:isActive?T.accentSolid:(T.textSm+"66"),position:"relative",transition:"background .15s",flexShrink:0,opacity:metaEditable?(busy?0.6:1):0.55,display:"block"}}>
+                                            <span style={{position:"absolute",top:2,left:isActive?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 2px rgba(0,0,0,.3)",transition:"left .15s",display:"flex",alignItems:"center",justifyContent:"center"}}>{busy&&<Spinner size={8} color={isActive?T.accentSolid:T.textSm}/>}</span>
                                           </button>
                                         </td>
-                                        <td style={{padding:"10px 12px",fontSize:13,color:T.text,overflow:"hidden",verticalAlign:"top"}}>
+                                        <td style={{...TD,overflow:"hidden",...stickyL(W.act,T.card),boxShadow:`1px 0 0 ${T.borderL}`}}>
                                           {drillLabel ? (
                                             <button onClick={()=>drillInto(r)} title={`Ver sus ${drillLabel}`} style={{display:"block",width:"100%",background:"transparent",border:"none",color:LINK,fontSize:13,fontWeight:500,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
                                               onMouseEnter={e=>{e.currentTarget.style.textDecoration="underline";}}
@@ -36751,27 +36790,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                               {r.name||"(sin nombre)"}
                                             </button>
                                           ) : (
-                                            <div style={{color:LINK,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||"(sin nombre)"}</div>
+                                            <div title={r.name} style={{color:LINK,fontSize:13,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||"(sin nombre)"}</div>
                                           )}
-                                          <div style={{fontSize:11,color:T.textSm,marginTop:3,display:"flex",alignItems:"center",gap:6,overflow:"hidden",whiteSpace:"nowrap"}}>
-                                            <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:7,height:7,borderRadius:"50%",background:isActive?T.green:(T.textSm+"88")}}/>{isActive?"Activa":r.effective_status==="PAUSED"?"Desactivada":(r.effective_status||"—").toLowerCase().replace(/_/g," ")}</span>
-                                            {(() => { const cp = r._cuenta || (aDrill[0]?.act && ctasElegidas.find(c=>c.id===aDrill[0].act)?.nombre) || activeAcc?.ad_account_name; return cp ? <span title="Cuenta publicitaria" style={{color:T.green,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis"}}>CP: {cp}</span> : null; })()}
-                                            {(() => {
-                                              const prods = productsForRow(r, aLevel);
-                                              if (prods.length === 0) return null;
-                                              const avgBe = prods.filter(p=>p.roas_be>0).reduce((s,p,_,arr)=>s+p.roas_be/arr.length,0);
-                                              return <>
-                                                <span style={{color:T.borderL}}>·</span>
-                                                {prods.slice(0,2).map(p => <span key={p.id} style={{padding:"1px 6px",borderRadius:4,background:T.accent+"15",color:T.accent,fontWeight:600,fontSize:9,letterSpacing:0.2}}>{p.name}</span>)}
-                                                {prods.length > 2 && <span style={{color:T.textSm,fontSize:9}}>+{prods.length-2}</span>}
-                                                {avgBe > 0 && <span style={{padding:"1px 6px",borderRadius:4,background:T.green+"15",color:T.green,fontWeight:700,fontSize:9,letterSpacing:0.2}}>BE {avgBe.toFixed(2)}x{prods.length>1?" (avg)":""}</span>}
-                                              </>;
-                                            })()}
-                                          </div>
                                         </td>
-                                        <td style={{padding:"10px 12px",textAlign:"right",fontSize:12,color:T.text,verticalAlign:"top",whiteSpace:"nowrap"}}>
+                                        <td style={{...TD}}>{entrega(r)}</td>
+                                        <td style={{...TD,textAlign:"right"}}>
                                           {!r.daily_budget ? (
-                                            <span style={{fontSize:11,color:T.textSm,whiteSpace:"normal"}}>{aLevel==="ad"?"—":aLevel==="campaign"?"Del conjunto":"De la campaña"}</span>
+                                            <span style={{fontSize:11,color:T.textSm,whiteSpace:"normal",display:"block",lineHeight:1.25}}>{aLevel==="ad"?"—":"Con el presupuesto de la campaña"}</span>
                                           ) : editando ? (
                                             <input autoFocus type="number" min="1" step="0.01" value={aBudgetEdit.val}
                                               onChange={e=>setABudgetEdit({id:r.id,val:e.target.value})}
@@ -36794,21 +36819,30 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                         {visibleCols.map(c => {
                                           const col = COL_META[c];
                                           const color = col.color ? col.color(r) : T.text;
-                                          return <td key={c} style={{padding:"10px 12px",textAlign:"right",fontSize:12,color,fontWeight:col.bold?700:400,whiteSpace:"nowrap",verticalAlign:"top"}}>{col.render(r)}</td>;
+                                          const v = col.render(r);
+                                          const vacio = v === "—";
+                                          return <td key={c} style={{...TD,textAlign:"right",color:vacio?T.textSm:color}}>
+                                            <span style={col.dotted&&!vacio?{textDecoration:"underline dotted",textUnderlineOffset:3,textDecorationColor:T.textSm}:undefined}>{v}</span>
+                                            {col.rowSub && <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{col.rowSub}</div>}
+                                          </td>;
                                         })}
                                       </tr>
                                     );
                                   })}
                                 </tbody>
-                                <tfoot style={{background:T.bg}}>
+                                <tfoot>
                                   <tr>
-                                    <td style={{padding:"10px 12px"}}></td>
-                                    <td style={{padding:"10px 12px",fontSize:12,fontWeight:700,color:T.textSm}}>Resultados de {rows.length} {nivelTxt}</td>
-                                    <td></td>
+                                    <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,...stickyL(0,T.surface),background:T.surface}}></td>
+                                    <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text,...stickyL(W.act,T.surface),background:T.surface,boxShadow:`1px 0 0 ${T.borderL}`}}>Resultados de {rows.length} {nivelTxt}</td>
+                                    <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,background:T.surface}}></td>
+                                    <td style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,background:T.surface}}></td>
                                     {visibleCols.map(c => {
                                       const col = COL_META[c];
-                                      const color = col.totalColor ? col.totalColor() : T.text;
-                                      return <td key={c} style={{padding:"10px 12px",textAlign:"right",fontSize:12,fontWeight:700,color,whiteSpace:"nowrap"}}>{col.total(t)}</td>;
+                                      const v = col.total(t);
+                                      return <td key={c} style={{...TD,borderBottom:"none",borderTop:`2px solid ${T.border}`,background:T.surface,textAlign:"right",fontWeight:700,color:v==="—"?T.textSm:T.text}}>
+                                        <div>{v}</div>
+                                        <div style={{fontSize:10,fontWeight:400,color:T.textSm,marginTop:2}}>{col.sub}</div>
+                                      </td>;
                                     })}
                                   </tr>
                                 </tfoot>

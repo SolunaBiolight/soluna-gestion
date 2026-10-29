@@ -1738,6 +1738,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       const fields = [
         "campaign_id", "campaign_name", "adset_id", "adset_name", "ad_id", "ad_name",
         "spend", "impressions", "clicks", "ctr", "cpm", "cpc", "frequency", "reach",
+        "inline_link_clicks", "inline_link_click_ctr", "cost_per_inline_link_click",
         "actions", "action_values", "purchase_roas", "cost_per_action_type",
         "video_avg_time_watched_actions",
         "date_start", "date_stop",
@@ -1861,6 +1862,12 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         } catch (e) { /* seguimos sin status */ }
 
         const esCheckout = (a) => a.action_type === "initiate_checkout" || a.action_type === "offsite_conversion.fb_pixel_initiate_checkout";
+        // Columnas del Administrador de anuncios: visitas a la página de destino, lista de deseos y carritos.
+        const esLpv = (a) => a.action_type === "landing_page_view";
+        const esWish = (a) => a.action_type === "add_to_wishlist" || a.action_type === "offsite_conversion.fb_pixel_add_to_wishlist";
+        const esCart = (a) => a.action_type === "add_to_cart" || a.action_type === "offsite_conversion.fb_pixel_add_to_cart";
+        const nAct = (r, f) => parseInt((r.actions || []).find(f)?.value) || 0;
+        const EXTRA0 = { link_clicks: 0, link_ctr: 0, link_cpc: 0, lpv: 0, wishlist: 0, carts: 0 };
         const rows = (data.data || []).map(r => {
           const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
           const id = r[idField];
@@ -1896,6 +1903,10 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             avg_watch: parseFloat((r.video_avg_time_watched_actions || [])[0]?.value) || 0,
             // Pagos iniciados (InitiateCheckout del píxel).
             checkouts: parseInt((r.actions || []).find(esCheckout)?.value) || 0,
+            link_clicks: parseInt(r.inline_link_clicks) || 0,
+            link_ctr: parseFloat(r.inline_link_click_ctr) || 0,
+            link_cpc: parseFloat(r.cost_per_inline_link_click) || 0,
+            lpv: nAct(r, esLpv), wishlist: nAct(r, esWish), carts: nAct(r, esCart),
           };
         });
 
@@ -1907,7 +1918,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             rows.push({
               id, name: n.name || "", status: n.status, effective_status: n.effective_status,
               spend: 0, impressions: 0, clicks: 0, ctr: 0, cpm: 0, cpc: 0, frequency: 0, reach: 0,
-              purchases: 0, purchase_value: 0, roas: 0, cpa: 0, video_3s: 0, avg_watch: 0, checkouts: 0,
+              purchases: 0, purchase_value: 0, roas: 0, cpa: 0, video_3s: 0, avg_watch: 0, checkouts: 0, ...EXTRA0,
               daily_budget: n.daily_budget ? parseFloat(n.daily_budget) / 100 : null,
               objective: n.objective || null,
               creative: n.creative || null,
@@ -1956,7 +1967,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
               const dd = (f, n) => new Date(Date.parse(f + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
               const idField = level === "campaign" ? "campaign_id" : level === "adset" ? "adset_id" : "ad_id";
               const hp = { level, "time_range[since]": dd(since, -1), "time_range[until]": dd(until, 1), time_increment: 1,
-                breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone", fields: `${idField},spend,impressions,clicks,actions,action_values`, limit: 500,
+                breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone", fields: `${idField},spend,impressions,clicks,inline_link_clicks,actions,action_values`, limit: 500,
                 action_attribution_windows: JSON.stringify(["1d_click", "1d_view"]) };
               if (filteringParam) hp.filtering = filteringParam;
               const all = []; let pg = await metaGet(`${cfg.ad_account_id}/insights`, hp, cfg.access_token); all.push(...(pg.data || []));
@@ -1969,17 +1980,19 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
                 if (!isFinite(h) || !r.date_start) continue;
                 const z = zonaDe(new Date(utcDeLocal(r.date_start, h, accTz)).toISOString(), tzQ);
                 if (z.fecha < since || z.fecha > until) continue;
-                const a = acc[r[idField]] || (acc[r[idField]] = { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0, checkouts: 0 });
+                const a = acc[r[idField]] || (acc[r[idField]] = { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0, checkouts: 0, link_clicks: 0, lpv: 0, wishlist: 0, carts: 0 });
                 a.spend += parseFloat(r.spend) || 0; a.impressions += parseInt(r.impressions) || 0; a.clicks += parseInt(r.clicks) || 0;
                 a.video_3s += parseInt((r.actions || []).find(x => x.action_type === "video_view")?.value) || 0;
                 a.checkouts += parseInt((r.actions || []).find(esCheckout)?.value) || 0;
+                a.link_clicks += parseInt(r.inline_link_clicks) || 0; a.lpv += nAct(r, esLpv); a.wishlist += nAct(r, esWish); a.carts += nAct(r, esCart);
                 a.purchases += parseInt((r.actions || []).find(isP)?.value) || 0; a.purchase_value += parseFloat((r.action_values || []).find(isP)?.value) || 0;
               }
               for (const row of rows) {
-                const a = acc[row.id] || { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0, checkouts: 0 };
+                const a = acc[row.id] || { spend: 0, impressions: 0, clicks: 0, purchases: 0, purchase_value: 0, video_3s: 0, checkouts: 0, link_clicks: 0, lpv: 0, wishlist: 0, carts: 0 };
                 Object.assign(row, a, {
                   ctr: a.impressions ? a.clicks / a.impressions * 100 : 0, cpm: a.impressions ? a.spend / a.impressions * 1000 : 0,
                   cpc: a.clicks ? a.spend / a.clicks : 0, roas: a.spend ? a.purchase_value / a.spend : 0, cpa: a.purchases ? a.spend / a.purchases : 0,
+                  link_ctr: a.impressions ? a.link_clicks / a.impressions * 100 : 0, link_cpc: a.link_clicks ? a.spend / a.link_clicks : 0,
                 });
               }
               tzInfo = { zona: tzQ, zonaCuenta: accTz };
