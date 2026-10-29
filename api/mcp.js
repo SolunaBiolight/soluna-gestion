@@ -201,6 +201,22 @@ async function register(req, res, db) {
 
 // ─── Autorización ────────────────────────────────────────────────────────
 
+// Redirect de loopback (apps de escritorio o de terminal, como Claude Code, que registra
+// "http://localhost/callback"): el puerto lo elige la app en cada login, así que se compara
+// sin el puerto (RFC 8252 §7.3). El resto tiene que coincidir exacto.
+function redirectRegistrado(registrados, ru) {
+  if (registrados.includes(ru)) return true;
+  const sinPuerto = (s) => {
+    try {
+      const u = new URL(s);
+      if (u.protocol !== "http:" || !["localhost", "127.0.0.1"].includes(u.hostname)) return null;
+      return `${u.protocol}//${u.hostname}${u.pathname}${u.search}`;
+    } catch { return null; }
+  };
+  const x = sinPuerto(ru);
+  return !!x && registrados.some((r) => sinPuerto(r) === x);
+}
+
 async function authorize(req, res, db, origin) {
   const q = req.query || {};
   const client = await getClient(db, q.client_id);
@@ -208,7 +224,7 @@ async function authorize(req, res, db, origin) {
   const ru = String(q.redirect_uri || "") || (client.redirect_uris.length === 1 ? client.redirect_uris[0] : "");
   const label = redirectLabel(ru);
   // Cliente fijo de Gemini: Google no publica un redirect único, se acepta cualquiera de sus hosts.
-  const redirOk = !!label && (client.kind === "static" ? label === "Gemini" && (client.redirect_hosts || []).includes(new URL(ru).hostname) : client.redirect_uris.includes(ru));
+  const redirOk = !!label && (client.kind === "static" ? label === "Gemini" && (client.redirect_hosts || []).includes(new URL(ru).hostname) : redirectRegistrado(client.redirect_uris, ru));
   if (!ru || !redirOk) return htmlError(res, "La dirección de retorno no coincide con la que registró la app.");
   // Desde acá el redirect es de confianza: los errores vuelven a la app (con iss, RFC 9207).
   const back = (p) => redirect(res, withParams(ru, { ...p, state: q.state, iss: origin }));
