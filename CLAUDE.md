@@ -270,6 +270,8 @@ growith_mpComision         → número, % comisión MP default en Canjes (12)
 growith_canjes_alertcfg_{uid} → JSON umbrales (días) del motor de alertas de Canjes: {despachar,demora,contAviso,contUrgente,contCritico,sinrespuesta}
 growith_meta_roas_be       → número, ROAS break-even del análisis Meta (2)
 growith_meta_cols          → JSON[] columnas visibles de la tabla de análisis Meta
+growith_meta_cols_v5       → JSON[] columnas visibles de Meta → Análisis (29/oct/2026: tabla calcada del Administrador de anuncios; el orden es fijo, META_COL_ORDER)
+growith_meta_colw          → JSON {columna: px} anchos de columna de Meta → Análisis arrastrando el divisor del encabezado (doble clic = restablecer)
 growith_meta_lasteval_{accId} → timestamp última evaluación de reglas Meta
 growith_auto_publish_{uid} → "1" auto-publicar creativos Meta
 growith_alertNotif_{uid}   → JSON config notificaciones de alertas: {email,whatsapp,enabled}

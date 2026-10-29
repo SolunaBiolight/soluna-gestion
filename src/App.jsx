@@ -34763,6 +34763,23 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aCols,setACols]=useState(()=>{ try {
     const s5=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v5"))||"null"); if(Array.isArray(s5)&&s5.length) return ordenarCols(s5);
     return DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
+  // Anchos de columna (se arrastran desde el divisor del encabezado, como en Meta) — localStorage growith_meta_colw
+  const META_W0 = { act:56, name:320, ent:118, pres:118, col:122 };
+  const [aColW,setAColW]=useState(()=>{ try { const v=JSON.parse(localStorage.getItem(ghKey("growith_meta_colw"))||"null"); return v&&typeof v==="object"?v:{}; } catch(_) { return {}; } });
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_colw"), JSON.stringify(aColW)); } catch(_) {} }, [aColW]);
+  const anchoCol = (k) => aColW[k] || META_W0[k] || META_W0.col;
+  const iniciarResize = (key, e) => {
+    e.preventDefault(); e.stopPropagation();
+    const x0 = e.clientX, w0 = anchoCol(key);
+    const mv = (ev) => setAColW(p=>({...p, [key]: Math.max(key==="act"?44:48, Math.round(w0 + ev.clientX - x0))}));
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); document.body.style.cursor=""; document.body.style.userSelect=""; };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+    document.body.style.cursor="col-resize"; document.body.style.userSelect="none";
+  };
+  // Divisor arrastrable del encabezado; doble clic vuelve al ancho original.
+  const grip = (key) => <span onMouseDown={e=>iniciarResize(key,e)} onDoubleClick={e=>{e.stopPropagation(); setAColW(p=>{ const x={...p}; delete x[key]; return x; });}} onClick={e=>e.stopPropagation()} title="Arrastrá para cambiar el ancho · doble clic para restablecer"
+    onMouseEnter={e=>{e.currentTarget.style.background=T.accent;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}
+    style={{position:"absolute",top:0,right:-4,width:8,height:"100%",cursor:"col-resize",zIndex:2,background:"transparent",borderRadius:2}}/>;
   const [aBudgetEdit,setABudgetEdit]=useState(null); // {id, val} mientras se edita un presupuesto en la tabla
   const [aColsOpen,setAColsOpen]=useState(false);
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
@@ -36718,17 +36735,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       // misma fila de totales con su leyenda; en violeta y negro en vez de azul y blanco.
                       const LINK = T.accent;
                       const nivelTit = aLevel==="campaign" ? "Campaña" : aLevel==="adset" ? "Conjunto de anuncios" : "Anuncio";
-                      const W = { act:56, name:320, ent:118, pres:118, col:122 };
-                      const anchoMin = W.act + W.name + W.ent + W.pres + visibleCols.length*W.col;
-                      const TH = { padding:"8px 10px", fontSize:11, fontWeight:600, color:T.textMd, background:T.surface, borderBottom:`2px solid ${T.border}`, borderRight:`1px solid ${T.borderL}`, verticalAlign:"middle", lineHeight:1.25, whiteSpace:"normal" };
-                      const TD = { padding:"9px 10px", fontSize:12, color:T.text, borderRight:`1px solid ${T.borderL}`, borderBottom:`1px solid ${T.borderL}`, verticalAlign:"middle", whiteSpace:"nowrap" };
+                      const W = { act:anchoCol("act"), name:anchoCol("name"), ent:anchoCol("ent"), pres:anchoCol("pres") };
+                      const anchoTotal = W.act + W.name + W.ent + W.pres + visibleCols.reduce((a,c)=>a+anchoCol(c),0);
+                      const TH = { padding:"8px 10px", fontSize:11, fontWeight:600, color:T.textMd, background:T.surface, borderBottom:`2px solid ${T.border}`, borderRight:`1px solid ${T.borderL}`, verticalAlign:"middle", lineHeight:1.25, whiteSpace:"normal", overflow:"hidden", position:"relative" };
+                      const TD = { padding:"9px 10px", fontSize:12, color:T.text, borderRight:`1px solid ${T.borderL}`, borderBottom:`1px solid ${T.borderL}`, verticalAlign:"middle", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" };
                       const stickyL = (left, bg) => ({ position:"sticky", left, zIndex:1, background:bg });
                       const hdr = (key, label, align="right") => (
                         <th key={key} onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:align,cursor:"pointer",userSelect:"none"}}>
-                          <span style={{display:"flex",alignItems:"flex-end",gap:4,justifyContent:align==="right"?"flex-end":"flex-start"}}>
-                            <span>{label}</span>
+                          <span title={label} style={{display:"flex",alignItems:"flex-end",gap:4,justifyContent:align==="right"?"flex-end":"flex-start",overflow:"hidden"}}>
+                            <span style={{overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical"}}>{label}</span>
                             <span style={{color:aSort.key===key?T.accent:T.textSm,fontSize:10,flexShrink:0}}>{aSort.key===key?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span>
                           </span>
+                          {grip(key)}
                         </th>
                       );
                       const entrega = (r) => {
@@ -36736,7 +36754,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const on = st==="ACTIVE";
                         const txt = on ? "Activa" : st==="PAUSED" ? "Desactivado" : st==="CAMPAIGN_PAUSED" ? "Campaña desactivada" : st==="ADSET_PAUSED" ? "Conjunto desactivado" : st==="IN_PROCESS" ? "En proceso" : st==="WITH_ISSUES" ? "Con problemas" : st==="PENDING_REVIEW" ? "En revisión" : st==="DISAPPROVED" ? "Rechazado" : st==="SCHEDULED" ? "Programado" : (st||"—").toLowerCase().replace(/_/g," ");
                         const col = on ? T.green : st==="WITH_ISSUES"||st==="DISAPPROVED" ? T.red : T.textSm;
-                        return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,color:on?T.text:T.textMd}}><span style={{width:8,height:8,borderRadius:"50%",background:on?col:"transparent",border:`2px solid ${col}`,boxSizing:"border-box",flexShrink:0}}/>{txt}</span>;
+                        return <span style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:on?T.text:T.textMd,overflow:"hidden"}}><span style={{width:8,height:8,borderRadius:"50%",background:on?col:"transparent",border:`2px solid ${col}`,boxSizing:"border-box",flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</span></span>;
                       };
                       const bloque = (k, rows) => {
                         const t = sumas(rows);
@@ -36753,16 +36771,23 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                               </div>
                             )}
                             <div style={{overflowX:"auto"}}>
-                              <table style={{width:"100%",minWidth:anchoMin,tableLayout:"fixed",borderCollapse:"separate",borderSpacing:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                                <colgroup><col style={{width:W.act}}/><col style={{width:W.name}}/><col style={{width:W.ent}}/><col style={{width:W.pres}}/>{visibleCols.map(c=><col key={c} style={{width:W.col}}/>)}</colgroup>
+                              <table style={{width:anchoTotal,minWidth:anchoTotal,tableLayout:"fixed",borderCollapse:"separate",borderSpacing:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                                <colgroup><col style={{width:W.act}}/><col style={{width:W.name}}/><col style={{width:W.ent}}/><col style={{width:W.pres}}/>{visibleCols.map(c=><col key={c} style={{width:anchoCol(c)}}/>)}</colgroup>
                                 <thead>
                                   <tr>
-                                    <th style={{...TH,textAlign:"left",...stickyL(0,T.surface),zIndex:3}}>Act.</th>
+                                    <th style={{...TH,textAlign:"left",...stickyL(0,T.surface),zIndex:3}}>Act.{grip("act")}</th>
                                     <th onClick={()=>setASort(s=>({key:"name", dir: s.key==="name" && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:"left",cursor:"pointer",userSelect:"none",...stickyL(W.act,T.surface),zIndex:3,boxShadow:`1px 0 0 ${T.border}`}}>
                                       <span style={{display:"flex",alignItems:"flex-end",gap:4}}><span>{nivelTit}</span><span style={{color:aSort.key==="name"?T.accent:T.textSm,fontSize:10}}>{aSort.key==="name"?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span></span>
+                                      {grip("name")}
                                     </th>
-                                    {hdr("effective_status","Entrega","left")}
-                                    {hdr("daily_budget","Presupuesto")}
+                                    <th onClick={()=>setASort(s=>({key:"effective_status", dir: s.key==="effective_status" && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:"left",cursor:"pointer",userSelect:"none"}}>
+                                      <span style={{display:"flex",alignItems:"flex-end",gap:4}}><span>Entrega</span><span style={{color:aSort.key==="effective_status"?T.accent:T.textSm,fontSize:10}}>{aSort.key==="effective_status"?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span></span>
+                                      {grip("ent")}
+                                    </th>
+                                    <th onClick={()=>setASort(s=>({key:"daily_budget", dir: s.key==="daily_budget" && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:"right",cursor:"pointer",userSelect:"none"}}>
+                                      <span style={{display:"flex",alignItems:"flex-end",gap:4,justifyContent:"flex-end"}}><span>Presupuesto</span><span style={{color:aSort.key==="daily_budget"?T.accent:T.textSm,fontSize:10}}>{aSort.key==="daily_budget"?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span></span>
+                                      {grip("pres")}
+                                    </th>
                                     {visibleCols.map(c => hdr(c, COL_META[c].label))}
                                   </tr>
                                 </thead>
@@ -36793,7 +36818,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                             <div title={r.name} style={{color:LINK,fontSize:13,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||"(sin nombre)"}</div>
                                           )}
                                         </td>
-                                        <td style={{...TD}}>{entrega(r)}</td>
+                                        <td style={{...TD}} title={r.effective_status||""}>{entrega(r)}</td>
                                         <td style={{...TD,textAlign:"right"}}>
                                           {!r.daily_budget ? (
                                             <span style={{fontSize:11,color:T.textSm,whiteSpace:"normal",display:"block",lineHeight:1.25}}>{aLevel==="ad"?"—":"Con el presupuesto de la campaña"}</span>
@@ -36821,7 +36846,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                           const color = col.color ? col.color(r) : T.text;
                                           const v = col.render(r);
                                           const vacio = v === "—";
-                                          return <td key={c} style={{...TD,textAlign:"right",color:vacio?T.textSm:color}}>
+                                          return <td key={c} title={vacio?undefined:v} style={{...TD,textAlign:"right",color:vacio?T.textSm:color}}>
                                             <span style={col.dotted&&!vacio?{textDecoration:"underline dotted",textUnderlineOffset:3,textDecorationColor:T.textSm}:undefined}>{v}</span>
                                             {col.rowSub && <div style={{fontSize:10,color:T.textSm,marginTop:2}}>{col.rowSub}</div>}
                                           </td>;
