@@ -22665,9 +22665,9 @@ function DepPosponerModal({T,tanda,hoy,onClose,onDone}){
 // Sonido del depósito (28/oct/2026, "llegan las tandas pero no suena nada"): un solo AudioContext que
 // se desbloquea con el primer clic o tecla en el panel (el navegador no deja sonar una página que nadie
 // tocó, por ejemplo después de recargarse sola). ghDepBeep = pitido corto (lector); ghDepAlarma = alarma
-// fuerte de tanda nueva: tres tonos que suben, tres veces seguidas, con onda cuadrada y compresor.
+// de tanda nueva (grabación, ver ghDepAlarma).
 let _ghDepAc=null;
-function ghDepAudio(){ try{ if(!_ghDepAc) _ghDepAc=new (window.AudioContext||window.webkitAudioContext)(); if(_ghDepAc.state==="suspended") _ghDepAc.resume().catch(()=>{}); return _ghDepAc; }catch(_){ return null; } }
+function ghDepAudio(){ try{ if(!_ghDepAc) _ghDepAc=new (window.AudioContext||window.webkitAudioContext)(); if(_ghDepAc.state==="suspended") _ghDepAc.resume().catch(()=>{}); if(typeof ghDepSonidoCargar==="function") ghDepSonidoCargar(_ghDepAc); return _ghDepAc; }catch(_){ return null; } }
 function ghDepSonidoListo(){ return !!_ghDepAc&&_ghDepAc.state==="running"; }
 function ghDepTonos(notas,vol){ const ac=ghDepAudio(); if(!ac) return false;
   try{ const comp=ac.createDynamicsCompressor(); comp.connect(ac.destination); const master=ac.createGain(); master.gain.value=1; master.connect(comp); const t0=ac.currentTime+0.05;
@@ -22675,25 +22675,21 @@ function ghDepTonos(notas,vol){ const ac=ghDepAudio(); if(!ac) return false;
   }catch(_){ return false; }
   return ac.state==="running"; }
 function ghDepBeep(){ return ghDepTonos([[880,0,0.12,"sine"],[1320,0.14,0.14,"sine"]],0.35); }
-// "Ka-ching" de caja registradora (28/oct/2026, pedido de Lautaro: como el aviso de venta de Tienda Nube
-// o Shopify): "ka" = golpe mecánico corto (ruido filtrado) y "ching" = campana brillante con parciales
-// inarmónicos que decae lento. Suena dos veces seguidas para que llame la atención.
-function ghDepKaChing(ac,dest,t){
-  // ka: ráfaga de ruido con filtro pasa-banda, 60 ms
-  const len=Math.floor(ac.sampleRate*0.07), buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
-  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
-  const ns=ac.createBufferSource(); ns.buffer=buf; const bp=ac.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=2400; bp.Q.value=1.2;
-  const gk=ac.createGain(); gk.gain.value=0.9; ns.connect(bp); bp.connect(gk); gk.connect(dest); ns.start(t);
-  // ching: campana (fundamental + parciales inarmónicos), ataque instantáneo y cola larga
-  const tc=t+0.09;
-  [[2093,0.55,1.4],[2637,0.35,1.1],[3520,0.25,0.8],[5274,0.15,0.5],[6645,0.08,0.35]].forEach(([f,v,dur])=>{
-    const o=ac.createOscillator(), g=ac.createGain(); o.type="sine"; o.frequency.setValueAtTime(f*1.004,tc); o.frequency.exponentialRampToValueAtTime(f,tc+0.05);
-    g.gain.setValueAtTime(0.0001,tc); g.gain.exponentialRampToValueAtTime(v,tc+0.004); g.gain.exponentialRampToValueAtTime(0.0001,tc+dur);
-    o.connect(g); g.connect(dest); o.start(tc); o.stop(tc+dur+0.05); });
+// Sonido de tanda nueva (29/oct/2026, elegido por Lautaro entre grabaciones reales: "moneda de videojuego",
+// Mixkit 2069, gratis para uso comercial): public/sonidos/tanda-nueva.mp3. Se decodifica una vez y se toca
+// por el mismo AudioContext ya desbloqueado (así suena aunque la pestaña esté de fondo). Mientras no cargó,
+// suenan dos tonos de respaldo.
+let _ghDepSnd=null, _ghDepSndP=null;
+function ghDepSonidoCargar(ac){
+  if(_ghDepSnd||_ghDepSndP) return _ghDepSndP;
+  _ghDepSndP=fetch("/sonidos/tanda-nueva.mp3").then(r=>r.arrayBuffer()).then(b=>new Promise((ok,ko)=>ac.decodeAudioData(b,ok,ko))).then(buf=>{ _ghDepSnd=buf; return buf; }).catch(()=>{ _ghDepSndP=null; return null; });
+  return _ghDepSndP;
 }
 function ghDepAlarma(){ const ac=ghDepAudio(); if(!ac) return false;
-  try{ const comp=ac.createDynamicsCompressor(); comp.threshold.value=-18; comp.ratio.value=6; comp.connect(ac.destination); const master=ac.createGain(); master.gain.value=1.4; master.connect(comp);
-    const t0=ac.currentTime+0.05; ghDepKaChing(ac,master,t0); ghDepKaChing(ac,master,t0+0.55);
+  try{
+    const tocar=buf=>{ const src=ac.createBufferSource(); src.buffer=buf; const g=ac.createGain(); g.gain.value=1.3; src.connect(g); g.connect(ac.destination); src.start(ac.currentTime+0.02); };
+    if(_ghDepSnd) tocar(_ghDepSnd);
+    else { ghDepTonos([[1047,0,0.18,"sine"],[1568,0.16,0.35,"sine"]],0.5); ghDepSonidoCargar(ac); }
   }catch(_){ return false; }
   return ac.state==="running"; }
 function DepositoCola({T,api,owner,ver=null,enVivo=null}){
