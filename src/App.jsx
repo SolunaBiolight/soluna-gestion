@@ -34755,12 +34755,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // ROAS break-even configurable (persiste en localStorage)
   const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem(ghKey("growith_meta_roas_be")))||2; } catch(_) { return 2; } });
   // Columnas visibles (persiste)
-  const DEFAULT_COLS = ["roas","cpa","aov","purchase_value","purchases","checkouts","spend","cpc","ctr","cpm","frequency","hook","avg_watch"];
+  const DEFAULT_COLS = ["spend","roas","cpa","checkouts","purchases","purchase_value","aov","cpc","ctr","cpm","frequency","hook","avg_watch"];
+  // Gasto siempre primero y Pagos iniciados justo después del CPA (como pidió el usuario), aunque vengan guardadas en otro orden.
+  const ordenarCols = (c) => { const l=c.filter(k=>k!=="spend"&&k!=="checkouts"); if(c.includes("checkouts")){ const i=l.indexOf("cpa"); l.splice(i>=0?i+1:0,0,"checkouts"); } return c.includes("spend")?["spend",...l]:l; };
   const [aCols,setACols]=useState(()=>{ try {
-    const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v3"))||"null"); if(Array.isArray(s)&&s.length) return s;
+    const s4=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v4"))||"null"); if(Array.isArray(s4)&&s4.length) return ordenarCols(s4);
+    const s=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v3"))||"null"); if(Array.isArray(s)&&s.length) return ordenarCols(s);
     // Columnas guardadas antes de "Pagos iniciados": se agrega después de Ventas.
     const v2=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v2"))||"null");
-    if(Array.isArray(v2)&&v2.length){ const i=v2.indexOf("purchases"); return v2.includes("checkouts")?v2:[...v2.slice(0,i+1),"checkouts",...v2.slice(i+1)]; }
+    if(Array.isArray(v2)&&v2.length){ const i=v2.indexOf("purchases"); return ordenarCols(v2.includes("checkouts")?v2:[...v2.slice(0,i+1),"checkouts",...v2.slice(i+1)]); }
     return DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
   const [aBudgetEdit,setABudgetEdit]=useState(null); // {id, val} mientras se edita un presupuesto en la tabla
   const [aColsOpen,setAColsOpen]=useState(false);
@@ -35334,7 +35337,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Persistir ROAS BE y columnas
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_roas_be"), String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
-  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v3"), JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v4"), JSON.stringify(ordenarCols(aCols))); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
@@ -36689,25 +36692,23 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   </div>
                 </div>
                     {(() => {
-                      // Un bloque por tienda de Impultienda: la tienda adonde fueron las ventas de la campaña
-                      // y, si todavía no vendió, la tienda del país que dice el nombre ("FR | ...").
+                      // Un bloque por CUENTA PUBLICITARIA (como el Administrador de anuncios); la tienda queda como filtro.
                       const grupos = {};
-                      for (const r of filtered) { const k = Object.keys(tiendas).length ? (tiendaDe(r)||"_") : "_"; (grupos[k] = grupos[k] || []).push(r); }
-                      const orden = Object.keys(grupos).sort((x,y)=> x==="_" ? 1 : y==="_" ? -1 : sumas(grupos[y]).spend - sumas(grupos[x]).spend);
-                      const separar = orden.length > 1 || orden[0] !== "_";
+                      for (const r of filtered) { const k = ctaDe(r) || "_"; (grupos[k] = grupos[k] || []).push(r); }
+                      const orden = Object.keys(grupos).sort((x,y)=> sumas(grupos[y]).spend - sumas(grupos[x]).spend);
+                      const separar = orden.length > 1;
+                      const nombreCta = (k) => optCtas.find(([id])=>id===k)?.[1] || k;
                       const nivelTxt = aLevel==="campaign" ? "campañas" : aLevel==="adset" ? "conjuntos" : "anuncios";
                       const LINK = "#4599ff"; // azul de los nombres en el Administrador de anuncios
                       const colW = 104;
                       const anchoMin = 64 + 300 + 130 + visibleCols.length*colW;
                       const bloque = (k, rows) => {
                         const t = sumas(rows);
-                        const tienda = tiendas[k];
                         return (
                           <div key={k} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0}}>
                             {separar && (
                               <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
-                                <span style={{fontSize:14,fontWeight:700,color:T.text}}>{k==="_" ? "Sin tienda" : (tienda?.nombre || k)}</span>
-                                {tienda?.pais && <span style={{fontSize:10,fontWeight:700,color:T.textMd,background:T.bg,border:`1px solid ${T.borderL}`,borderRadius:5,padding:"2px 6px",letterSpacing:0.4}}>{tienda.pais}</span>}
+                                <span style={{fontSize:14,fontWeight:700,color:T.text}}>{nombreCta(k)}</span>
                                 <span style={{fontSize:11,color:T.textSm}}>{rows.length} {nivelTxt}</span>
                                 <span style={{flex:1}}/>
                                 <span style={{fontSize:12,color:T.textMd}}>Gasto <b style={{color:T.text}}>{cur}{fmt(t.spend)}</b></span>
