@@ -18731,7 +18731,8 @@ function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
     </Card>
   </>);
 }
-function ghImpCardsDe(t0, serie, nTiendas, fijos=0, fijosMes=0){
+function ghImpCardsDe(t0, serie, nTiendas, fijos=0, fijosMes=0, aceptanSrv=null){
+  const aceptan=aceptanSrv??(t0.nUpsell||0);
   // El profit ya descuenta los gastos fijos del período.
   const t={...t0, ganancia:t0.ganancia-fijos}; t.margen=t.ventas?t.ganancia/t.ventas:null;
   const usd=GH_FMT_USD, x=(v)=>v!=null&&isFinite(v)?v.toFixed(2)+"x":"—", pct=(v)=>v!=null&&isFinite(v)?(v*100).toFixed(1)+"%":"—";
@@ -18755,7 +18756,7 @@ function ghImpCardsDe(t0, serie, nTiendas, fijos=0, fijosMes=0){
     {label:"Revenue front", val:usd(t.front), accent:GH_MC.blue, hint:`Compras principales (con order bumps) · ${t.nFront||0} ventas${t.ventas?` · ${pct(t.front/t.ventas)}`:""}`, spk:sp(d=>d.front||0)},
     {label:"Revenue post-compra", val:usd(t.upsell), accent:GH_MC.green, hint:t.nUpsell?`Ticket promedio post-compra ${usd(t.upsell/t.nUpsell)}`:"Solo ofertas post-compra", spk:sp(d=>d.upsell||0)},
     {label:"Reembolsos", val:usd(t.reembolsos), accent:GH_MC.red, hint:t.ventas?`${pct(t.reembolsos/t.ventas)} de la facturación · incluye contracargos`:"Incluye contracargos", bad:t.ventas>0&&t.reembolsos/t.ventas>0.05},
-    {label:"% post-compra", val:pct(t.n?(t.nUpsell||0)/t.n:null), accent:GH_MC.green, hint:`${t.nUpsell||0} upsells cada ${t.n||0} ventas front`},
+    {label:"% aceptación post-compra", val:pct(t.n?Math.min(1,aceptan/t.n):null), accent:GH_MC.green, hint:`${aceptan} de ${t.n||0} compradores aceptaron al menos una oferta`},
     {label:"Gastos fijos", val:usd(fijos), accent:GH_MC.red, hint:fijosMes?`${usd(fijosMes)} por mes, repartido por día`:"Cargalos en Dashboard → Conexión"},
     {label:"Facturación por tienda", val:usd(nTiendas?t.ventas/nTiendas:null), accent:GH_MC.gold, hint:`Promedio entre ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`},
     {label:"Ganancia por tienda", val:usd(nTiendas?t.ganancia/nTiendas:null), accent:t.ganancia>=0?GH_MC.green:GH_MC.red, valColor:t.ganancia>=0?GH_MC.green:GH_MC.red, hint:`Profit promedio entre ${nTiendas} tienda${nTiendas===1?"":"s"} con ventas`, bad:t.ganancia<0},
@@ -19020,7 +19021,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             <Card T={T}><DSEmpty T={T} icon="store" title="Todavía no hay ventas en este período" subtitle="Si recién conectás Impultienda, revisá la pestaña Conexión: la URL del webhook tiene que estar cargada en Impultienda con su clave de firma." action={<Btn T={T} onClick={()=>ir("conexion")}>Ir a Conexión</Btn>}/></Card>)}
           {vista==="dashboard" && data && filas.length>0 && (<>
             <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0",display:"flex",alignItems:"center"}}>Métricas principales · todas las tiendas<button onClick={()=>setEditCards(v=>!v)} title="Elegir y ordenar las métricas" style={{marginLeft:"auto",background:editCards?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editCards?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button></div>
-            {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT,data?.totales?.fijos||0,data?.totales?.fijosMes||0)} editar={editCards} setEditar={setEditCards}/>; })()}
+            {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT,data?.totales?.fijos||0,data?.totales?.fijosMes||0,data?.totales?.aceptaronPost)} editar={editCards} setEditar={setEditCards}/>; })()}
             <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"14px 0 0"}}>Tiendas · por país</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:DS.sp.md}}>
               {tiendas.filter(x=>x.id!=="SIN_ASIGNAR").map(x=>{ const s=ghImpSumar(filas.filter(f=>f.tienda===x.id)); return (

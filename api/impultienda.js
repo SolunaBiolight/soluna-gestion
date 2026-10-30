@@ -611,6 +611,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   }
   const feePct = pctReal ?? Number(cfg.feePct ?? 2.9), feeFijo = pctReal != null ? 0 : Number(cfg.feeFijo ?? 0.3);
   const ventasLista = [];
+  const aceptaron = new Set();
   const tiendasMap = armarTiendas(cfg, ordenes);
   const filas = {}; // "fecha|hora|tienda"
   const fila = (fecha, hora, tienda) => { const k = `${fecha}|${hora}|${tienda}`; const t = tiendasMap[tienda]; return filas[k] || (filas[k] = { fecha, hora, tienda, tiendaNombre: t?.nombre || (tienda === "SIN_ASIGNAR" ? "Sin asignar" : tienda), pais: t?.pais || null, ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 }); };
@@ -630,6 +631,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       // Una venta = la compra principal; el post-compra suma facturación pero NO es otra venta (igual que Impultienda).
       f.ventas += usd; if (!o.post_compra) f.n += 1;
       if (o.post_compra) { f.upsell += usd; f.nUpsell += 1; } else { f.front += usd; f.nFront += 1; }
+      if (o.post_compra) aceptaron.add(String(o.orden_original || o.email || o.order_id)); // personas, no upsells: 15 post-compras de un comprador = 1 aceptación
       const ck = campanaDeVenta(o.utm, campLista) || campDeIdx(o.utm) || "SIN_CAMPANA";
       const cv = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {}, tiendas: {} });
       cv.ventas += usd; if (!o.post_compra) cv.n += 1;
@@ -686,7 +688,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   for (let d = desde; d <= hasta; d = addDias(d, 1)) { const [yy, mm] = d.split("-").map(Number); fijos += fijosMes / new Date(Date.UTC(yy, mm, 0)).getUTCDate(); }
   const tot = lista.reduce((t, f) => { for (const k of ["ventas", "n", "front", "nFront", "upsell", "nUpsell", "reembolsos", "comisiones", "comisionesEstimadas", "gasto"]) t[k] += f[k]; return t; }, { ventas: 0, n: 0, front: 0, nFront: 0, upsell: 0, nUpsell: 0, reembolsos: 0, comisiones: 0, comisionesEstimadas: 0, gasto: 0 });
   tot.ganancia = tot.ventas - tot.reembolsos - tot.comisiones - tot.gasto;
-  tot.fijos = fijos; tot.fijosMes = fijosMes;
+  tot.fijos = fijos; tot.fijosMes = fijosMes; tot.aceptaronPost = aceptaron.size;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
   return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, comisionPromedio: { pct: feePct, fijo: feeFijo, real: pctReal != null, cruzadas: conFee.length }, ventas: ventasLista.sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 2000), fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
@@ -706,7 +708,7 @@ export function metricasDigitales(t0, nTiendas) {
     comisiones: r2(t.comisiones), comisiones_estimadas: r2(t.comisionesEstimadas),
     revenue_front: r2(t.front), ventas_front: t.nFront, revenue_backend_postcompra: r2(t.upsell), upsells: t.nUpsell,
     gastos_fijos: r2(t0.fijos || 0), ganancia_por_venta: r2(t.n ? t.ganancia / t.n : null),
-    take_rate_upsell_pct: r2(t.nFront ? t.nUpsell / t.nFront * 100 : null), reembolsos: r2(t.reembolsos),
+    aceptaron_post_compra: t0.aceptaronPost ?? null, aceptacion_post_compra_pct: r2(t.nFront ? (t0.aceptaronPost ?? t.nUpsell) / t.nFront * 100 : null), reembolsos: r2(t.reembolsos),
   };
 }
 
@@ -923,7 +925,7 @@ export default async function handler(req, res) {
       if (Date.parse(hasta) - Date.parse(desde) > 31 * 86400000) return res.status(400).json({ error: "Máximo 31 días." });
       // Caché por rango (fresh=1 la saltea): 30 s si incluye hoy, para que el gasto se vea casi en vivo; 10 min si es pasado.
       const ttl = hasta >= hoy ? 30000 : 10 * 60000;
-      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v10_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
+      const cacheRef = db.collection("users").doc(uid).collection("impultienda_cfg").doc(`cache_v11_${desde}_${hasta}_${tz.replace(/\//g, "-")}`);
       if (req.query.fresh !== "1") {
         const c = await cacheRef.get();
         if (c.exists && Date.now() - (c.data().ts || 0) < ttl) return res.json({ ...JSON.parse(c.data().body), cache: true });
