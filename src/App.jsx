@@ -10604,7 +10604,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       .then(r=>r.ok?r.json():null)
       .then(d=>{
         if(!alive) return;
-        if(d&&d.enabled) setAndreani({enabled:true,saldo:d.saldo||0,origenConfigurado:!!d.origenConfigurado,sucOrigen:d.sucOrigen||null,loaded:true,saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:null});
+        if(d&&d.enabled) setAndreani({enabled:true,emisionPausada:!!d.emisionPausada,saldo:d.saldo||0,origenConfigurado:!!d.origenConfigurado,sucOrigen:d.sucOrigen||null,loaded:true,saldoBajo:!!d.saldoBajo,etiquetasEstimadas:typeof d.etiquetasEstimadas==="number"?d.etiquetasEstimadas:null});
         else setAndreani(a=>({...a,enabled:false,loaded:true}));
       })
       .catch(()=>{ if(alive) setAndreani(a=>({...a,loaded:true})); });
@@ -12196,6 +12196,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   // rechazaba con "origen_no_configurado" después de elegir la sucursal.
   const bulkPendienteRef=useRef(undefined);
   async function lanzarBulkAndreani(ordersOverride){
+    if(andreani.emisionPausada){ toast("La generación de etiquetas con saldo está pausada por un cambio de tarifas de Andreani. Usá Exportar XLSX Andreani.","error"); return; }
     // Desde "Por empaquetar": la etiqueta marca el pedido como enviado en la
     // tienda y el cliente recibe el aviso — que quede claro antes de emitir.
     if(!andreani.origenConfigurado){
@@ -13497,7 +13498,10 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6M9 15l3 3 3-3"/></svg>
                     Exportar XLSX Andreani ({selected.size})
                   </button>
-                  {andreani.enabled&&(
+                  {andreani.enabled&&andreani.emisionPausada&&(
+                    <span title="Andreani cambió sus tarifas: la generación de etiquetas con saldo está pausada hasta actualizar los precios. Usá Exportar XLSX Andreani." style={{fontSize:12,color:T.textSm,maxWidth:220,lineHeight:1.35}}>Etiquetas con saldo pausadas por cambio de tarifas de Andreani</span>
+                  )}
+                  {andreani.enabled&&!andreani.emisionPausada&&(
                     <button onClick={()=>{setExportSingleOrder(null);lanzarBulkAndreani([...selected.values()]);}}
                       title="Cotiza y emite las etiquetas al instante, debitando del saldo de envíos"
                       style={{...BtnPrimary(T),height:42,boxSizing:"border-box",borderRadius:DS.r.full,border:`1px solid ${T.isDark?"#16a34a":"#15803d"}`,background:T.isDark?"#16a34a":"#15803d",color:"#fff",boxShadow:`0 6px 22px ${T.green}3d`,fontSize:14,fontWeight:700,padding:"0 22px",display:"flex",alignItems:"center",gap:9,whiteSpace:"nowrap",position:"relative"}}>

@@ -1159,6 +1159,12 @@ async function sendEmail({ to, subject, html, tipo }, opts = {}) {
 // Envíos con saldo (etiquetas prepagas): LANZAMIENTO OFICIAL el 19/oct/2026 — abierto a toda cuenta con
 // acceso a la sección Envíos (eso ya lo exige requireUid). La lista `habilitados` solo cuenta si un admin
 // vuelve a cerrar el servicio (andreani_config/global.abiertoATodos = false).
+// Emisión de etiquetas por API PAUSADA para todas las cuentas (incluidos los
+// admins) desde el 29/oct/2026: Andreani subió la tarifa y bajó el descuento, y
+// el costo que calcula Growith (lista − descuentoPct + seguro) quedó por debajo
+// del real. Se reactiva poniendo false cuando descuentoPct y markup estén al día.
+// Cotizar, descargar, anular y seguir etiquetas ya emitidas siguen andando.
+export const EMISION_PAUSADA = true;
 function enviosSaldoHabilitado(cfg, uid, esAdmin) { return !!esAdmin || cfg?.abiertoATodos !== false || (cfg?.habilitados || []).includes(uid); }
 // Cargas que cuentan como "pendientes de facturar" (Admin → Envíos → Facturación): desde la fecha que el
 // admin elige en la config fiscal (fiscal.desde, AAAA-MM-DD, hora AR); sin fecha, todas.
@@ -1718,6 +1724,7 @@ export default async function handler(req, res) {
       return res.json({
         ok: true,
         enabled: enviosSaldoHabilitado(cfg, uid, esAdmin),
+        emisionPausada: EMISION_PAUSADA,
         saldo,
         etiquetasEstimadas,
         saldoBajo: etiquetasEstimadas != null && etiquetasEstimadas < 5,
@@ -2103,6 +2110,7 @@ export default async function handler(req, res) {
       const [cfgG, snap, esAdmin] = await Promise.all([
         getGlobalConfig(db), userRef.get(), isPlatformAdmin(db, uid),
       ]);
+      if (EMISION_PAUSADA) return res.status(503).json({ code: "emision_pausada", error: "La generación de etiquetas con saldo está pausada por un cambio de tarifas de Andreani. Mientras tanto usá Exportar XLSX Andreani. No se debitó nada." });
       if (!enviosSaldoHabilitado(cfgG, uid, esAdmin)) return res.status(403).json({ error: "Tu cuenta no tiene habilitado Envíos Andreani. Contactá al soporte." });
       const uData = snap.exists ? snap.data() : {};
       const cfg = cfgParaCuenta(cfgG, uData); // markup por cliente, si lo tiene
