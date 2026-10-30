@@ -34744,7 +34744,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Ventas reales por UTM (Impultienda): pisan compras / revenue / ROAS / CPA / AOV de Meta.
   const [utmAtr,setUtmAtr]=useState(null);
   const [utmBusy,setUtmBusy]=useState(false);
-  const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad
+  const [aLevel,setALevel]=useState("campaign"); // campaign | adset | ad (nivel BASE que se carga; cada cuenta puede mirar otro)
+  const [aNivelCta,setANivelCta]=useState({}); // {cuenta: "campaign"|"adset"|"ad"} nivel elegido en cada bloque de cuenta
+  const [insVer,setInsVer]=useState(0); // sube cuando entra algo a la caché de insights (re-pinta los bloques que esperan otro nivel)
   const [aSince,setASince]=useState(()=>hoyAR()); // por defecto "Hoy", como el Dashboard
   const [aUntil,setAUntil]=useState(()=>hoyAR());
   const [aRows,setARows]=useState([]);
@@ -35250,47 +35252,102 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   },[libSince,libUntil]);
 
   const loadInsightsReqIdRef = React.useRef(0);
-  async function loadInsights() {
-    if(!activeAccId) return;
-    const myReqId = ++loadInsightsReqIdRef.current;
+  // Caché de insights por vista (cuenta+nivel+rango+drill): en memoria (la de localStorage puede no entrar
+  // con muchos anuncios) y en localStorage (sobrevive a recargar). Más una promesa en vuelo por clave para
+  // no pedirle dos veces lo mismo a Meta.
+  const insMemRef = React.useRef(new Map());
+  const insVueloRef = React.useRef(new Map());
+  const INS_TTL = 30*60000; // 30 min: métricas de pauta cambian rápido
+  const insKey = (level, lastParent) => `growith_meta_ins_${verJuntas&&!lastParent?"juntas"+ctasJuntas.map(c=>c.id).join(""):activeAccId}_${mtz}_${mmon}_${level}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
+  const insCache = (key) => { const m=insMemRef.current.get(key); if(m&&Date.now()-m.ts<INS_TTL) return m.rows; return ghSwrGet(key, INS_TTL); };
+  const insGuardar = (key, rows) => { insMemRef.current.set(key,{ts:Date.now(),rows}); ghSwrSet(key, rows); setInsVer(v=>v+1); };
+  // Cambia el nivel de UN bloque de cuenta; si ese nivel no está en caché, lo pide ya.
+  function elegirNivelCta(k, lv) {
+    setANivelCta(p=>({...p,[k]:lv}));
     const lastParent = aDrill[aDrill.length-1];
-    // SWR: pintar al instante el último resultado de esta vista exacta
-    // (cuenta+nivel+rango+drill) mientras Meta responde de fondo.
-    const swrKey = `growith_meta_ins_${verJuntas&&!lastParent?"juntas"+ctasJuntas.map(c=>c.id).join(""):activeAccId}_${mtz}_${mmon}_${aLevel}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
-    const cached = ghSwrGet(swrKey, 30*60000); // 30 min: métricas de pauta cambian rápido
-    setALoading(true);
-    setAError(null);
-    // Con cache mostramos eso; sin cache limpiamos YA para no ver el nivel anterior.
-    if (cached) setARows(cached); else setARows([]);
-    try {
-      const params = {acc_id:activeAccId,level:aLevel,since:aSince,until:aUntil,tz:mtz};
-      cargarUtm(); // las ventas por UTM se piden a la vez que Meta, no después
+    const key = insKey(lv, lastParent);
+    if (lv!==aLevel && !insCache(key)) traerNivel(lv, lastParent).then(d=>{ if(d&&!d.error) insGuardar(key, d.rows||[]); }).catch(()=>{});
+  }
+  // Pide a Meta UN nivel con los parámetros actuales. Devuelve {rows, pageNames} o {error}.
+  function traerNivel(level, lastParent) {
+    const key = insKey(level, lastParent);
+    if (insVueloRef.current.has(key)) return insVueloRef.current.get(key);
+    const p = (async () => {
+      const params = {acc_id:activeAccId,level,since:aSince,until:aUntil,tz:mtz};
       if (typeof window!=="undefined"&&window.__ghEsDigital) params.pages = "1"; // fanpages solo para el filtro de las tiendas digitales
       if (lastParent) {
         params.parent_id = lastParent.id;
         params.parent_type = lastParent.level;
         if (lastParent.act) params.ad_account = lastParent.act;
       }
-      let d;
       if (verJuntas && !lastParent) {
         // Todas las cuentas elegidas en paralelo, unidas en una sola lista (cada fila sabe de qué cuenta es).
         const res = await Promise.all(ctasJuntas.map(c=>metaApi("insights","GET",null,{...params,ad_account:c.id}).then(x=>({c,x})).catch(e=>({c,x:{error:e.message}}))));
         const errs = res.filter(r=>r.x?.error).map(r=>`${r.c.nombre}: ${r.x.error}`);
         const rows = res.flatMap(r=>(r.x?.rows||[]).map(row=>({...convFila(row,r.c.moneda),_moneda:(mmon&&fxM)?mmon:(r.c.moneda||"USD"),_act:r.c.id,_cuenta:r.c.nombre})));
-        setAPageNames(Object.assign({}, ...res.map(r=>r.x?.page_names||{})));
-        d = rows.length||!errs.length ? {rows} : {error:errs.join(" | ")};
-      } else { d = await metaApi("insights","GET",null,params); if (d?.page_names) setAPageNames(d.page_names); if (d?.rows) { const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency; d={...d,rows:d.rows.map(r=>({...convFila(r,de),_moneda:(mmon&&fxM)?mmon:(de||"USD")}))}; } }
-      // Si dispararon otra carga después de esta, descartamos.
-      if (myReqId !== loadInsightsReqIdRef.current) return;
-      if(d.error) { setAError(d.error); if(!cached) setARows([]); }
-      else { setARows(d.rows||[]); ghSwrSet(swrKey, d.rows||[]); }
-    } catch(e) {
-      if (myReqId !== loadInsightsReqIdRef.current) return;
-      if(!cached) setAError(e.message || "Error de red");
-    } finally {
-      if (myReqId === loadInsightsReqIdRef.current) setALoading(false);
+        const pageNames = Object.assign({}, ...res.map(r=>r.x?.page_names||{}));
+        return rows.length||!errs.length ? {rows, pageNames} : {error:errs.join(" | ")};
+      }
+      const d = await metaApi("insights","GET",null,params);
+      if (d?.error) return {error:d.error};
+      const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency;
+      return {rows:(d?.rows||[]).map(r=>({...convFila(r,de),_moneda:(mmon&&fxM)?mmon:(de||"USD")})), pageNames:d?.page_names||null};
+    })().finally(()=>insVueloRef.current.delete(key));
+    insVueloRef.current.set(key, p);
+    return p;
+  }
+  // Los otros dos niveles se piden de fondo apenas llega el actual: pasar de campañas a conjuntos
+  // o a anuncios pinta al instante lo ya traído (y se refresca solo).
+  function precargarNiveles(lastParent) {
+    for (const lv of ["campaign","adset","ad"]) {
+      if (lv===aLevel) continue;
+      const key = insKey(lv, lastParent);
+      const m = insMemRef.current.get(key);
+      if (m && Date.now()-m.ts < 90000) continue; // todavía fresco
+      traerNivel(lv, lastParent).then(d=>{ if(d&&!d.error) insGuardar(key, d.rows||[]); }).catch(()=>{});
     }
   }
+  // fondo=true: refresco silencioso (cada 2 min): sin spinner, sin vaciar la tabla, sin tocar el error.
+  async function loadInsights(opts={}) {
+    if(!activeAccId) return;
+    const fondo = opts && opts.fondo === true;
+    const myReqId = ++loadInsightsReqIdRef.current;
+    const lastParent = aDrill[aDrill.length-1];
+    // SWR: pintar al instante el último resultado de esta vista exacta mientras Meta responde de fondo.
+    const swrKey = insKey(aLevel, lastParent);
+    const cached = insCache(swrKey);
+    if (!fondo) {
+      setALoading(true);
+      setAError(null);
+      // Con cache mostramos eso; sin cache limpiamos YA para no ver el nivel anterior.
+      if (cached) setARows(cached); else setARows([]);
+    }
+    try {
+      cargarUtm(); // las ventas por UTM se piden a la vez que Meta, no después
+      const d = await traerNivel(aLevel, lastParent);
+      // Si dispararon otra carga después de esta, descartamos.
+      if (myReqId !== loadInsightsReqIdRef.current) return;
+      if (d.error) { if (!fondo) { setAError(d.error); if(!cached) setARows([]); } }
+      else {
+        if (d.pageNames) setAPageNames(p=>({...(p||{}),...d.pageNames}));
+        setARows(d.rows||[]); insGuardar(swrKey, d.rows||[]);
+        if (fondo) setAError(null);
+      }
+      precargarNiveles(lastParent);
+    } catch(e) {
+      if (myReqId !== loadInsightsReqIdRef.current) return;
+      if(!fondo && !cached) setAError(e.message || "Error de red");
+    } finally {
+      if (!fondo && myReqId === loadInsightsReqIdRef.current) setALoading(false);
+    }
+  }
+  // Refresco de fondo cada 2 minutos mientras se mira Análisis con la pestaña visible.
+  useEffect(()=>{
+    if(tab!=="analisis"||!activeAccId) return;
+    const t=setInterval(()=>{ if(typeof document==="undefined"||document.visibilityState==="visible") loadInsights({fondo:true}); },120000);
+    return ()=>clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab,activeAccId,aLevel,aSince,aUntil,aDrill,verJuntas,ctasJuntas.map(c=>c.id).join(","),mtz,mmon,!!fxM]);
 
   async function cargarUtm() {
     try {
@@ -35338,14 +35395,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   }
 
   // Drill down: cuando se hace click en una row, entrar a sus hijos
-  function drillInto(row) {
-    // Como en Meta: tocar el nombre deja ESA fila tildada y pasa a la pestaña de sus hijos.
-    if (aLevel === "campaign") {
+  function drillInto(row, k) {
+    // Como en Meta: tocar el nombre deja ESA fila tildada y pasa el bloque de SU cuenta al nivel de sus hijos.
+    const lv = row._lvl || aLevel;
+    if (lv === "campaign") {
       setASel(p=>({...p, campaign:new Set([String(row.id)]), adset:new Set(), ad:new Set()}));
-      setADrill([]); setALevel("adset");
-    } else if (aLevel === "adset") {
+      elegirNivelCta(k, "adset");
+    } else if (lv === "adset") {
       setASel(p=>({...p, adset:new Set([String(row.id)]), ad:new Set()}));
-      setADrill([]); setALevel("ad");
+      elegirNivelCta(k, "ad");
     }
   }
   // Volver a un nivel del breadcrumb
@@ -36526,35 +36584,48 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                 {/* Tabla de insights */}
                 {aLoading && aRows.length === 0 ? (
-                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"60px 20px",textAlign:"center"}}>
-                    <Spinner size={20} color={T.accent}/>
-                    <div style={{fontSize:13,color:T.textSm,marginTop:14}}>Trayendo métricas de Meta...</div>
+                  <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"22px 20px",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                    <Spinner size={14} color={T.accent}/>
+                    <span style={{fontSize:12,color:T.textSm}}>Trayendo {aLevel==="campaign"?"campañas":aLevel==="adset"?"conjuntos de anuncios":"anuncios"} de Meta…</span>
                   </div>
                 ) : (() => {
                   // Filtrar + sortear
-                  let filtered = aRows.map(r=>conUtm(r,aLevel));
+                  const ctaDe = (r) => r._act || aDrill[0]?.act || activeAcc?.ad_account_id || "";
+                  const lastParentIns = aDrill[aDrill.length-1];
+                  const nivelDe = (k) => aNivelCta[k] || aLevel;
+                  // Cada cuenta publicitaria mira SU nivel (campañas / conjuntos / anuncios): el nivel base sale de aRows,
+                  // los otros de la caché que se precarga sola; si todavía no llegó, el bloque muestra "trayendo…".
+                  void insVer; // re-pintar cuando entra una precarga
+                  const ctasKeys = [...new Set(aRows.map(r=>ctaDe(r)||"_"))];
+                  const ctasCargando = {};
+                  let filtered = [];
+                  for (const k of ctasKeys) {
+                    const lv = nivelDe(k);
+                    let src = lv===aLevel ? aRows : insCache(insKey(lv, lastParentIns));
+                    if (!src) { ctasCargando[k] = true; src = []; }
+                    for (const r of src) if ((ctaDe(r)||"_")===k) filtered.push({...conUtm(r,lv), _lvl:lv});
+                  }
                   if (aQuery.trim()) {
                     const q = aQuery.trim().toLowerCase();
                     filtered = filtered.filter(r => (r.name||"").toLowerCase().includes(q));
                   }
-                  // Solo los hijos de lo tildado en la pestaña de arriba (sin nada tildado, todos).
-                  if (aLevel === "adset" && aSel.campaign.size) filtered = filtered.filter(r => aSel.campaign.has(String(r.campaign_id)));
-                  if (aLevel === "ad") {
-                    if (aSel.adset.size) filtered = filtered.filter(r => aSel.adset.has(String(r.adset_id)));
-                    else if (aSel.campaign.size) filtered = filtered.filter(r => aSel.campaign.has(String(r.campaign_id)));
-                  }
+                  // Solo los hijos de lo tildado en el nivel de arriba (sin nada tildado, todos).
+                  filtered = filtered.filter(r => {
+                    if (r._lvl === "adset") return !aSel.campaign.size || aSel.campaign.has(String(r.campaign_id));
+                    if (r._lvl === "ad") return aSel.adset.size ? aSel.adset.has(String(r.adset_id)) : (!aSel.campaign.size || aSel.campaign.has(String(r.campaign_id)));
+                    return true;
+                  });
                   // Tienda de cada fila: adonde fueron sus ventas por UTM o, sin ventas, el país del nombre ("FR | ...").
                   const tiendas = utmAtr?.tiendas || {};
                   const porPais = {};
                   for (const t of Object.values(tiendas)) if (t.pais) (porPais[t.pais] = porPais[t.pais] || []).push(t.id);
                   const tiendaDe = (r) => {
-                    const ct = utmAtr?.ct?.[aLevel==="campaign" ? r.id : r.campaign_id];
+                    const ct = utmAtr?.ct?.[(r._lvl||aLevel)==="campaign" ? r.id : r.campaign_id];
                     const top = ct && Object.entries(ct).sort((x,y)=>y[1]-x[1])[0];
                     if (top) return top[0];
                     const cods = String(r.name||"").toUpperCase().split(/[^A-Z]+/).filter(w=>w.length===2&&porPais[w]?.length===1);
                     return cods.length ? porPais[cods[0]][0] : null;
                   };
-                  const ctaDe = (r) => r._act || aDrill[0]?.act || activeAcc?.ad_account_id || "";
                   // Opciones de los filtros (de lo que trajo Meta, antes de filtrar por ellos)
                   const optCtas = [...new Map(filtered.map(r=>[ctaDe(r), r._cuenta || ctasElegidas.find(c=>c.id===ctaDe(r))?.nombre || activeAcc?.ad_account_name || ctaDe(r)])).entries()];
                   const optTiendas = Object.keys(tiendas).length ? [...new Set(filtered.map(r=>tiendaDe(r)||"_"))].map(k=>[k, k==="_"?"Sin tienda":(tiendas[k]?.nombre||k)]) : [];
@@ -36573,11 +36644,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   const pasaEstado = (r) => aFilterStatus === "active" ? r.effective_status === "ACTIVE" : aFilterStatus === "paused" ? r.effective_status === "PAUSED" : true;
                   filtered = filteredTodo.filter(pasaEstado);
 
-                  if (filteredTodo.length === 0) {
+                  if (filteredTodo.length === 0 && !Object.keys(ctasCargando).length) {
                     return (
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
-                        <div style={{fontSize:13,color:T.textSm}}>No hay {aLevel === "campaign" ? "campañas" : aLevel === "adset" ? "adsets" : "ads"} en este rango.</div>
+                        <div style={{fontSize:13,color:T.textSm}}>No hay campañas con datos en este rango.</div>
                         {(aFiltCta||aFiltTienda||aFiltPage||aFilterStatus!=="all"||aQuery||aSel.campaign.size||aSel.adset.size) && <button onClick={()=>{setAFiltCta("");setAFiltTienda("");setAFiltPage("");setAFilterStatus("all");setAQuery("");selLimpiar("campaign");}} style={{marginTop:12,background:"transparent",border:`1px solid ${T.border}`,color:T.accent,borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar filtros</button>}
                       </div>
                     );
@@ -36606,7 +36677,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   const money = (n) => n ? cur+fmt(n) : "—";
                   const COL_META = {
                     spend:          { label:"Monto gastado", sub:"Gasto total", render: r => cur+fmt(r.spend), total: t => cur+fmt(t.spend) },
-                    roas:           { label:"ROAS de resultados", sub:"Valor,compra", render: r => r.roas ? fmt(r.roas) : "—", total: t => t.roas ? fmt(t.roas) : "—", color: r => {const be=effectiveBeForRow(r,aLevel,aRoasBe); if(!be||be<=0||!r.roas) return T.text; return r.roas>=be?T.green:T.red;} },
+                    roas:           { label:"ROAS de resultados", sub:"Valor,compra", render: r => r.roas ? fmt(r.roas) : "—", total: t => t.roas ? fmt(t.roas) : "—", color: r => {const be=effectiveBeForRow(r,r._lvl||aLevel,aRoasBe); if(!be||be<=0||!r.roas) return T.text; return r.roas>=be?T.green:T.red;} },
                     cpa:            { label:"Costo por resultado", sub:"Por compra", rowSub:"Por compra", render: r => money(r.cpa), total: t => money(t.cpa), dotted:true },
                     purchases:      { label:"Compras", sub:"Total", render: r => cnt(r.purchases), total: t => cnt(t.n), dotted:true },
                     checkouts:      { label:"Pagos iniciados", sub:"Total", render: r => cnt(r.checkouts), total: t => cnt(t.chk), dotted:true },
@@ -36630,7 +36701,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     clicks:         { label:"Clics (todos)", sub:"Total", render: r => cnt(r.clicks), total: t => cnt(t.clicks) },
                   };
                   const visibleCols = aCols.filter(k => COL_META[k]);
-                  const canDrill = aLevel !== "ad";
 
                   return (
                     <>
@@ -36639,25 +36709,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                 {/* Header con controles */}
                 <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"16px 20px",marginBottom:16}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    {/* Pestañas Campañas / Conjuntos de anuncios / Anuncios, con el chip "1 seleccionado" como en el Administrador de anuncios */}
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {[{id:"campaign",label:"Campañas",icon:"folder"},{id:"adset",label:"Conjuntos de anuncios",icon:"box"},{id:"ad",label:"Anuncios",icon:"play"}].map(l=>{
-                        const act = aLevel===l.id;
-                        const n = aSel[l.id].size;
-                        return (
-                          <div key={l.id} onClick={()=>{ if(!act){ setADrill([]); setALevel(l.id); } }} role="tab" aria-selected={act} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 12px",borderRadius:10,border:`1px solid ${act?T.accent:T.border}`,background:act?T.accent+"1a":T.card,cursor:act?"default":"pointer",userSelect:"none"}}>
-                            <span style={{color:act?T.accent:T.textMd,display:"inline-flex"}}><GhI n={l.icon} size={14}/></span>
-                            <span style={{fontSize:13,fontWeight:700,color:act?T.accent:T.text,whiteSpace:"nowrap"}}>{l.label}</span>
-                            {n>0 && (
-                              <span style={{display:"inline-flex",alignItems:"center",gap:6,background:T.accent+"26",color:T.accent,borderRadius:6,padding:"2px 6px 2px 8px",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
-                                {n} seleccionado{n>1?"s":""}
-                                <button onClick={e=>{e.stopPropagation(); selLimpiar(l.id);}} title="Quitar la selección" style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",padding:0,lineHeight:0,fontFamily:"inherit"}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
                     {/* Columnas */}
                     <div style={{position:"relative"}}>
                       <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg> Columnas</button>
@@ -36719,7 +36770,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       </div>
                     )}
                     <span title={metaEditable?"El token de esta cuenta tiene ads_management: podés pausar, activar y cambiar presupuestos desde acá.":"Solo lectura. Para editar desde Growith conectá un token de usuario del sistema con ads_management (pestaña Cuenta)."} style={{fontSize:10,fontWeight:700,color:metaEditable?T.accent:T.textSm,background:(metaEditable?T.accent:T.textSm)+"18",borderRadius:6,padding:"4px 7px",letterSpacing:0.3,whiteSpace:"nowrap"}}>{metaEditable?"EDICIÓN ACTIVA":"SOLO LECTURA"}</span>
-                    <button onClick={loadInsights} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <button onClick={()=>loadInsights()} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {aLoading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
                     </button>
                   </div>
@@ -36727,18 +36778,19 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {(() => {
                       // Un bloque por CUENTA PUBLICITARIA (como el Administrador de anuncios); la tienda queda como filtro.
                       const grupos = {};
+                      for (const k of ctasKeys) grupos[k] = [];
                       for (const r of filteredTodo) { const k = ctaDe(r) || "_"; (grupos[k] = grupos[k] || []).push(r); }
                       const orden = Object.keys(grupos).sort((x,y)=> sumas(grupos[y]).spend - sumas(grupos[x]).spend);
                       const separar = orden.length > 1;
                       const nombreCta = (k) => optCtas.find(([id])=>id===k)?.[1] || k;
-                      const nivelTxt = aLevel==="campaign" ? "campañas" : aLevel==="adset" ? "conjuntos" : "anuncios";
+                      const nivelTxtDe = (lv) => lv==="campaign" ? "campañas" : lv==="adset" ? "conjuntos" : "anuncios";
+                      const NIVELES = [{id:"campaign",label:"Campañas",icon:"folder"},{id:"adset",label:"Conjuntos",icon:"box"},{id:"ad",label:"Anuncios",icon:"play"}];
                       // Tabla calcada del Administrador de anuncios (29/oct/2026): mismas columnas, mismo orden,
                       // misma fila de totales con su leyenda; en violeta y negro en vez de azul y blanco.
                       const LINK = T.accent;
-                      const nivelTit = aLevel==="campaign" ? "Campaña" : aLevel==="adset" ? "Conjunto de anuncios" : "Anuncio";
+                      const nivelTitDe = (lv) => lv==="campaign" ? "Campaña" : lv==="adset" ? "Conjunto de anuncios" : "Anuncio";
                       const W = { sel:META_W0.sel, act:anchoCol("act"), name:anchoCol("name"), ent:anchoCol("ent"), pres:anchoCol("pres") };
                       const anchoTotal = W.sel + W.act + W.name + W.ent + W.pres + visibleCols.reduce((a,c)=>a+anchoCol(c),0);
-                      const selSet = aSel[aLevel];
                       const Casilla = ({on, mixto, onChange, title}) => (
                         <button onClick={e=>{e.stopPropagation(); onChange();}} role="checkbox" aria-checked={mixto?"mixed":on} title={title} style={{width:16,height:16,borderRadius:4,border:`1.5px solid ${on||mixto?T.accentSolid:T.textSm}`,background:on||mixto?T.accentSolid:"transparent",padding:0,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",lineHeight:0}}>
                           {on ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg> : mixto ? <span style={{width:8,height:2,background:"#fff",borderRadius:1}}/> : null}
@@ -36766,6 +36818,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const bloque = (k, rows) => {
                         // rows = TODO lo de la cuenta en el período (el total de abajo suma esto, siempre).
                         const t = sumas(rows);
+                        const lv = nivelDe(k);
+                        const nivelTxt = nivelTxtDe(lv), nivelTit = nivelTitDe(lv);
+                        const selSet = aSel[lv];
+                        const cargandoCta = !!ctasCargando[k];
                         const visibles = rows.filter(pasaEstado);
                         // Apagadas (o fuera del filtro) que igual gastaron 1 USD o más en el período: van en el desglose.
                         const ocultas = rows.filter(r => !pasaEstado(r));
@@ -36775,16 +36831,38 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const gastoOculto = sumas(conGasto).spend;
                         return (
                           <div key={k} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0}}>
-                            {separar && (
-                              <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
-                                <span style={{fontSize:14,fontWeight:700,color:T.text}}>{nombreCta(k)}</span>
-                                <span style={{fontSize:11,color:T.textSm}}>{rows.length} {nivelTxt}</span>
-                                <span style={{flex:1}}/>
+                            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+                              {/* Campañas / Conjuntos / Anuncios de ESTA cuenta (cada cuenta puede mirar un nivel distinto) */}
+                              <div role="tablist" style={{display:"flex",gap:6}}>
+                                {NIVELES.map(l=>{
+                                  const act = lv===l.id; const n = aSel[l.id].size;
+                                  return (
+                                    <div key={l.id} role="tab" aria-selected={act} onClick={()=>{ if(!act) elegirNivelCta(k,l.id); }} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,border:`1px solid ${act?T.accent:T.border}`,background:act?T.accent+"1a":T.card,cursor:act?"default":"pointer",userSelect:"none"}}>
+                                      <span style={{color:act?T.accent:T.textMd,display:"inline-flex"}}><GhI n={l.icon} size={13}/></span>
+                                      <span style={{fontSize:12,fontWeight:700,color:act?T.accent:T.text,whiteSpace:"nowrap"}}>{l.label}</span>
+                                      {n>0 && (
+                                        <span style={{display:"inline-flex",alignItems:"center",gap:5,background:T.accent+"26",color:T.accent,borderRadius:999,padding:"1px 6px 1px 7px",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
+                                          {n}
+                                          <button onClick={e=>{e.stopPropagation(); selLimpiar(l.id);}} title="Quitar la selección" style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",padding:0,lineHeight:0,fontFamily:"inherit"}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {separar && <span style={{fontSize:14,fontWeight:700,color:T.text}}>{nombreCta(k)}</span>}
+                              <span style={{fontSize:11,color:T.textSm}}>{cargandoCta ? <Spinner size={10} color={T.textMd}/> : `${rows.length} ${nivelTxt}`}</span>
+                              <span style={{flex:1}}/>
                                 <span style={{fontSize:12,color:T.textMd}}>Gasto <b style={{color:T.text}}>{cur}{fmt(t.spend)}</b></span>
                                 <span style={{fontSize:12,color:T.textMd}}>Compras <b style={{color:T.text}}>{t.n}</b></span>
                                 <span style={{fontSize:12,color:T.textMd}}>ROAS <b style={{color:aRoasBe>0&&t.spend?(t.roas>=aRoasBe?T.green:T.red):T.text}}>{fmt(t.roas)}</b></span>
+                            </div>
+                            {cargandoCta ? (
+                              <div style={{padding:"18px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                                <Spinner size={14} color={T.accent}/>
+                                <span style={{fontSize:12,color:T.textSm}}>Trayendo {nivelTxt} de Meta…</span>
                               </div>
-                            )}
+                            ) : (
                             <div style={{overflowX:"auto"}}>
                               <table style={{width:anchoTotal,minWidth:anchoTotal,tableLayout:"fixed",borderCollapse:"separate",borderSpacing:0,fontFamily:"'Inter',system-ui,sans-serif"}}>
                                 <colgroup><col style={{width:W.sel}}/><col style={{width:W.act}}/><col style={{width:W.name}}/><col style={{width:W.ent}}/><col style={{width:W.pres}}/>{visibleCols.map(c=><col key={c} style={{width:anchoCol(c)}}/>)}</colgroup>
@@ -36792,7 +36870,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   <tr>
                                     <th style={{...TH,padding:"8px 0 8px 10px",...stickyL(0,T.surface),zIndex:3}}>
                                       {(() => { const ids=lista.map(r=>String(r.id)); const nOn=ids.filter(id=>selSet.has(id)).length; const todos=nOn===ids.length&&ids.length>0;
-                                        return <Casilla on={todos} mixto={!todos&&nOn>0} title={todos?"Destildar todo":"Tildar todo"} onChange={()=>setASel(p=>{ const n=new Set(p[aLevel]); if(todos) ids.forEach(id=>n.delete(id)); else ids.forEach(id=>n.add(id)); return {...p,[aLevel]:n}; })}/>; })()}
+                                        return <Casilla on={todos} mixto={!todos&&nOn>0} title={todos?"Destildar todo":"Tildar todo"} onChange={()=>setASel(p=>{ const n=new Set(p[lv]); if(todos) ids.forEach(id=>n.delete(id)); else ids.forEach(id=>n.add(id)); return {...p,[lv]:n}; })}/>; })()}
                                     </th>
                                     <th style={{...TH,textAlign:"left",...stickyL(W.sel,T.surface),zIndex:3}}>Act.{grip("act")}</th>
                                     <th onClick={()=>setASort(s=>({key:"name", dir: s.key==="name" && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:"left",cursor:"pointer",userSelect:"none",...stickyL(W.sel+W.act,T.surface),zIndex:3,boxShadow:`1px 0 0 ${T.border}`}}>
@@ -36815,14 +36893,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     const busy = !!aBusyIds[r.id];
                                     const delDesglose = !pasaEstado(r);
                                     const isActive = r.effective_status === "ACTIVE";
-                                    const drillLabel = aLevel==="campaign" ? "conjuntos de anuncios" : aLevel==="adset" ? "anuncios" : null;
+                                    const drillLabel = lv==="campaign" ? "conjuntos de anuncios" : lv==="adset" ? "anuncios" : null;
                                     const editando = aBudgetEdit?.id === r.id;
                                     const puedeSwitch = metaEditable && !busy;
                                     const tildada = selSet.has(String(r.id));
                                     const bgFila = tildada ? T.accent+"14" : T.card;
                                     return (
                                       <tr key={r.id} className="gh-meta-row" style={{...(tildada?{background:bgFila}:null),...(delDesglose?{opacity:0.72}:null)}}>
-                                        <td style={{...TD,padding:"9px 0 9px 10px",...stickyL(0,bgFila)}}><Casilla on={tildada} onChange={()=>selTog(aLevel,String(r.id))} title={tildada?"Destildar":"Tildar"}/></td>
+                                        <td style={{...TD,padding:"9px 0 9px 10px",...stickyL(0,bgFila)}}><Casilla on={tildada} onChange={()=>selTog(lv,String(r.id))} title={tildada?"Destildar":"Tildar"}/></td>
                                         <td style={{...TD,...stickyL(W.sel,bgFila)}}>
                                           <button onClick={()=>puedeSwitch&&toggleStatus(r)} disabled={!puedeSwitch} role="switch" aria-checked={isActive}
                                             title={!metaEditable ? `${isActive?"Activa":"Desactivada"}. Solo lectura: para activar o pausar desde Growith conectá un token con ads_management (pestaña Cuenta).` : isActive?"Desactivar":"Activar"}
@@ -36832,7 +36910,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                         </td>
                                         <td style={{...TD,overflow:"hidden",...stickyL(W.sel+W.act,bgFila),boxShadow:`1px 0 0 ${T.borderL}`}}>
                                           {drillLabel ? (
-                                            <button onClick={()=>drillInto(r)} title={`Ver sus ${drillLabel}`} style={{display:"block",width:"100%",background:"transparent",border:"none",color:LINK,fontSize:13,fontWeight:500,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
+                                            <button onClick={()=>drillInto(r,k)} title={`Ver sus ${drillLabel}`} style={{display:"block",width:"100%",background:"transparent",border:"none",color:LINK,fontSize:13,fontWeight:500,cursor:"pointer",padding:0,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}
                                               onMouseEnter={e=>{e.currentTarget.style.textDecoration="underline";}}
                                               onMouseLeave={e=>{e.currentTarget.style.textDecoration="none";}}>
                                               {r.name||"(sin nombre)"}
@@ -36844,7 +36922,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                         <td style={{...TD}} title={r.effective_status||""}>{entrega(r)}</td>
                                         <td style={{...TD,textAlign:"right"}}>
                                           {!r.daily_budget ? (
-                                            <span style={{fontSize:11,color:T.textSm,whiteSpace:"normal",display:"block",lineHeight:1.25}}>{aLevel==="ad"?"—":"Con el presupuesto de la campaña"}</span>
+                                            <span style={{fontSize:11,color:T.textSm,whiteSpace:"normal",display:"block",lineHeight:1.25}}>{lv==="ad"?"—":"Con el presupuesto de la campaña"}</span>
                                           ) : editando ? (
                                             <input autoFocus type="number" min="1" step="0.01" value={aBudgetEdit.val}
                                               onChange={e=>setABudgetEdit({id:r.id,val:e.target.value})}
@@ -36911,6 +36989,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 </tfoot>
                               </table>
                             </div>
+                            )}
                           </div>
                         );
                       };
