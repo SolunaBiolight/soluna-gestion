@@ -315,6 +315,8 @@ growith_sku_dep_enviados   → JSON {"nombre|tamaño": ts} de los PDF de rótulo
 growith_imp_tz             → zona horaria IANA elegida en el Dashboard de productos digitales (Impultienda); sin valor = la del navegador
 growith_imp_cards          → orden y cards ocultas del Dashboard de productos digitales ({orden:[], ocultas:{}})
 growith_imp_moneda         → moneda en la que se muestran los montos del Dashboard digital (ARS = dólar cripto, resto = oficial)
+growith_meta_ctas_orden    → orden manual de los bloques por cuenta en Meta → Análisis (ghKey)
+growith_meta_ctas_ocultas  → cuentas ocultas en Meta → Análisis (ghKey)
 growith_depo_operario      → nombre de quien opera en la PC del depósito (panel por token #/deposito/panel/<pcToken>); viaja en cada acción y queda en el historial de la tanda
 ```
 Patrón SWR: helpers globales `ghSwrGet(key,maxAge)` / `ghSwrSet(key,data)` — pintar cache al instante, refrescar de fondo, y si el refresco falla con cache pintada no romper la vista.

@@ -35255,6 +35255,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Caché de insights por vista (cuenta+nivel+rango+drill): en memoria (la de localStorage puede no entrar
   // con muchos anuncios) y en localStorage (sobrevive a recargar). Más una promesa en vuelo por clave para
   // no pedirle dos veces lo mismo a Meta.
+  // Orden de los bloques por cuenta: automático por campañas activas, fijo hasta recargar o refrescar
+  // (entrar a conjuntos/anuncios no lo cambia). Si la persona arrastra o oculta, queda guardado.
+  const ctaOrdenAutoRef = React.useRef(null);
+  const [ctaOrden,setCtaOrdenS]=useState(()=>{ try{ const v=JSON.parse(localStorage.getItem(ghKey("growith_meta_ctas_orden"))||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; } });
+  const setCtaOrden=(v)=>{ setCtaOrdenS(v); try{ localStorage.setItem(ghKey("growith_meta_ctas_orden"),JSON.stringify(v)); }catch(_){} };
+  const [ctaOcultas,setCtaOcultasS]=useState(()=>{ try{ const v=JSON.parse(localStorage.getItem(ghKey("growith_meta_ctas_ocultas"))||"[]"); return Array.isArray(v)?v:[]; }catch(_){ return []; } });
+  const setCtaOcultas=(v)=>{ setCtaOcultasS(v); try{ localStorage.setItem(ghKey("growith_meta_ctas_ocultas"),JSON.stringify(v)); }catch(_){} };
+  const [ctaVerOcultas,setCtaVerOcultas]=useState(false);
+  const [ctaDrag,setCtaDrag]=useState(null);
   const insMemRef = React.useRef(new Map());
   const insVueloRef = React.useRef(new Map());
   const INS_TTL = 30*60000; // 30 min: métricas de pauta cambian rápido
@@ -36770,7 +36779,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       </div>
                     )}
                     <span title={metaEditable?"El token de esta cuenta tiene ads_management: podés pausar, activar y cambiar presupuestos desde acá.":"Solo lectura. Para editar desde Growith conectá un token de usuario del sistema con ads_management (pestaña Cuenta)."} style={{fontSize:10,fontWeight:700,color:metaEditable?T.accent:T.textSm,background:(metaEditable?T.accent:T.textSm)+"18",borderRadius:6,padding:"4px 7px",letterSpacing:0.3,whiteSpace:"nowrap"}}>{metaEditable?"EDICIÓN ACTIVA":"SOLO LECTURA"}</span>
-                    <button onClick={()=>loadInsights()} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <button onClick={()=>{ ctaOrdenAutoRef.current=null; loadInsights(); }} disabled={aLoading} title="Refrescar con el rango actual" style={{background:T.card,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:13,cursor:aLoading?"wait":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
                       {aLoading?<Spinner size={12} color={T.textMd}/>:<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
                     </button>
                   </div>
@@ -36780,8 +36789,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const grupos = {};
                       for (const k of ctasKeys) grupos[k] = [];
                       for (const r of filteredTodo) { const k = ctaDe(r) || "_"; (grupos[k] = grupos[k] || []).push(r); }
-                      const orden = Object.keys(grupos).sort((x,y)=> sumas(grupos[y]).spend - sumas(grupos[x]).spend);
-                      const separar = orden.length > 1;
+                      // Orden automático: más campañas activas arriba. Se calcula una vez con el nivel Campañas y queda fijo.
+                      const campRows = aLevel==="campaign" && !aDrill.length ? aRows : (aDrill.length ? null : insCache(insKey("campaign")));
+                      if (!ctaOrdenAutoRef.current && campRows?.length) {
+                        const act = {}; for (const r of campRows) { const c = ctaDe(r)||"_"; act[c] = (act[c]||0) + (r.effective_status==="ACTIVE"?1:0); }
+                        ctaOrdenAutoRef.current = Object.keys(act).sort((x,y)=> act[y]-act[x]);
+                      }
+                      const pos = (lista,k) => { const i = (lista||[]).indexOf(k); return i<0 ? 9999 : i; };
+                      const todas = Object.keys(grupos).sort((x,y)=> pos(ctaOrden,x)-pos(ctaOrden,y) || pos(ctaOrdenAutoRef.current,x)-pos(ctaOrdenAutoRef.current,y) || x.localeCompare(y));
+                      const separar = todas.length > 1;
+                      const ocultasCta = separar ? todas.filter(k=>ctaOcultas.includes(k)) : [];
+                      const orden = todas.filter(k=>!ocultasCta.includes(k));
+                      const moverCta = (de,a) => { if(!de||de===a) return; const cur=todas.filter(k=>k!==de); const iA=cur.indexOf(a); const iDe=todas.indexOf(de); if(iA<0) return; cur.splice(iDe<todas.indexOf(a)?iA+1:iA,0,de); setCtaOrden(cur); };
                       const nombreCta = (k) => optCtas.find(([id])=>id===k)?.[1] || k;
                       const nivelTxtDe = (lv) => lv==="campaign" ? "campañas" : lv==="adset" ? "conjuntos" : "anuncios";
                       const NIVELES = [{id:"campaign",label:"Campañas",icon:"folder"},{id:"adset",label:"Conjuntos",icon:"box"},{id:"ad",label:"Anuncios",icon:"play"}];
@@ -36830,8 +36849,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const lista = desgloseAbierto ? [...visibles, ...conGasto] : visibles;
                         const gastoOculto = sumas(conGasto).spend;
                         return (
-                          <div key={k} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0}}>
+                          <div key={k} onDragOver={e=>{ if(!ctaDrag) return; e.preventDefault(); if(ctaDrag!==k) moverCta(ctaDrag,k); }} onDrop={e=>{e.preventDefault(); setCtaDrag(null);}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0,opacity:ctaDrag===k?0.45:1}}>
                             <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+                              {separar && <span draggable onDragStart={e=>{ setCtaDrag(k); try{ e.dataTransfer.effectAllowed="move"; const c=e.currentTarget.parentElement?.parentElement; if(c) e.dataTransfer.setDragImage(c,40,20); }catch(_){} }} onDragEnd={()=>setCtaDrag(null)} title="Arrastrá para mover esta cuenta" style={{cursor:"grab",color:T.textSm,fontSize:14,lineHeight:1,userSelect:"none"}}>⠿</span>}
                               {/* Campañas / Conjuntos / Anuncios de ESTA cuenta (cada cuenta puede mirar un nivel distinto) */}
                               <div role="tablist" style={{display:"flex",gap:6}}>
                                 {NIVELES.map(l=>{
@@ -36856,6 +36876,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <span style={{fontSize:12,color:T.textMd}}>Gasto <b style={{color:T.text}}>{cur}{fmt(t.spend)}</b></span>
                                 <span style={{fontSize:12,color:T.textMd}}>Compras <b style={{color:T.text}}>{t.n}</b></span>
                                 <span style={{fontSize:12,color:T.textMd}}>ROAS <b style={{color:aRoasBe>0&&t.spend?(t.roas>=aRoasBe?T.green:T.red):T.text}}>{fmt(t.roas)}</b></span>
+                                {separar && <button onClick={()=>setCtaOcultas([...ctaOcultas,k])} title="Ocultar esta cuenta" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",padding:2,lineHeight:0}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10 10 0 0112 20C5 20 1 12 1 12a18 18 0 015.06-5.94M9.9 4.24A9 9 0 0112 4c7 0 11 8 11 8a18 18 0 01-2.16 3.19M1 1l22 22"/></svg></button>}
                             </div>
                             {cargandoCta ? (
                               <div style={{padding:"18px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
@@ -36993,7 +37014,18 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                           </div>
                         );
                       };
-                      return orden.map(k => bloque(k, grupos[k]));
+                      return (<>
+                        {orden.map(k => bloque(k, grupos[k]))}
+                        {(ocultasCta.length>0 || ctaOrden.length>0) && (
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:12,color:T.textMd,padding:"2px 4px 10px"}}>
+                            {ocultasCta.length>0 && <button onClick={()=>setCtaVerOcultas(v=>!v)} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontWeight:600,fontSize:12,fontFamily:"inherit",padding:0}}>{ctaVerOcultas?"▾":"▸"} {ocultasCta.length} cuenta{ocultasCta.length===1?"":"s"} oculta{ocultasCta.length===1?"":"s"}</button>}
+                            {ctaVerOcultas && ocultasCta.map(k=>(
+                              <span key={k} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"4px 10px",borderRadius:999,border:`1px solid ${T.border}`}}>{nombreCta(k)} · {cur}{fmt(sumas(grupos[k]).spend)}
+                                <button onClick={()=>setCtaOcultas(ctaOcultas.filter(x=>x!==k))} style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit",padding:0}}>Mostrar</button>
+                              </span>))}
+                            {ctaOrden.length>0 && <button onClick={()=>setCtaOrden([])} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,fontFamily:"inherit",padding:0}}>Volver al orden automático</button>}
+                          </div>)}
+                      </>);
                     })()}
                     </>
                   );
