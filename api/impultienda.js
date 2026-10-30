@@ -363,9 +363,34 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
 // nombre ("IT | Lumea…", "Lumea IT", "[PL]"). Si no matchea ninguna, "sin asignar".
 // Códigos de una tienda: país (IT), varios (RO MD) u otra etiqueta que el cliente use en sus campañas (VERANO).
 export const paisesDe = (p) => String(p || "").toUpperCase().split(/[^A-Z0-9]+/).filter(x => x.length >= 2 && x.length <= 20);
+// Nombres de país que la gente escribe en el nombre de la campaña ("💇 CHEQUIA Atlas…", "ITALIA · CP6") → código ISO.
+// Sin acentos y en mayúsculas (se comparan con los tokens normalizados del nombre). Nombres de dos palabras van con espacio.
+const PAIS_NOMBRES = {
+  CZ: ["CHEQUIA", "CHEQUÍA", "REPUBLICA CHECA", "CZECH", "CZECHIA", "CESKO"], RO: ["RUMANIA", "ROMANIA"], IT: ["ITALIA", "ITALY"],
+  FR: ["FRANCIA", "FRANCE"], SK: ["ESLOVAQUIA", "SLOVAKIA", "SLOVENSKO"], HU: ["HUNGRIA", "HUNGARY"], HR: ["CROACIA", "CROATIA"],
+  PL: ["POLONIA", "POLAND", "POLSKA"], RS: ["SERBIA"], TR: ["TURQUIA", "TURKEY", "TURKIYE"], GR: ["GRECIA", "GREECE"], BG: ["BULGARIA"],
+  PT: ["PORTUGAL"], ES: ["ESPANA", "SPAIN"], DE: ["ALEMANIA", "GERMANY", "DEUTSCHLAND"], ZA: ["SUDAFRICA", "SOUTH AFRICA"],
+  MD: ["MOLDAVIA", "MOLDOVA"], UK: ["REINO UNIDO", "UNITED KINGDOM", "INGLATERRA"], GB: ["REINO UNIDO", "UNITED KINGDOM", "INGLATERRA"],
+  US: ["ESTADOS UNIDOS", "USA", "UNITED STATES"], MX: ["MEXICO"], AR: ["ARGENTINA"], CL: ["CHILE"], CO: ["COLOMBIA"], PE: ["PERU"],
+  BR: ["BRASIL", "BRAZIL"], NL: ["HOLANDA", "PAISES BAJOS", "NETHERLANDS"], BE: ["BELGICA", "BELGIUM"], AT: ["AUSTRIA"], CH: ["SUIZA", "SWITZERLAND"],
+  SE: ["SUECIA", "SWEDEN"], NO: ["NORUEGA", "NORWAY"], DK: ["DINAMARCA", "DENMARK"], FI: ["FINLANDIA", "FINLAND"], IE: ["IRLANDA", "IRELAND"],
+  LT: ["LITUANIA", "LITHUANIA"], LV: ["LETONIA", "LATVIA"], EE: ["ESTONIA"], SI: ["ESLOVENIA", "SLOVENIA"], UA: ["UCRANIA", "UKRAINE"],
+  AU: ["AUSTRALIA"], CA: ["CANADA"], NZ: ["NUEVA ZELANDA", "NEW ZEALAND"], JP: ["JAPON", "JAPAN"], IN: ["INDIA"],
+};
+const sinAcentos = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+// Códigos de país que aparecen en el nombre de una campaña: como código ("IT | …", "[PL]") o como nombre ("ITALIA", "POLONIA").
+export function paisesDeNombre(nombre) {
+  const toks = sinAcentos(nombre).split(/[^A-Z0-9]+/).filter(Boolean);
+  const out = new Set(toks.filter(t => t.length === 2));
+  const texto = " " + toks.join(" ") + " ";
+  for (const [cod, nombres] of Object.entries(PAIS_NOMBRES)) if (nombres.some(n => texto.includes(" " + sinAcentos(n) + " "))) out.add(cod);
+  return out;
+}
+// Tienda a la que va el gasto de una campaña, por lo que dice el nombre. Si no cierra con exactamente una, null.
 export function tiendaDeCampana(nombre, tiendas) {
   const toks = String(nombre || "").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
-  const hit = tiendas.filter(t => paisesDe(t.pais).some(p => toks.includes(p)));
+  let hit = tiendas.filter(t => paisesDe(t.pais).some(p => toks.includes(p)));
+  if (hit.length !== 1) { const cods = paisesDeNombre(nombre); hit = tiendas.filter(t => paisesDe(t.pais).some(p => cods.has(p))); }
   return hit.length === 1 ? hit[0].id : null;
 }
 
@@ -606,8 +631,9 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       f.ventas += usd; if (!o.post_compra) f.n += 1;
       if (o.post_compra) { f.upsell += usd; f.nUpsell += 1; } else { f.front += usd; f.nFront += 1; }
       const ck = campanaDeVenta(o.utm, campLista) || campDeIdx(o.utm) || "SIN_CAMPANA";
-      const cv = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {} });
+      const cv = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {}, tiendas: {} });
       cv.ventas += usd; if (!o.post_compra) cv.n += 1;
+      if (tiendasMap[tid]) cv.tiendas[tid] = (cv.tiendas[tid] || 0) + 1;
       // Con utm_content={{ad.id}} se muestra el nombre del anuncio (índice de 60 días).
       const adRaw = String(o.utm?.utm_content || ""); const ad = String(idxUtm?.a?.[adRaw]?.[0] || adRaw || "sin anuncio").slice(0, 80);
       const av = cv.anuncios[ad] || (cv.anuncios[ad] = { anuncio: ad, ventas: 0, n: 0 }); av.ventas += usd; if (!o.post_compra) av.n += 1;
@@ -629,11 +655,13 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   }
 
   const tiendasLista = Object.values(tiendasMap);
+  // Tienda de una campaña cuando el nombre no dice el país: adonde fueron SUS ventas por UTM en el período (la que más tuvo).
+  const tiendaPorVentas = (key) => { const t = ventasCamp[key]?.tiendas; if (!t) return null; const top = Object.entries(t).sort((a, b) => b[1] - a[1])[0]; return top ? top[0] : null; };
   const campanas = {};
   for (const [k, usd] of Object.entries(meta.porHora)) {
     const [fecha, hora, camp, cid] = k.split("|");
     if (fecha < desde || fecha > hasta) continue;
-    const tid = tiendaDeCampana(camp, tiendasLista) || "SIN_ASIGNAR";
+    const tid = tiendaDeCampana(camp, tiendasLista) || tiendaPorVentas(cid || camp) || "SIN_ASIGNAR";
     fila(fecha, parseInt(hora, 10), tid).gasto += usd;
     if (camp) { const key = cid || camp; const c = campanas[key] || (campanas[key] = { key, id: cid || null, nombre: camp, tienda: tid, gasto: 0 }); c.gasto += usd; }
   }
