@@ -34790,6 +34790,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
   const [aFilterStatus,setAFilterStatus]=useState("active"); // all | active | paused — arranca en "Solo activos"
+  const [aVerApagadas,setAVerApagadas]=useState({}); // {cuenta: true} desglose "apagadas con gasto" abierto
   const [aFiltCta,setAFiltCta]=useState("");     // "" = todas las cuentas publicitarias
   const [aFiltTienda,setAFiltTienda]=useState(""); // "" = todas las tiendas
   const [aFiltPage,setAFiltPage]=useState("");   // "" = todas las fanpages
@@ -36536,8 +36537,6 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     const q = aQuery.trim().toLowerCase();
                     filtered = filtered.filter(r => (r.name||"").toLowerCase().includes(q));
                   }
-                  if (aFilterStatus === "active") filtered = filtered.filter(r => r.effective_status === "ACTIVE");
-                  if (aFilterStatus === "paused") filtered = filtered.filter(r => r.effective_status === "PAUSED");
                   // Solo los hijos de lo tildado en la pestaña de arriba (sin nada tildado, todos).
                   if (aLevel === "adset" && aSel.campaign.size) filtered = filtered.filter(r => aSel.campaign.has(String(r.campaign_id)));
                   if (aLevel === "ad") {
@@ -36568,8 +36567,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     if (typeof a[k] === "string") return (a[k]||"").localeCompare(b[k]||"") * dir;
                     return ((a[k]||0) - (b[k]||0)) * dir;
                   });
+                  // El filtro de estado se aplica ÚLTIMO: filteredTodo = todo lo que gastó en el período (el total
+                  // de abajo SIEMPRE suma eso, se vean o no las apagadas); filtered = lo que se muestra.
+                  const filteredTodo = filtered;
+                  const pasaEstado = (r) => aFilterStatus === "active" ? r.effective_status === "ACTIVE" : aFilterStatus === "paused" ? r.effective_status === "PAUSED" : true;
+                  filtered = filteredTodo.filter(pasaEstado);
 
-                  if (filtered.length === 0) {
+                  if (filteredTodo.length === 0) {
                     return (
                       <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"50px 20px",textAlign:"center"}}>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.border} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:8,display:"block",margin:"0 auto 8px"}}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
@@ -36590,7 +36594,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     t.freq = t.reach>0 ? t.impr/t.reach : 0; t.watch = t.watchN>0 ? t.watchW/t.watchN : 0;
                     return t;
                   };
-                  const tot = sumas(filtered);
+                  const tot = sumas(filteredTodo);
 
                   const fmt = (n) => n.toLocaleString("es-AR",{minimumFractionDigits:2, maximumFractionDigits:2});
                   const fmtInt = (n) => Math.round(n).toLocaleString("es-AR");
@@ -36723,7 +36727,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     {(() => {
                       // Un bloque por CUENTA PUBLICITARIA (como el Administrador de anuncios); la tienda queda como filtro.
                       const grupos = {};
-                      for (const r of filtered) { const k = ctaDe(r) || "_"; (grupos[k] = grupos[k] || []).push(r); }
+                      for (const r of filteredTodo) { const k = ctaDe(r) || "_"; (grupos[k] = grupos[k] || []).push(r); }
                       const orden = Object.keys(grupos).sort((x,y)=> sumas(grupos[y]).spend - sumas(grupos[x]).spend);
                       const separar = orden.length > 1;
                       const nombreCta = (k) => optCtas.find(([id])=>id===k)?.[1] || k;
@@ -36760,7 +36764,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         return <span style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:on?T.text:T.textMd,overflow:"hidden"}}><span style={{width:8,height:8,borderRadius:"50%",background:on?col:"transparent",border:`2px solid ${col}`,boxSizing:"border-box",flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</span></span>;
                       };
                       const bloque = (k, rows) => {
+                        // rows = TODO lo de la cuenta en el período (el total de abajo suma esto, siempre).
                         const t = sumas(rows);
+                        const visibles = rows.filter(pasaEstado);
+                        // Apagadas (o fuera del filtro) que igual gastaron 1 USD o más en el período: van en el desglose.
+                        const ocultas = rows.filter(r => !pasaEstado(r));
+                        const conGasto = ocultas.filter(r => (r.spend||0) >= ((fxM && fxM[String(r._moneda||"USD").toUpperCase()]) || 1));
+                        const desgloseAbierto = !!aVerApagadas[k];
+                        const lista = desgloseAbierto ? [...visibles, ...conGasto] : visibles;
+                        const gastoOculto = sumas(conGasto).spend;
                         return (
                           <div key={k} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0}}>
                             {separar && (
@@ -36779,7 +36791,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 <thead>
                                   <tr>
                                     <th style={{...TH,padding:"8px 0 8px 10px",...stickyL(0,T.surface),zIndex:3}}>
-                                      {(() => { const ids=rows.map(r=>String(r.id)); const nOn=ids.filter(id=>selSet.has(id)).length; const todos=nOn===ids.length&&ids.length>0;
+                                      {(() => { const ids=lista.map(r=>String(r.id)); const nOn=ids.filter(id=>selSet.has(id)).length; const todos=nOn===ids.length&&ids.length>0;
                                         return <Casilla on={todos} mixto={!todos&&nOn>0} title={todos?"Destildar todo":"Tildar todo"} onChange={()=>setASel(p=>{ const n=new Set(p[aLevel]); if(todos) ids.forEach(id=>n.delete(id)); else ids.forEach(id=>n.add(id)); return {...p,[aLevel]:n}; })}/>; })()}
                                     </th>
                                     <th style={{...TH,textAlign:"left",...stickyL(W.sel,T.surface),zIndex:3}}>Act.{grip("act")}</th>
@@ -36799,8 +36811,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {rows.map(r => {
+                                  {lista.map(r => {
                                     const busy = !!aBusyIds[r.id];
+                                    const delDesglose = !pasaEstado(r);
                                     const isActive = r.effective_status === "ACTIVE";
                                     const drillLabel = aLevel==="campaign" ? "conjuntos de anuncios" : aLevel==="adset" ? "anuncios" : null;
                                     const editando = aBudgetEdit?.id === r.id;
@@ -36808,7 +36821,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     const tildada = selSet.has(String(r.id));
                                     const bgFila = tildada ? T.accent+"14" : T.card;
                                     return (
-                                      <tr key={r.id} className="gh-meta-row" style={tildada?{background:bgFila}:undefined}>
+                                      <tr key={r.id} className="gh-meta-row" style={{...(tildada?{background:bgFila}:null),...(delDesglose?{opacity:0.72}:null)}}>
                                         <td style={{...TD,padding:"9px 0 9px 10px",...stickyL(0,bgFila)}}><Casilla on={tildada} onChange={()=>selTog(aLevel,String(r.id))} title={tildada?"Destildar":"Tildar"}/></td>
                                         <td style={{...TD,...stickyL(W.sel,bgFila)}}>
                                           <button onClick={()=>puedeSwitch&&toggleStatus(r)} disabled={!puedeSwitch} role="switch" aria-checked={isActive}
@@ -36864,6 +36877,20 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                       </tr>
                                     );
                                   })}
+                                  {conGasto.length > 0 && (
+                                    <tr>
+                                      <td colSpan={5+visibleCols.length} style={{padding:"3px 0",background:T.card,borderBottom:`1px solid ${T.borderL}`}}>
+                                        <div style={{position:"relative",height:24,display:"flex",alignItems:"center"}}>
+                                          <div style={{position:"absolute",left:0,right:0,top:12,height:1,background:`linear-gradient(90deg, ${T.accent}99 0%, ${T.accent}99 55%, transparent 100%)`}}/>
+                                          <button onClick={()=>setAVerApagadas(p=>({...p,[k]:!p[k]}))} title={desgloseAbierto?"Ocultar las apagadas con gasto":"Mostrar las apagadas que gastaron en este período (1 USD o más)"}
+                                            style={{position:"sticky",left:W.sel+W.act+10,zIndex:2,display:"inline-flex",alignItems:"center",gap:6,background:T.card,border:`1px solid ${T.accent}66`,color:T.accent,borderRadius:999,padding:"2px 10px 2px 8px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{transform:desgloseAbierto?"rotate(180deg)":"none",transition:"transform .15s"}}><polyline points="6 9 12 15 18 9"/></svg>
+                                            {desgloseAbierto?"Ocultar":"Ver"} {conGasto.length} apagada{conGasto.length===1?"":"s"} con gasto · {cur}{fmt(gastoOculto)}
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
                                 </tbody>
                                 <tfoot>
                                   <tr>
