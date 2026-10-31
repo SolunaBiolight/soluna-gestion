@@ -35360,6 +35360,15 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const insKey = (level, lastParent) => `growith_meta_ins_${verJuntas&&!lastParent?"juntas"+ctasJuntas.map(c=>c.id).join(""):activeAccId}_${mtz}_${mmon}_${level}_${aSince}_${aUntil}_${lastParent?.id||"root"}`;
   const insCache = (key) => { const m=insMemRef.current.get(key); if(m&&Date.now()-m.ts<INS_TTL) return m.rows; return ghSwrGet(key, INS_TTL); };
   const insGuardar = (key, rows) => { insMemRef.current.set(key,{ts:Date.now(),rows}); ghSwrSet(key, rows); setInsVer(v=>v+1); };
+  // Cada bloque de cuenta puede estar en otro nivel que aRows: el cambio se aplica también a lo guardado de cada nivel.
+  function patchFila(id, cambio) {
+    setARows(prev=>prev.map(r=>r.id===id?{...r,...cambio}:r));
+    const lastParent = aDrill[aDrill.length-1];
+    for (const lv of ["campaign","adset","ad"]) {
+      const key = insKey(lv, lastParent), rows = insCache(key);
+      if (rows?.some(r=>r.id===id)) insGuardar(key, rows.map(r=>r.id===id?{...r,...cambio}:r));
+    }
+  }
   // Cambia el nivel de UN bloque de cuenta; si ese nivel no está en caché, lo pide ya.
   function elegirNivelCta(k, lv) {
     setANivelCta(p=>({...p,[k]:lv}));
@@ -35371,6 +35380,12 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   function traerNivel(level, lastParent) {
     const key = insKey(level, lastParent);
     if (insVueloRef.current.has(key)) return insVueloRef.current.get(key);
+    // Si Meta corta por límite de pedidos, las filas llegan sin estado: se conserva el último conocido en vez de darlas por apagadas.
+    const conEstadoPrevio = (res) => {
+      if (!res?.rows?.some(r=>!r.effective_status)) return res;
+      const prev = new Map((insCache(key)||[]).map(r=>[r.id,r]));
+      return {...res, rows:res.rows.map(r=>r.effective_status||!prev.get(r.id)?.effective_status ? r : {...r,status:prev.get(r.id).status,effective_status:prev.get(r.id).effective_status})};
+    };
     const p = (async () => {
       const params = {acc_id:activeAccId,level,since:aSince,until:aUntil,tz:mtz};
       if (typeof window!=="undefined"&&window.__ghEsDigital) params.pages = "1"; // fanpages solo para el filtro de las tiendas digitales
@@ -35391,7 +35406,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       if (d?.error) return {error:d.error};
       const de=(lastParent?.act&&ctasElegidas.find(c=>c.id===lastParent.act)?.moneda)||activeAcc?.currency;
       return {rows:(d?.rows||[]).map(r=>({...convFila(r,de),_moneda:(mmon&&fxM)?mmon:(de||"USD")})), pageNames:d?.page_names||null};
-    })().finally(()=>insVueloRef.current.delete(key));
+    })().then(conEstadoPrevio).finally(()=>insVueloRef.current.delete(key));
     insVueloRef.current.set(key, p);
     return p;
   }
@@ -35489,7 +35504,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     try {
       const d=await metaApi("set_budget","POST",{node_id:row.id,daily_budget:n},{acc_id:activeAccId});
       if(d.error) toast("Error: "+d.error,"error");
-      else { toast("Presupuesto actualizado","success"); setARows(prev=>prev.map(r=>r.id===row.id?{...r,daily_budget:n}:r)); }
+      else { toast("Presupuesto actualizado","success"); patchFila(row.id,{daily_budget:n}); }
     } finally { setABusyIds(b=>{ const x={...b}; delete x[row.id]; return x; }); }
   }
 
@@ -35523,9 +35538,10 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" || row.effective_status === "SIN_ACTIVOS" ? "PAUSED" : "ACTIVE";
-    const levelLabel = aLevel==="campaign" ? "la campaña" : aLevel==="adset" ? "el adset" : "el ad";
+    const nivelFila = row._lvl||aLevel;
+    const levelLabel = nivelFila==="campaign" ? "la campaña" : nivelFila==="adset" ? "el adset" : "el ad";
     const verb = targetStatus==="PAUSED" ? "Pausar" : "Activar";
-    if (!await appConfirm(`¿${verb} ${levelLabel} "${row.name||row.id}"?${targetStatus==="PAUSED"&&aLevel==="campaign"?"\n\nSe pausan también todos sus adsets y ads.":""}`,{okLabel:verb,danger:targetStatus==="PAUSED"})) return;
+    if (!await appConfirm(`¿${verb} ${levelLabel} "${row.name||row.id}"?${targetStatus==="PAUSED"&&nivelFila==="campaign"?"\n\nSe pausan también todos sus adsets y ads.":""}`,{okLabel:verb,danger:targetStatus==="PAUSED"})) return;
     setABusyIds(b=>({...b,[row.id]:true}));
     try {
       const d = await metaApi("set_status","POST",{node_id:row.id,status:targetStatus},{acc_id:activeAccId});
@@ -35533,7 +35549,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
       else {
         toast(`${targetStatus==="PAUSED"?"Pausado":"Activado"}`,"success");
         // Actualizar el row local sin recargar todo
-        setARows(prev => prev.map(r => r.id === row.id ? {...r, effective_status: targetStatus, status: targetStatus} : r));
+        patchFila(row.id,{effective_status:targetStatus,status:targetStatus});
       }
     } finally {
       setABusyIds(b => { const n={...b}; delete n[row.id]; return n; });
@@ -36743,7 +36759,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   // El filtro de estado se aplica ÚLTIMO: filteredTodo = todo lo que gastó en el período (el total
                   // de abajo SIEMPRE suma eso, se vean o no las apagadas); filtered = lo que se muestra.
                   const filteredTodo = filtered;
-                  const pasaEstado = (r) => aFilterStatus === "active" ? r.effective_status === "ACTIVE" : aFilterStatus === "paused" ? (r.effective_status === "PAUSED" || r.effective_status === "SIN_ACTIVOS") : true;
+                  const pasaEstado = (r) => !r.effective_status ? true : aFilterStatus === "active" ? r.effective_status === "ACTIVE" : aFilterStatus === "paused" ? (r.effective_status === "PAUSED" || r.effective_status === "SIN_ACTIVOS") : true;
                   filtered = filteredTodo.filter(pasaEstado);
 
                   if (filteredTodo.length === 0 && !Object.keys(ctasCargando).length) {
@@ -36923,7 +36939,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const entrega = (r) => {
                         const st = r.effective_status;
                         const on = st==="ACTIVE";
-                        const txt = on ? "Activa" : st==="SIN_ACTIVOS" ? ((r._lvl||aLevel)==="campaign" ? "Conjuntos desactivados" : "Anuncios desactivados") : st==="PAUSED" ? "Desactivado" : st==="CAMPAIGN_PAUSED" ? "Campaña desactivada" : st==="ADSET_PAUSED" ? "Conjunto desactivado" : st==="IN_PROCESS" ? "En proceso" : st==="WITH_ISSUES" ? "Con problemas" : st==="PENDING_REVIEW" ? "En revisión" : st==="DISAPPROVED" ? "Rechazado" : st==="SCHEDULED" ? "Programado" : (st||"—").toLowerCase().replace(/_/g," ");
+                        const txt = !st ? "Sin dato de Meta" : on ? "Activa" : st==="SIN_ACTIVOS" ? ((r._lvl||aLevel)==="campaign" ? "Conjuntos desactivados" : "Anuncios desactivados") : st==="PAUSED" ? "Desactivado" : st==="CAMPAIGN_PAUSED" ? "Campaña desactivada" : st==="ADSET_PAUSED" ? "Conjunto desactivado" : st==="IN_PROCESS" ? "En proceso" : st==="WITH_ISSUES" ? "Con problemas" : st==="PENDING_REVIEW" ? "En revisión" : st==="DISAPPROVED" ? "Rechazado" : st==="SCHEDULED" ? "Programado" : (st||"—").toLowerCase().replace(/_/g," ");
                         const col = on ? T.green : st==="WITH_ISSUES"||st==="DISAPPROVED" ? T.red : T.textSm;
                         return <span style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:on?T.text:T.textMd,overflow:"hidden"}}><span style={{width:8,height:8,borderRadius:"50%",background:on?col:"transparent",border:`2px solid ${col}`,boxSizing:"border-box",flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</span></span>;
                       };
@@ -37009,7 +37025,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                     const isActive = r.effective_status === "ACTIVE";
                                     const drillLabel = lv==="campaign" ? "conjuntos de anuncios" : lv==="adset" ? "anuncios" : null;
                                     const editando = aBudgetEdit?.id === r.id;
-                                    const puedeSwitch = metaEditable && !busy;
+                                    const puedeSwitch = metaEditable && !busy && !!r.effective_status; // sin estado no se sabe si está prendida: no se puede tocar
                                     const tildada = selSet.has(String(r.id));
                                     const bgFila = tildada ? T.accent+"14" : T.card;
                                     return (
