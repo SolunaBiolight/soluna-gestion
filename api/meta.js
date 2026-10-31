@@ -135,6 +135,16 @@ async function metaGet(path, params, token) {
   throw new Error(lastErr || "Meta retries exhausted");
 }
 
+// Topes y objetivos que tiene cargados un conjunto (solo los distintos de cero). Meta los da en centavos; el ROAS, × 10.000.
+function objetivosDe(n) {
+  const out = [];
+  const num = (v) => parseFloat(v) || 0;
+  if (num(n.bid_amount) > 0) out.push({ campo: "bid_amount", label: n.bid_strategy === "COST_CAP" ? "Cost cap" : n.bid_strategy === "LOWEST_COST_WITH_BID_CAP" ? "Bid cap" : "Puja", valor: num(n.bid_amount) / 100 });
+  if (num(n.bid_constraints?.roas_average_floor) > 0) out.push({ campo: "roas_average_floor", label: "ROAS objetivo", valor: num(n.bid_constraints.roas_average_floor) / 10000, roas: true });
+  for (const [campo, label] of [["daily_min_spend_target", "Gasto mínimo diario"], ["daily_spend_cap", "Gasto máximo diario"], ["lifetime_min_spend_target", "Gasto mínimo total"], ["lifetime_spend_cap", "Gasto máximo total"]]) if (num(n[campo]) > 0) out.push({ campo, label, valor: num(n[campo]) / 100 });
+  return out;
+}
+
 async function metaPost(path, payload, token) {
   let lastErr = null;
   for (let attempt = 0; attempt <= META_RETRY_DELAYS_MS.length; attempt++) {
@@ -470,8 +480,8 @@ async function fetchInsightsRows(cfg, level, since, until) {
     } catch (_) { break; }
   }
 
-  const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
-                   : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
+  const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget,bid_strategy"
+                   : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,bid_strategy,bid_amount,bid_constraints,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap"
                    : "id,name,status,effective_status,adset_id,campaign_id";
   const nodeArr = [];
   let nodePage = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads"}`, {
@@ -1795,8 +1805,8 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         })().catch(e => ({ error: e.message })) : null;
         const pNodes = breakdownParam ? Promise.resolve({}) : (async () => {
           const nodeMap = {};
-          const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget"
-                           : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id"
+          const nodeFields = level === "campaign" ? "id,name,status,effective_status,objective,daily_budget,lifetime_budget,bid_strategy"
+                           : level === "adset"    ? "id,name,status,effective_status,daily_budget,lifetime_budget,campaign_id,bid_strategy,bid_amount,bid_constraints,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap"
                            : "id,name,status,effective_status,adset_id,campaign_id";
           try {
             const nodesParams = { fields: nodeFields, limit: 200 };
@@ -1817,6 +1827,24 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
               } catch (_) { break; }
             }
           } catch (e) { /* seguimos sin status */ }
+          // Meta deja ACTIVE una campaña con todos sus conjuntos apagados (y un conjunto sin anuncios activos): no está entregando.
+          if (level !== "ad") {
+            try {
+              const padre = level === "campaign" ? "campaign_id" : "adset_id";
+              const conActivos = new Set();
+              const filt = [...(filteringParam ? JSON.parse(filteringParam) : []), { field: "effective_status", operator: "IN", value: ["ACTIVE"] }];
+              let pg = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "adsets" : "ads"}`, { fields: padre, limit: 500, filtering: JSON.stringify(filt) }, cfg.access_token);
+              let completo = true;
+              for (let i = 0; ; i++) {
+                for (const h of pg.data || []) conActivos.add(String(h[padre]));
+                if (!pg.paging?.next) break;
+                if (i >= 20) { completo = false; break; }
+                pg = await (await fetch(pg.paging.next, { signal: AbortSignal.timeout(25000) })).json();
+                if (pg.error) { completo = false; break; }
+              }
+              if (completo) for (const n of Object.values(nodeMap)) if (n.effective_status === "ACTIVE" && !conActivos.has(String(n.id))) n.effective_status = "SIN_ACTIVOS";
+            } catch (_) {}
+          }
           return nodeMap;
         })();
         // Paginar insights — sin esto, accounts con > 500 nodos cortan los datos
@@ -1913,6 +1941,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             roas: parseFloat((r.purchase_roas || [])[0]?.value) || 0,
             cpa: parseFloat(cpaPurchase?.value) || 0,
             daily_budget: node.daily_budget ? parseFloat(node.daily_budget) / 100 : null,
+            objetivos: objetivosDe(node),
             objective: node.objective || null,
             creative: node.creative || null,
             // Reproducciones de 3 s (actions.video_view) y tiempo promedio de reproducción (segundos).
@@ -1937,6 +1966,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
               spend: 0, impressions: 0, clicks: 0, ctr: 0, cpm: 0, cpc: 0, frequency: 0, reach: 0,
               purchases: 0, purchase_value: 0, roas: 0, cpa: 0, video_3s: 0, avg_watch: 0, checkouts: 0, ...EXTRA0,
               daily_budget: n.daily_budget ? parseFloat(n.daily_budget) / 100 : null,
+              objetivos: objetivosDe(n),
               objective: n.objective || null,
               creative: n.creative || null,
               campaign_id: n.campaign_id, adset_id: n.adset_id,
@@ -2869,6 +2899,34 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
         } catch (e) { ultimo = e; }
       }
       return res.status(500).json({ error: tokens.length > 1 ? `Ningún token con permiso de edición pudo cambiarlo: ${ultimo.message}` : ultimo.message });
+    }
+
+    // Cambia un tope u objetivo que el conjunto YA tiene (bid cap, cost cap, ROAS objetivo, gasto mínimo o máximo).
+    if (action === "set_objetivo" && req.method === "POST") {
+      const { node_id, campo, valor } = req.body || {};
+      const monto = parseFloat(valor);
+      const CAMPOS = ["bid_amount", "roas_average_floor", "daily_min_spend_target", "daily_spend_cap", "lifetime_min_spend_target", "lifetime_spend_cap"];
+      if (!/^\d{5,30}$/.test(String(node_id || "")) || !CAMPOS.includes(campo) || !isFinite(monto) || monto <= 0) return res.status(400).json({ error: "Faltan el conjunto o un valor válido" });
+      const accIdQ = acc_id || req.query.acc_id;
+      const todas = await listMetaAccounts(db, uid);
+      const orden = [...todas.filter(a => String(a.id) === String(accIdQ)), ...todas.filter(a => String(a.id) !== String(accIdQ))];
+      const tokens = [];
+      for (const a of orden) if (await puedeEditar(db, uid, a)) tokens.push(a.access_token);
+      if (!tokens.length) return res.status(403).json({ error: "Esta cuenta está conectada solo para mirar. Para editar desde Growith, conectá Meta con un token con el permiso ads_management.", code: "meta_solo_lectura" });
+      let ultimo;
+      for (const t of tokens) {
+        try {
+          const n = await metaGet(node_id, { fields: "bid_amount,bid_constraints,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap" }, t);
+          const esRoas = campo === "roas_average_floor";
+          const actual = parseFloat(esRoas ? n.bid_constraints?.roas_average_floor : n[campo]) || 0;
+          if (!actual) return res.status(400).json({ error: "Este conjunto ya no tiene ese valor cargado." });
+          const nuevo = Math.round(monto * (esRoas ? 10000 : 100));
+          if (nuevo > actual * 5 || nuevo < actual / 5) return res.status(400).json({ error: "Cambio demasiado grande: se permite entre 1/5 y 5 veces el valor actual." });
+          await metaPost(node_id, esRoas ? { bid_constraints: JSON.stringify({ ...n.bid_constraints, roas_average_floor: nuevo }) } : { [campo]: String(nuevo) }, t);
+          return res.json({ ok: true, node_id, campo, valor: monto });
+        } catch (e) { ultimo = e; }
+      }
+      return res.status(500).json({ error: ultimo.message });
     }
 
     if (action === "resources" && req.method === "GET") {

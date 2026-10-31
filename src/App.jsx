@@ -912,7 +912,7 @@ const GH_UTM_PARAMS = "utm_source=facebook&utm_medium=paid&utm_id={{campaign.id}
 // Menú lateral (estático). También alimenta Admin > Sistema > Accesos por sección.
 // Tienda de productos digitales (Impultienda): solo estas secciones. Sin stock,
 // envíos, reclamos, canjes, Mercado Libre, Google Ads, tareas ni calendario.
-const GH_IMP_SECCIONES = new Set(["margenes","arca","meta","referidos","planes","config","admin","porhora"]);
+const GH_IMP_SECCIONES = new Set(["margenes","arca","stripereg","meta","referidos","planes","config","admin","porhora"]);
 const SIDEBAR_GROUPS_BASE = [
     {id:"home",     label:"Inicio",    icon:"M3 12l9-9 9 9M5 10v10a2 2 0 002 2h3M19 10v10a2 2 0 01-2 2h-3M9 22V12h6v10"},
     // {id:"copilot", …} — Copilot oculto del menú temporalmente (2026-09-12)
@@ -924,7 +924,8 @@ const SIDEBAR_GROUPS_BASE = [
       // adicionales, fact. externa, dólar) — las 5 entradas viejas son tabs
       // internas de esa página; sus ids siguen vivos como margenesTab (aliases).
       subs:[{id:"dashboard",label:"Dashboard"},{id:"pnl",label:"P&L Mensual"},{id:"costos",label:"Configuraciones"}]},
-    {id:"arca",     label:"Facturador", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    {id:"arca",     label:"ARCA", icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    {id:"stripereg", label:"Registros Stripe", soloImp:true, icon:"M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
       subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
@@ -1065,7 +1066,7 @@ function Sidebar({T, page, setPage, user, userPlan, isAdmin, depositoNav=false, 
           // Miembro de otro espacio: solo sus secciones habilitadas (los títulos de grupo quedan si tienen algo visible)
           .filter(item=>!item.soloDeposito||depositoNav)
           .filter(item=>!item.soloAdmin||isAdmin)
-          .filter(item=>!connectedStores.imp||item.group||GH_IMP_SECCIONES.has(item.id))
+          .filter(item=>item.soloImp?connectedStores.imp:(!connectedStores.imp||item.group||GH_IMP_SECCIONES.has(item.id)))
           .filter((item,i,arr)=>!item.group||(arr[i+1]&&!arr[i+1].group))
           .filter(item=>{ if(!seccionesMiembro) return true; if(item.group||item.soloDeposito) return true; if(item.hub) return item.hub.some(c=>seccionesMiembro[c.permKey]===true); return seccionesMiembro[item.permKey||item.id]===true; })
           // Gateo por plan (sin trial): Facturador ($19) = solo Inicio + Facturador.
@@ -1571,7 +1572,7 @@ function CommandPalette({T, open, onClose, setPage, isAdmin}) {
     {label:"Stock & Estadísticas", page:"stock",   icon:"M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"},
     {label:"Gestión Mercado Libre", page:"ml",     icon:"M12 22a10 10 0 100-20 10 10 0 000 20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"},
     {label:"Meta Ads",            page:"meta",     icon:"M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"},
-    {label:"Facturador",          page:"arca",     icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
+    {label:"ARCA",                page:"arca",     icon:"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"},
     {label:"Configuración",        page:"config",   icon:"M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"},
     {label:"Planes",              page:"planes",   icon:"M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"},
     ...(isAdmin?[
@@ -1914,7 +1915,7 @@ function CuponPublicoView({token}){
 const SECCIONES_MIEMBRO=[
   {id:"tareas",label:"Tareas"},{id:"canjes",label:"Canjes"},{id:"envios",label:"Envíos"},
   {id:"reclamos",label:"Reclamos"},{id:"stock",label:"Stock"},{id:"meta",label:"Meta Ads"},
-  {id:"ml",label:"Mercado Libre"},{id:"margenes",label:"Dashboard"},{id:"arca",label:"Facturador"},
+  {id:"ml",label:"Mercado Libre"},{id:"margenes",label:"Dashboard"},{id:"arca",label:"ARCA"},
   {id:"calendario",label:"Calendario de Pagos"},
 ];
 // "Depósito" solo se ofrece en la cuenta dueña del depósito (window.__ghDepositoOwner lo levanta App).
@@ -18694,7 +18695,7 @@ function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
               <td style={{...td,textAlign:"left",color:T.textMd}}>{v.fecha.slice(5).split("-").reverse().join("/")} {String(v.hora).padStart(2,"0")}:{String(new Date(v.at).getUTCMinutes()).padStart(2,"0")}</td>
               <td style={{...td,textAlign:"left",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{v.tienda}</td>
               <td style={{...td,textAlign:"left",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",color:T.textMd}} title={v.email||""}>{v.email||"—"}</td>
-              <td style={{...td,textAlign:"left"}}>#{v.orden}{v.post_compra && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"1px 7px"}}>POST-COMPRA</span>}{v.disputa&&!v.disputa.perdida && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.yellow,background:T.yellow+"18",borderRadius:99,padding:"1px 7px"}}>{v.disputa.usd<-0.005||v.disputa.fee>0?"DISPUTA GANADA":"DISPUTA"}</span>}{v.reembolsada && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:99,padding:"1px 7px"}}>{v.disputa?"DISPUTA PERDIDA":v.reembolso?.status==="pending"?"REEMBOLSO EN PROCESO":v.reembolsoUsd<v.total-0.01?"REEMBOLSO PARCIAL":"REEMBOLSADA"}</span>}</td>
+              <td style={{...td,textAlign:"left"}}>#{v.orden}{v.post_compra && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"1px 7px"}}>POST-COMPRA</span>}{v.disputa&&v.disputa.estado!=="perdida" && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.yellow,background:T.yellow+"18",borderRadius:99,padding:"1px 7px"}}>{v.disputa.estado==="ganada"?"DISPUTA GANADA":"DISPUTA ABIERTA"}</span>}{v.reembolsada && <span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.red,background:T.red+"18",borderRadius:99,padding:"1px 7px"}}>{v.disputa?"DISPUTA PERDIDA":v.reembolso?.status==="pending"?"REEMBOLSO EN PROCESO":v.reembolsoUsd<v.total-0.01?"REEMBOLSO PARCIAL":"REEMBOLSADA"}</span>}</td>
               <td style={td}>{GH_FMT_USD(v.total)}</td>
               <td style={td}>{GH_FMT_USD(v.comision)} <span style={{fontSize:10,fontWeight:700,color:fc,background:fc+"18",borderRadius:99,padding:"1px 7px",marginLeft:4}}>{fl}</span></td>
               <td style={{...td,color:T.textMd}}>{GH_FMT_USD(v.meta||0)}</td>
@@ -18704,7 +18705,7 @@ function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:18}}>
                 <div style={{fontSize:DS.font.sm}}>
                   <div style={{fontWeight:700,color:T.text,marginBottom:6}}>De dónde sale el profit</div>
-                  {[["Venta",v.total,T.text],...((v.comisionDetalle&&v.comisionDetalle.length)?v.comisionDetalle.map(d=>[`− ${d.desc}`,-d.monto,T.textMd]):[[`− Comisión ${v.fuente==="estimada"?`estimada (${prom?.pct?.toFixed(1)||"?"}%)`:v.fuente==="stripe"?"de Stripe":"de Mercado Pago"}`,-v.comision,T.textMd]]),["− Meta Ads (parte de esta venta)",-(v.meta||0),T.textMd],...(v.disputa?[...(v.disputa.perdida?[["− Disputa: venta devuelta",-v.disputa.usd,T.red]]:[]),["− Costo de la disputa",-v.disputa.fee,T.red],...(v.reembolsoUsd-v.disputa.usd-v.disputa.fee>0.005?[["− Reembolso",-(v.reembolsoUsd-v.disputa.usd-v.disputa.fee),T.red]]:[])]:v.reembolsoUsd?[["− Reembolso (la comisión no se devuelve)",-v.reembolsoUsd,T.red]]:[])].map(([l,x,c],ix)=>(
+                  {[["Venta",v.total,T.text],...((v.comisionDetalle&&v.comisionDetalle.length)?v.comisionDetalle.map(d=>[`− ${d.desc}`,-d.monto,T.textMd]):[[`− Comisión ${v.fuente==="estimada"?`estimada (${prom?.pct?.toFixed(1)||"?"}%)`:v.fuente==="stripe"?"de Stripe":"de Mercado Pago"}`,-v.comision,T.textMd]]),["− Meta Ads (parte de esta venta)",-(v.meta||0),T.textMd],...(v.disputa?[...(v.disputa.usd>0.005?[[v.disputa.estado==="perdida"?"− Disputa: venta devuelta":"− Disputa: plata retenida",-v.disputa.usd,T.red]]:[]),["− Costo de la disputa",-v.disputa.fee,T.red],...(v.reembolsoUsd-v.disputa.usd-v.disputa.fee>0.005?[["− Reembolso",-(v.reembolsoUsd-v.disputa.usd-v.disputa.fee),T.red]]:[])]:v.reembolsoUsd?[["− Reembolso (la comisión no se devuelve)",-v.reembolsoUsd,T.red]]:[])].map(([l,x,c],ix)=>(
                     <div key={ix} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"3px 0",color:c}}><span>{l}</span><span style={{fontVariantNumeric:"tabular-nums"}}>{GH_FMT_USD(x)}</span></div>))}
                   <div style={{display:"flex",justifyContent:"space-between",gap:12,padding:"6px 0 0",marginTop:4,borderTop:`1px solid ${T.border}`,fontWeight:800,color:((v.profit??0)-(v.reembolsoUsd||0))>=0?T.green:T.red}}><span>Profit</span><span>{GH_FMT_USD((v.profit??0)-(v.reembolsoUsd||0))} {v.total?`(${(((v.profit??0)-(v.reembolsoUsd||0))/v.total*100).toFixed(0)}%)`:""}</span></div>
                   <div style={{fontSize:10,color:T.textSm,marginTop:6,lineHeight:1.45}}>Meta: gasto de su tienda ese día repartido según cuánto pesó esta venta en la facturación del día.</div>
@@ -18714,9 +18715,9 @@ function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
                     <span style={{fontSize:DS.font.sm,color:T.textMd}}>Reembolso {v.reembolso.monto} {v.reembolso.moneda} · {v.reembolso.status==="succeeded"?"realizado":v.reembolso.status==="pending"?"en proceso":v.reembolso.status} · {v.reembolso.id}</span>
                     {v.reembolso.status==="pending" && <Btn T={T} size="sm" variant="ghost" disabled={busy===v.order_id} onClick={()=>estado(v)}>Actualizar estado</Btn>}
                     <Btn T={T} size="sm" variant="secondary" onClick={()=>comprobante(v)}>Descargar comprobante</Btn>
-                  </>) : v.fuente==="stripe" && !v.reembolsada ? (
+                  </>) : v.fuente==="stripe" && !v.reembolsada && !v.disputa ? (
                     <Btn T={T} size="sm" variant="secondary" disabled={busy===v.order_id} onClick={()=>reembolsar(v)} style={{color:T.red}}>{busy===v.order_id?"Reembolsando…":"Reembolsar"}</Btn>
-                  ) : v.reembolsada ? <span style={{fontSize:DS.font.sm,color:T.textSm}}>{v.disputa?"Disputa perdida en Stripe.":"Reembolsada desde Impultienda o Stripe."}</span>
+                  ) : v.reembolsada||v.disputa ? <span style={{fontSize:DS.font.sm,color:T.textSm}}>{v.disputa?`Disputa ${v.disputa.estado} en Stripe.`:"Reembolsada desde Impultienda o Stripe."}</span>
                     : <span style={{fontSize:DS.font.sm,color:T.textSm}}>Para reembolsar desde Growith, la venta tiene que estar cruzada con su cobro de Stripe.</span>}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 14px",fontSize:DS.font.sm,alignContent:"start"}}>
@@ -18778,6 +18779,93 @@ function ghImpParsearTiendas(txt){
   try{ const m=t.match(/\[[\s\S]*\]/); const arr=JSON.parse(m?m[0]:t); if(Array.isArray(arr)) return arr.map(x=>({id:String(x.id||x.store_id||"").trim(),nombre:String(x.nombre||x.name||"").trim(),pais:String(x.pais||x.country||"").toUpperCase().trim()})).filter(x=>x.nombre||x.id); }catch(_){}
   return t.split(/\n+/).map(l=>l.split(/[;\t|]/).map(x=>x.trim()).filter(Boolean)).filter(p=>p.length>=2).map(p=>{ const esId=/^[0-9a-f-]{20,40}$/i.test(p[0]); return esId?{id:p[0],nombre:p[1]||"",pais:(p[2]||"").toUpperCase()}:{id:"",nombre:p[0],pais:(p[1]||"").toUpperCase()}; });
 }
+// Registros de Stripe: todos los movimientos del saldo de un período, para ver y bajar en CSV.
+function AppStripeRegistros({T,user}){
+  const uid=user?.uid;
+  const [desde,setDesde]=useState(()=>hoyAR().slice(0,8)+"01"); const [hasta,setHasta]=useState(()=>hoyAR());
+  const [filas,setFilas]=useState(null); const [cargando,setCargando]=useState(false); const [error,setError]=useState(""); const [conectado,setConectado]=useState(true);
+  const reqRef=useRef(0);
+  const cargar=async()=>{
+    const id=++reqRef.current; setCargando(true); setError(""); setFilas([]);
+    try{
+      let todas=[], cursor="";
+      do{
+        const j=await authFetch(`/api/impultienda?action=stripe_registros&uid=${uid}&desde=${desde}&hasta=${hasta}${cursor?`&despues=${cursor}`:""}`).then(r=>r.json());
+        if(id!==reqRef.current) return;
+        if(j.error) throw new Error(j.error);
+        setConectado(j.conectado!==false);
+        todas=[...todas,...(j.filas||[])]; setFilas(todas); cursor=j.siguiente||"";
+      }while(cursor);
+    }catch(e){ if(id===reqRef.current) setError(e.message||"No se pudo leer Stripe"); }
+    finally{ if(id===reqRef.current) setCargando(false); }
+  };
+  useEffect(()=>{ if(uid) cargar(); },[uid,desde,hasta]);
+  const descargar=()=>{
+    const cols=[["id","ID"],["fecha","Fecha (UTC)"],["tipo","Tipo"],["categoria","Categoría"],["descripcion","Descripción"],["monto","Monto"],["comision","Comisión"],["neto","Neto"],["moneda","Moneda"],["estado","Estado"],["disponible","Disponible"],["cobro","Cobro"],["email","Email"]];
+    const esc=v=>{ let x=String(v??""); if(typeof v==="string"&&/^[=+\-@]/.test(x)) x="'"+x; return `"${x.replace(/"/g,'""')}"`; };
+    const csv="﻿"+[cols.map(c=>esc(c[1])).join(","),...filas.map(f=>cols.map(c=>esc(f[c[0]])).join(","))].join("\r\n");
+    const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"})); a.download=`stripe_${desde}_${hasta}.csv`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  };
+  const th={padding:"8px 10px",fontSize:11,fontWeight:600,color:T.textMd,textAlign:"left",borderBottom:`1px solid ${T.border}`,whiteSpace:"nowrap"};
+  const td={padding:"8px 10px",fontSize:12,color:T.text,borderBottom:`1px solid ${T.borderL||T.border}`,whiteSpace:"nowrap"};
+  return (<div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg}}>
+    <div>
+      <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.bold,color:T.text}}>Registros Stripe</div>
+      <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Cobros, reembolsos, disputas, comisiones y transferencias del saldo de tu cuenta.</div>
+    </div>
+    <Card T={T}>
+      <div style={{display:"flex",gap:DS.sp.md,alignItems:"flex-end",flexWrap:"wrap"}}>
+        <div><div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:4}}>Desde</div><GhDatePicker T={T} value={desde} onChange={v=>v&&setDesde(v)} allowFuture={false}/></div>
+        <div><div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:4}}>Hasta</div><GhDatePicker T={T} value={hasta} onChange={v=>v&&setHasta(v)} allowFuture={false}/></div>
+        <div style={{flex:1}}/>
+        <Btn T={T} variant="primary" disabled={cargando||!filas?.length} onClick={descargar}>{cargando?"Leyendo Stripe…":`Descargar CSV (${filas?.length||0})`}</Btn>
+      </div>
+    </Card>
+    {!conectado ? <Card T={T}><DSEmpty T={T} title="Stripe no está conectado" subtitle="Conectalo desde Dashboard, en la vista Conexión, para ver tus registros."/></Card>
+    : error ? <Card T={T}><div style={{fontSize:DS.font.base,color:T.red}}>{error}</div></Card>
+    : filas&&!filas.length&&!cargando ? <Card T={T}><DSEmpty T={T} title="Sin movimientos" subtitle="No hay movimientos de Stripe en este período."/></Card>
+    : <Card T={T} padding="sm"><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+        <thead><tr>{["Fecha","Tipo","Descripción","Monto","Comisión","Neto","Moneda","Email"].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{(filas||[]).slice(0,200).map(f=><tr key={f.id}><td style={td}>{new Date(f.fecha).toLocaleString("es-AR",{timeZone:"America/Argentina/Buenos_Aires",dateStyle:"short",timeStyle:"short"})}</td><td style={td}>{f.categoria||f.tipo}</td><td style={{...td,maxWidth:260,overflow:"hidden",textOverflow:"ellipsis"}} title={f.descripcion}>{f.descripcion||"-"}</td><td style={{...td,color:f.monto<0?T.red:T.text}}>{f.monto.toFixed(2)}</td><td style={td}>{f.comision.toFixed(2)}</td><td style={td}>{f.neto.toFixed(2)}</td><td style={td}>{f.moneda}</td><td style={td}>{f.email||"-"}</td></tr>)}</tbody>
+      </table></div>{filas?.length>200&&<div style={{fontSize:DS.font.sm,color:T.textSm,padding:10}}>Se ven los últimos 200. El CSV trae los {filas.length}.</div>}</Card>}
+  </div>);
+}
+
+// Globito bajo el presupuesto: topes y objetivos que el conjunto ya tiene cargados.
+function MetaObjetivos({T,r,cur,editable,metaApi,accId,onGuardado}){
+  const [pos,setPos]=useState(null); const [vals,setVals]=useState({}); const [busy,setBusy]=useState(null); const [err,setErr]=useState("");
+  const lista=r.objetivos||[];
+  if(!lista.length) return null;
+  const guardar=async(o)=>{
+    const n=parseFloat(String(vals[o.campo]).replace(",","."));
+    if(!isFinite(n)||n<=0){ setErr("Poné un número mayor a cero."); return; }
+    setBusy(o.campo); setErr("");
+    try{ const d=await metaApi("set_objetivo","POST",{node_id:r.id,campo:o.campo,valor:n},{acc_id:accId}); if(d.error) setErr(d.error); else { onGuardado(r.id,o.campo,n); setVals(v=>{ const x={...v}; delete x[o.campo]; return x; }); } }
+    catch(e){ setErr(e.message); } finally{ setBusy(null); }
+  };
+  return (<>
+    <button onClick={e=>{ e.stopPropagation(); const b=e.currentTarget.getBoundingClientRect(); setPos({top:Math.max(8,Math.min(b.bottom+6,window.innerHeight-90-lista.length*70)),left:Math.max(8,Math.min(b.right-300,window.innerWidth-308))}); }}
+      style={{display:"inline-block",marginTop:4,background:"transparent",border:`1px solid ${T.accent}66`,color:T.accent,borderRadius:DS.r.full,padding:"1px 8px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+      {lista[0].label} {lista[0].roas?"":cur}{lista[0].valor}{lista.length>1?` +${lista.length-1}`:""}
+    </button>
+    {pos&&ReactDOM.createPortal(<>
+      <div onClick={()=>setPos(null)} style={{position:"fixed",inset:0,zIndex:9998}}/>
+      <div style={{position:"fixed",top:pos.top,left:pos.left,width:300,zIndex:9999,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:DS.shadow.lg,padding:DS.sp.lg}}>
+        <div style={{fontSize:DS.font.base,fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.md,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.name}>{r.name}</div>
+        {lista.map(o=>{ const v=vals[o.campo]??String(o.valor); const cambio=parseFloat(v)!==o.valor; return (
+          <div key={o.campo} style={{marginBottom:DS.sp.md}}>
+            <div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:4}}>{o.label}{o.roas?"":` (${cur})`}</div>
+            <div style={{display:"flex",gap:DS.sp.sm}}>
+              <input type="number" min="0" step="0.01" disabled={!editable} value={v} onChange={e=>setVals(x=>({...x,[o.campo]:e.target.value}))} onKeyDown={e=>{ if(e.key==="Enter"&&cambio) guardar(o); }} style={{...InputStyle(T),flex:1,minWidth:0}}/>
+              {editable&&<Btn T={T} size="sm" variant="primary" disabled={!cambio||busy===o.campo} onClick={()=>guardar(o)}>{busy===o.campo?"…":"Guardar"}</Btn>}
+            </div>
+          </div>); })}
+        {!editable&&<div style={{fontSize:DS.font.sm,color:T.textSm}}>Esta conexión es solo para mirar.</div>}
+        {err&&<div style={{fontSize:DS.font.sm,color:T.red,whiteSpace:"normal"}}>{err}</div>}
+      </div></>,document.body)}
+  </>);
+}
+
 function ImpultiendaConexion({T,uid,onCambio}){
   const [cfg,setCfg]=useState(null);
   const [secret,setSecret]=useState("");
@@ -24236,7 +24324,7 @@ function AdmConfig({ctx}) {
   const q=nuevo.trim().toLowerCase(); const match=q?usuarios.find(u=>(u.email||"").toLowerCase()===q||u._id===nuevo.trim()):null; const sugeridos=q&&!match?usuarios.filter(u=>(u.email||"").toLowerCase().includes(q)||(u.nombre||"").toLowerCase().includes(q)).slice(0,6):[];
   const upd=patch=>setEnvCfg(c=>({...(c||{habilitados:[]}),...patch}));
   const clienteBtn=(uid,label)=><button onClick={()=>usuariosPorUid[uid]&&setCuenta(uid)} style={{background:"transparent",border:"none",padding:0,cursor:usuariosPorUid[uid]?"pointer":"default",fontFamily:"'Inter',system-ui,sans-serif",fontSize:12,fontWeight:600,color:T.text,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"100%"}}>{label}</button>;
-  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub&&!it.soloDeposito&&!it.soloAdmin);
+  const secciones=SIDEBAR_GROUPS_BASE.filter(it=>it.id&&!it.soloImp&&it.id!=="home"&&!it.soon&&!it.go&&!it.hub&&!it.soloDeposito&&!it.soloAdmin);
   return (
     <div className="gh-admin-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
       <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
@@ -35404,6 +35492,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     } finally { setABusyIds(b=>{ const x={...b}; delete x[row.id]; return x; }); }
   }
 
+  // Lo guardado se ve al toque en la fila; la caché del nivel se corrige con el refresco de fondo.
+  const guardarObjetivo=(id,campo,valor)=>{ toast("Actualizado en Meta","success"); setARows(prev=>prev.map(r=>r.id===id?{...r,objetivos:(r.objetivos||[]).map(o=>o.campo===campo?{...o,valor}:o)}:r)); loadInsights({fondo:true}); };
+
   // Drill down: cuando se hace click en una row, entrar a sus hijos
   function drillInto(row, k) {
     // Como en Meta: tocar el nombre deja ESA fila tildada y pasa el bloque de SU cuenta al nivel de sus hijos.
@@ -35430,7 +35521,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v5"), JSON.stringify(ordenarCols(aCols))); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
-    const targetStatus = row.effective_status === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    const targetStatus = row.effective_status === "ACTIVE" || row.effective_status === "SIN_ACTIVOS" ? "PAUSED" : "ACTIVE";
     const levelLabel = aLevel==="campaign" ? "la campaña" : aLevel==="adset" ? "el adset" : "el ad";
     const verb = targetStatus==="PAUSED" ? "Pausar" : "Activar";
     if (!await appConfirm(`¿${verb} ${levelLabel} "${row.name||row.id}"?${targetStatus==="PAUSED"&&aLevel==="campaign"?"\n\nSe pausan también todos sus adsets y ads.":""}`,{okLabel:verb,danger:targetStatus==="PAUSED"})) return;
@@ -36651,7 +36742,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                   // El filtro de estado se aplica ÚLTIMO: filteredTodo = todo lo que gastó en el período (el total
                   // de abajo SIEMPRE suma eso, se vean o no las apagadas); filtered = lo que se muestra.
                   const filteredTodo = filtered;
-                  const pasaEstado = (r) => aFilterStatus === "active" ? r.effective_status === "ACTIVE" : aFilterStatus === "paused" ? r.effective_status === "PAUSED" : true;
+                  const pasaEstado = (r) => aFilterStatus === "active" ? r.effective_status === "ACTIVE" : aFilterStatus === "paused" ? (r.effective_status === "PAUSED" || r.effective_status === "SIN_ACTIVOS") : true;
                   filtered = filteredTodo.filter(pasaEstado);
 
                   if (filteredTodo.length === 0 && !Object.keys(ctasCargando).length) {
@@ -36831,7 +36922,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const entrega = (r) => {
                         const st = r.effective_status;
                         const on = st==="ACTIVE";
-                        const txt = on ? "Activa" : st==="PAUSED" ? "Desactivado" : st==="CAMPAIGN_PAUSED" ? "Campaña desactivada" : st==="ADSET_PAUSED" ? "Conjunto desactivado" : st==="IN_PROCESS" ? "En proceso" : st==="WITH_ISSUES" ? "Con problemas" : st==="PENDING_REVIEW" ? "En revisión" : st==="DISAPPROVED" ? "Rechazado" : st==="SCHEDULED" ? "Programado" : (st||"—").toLowerCase().replace(/_/g," ");
+                        const txt = on ? "Activa" : st==="SIN_ACTIVOS" ? ((r._lvl||aLevel)==="campaign" ? "Conjuntos desactivados" : "Anuncios desactivados") : st==="PAUSED" ? "Desactivado" : st==="CAMPAIGN_PAUSED" ? "Campaña desactivada" : st==="ADSET_PAUSED" ? "Conjunto desactivado" : st==="IN_PROCESS" ? "En proceso" : st==="WITH_ISSUES" ? "Con problemas" : st==="PENDING_REVIEW" ? "En revisión" : st==="DISAPPROVED" ? "Rechazado" : st==="SCHEDULED" ? "Programado" : (st||"—").toLowerCase().replace(/_/g," ");
                         const col = on ? T.green : st==="WITH_ISSUES"||st==="DISAPPROVED" ? T.red : T.textSm;
                         return <span style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:on?T.text:T.textMd,overflow:"hidden"}}><span style={{width:8,height:8,borderRadius:"50%",background:on?col:"transparent",border:`2px solid ${col}`,boxSizing:"border-box",flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{txt}</span></span>;
                       };
@@ -36963,6 +37054,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                               </button>}
                                             </div>
                                           )}
+                                          {lv==="adset" && <MetaObjetivos key={r.id} T={T} r={r} cur={cur} editable={metaEditable} metaApi={metaApi} accId={activeAccId} onGuardado={guardarObjetivo}/>}
                                         </td>
                                         {visibleCols.map(c => {
                                           const col = COL_META[c];
@@ -45952,7 +46044,7 @@ export default function App() {
   },[user&&user.uid]);
   // ── Hash routing: cada sección tiene su URL (#/arca, #/meta, etc) ──
   // Sin libs externas, sin config server. Solo window.location.hash + listener.
-  const VALID_PAGES = ["home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario","deposito","porhora"];
+  const VALID_PAGES = ["stripereg","home","demo","copilot","margenes","arca","meta","gads","tiktokads","claude","chatgpt","gemini","reclamos","canjes","envios","config","planes","admin","stock","ml","tareas","referidos","calendario","deposito","porhora"];
   // Alias legacy: #/rendimiento era el nombre viejo del Dashboard (hoy #/margenes)
   // "equipo" fue sección propia hasta el 28/sep/2026; hoy es la pestaña Equipo
   // de Tareas (#/equipo y #/tareas/equipo abren esa pestaña).
@@ -46988,6 +47080,7 @@ export default function App() {
   else if(connectedStores.imp && !GH_IMP_SECCIONES.has(page)) pageContent = <PageView T={T} pageKey="margenes"><AppImpultiendaDash T={T} user={user} tab={margenesTab} setTab={setMargenesTab}/></PageView>;
   else if(page==="margenes") pageContent = adminGate("margenes") || planGate("plus") || <PageView T={T} pageKey="margenes">{connectedStores.imp ? <AppImpultiendaDash T={T} user={user} tab={margenesTab} setTab={setMargenesTab}/> : <AppMargenes T={T} user={user} onHome={()=>setPage("home")} tab={margenesTab} setTab={setMargenesTab}/>}</PageView>;
   else if(page==="arca") pageContent = adminGate("arca") || planGate("facturador") || <PageView T={T} pageKey="arca"><AppArca T={T} user={user} onHome={()=>setPage("home")} tab={arcaTab} setTab={setArcaTab}/></PageView>;
+  else if(page==="stripereg") pageContent = <PageView T={T} pageKey="stripereg"><AppStripeRegistros T={T} user={user}/></PageView>;
   else if(page==="stock") pageContent = adminGate("stock") || planGate("medio") || <PageView T={T} pageKey="stock"><AppStock T={T} user={user} onHome={()=>setPage("home")} tab={stockTab} setTab={setStockTab}/></PageView>;
   else if(page==="ml") pageContent = adminGate("ml") || planGate("medio") || <PageView T={T} pageKey="ml"><AppML T={T} user={user} onHome={()=>setPage("home")} onGoConfig={()=>setPage("config")} tab={mlTab} setTab={setMlTab}/></PageView>;
   else if(page==="meta") pageContent = adminGate("meta") || planGate("medio") || <PageView T={T} pageKey="meta"><AppMetaAds T={T} user={user} onHome={()=>setPage("home")} tab={metaTab} setTab={setMetaTab}/></PageView>;

@@ -327,9 +327,9 @@ async function stripeMovimientos(db, uid, cfg) {
   if (!key) return { m: {} };
   const ref = db.collection("users").doc(uid).collection("impultienda_cfg").doc("stripe_movs");
   const prev = (await ref.get()).data() || {};
-  const m = prev.m || {}, ch = prev.ch || {};
+  const m = prev.m || {}, ch = prev.ch || {}, d = prev.d || {};
   const ahora = Date.now();
-  if (prev.at && ahora - prev.at < 10 * 60000) return { m };
+  if (prev.at && ahora - prev.at < 10 * 60000) return { m, d };
   const desde = Math.floor((prev.at ? prev.at - 2 * 86400000 : ahora - 180 * 86400000) / 1000);
   const st = (u) => fetch("https://api.stripe.com/v1/" + u, { headers: { Authorization: `Bearer ${key}` } }).then(r => r.json());
   try {
@@ -361,10 +361,16 @@ async function stripeMovimientos(db, uid, cfg) {
       const usd = aUsd(Math.abs(t.amount) / 100, t.currency, fx), fee = aUsd(Math.abs(t.fee) / 100, t.currency, fx);
       if (usd == null || fee == null) continue;
       (m[ch[chId]] || (m[ch[chId]] = {}))[t.id] = { t: disputa ? "disputa" : "reembolso", usd: t.amount < 0 ? usd : -usd, fee: t.fee < 0 ? -fee : fee, at: new Date(t.created * 1000).toISOString() };
+      if (disputa && t.source?.id) d[ch[chId]] = { id: t.source.id, st: t.source.status || "" };
     }
-    await ref.set({ at: ahora, m, ch });
-    return { m };
-  } catch (e) { return { m, error: e.message }; }
+    // Perder una disputa no genera movimiento nuevo: hay que preguntarle a Stripe por las que siguen abiertas.
+    await Promise.all(Object.values(d).filter(x => !["won", "lost", "warning_closed"].includes(x.st)).slice(0, 30).map(async (x) => {
+      const j = await st(`disputes/${x.id}`).catch(() => null);
+      if (j?.status) x.st = j.status;
+    }));
+    await ref.set({ at: ahora, m, ch, d });
+    return { m, d };
+  } catch (e) { return { m, d, error: e.message }; }
 }
 function resumenMovs(txs) {
   const r = { reembolso: 0, disputa: 0, feeDisputa: 0, feeOtros: 0 };
@@ -702,6 +708,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       // Stripe no devuelve la comisión: la comisión queda y se resta todo lo devuelto.
       // Lo que dice Stripe manda: ve lo hecho fuera de Growith y los US$ de la disputa, que también restan.
       const mov = o.stripe?.bt && movs.m[o.stripe.bt] ? resumenMovs(movs.m[o.stripe.bt]) : null;
+      const disp = mov && Object.values(movs.m[o.stripe.bt]).some(x => x.t === "disputa") ? { usd: mov.disputa, fee: mov.feeDisputa, estado: mov.disputa <= 0.005 || movs.d?.[o.stripe.bt]?.st === "won" ? "ganada" : movs.d?.[o.stripe.bt]?.st === "lost" ? "perdida" : "abierta" } : null;
       const reemb = mov ? mov.total : o.reembolso?.usd != null ? o.reembolso.usd : (o.ev_refunded || o.ev_chargeback ? usd : 0);
       f.reembolsos += reemb;
       cv.comisiones += com;
@@ -709,7 +716,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
         total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
         comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
         pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: (o.utm?.utm_content && idxUtm?.a?.[o.utm.utm_content]?.[0]) || o.utm?.utm_content || null, importado: !!o.importado,
-        reembolsada: mov ? mov.reembolso + mov.disputa > 0.005 : !!(o.ev_refunded || o.ev_chargeback || o.reembolso), reembolso: o.reembolso || null, reembolsoUsd: reemb, disputa: mov && Object.values(movs.m[o.stripe.bt]).some(x => x.t === "disputa") ? { usd: mov.disputa, fee: mov.feeDisputa, perdida: mov.disputa > 0.005 } : null, email: o.email || null,
+        reembolsada: mov ? mov.reembolso + (disp?.estado === "perdida" ? mov.disputa : 0) > 0.005 : !!(o.ev_refunded || o.ev_chargeback || o.reembolso), reembolso: o.reembolso || null, reembolsoUsd: reemb, disputa: disp, email: o.email || null,
         order_id: o.order_id });
     }
   }
@@ -850,6 +857,25 @@ export default async function handler(req, res) {
       await ref.set({ reembolso, actualizado: new Date().toISOString() }, { merge: true });
       const cs = await cfgRef.parent.get(); const bd = db.batch(); let k = 0; for (const x of cs.docs) if (x.id.startsWith("cache_")) { bd.delete(x.ref); k++; } if (k) await bd.commit();
       return res.json({ ok: true, reembolso });
+    }
+    // Registros de Stripe: movimientos del saldo por tandas (el navegador las junta y arma el CSV).
+    if (action === "stripe_registros") {
+      const cfg = (await cfgRef.get()).data() || {};
+      const key = descifrar(cfg.stripeEnc); if (!key) return res.json({ conectado: false, filas: [] });
+      const ds = Date.parse(`${req.query.desde}T00:00:00-03:00`), hs = Date.parse(`${req.query.hasta}T23:59:59-03:00`);
+      if (!isFinite(ds) || !isFinite(hs) || hs < ds) return res.status(400).json({ error: "Período inválido" });
+      const desp = String(req.query.despues || "");
+      if (desp && !/^[a-zA-Z0-9_]+$/.test(desp)) return res.status(400).json({ error: "Cursor inválido" });
+      const filas = []; let cursor = desp, hayMas = true;
+      for (let i = 0; i < 5 && hayMas; i++) {
+        const u = `https://api.stripe.com/v1/balance_transactions?limit=100&created[gte]=${Math.floor(ds / 1000)}&created[lte]=${Math.floor(hs / 1000)}&expand[]=data.source${cursor ? `&starting_after=${cursor}` : ""}`;
+        const j = await fetch(u, { headers: { Authorization: `Bearer ${key}` } }).then(r => r.json());
+        if (j.error) return res.status(400).json({ error: j.error.message });
+        for (const t of j.data || []) filas.push({ id: t.id, fecha: new Date(t.created * 1000).toISOString(), tipo: t.type, categoria: t.reporting_category || "", descripcion: t.description || "", monto: t.amount / 100, comision: t.fee / 100, neto: t.net / 100, moneda: String(t.currency).toUpperCase(), estado: t.status, disponible: new Date(t.available_on * 1000).toISOString().slice(0, 10), cobro: t.source?.object === "charge" ? t.source.id : typeof t.source?.charge === "string" ? t.source.charge : "", email: t.source?.billing_details?.email || t.source?.receipt_email || "" });
+        hayMas = !!j.has_more && !!j.data?.length;
+        if (j.data?.length) cursor = j.data[j.data.length - 1].id;
+      }
+      return res.json({ conectado: true, filas, siguiente: hayMas ? cursor : null });
     }
     // Actualiza el estado de un reembolso (pendiente → hecho) consultando a Stripe.
     if (action === "reembolso_estado") {
