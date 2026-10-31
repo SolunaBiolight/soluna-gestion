@@ -385,9 +385,37 @@ export default async function handler(req, res) {
       // Ya suscripto y activo: cambio de plan en el momento (prorrateo Stripe).
       if (u.stripeSubscriptionId) {
         const sub = await stripe("GET", `/subscriptions/${u.stripeSubscriptionId}`).catch(() => null);
-        if (sub && ["active", "trialing", "past_due"].includes(sub.status)) {
+        // Suscripción con un cobro rechazado (tarjeta vencida / sin fondos): el plan venció acá, pero
+        // en Stripe la suscripción sigue viva con una factura impaga. Antes respondía "already" o la
+        // "cambiaba" sin cobrar → el botón Renovar no llevaba a ningún lado. Ahora va a pagar ESA
+        // factura (o al portal para cambiar la tarjeta si no hay factura abierta); al pagarla, el
+        // webhook invoice.paid renueva el plan.
+        if (sub && ["past_due", "unpaid", "incomplete"].includes(sub.status)) {
+          const invId = typeof sub.latest_invoice === "string" ? sub.latest_invoice : sub.latest_invoice?.id;
+          const inv = invId ? await stripe("GET", `/invoices/${invId}`).catch(() => null) : null;
+          let url = inv && inv.status === "open" && inv.hosted_invoice_url ? inv.hosted_invoice_url : null;
+          if (!url) {
+            const cfg = await ensureSetup(db);
+            const ps = await stripe("POST", "/billing_portal/sessions", { customer: sub.customer, return_url: `${origin}/#/planes?stripe=ok`, ...(cfg.portalConfigId ? { configuration: cfg.portalConfigId } : {}) });
+            url = ps?.url || null;
+          }
+          if (!url) throw new Error("Stripe no devolvió el link para pagar la factura pendiente");
+          await userRef.set({ stripeCheckoutUltimo: { ok: true, plan, periodo, deuda: sub.status, at: new Date(), ua: String(req.headers["user-agent"] || "").slice(0, 200) }, ...(u.stripeCheckoutError ? { stripeCheckoutError: FieldValue.delete() } : {}) }, { merge: true }).catch(() => {});
+          return res.json({ url, deuda: true });
+        }
+        if (sub && ["active", "trialing"].includes(sub.status)) {
           const itemId = sub.items?.data?.[0]?.id;
-          if (sub.metadata?.plan === plan && sub.metadata?.periodo === periodo && !sub.cancel_at_period_end) return res.json({ already: true });
+          if (sub.metadata?.plan === plan && sub.metadata?.periodo === periodo && !sub.cancel_at_period_end) {
+            // Stripe dice que está al día: si acá figura vencido (se perdió un webhook), se sincroniza
+            // el vencimiento para que el cliente no quede trabado en la pantalla de pago.
+            const fin = sub.current_period_end ? new Date(sub.current_period_end * 1000) : null;
+            const vencidoAca = !u.planExpiry || (u.planExpiry.toDate ? u.planExpiry.toDate() : new Date(u.planExpiry)) < new Date();
+            if (fin && fin > new Date() && (vencidoAca || u.plan !== plan)) {
+              await userRef.set({ plan, planExpiry: fin, stripeStatus: sub.status, cancelAtPeriodEnd: false }, { merge: true });
+              return res.json({ already: true, sincronizado: true });
+            }
+            return res.json({ already: true });
+          }
           const upd = await stripe("POST", `/subscriptions/${sub.id}`, {
             items: [{ id: itemId, price_data: priceData(plan, periodo) }],
             proration_behavior: "always_invoice", cancel_at_period_end: false,

@@ -20029,7 +20029,8 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         return;
       }
       if(d.changed){ toast(`Plan cambiado a ${pl?.nombre}${anual?" anual":""}`,"success"); setLoadingPlan(null); return; }
-      if(d.already){ toast("Ya tenés ese plan activo","info"); setLoadingPlan(null); return; }
+      if(d.already&&d.sincronizado){ toast("Tu suscripción estaba al día en Stripe: ya quedó activa","success"); setTimeout(()=>window.location.reload(),1500); return; }
+      if(d.already){ setPagoErr("Ese plan ya está activo con tu tarjeta. Si la app te sigue pidiendo pagar, recargá la página."); setLoadingPlan(null); return; }
       throw new Error("Respuesta inesperada");
     }catch(e){
       const msg=e?.name==="AbortError"?"El pago tardó demasiado en abrirse. Revisá tu conexión y probá de nuevo.":(e.message||"Error desconocido");
@@ -47068,7 +47069,7 @@ export default function App() {
   };
 
   // Paywall: trial vencido sin plan pago, o plan pago vencido sin renovar
-  if((trialExpired||planVencido)&&planReady&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} planVencido={planVencido?userPlan:null} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/></>);
+  if((trialExpired||planVencido)&&planReady&&!isAdmin) return(<><AppPlanes T={T} user={user} userPlan={planEfectivo} planExpiry={planExpiry} onBack={()=>{}} isTrialExpired={true} planVencido={planVencido?userPlan:null} USDT_ADDRESS={USDT_ADDRESS} SUPPORT_EMAIL={SUPPORT_EMAIL}/><AppPromptHost T={T}/><ToastContainer T={T}/></>);
 
   let pageContent = null;
   if(secMiembro && !seccionPermitida(page)) pageContent = null; // el efecto de arriba redirige a su primera sección
