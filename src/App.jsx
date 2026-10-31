@@ -18845,7 +18845,7 @@ function MetaObjetivos({T,r,cur,editable,metaApi,accId,onGuardado}){
   };
   return (<>
     <button onClick={e=>{ e.stopPropagation(); const b=e.currentTarget.getBoundingClientRect(); setPos({top:Math.max(8,Math.min(b.bottom+6,window.innerHeight-90-lista.length*70)),left:Math.max(8,Math.min(b.right-300,window.innerWidth-308))}); }}
-      style={{display:"inline-block",marginTop:4,background:"transparent",border:`1px solid ${T.accent}66`,color:T.accent,borderRadius:DS.r.full,padding:"1px 8px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+      style={{display:"inline-block",marginTop:4,background:"transparent",border:`1px solid ${T.accent}66`,color:T.accent,borderRadius:DS.r.full,padding:"1px 8px",fontSize:10,lineHeight:1.3,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"normal"}}>
       {lista[0].label} {lista[0].roas?"":cur}{lista[0].valor}{lista.length>1?` +${lista.length-1}`:""}
     </button>
     {pos&&ReactDOM.createPortal(<>
