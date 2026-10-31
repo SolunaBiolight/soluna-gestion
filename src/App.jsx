@@ -31961,59 +31961,47 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     </div>
                   )}
 
-                  {/* Panel de progreso de facturación del período — solo cuando terminó de cargar */}
+                  {/* Facturación del período, UNA sola tarjeta (31/oct/2026: antes había dos barras que decían casi
+                      lo mismo y se contradecían — la de arriba seguía el canal elegido y la de mes por mes no).
+                      Sigue el canal elegido, igual que la lista de abajo; con más de un mes, una fila por mes. */}
                   {!tnLoading && tnData && (()=>{
-                    const {mesTotal:_mesTotal, mesMonto:_mesMonto, billedCount:_billedCount, billedMonto:_billedMonto, pctOrd:_pctOrd, pctMonto:_pctMonto} = pendStats;
-                    if (_mesTotal===0) return null;
-                    return (
-                      <div style={{padding:"8px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginTop:10,marginBottom:14,display:"flex",gap:16,flexWrap:"wrap"}}>
-                        <div style={{flex:1,minWidth:130}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
-                            <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Ventas facturadas</span>
-                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>{_billedCount}<span style={{color:T.textSm,fontWeight:400}}>/{_mesTotal}</span> <span style={{color:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctOrd}%</span></span>
-                          </div>
-                          <div style={{height:4,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${_pctOrd}%`,background:_pctOrd>=80?T.green:_pctOrd>=50?T.yellow:T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
-                          </div>
-                        </div>
-                        <div style={{flex:2,minWidth:200}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
-                            <span style={{fontSize:10,color:T.textSm,fontWeight:500}}>Monto facturado</span>
-                            <span style={{fontSize:11,color:T.text,fontWeight:700}}>$ {_billedMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}<span style={{color:T.textSm,fontWeight:400}}> / $ {_mesMonto.toLocaleString("es-AR",{minimumFractionDigits:0,maximumFractionDigits:0})}</span> <span style={{color:_pctMonto>=80?T.green:_pctMonto>=50?T.yellow:T.textMd,fontWeight:700}}>{_pctMonto}%</span></span>
-                          </div>
-                          <div style={{height:4,background:T.border,borderRadius:3,overflow:"hidden"}}>
-                            <div style={{height:"100%",width:`${_pctMonto}%`,background:_pctMonto>=80?T.green:_pctMonto>=50?T.yellow:T.accent,borderRadius:3,transition:"width 0.4s ease"}}/>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Vendido contra facturado, mes por mes y por canal (17/oct/2026): muestra de un vistazo
-                      el agujero fiscal y deja seleccionar lo que falta de un mes con un toque. */}
-                  {!tnLoading && tnData && (()=>{
-                    const all=Object.entries(tnData?.ordenes||{});
+                    const all=Object.entries(tnData?.ordenes||{}).filter(([,o])=>canalSel==="todos"||o._platform===canalSel);
+                    if(!all.length) return null;
                     const mesDe=f=>{ const t=Date.parse(f||""); if(!isFinite(t)) return ""; return new Date(t-3*3600000).toISOString().slice(0,7); };
-                    const filas={};
-                    for(const [id,o] of all){ const k=mesDe(o.fecha); if(!k) continue; const r=filas[k]||(filas[k]={mes:k,n:0,vend:0,fact:0,nPend:0,pend:0,canal:{},ids:[]});
-                      r.n++; r.vend+=o.total||0; if(o._billed) r.fact+=o.total||0; else { r.nPend++; r.pend+=o.total||0; const c=o._platform||"otro"; r.canal[c]=(r.canal[c]||0)+1; if(ordenPasaFiltros(id,o)) r.ids.push(id); } }
+                    const nuevo=k=>({mes:k,n:0,nFact:0,vend:0,fact:0,nPend:0,pend:0,canal:{},ids:[]});
+                    const filas={}; const tot=nuevo("");
+                    for(const [id,o] of all){ const k=mesDe(o.fecha)||"sin-fecha"; const r=filas[k]||(filas[k]=nuevo(k));
+                      for(const x of [r,tot]){ x.n++; x.vend+=o.total||0; if(o._billed){ x.nFact++; x.fact+=o.total||0; } else { x.nPend++; x.pend+=o.total||0; const c=o._platform||"otro"; x.canal[c]=(x.canal[c]||0)+1; if(ordenPasaFiltros(id,o)) x.ids.push(id); } } }
                     const lista=Object.values(filas).sort((a,b)=>b.mes.localeCompare(a.mes));
-                    if(!lista.length||!lista.some(r=>r.nPend)) return null;
-                    const nomMes=k=>{ const [y,m]=k.split("-"); const t=new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return t.charAt(0).toUpperCase()+t.slice(1); };
+                    // Con algo sin facturar nunca dice 100 %: 2 ventas de 998 redondeaban a 100.
+                    const pctDe=r=>{ if(!r.vend) return r.nPend?0:100; const p=r.fact/r.vend*100; return r.nPend?Math.min(99,Math.floor(p)):100; };
+                    const nomMes=k=>{ if(k==="sin-fecha") return "Sin fecha"; const [y,m]=k.split("-"); const t=new Date(Number(y),Number(m)-1,1).toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return t.charAt(0).toUpperCase()+t.slice(1); };
                     const canalL={tiendanube:"Tienda Nube",shopify:"Shopify",mercadolibre:"Mercado Libre"};
+                    const $=v=>"$ "+Math.round(v).toLocaleString("es-AR");
+                    const barra=(pct,h)=>(<div style={{height:h,borderRadius:3,background:T.border,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:pct>=95?T.green:pct>=70?T.yellow:T.red,transition:"width 0.4s ease"}}/></div>);
+                    const selBtn=(r,txt)=>r.ids.length>0&&<button onClick={()=>{ setTnSelected(()=>Object.fromEntries(r.ids.map(id=>[id,true]))); toast(`${r.ids.length} venta${r.ids.length!==1?"s":""} sin facturar seleccionada${r.ids.length!==1?"s":""}: revisalas abajo y facturá`,"info"); }} style={{height:30,padding:"0 14px",borderRadius:99,border:`1px solid ${T.accentSolid}`,background:T.accentSolid+"14",color:T.accent,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap"}}>{txt}</button>;
+                    const pendTxt=r=>r.nPend?<><strong style={{color:T.red}}>{$(r.pend)}</strong> sin facturar · {r.nPend} venta{r.nPend!==1?"s":""}{canalSel==="todos"&&Object.keys(r.canal).length?<span style={{color:T.textSm}}> ({Object.entries(r.canal).map(([c,n])=>`${canalL[c]||c} ${n}`).join(", ")})</span>:null}</>:<span style={{color:T.green,fontWeight:600}}>Todo facturado</span>;
+                    const pT=pctDe(tot);
                     return (
-                      <div style={{border:`1px solid ${T.border}`,borderRadius:12,marginBottom:14,overflow:"hidden"}}>
-                        <div style={{padding:"9px 14px",background:T.surface,borderBottom:`1px solid ${T.border}`,fontSize:12,fontWeight:700,color:T.text,display:"flex",gap:8,alignItems:"baseline",flexWrap:"wrap"}}>Sin facturar, mes por mes<span style={{fontSize:11,fontWeight:500,color:T.textSm}}>· del período elegido arriba; ampliá el período para ver más meses</span></div>
-                        {lista.map((r,i)=>{ const pct=r.vend?Math.round(r.fact/r.vend*100):100; return (
-                          <div key={r.mes} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",flexWrap:"wrap",fontSize:12}}>
-                            <span style={{minWidth:130,fontWeight:700,color:T.text}}>{nomMes(r.mes)}</span>
-                            <div style={{flex:"1 1 160px",minWidth:120}}>
-                              <div style={{height:6,borderRadius:3,background:T.border,overflow:"hidden"}}><div style={{width:`${pct}%`,height:"100%",background:pct>=95?T.green:pct>=70?T.yellow:T.red}}/></div>
-                              <div style={{fontSize:11,color:T.textSm,marginTop:3}}>{pct} % facturado · vendido $ {Math.round(r.vend).toLocaleString("es-AR")}</div>
+                      <div style={{border:`1px solid ${T.border}`,borderRadius:12,marginTop:10,marginBottom:14,overflow:"hidden"}}>
+                        <div style={{padding:"12px 14px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                          <div style={{flex:"1 1 260px",minWidth:200}}>
+                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:6,flexWrap:"wrap"}}>
+                              <span style={{fontSize:12,color:T.text,fontWeight:700}}>Facturado {canalSel!=="todos"?`en ${canalL[canalSel]||canalSel} `:""}en el período</span>
+                              <span style={{fontSize:12,color:T.textMd}}><strong style={{color:T.text}}>{tot.nFact}</strong> de {tot.n} ventas · {$(tot.fact)} de {$(tot.vend)} · <strong style={{color:pT>=95?T.green:pT>=70?T.yellow:T.red}}>{pT} %</strong></span>
                             </div>
-                            <span style={{minWidth:150,color:r.nPend?T.text:T.textSm}}>{r.nPend?<><strong style={{color:T.red}}>$ {Math.round(r.pend).toLocaleString("es-AR")}</strong> sin facturar · {r.nPend} venta{r.nPend!==1?"s":""}</>:"todo facturado"}</span>
-                            {r.nPend>0&&<span style={{color:T.textSm,fontSize:11,minWidth:120}}>{Object.entries(r.canal).map(([c,n])=>`${canalL[c]||c} ${n}`).join(" · ")}</span>}
-                            {r.ids.length>0&&<button onClick={()=>{ setTnSelected(()=>Object.fromEntries(r.ids.map(id=>[id,true]))); toast(`${r.ids.length} venta${r.ids.length!==1?"s":""} de ${nomMes(r.mes).toLowerCase()} seleccionada${r.ids.length!==1?"s":""}: revisalas abajo y facturá`,"info"); }} style={{marginLeft:"auto",height:30,padding:"0 14px",borderRadius:99,border:`1px solid ${T.accentSolid}`,background:T.accentSolid+"14",color:T.accent,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Seleccionar {r.ids.length===r.nPend?"las":""} {r.ids.length}</button>}
+                            {barra(pT,6)}
+                          </div>
+                          <span style={{fontSize:12,color:T.text}}>{pendTxt(tot)}</span>
+                          {selBtn(tot,`Seleccionar ${tot.ids.length}`)}
+                        </div>
+                        {lista.length>1&&lista.map(r=>{ const pct=pctDe(r); return (
+                          <div key={r.mes} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",borderTop:`1px solid ${T.borderL||T.border}`,flexWrap:"wrap",fontSize:12}}>
+                            <span style={{minWidth:130,fontWeight:600,color:T.textMd}}>{nomMes(r.mes)}</span>
+                            <div style={{flex:"1 1 140px",minWidth:110}}>{barra(pct,4)}</div>
+                            <span style={{minWidth:44,color:T.textMd}}>{pct} %</span>
+                            <span style={{flex:"1 1 200px",color:T.text}}>{pendTxt(r)}</span>
+                            {selBtn(r,`Seleccionar ${r.ids.length}`)}
                           </div>
                         ); })}
                       </div>
