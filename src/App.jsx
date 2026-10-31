@@ -30147,7 +30147,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [regBatch, setRegBatch] = useState(null);       // batch_id: ver solo los comprobantes de un lote
   const [regMenu, setRegMenu] = useState(null);         // {id, top, right} menú de acciones abierto
   // Canceladas con factura activa (para emitir sus NC en lote) — sección al final de Registros
-  const [cancData, setCancData] = useState(null);   // {rows, count, truncated, amplio}
+  const [cancData, setCancData] = useState(null);   // {rows, count, truncated, amplio, parciales}
+  const [devAviso, setDevAviso] = useState(null);   // {cuit, total, parciales}: aviso de devueltas con factura arriba de Facturar
   const [cancLoading, setCancLoading] = useState(false);
   // "Adjuntar pendientes a ML" tiene su propio flag (antes compartía `emitting`)
   const [attachingML, setAttachingML] = useState(false);
@@ -30171,6 +30172,9 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [apUltimo, setApUltimo] = useState(null); // ultimoResultado de la última corrida
   const [apLoading, setApLoading] = useState(false);
   const [apSaving, setApSaving] = useState(false);
+  const [apSim, setApSim] = useState(null);      // resultado de "Probar reglas" (no emite nada)
+  const [apSimLoading, setApSimLoading] = useState(false);
+  const [apNc, setApNc] = useState(null);        // ncUltimo: notas de crédito automáticas del día
 
   // Sincronizar los campos de envío por mail y alícuotas con el CUIT activo
   useEffect(()=>{
@@ -30647,11 +30651,11 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   // ── Piloto automático: carga al entrar a Config, guardado explícito ──
-  const AP_DEFAULT = {enabled:false, canales:[], soloPagadas:true, topeMonto:"", maxPorCorrida:40, frecuencia:"1h", hora:9, diasVentana:7, pv:"", avisarMail:true};
+  const AP_DEFAULT = {enabled:false, canales:[], soloPagadas:true, topeMonto:"", maxPorCorrida:40, frecuencia:"1h", hora:9, diasVentana:7, pv:"", avisarMail:true, esperaDias:0, cierreMes:true, ncAuto:false};
   useEffect(()=>{
     if(tab!=="config" || !uid || !cuitSel) return;
     let vivo = true;
-    setApLoading(true); setApCfg(null); setApUltimo(null);
+    setApLoading(true); setApCfg(null); setApUltimo(null); setApSim(null); setApNc(null);
     api("get_autopilot","GET",null,{cuit:cuitSel}).then(d=>{
       if(!vivo) return;
       if(d.error){ setApCfg({...AP_DEFAULT}); return; }
@@ -30662,45 +30666,80 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         canales: Array.isArray(c.canales)?c.canales:[],
         topeMonto: c.topeMonto!=null && c.topeMonto!=="" ? String(c.topeMonto) : "",
         pv: c.pv ? String(c.pv) : "", avisarMail: c.avisarMail!==false,
+        esperaDias: parseInt(c.esperaDias)||0, cierreMes: c.cierreMes!==false, ncAuto: c.ncAuto===true,
       });
       setApUltimo(d.ultimoResultado || c.ultimoResultado || null);
+      setApNc(c.ncUltimo || null);
     }).catch(()=>{ if(vivo) setApCfg({...AP_DEFAULT}); }).finally(()=>{ if(vivo) setApLoading(false); });
     return ()=>{ vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[tab, uid, cuitSel]);
 
+  // Prender o apagar el piloto guarda en el acto (antes había que tocar además "Guardar reglas").
   async function toggleAutopilot() {
     if(!apCfg || apSaving) return;
     if(!apCfg.enabled){
-      const ok = await appConfirm("El piloto automático emite facturas REALES con CAE sin confirmación previa, según estas reglas. ¿Activar?",{okLabel:"Activar", danger:true});
+      if((apCfg.canales||[]).length===0) return toast("Primero elegí qué canales facturar","warning");
+      const ok = await appConfirm("El piloto automático emite facturas reales con CAE, sin pedirte confirmación, según las reglas de abajo. Si querés ver antes qué facturaría, tocá Cancelar y después Probar reglas. ¿Activar?",{okLabel:"Activar", danger:true});
       if(!ok) return;
       setApCfg(p=>({...p, enabled:true}));
+      handleSaveAutopilot({enabled:true});
     } else {
       setApCfg(p=>({...p, enabled:false}));
+      handleSaveAutopilot({enabled:false});
     }
   }
 
-  async function handleSaveAutopilot() {
-    if(!cuitSel || !apCfg || apSaving) return;
-    const cfg = {
-      enabled: !!apCfg.enabled,
-      canales: apCfg.canales||[],
-      soloPagadas: !!apCfg.soloPagadas,
-      topeMonto: apCfg.topeMonto==="" ? null : (parseFloat(apCfg.topeMonto)||null),
-      maxPorCorrida: parseInt(apCfg.maxPorCorrida)||40,
-      frecuencia: apCfg.frecuencia==="diaria" ? "diaria" : "1h",
-      hora: Math.min(23, Math.max(0, parseInt(apCfg.hora)||0)),
-      diasVentana: parseInt(apCfg.diasVentana)||7,
-      pv: apCfg.pv ? parseInt(apCfg.pv) : null,
-      avisarMail: apCfg.avisarMail!==false,
+  async function toggleNcAuto() {
+    if(!apCfg) return;
+    if(!apCfg.ncAuto){
+      const ok = await appConfirm("Una vez por día, el piloto va a emitir la nota de crédito de cada venta facturada que se canceló o se devolvió ENTERA en los últimos 60 días (y en Mercado Libre saca la factura de la venta). Las devoluciones parciales no: te las avisa para que hagas la nota de crédito por lo devuelto. ¿Activar?",{okLabel:"Activar"});
+      if(!ok) return;
+    }
+    setApCfg(p=>({...p, ncAuto:!p.ncAuto}));
+  }
+
+  function apCfgParaGuardar(base) {
+    return {
+      enabled: !!base.enabled,
+      canales: base.canales||[],
+      soloPagadas: !!base.soloPagadas,
+      topeMonto: base.topeMonto==="" ? null : (parseFloat(base.topeMonto)||null),
+      maxPorCorrida: parseInt(base.maxPorCorrida)||40,
+      frecuencia: base.frecuencia==="diaria" ? "diaria" : "1h",
+      hora: Math.min(23, Math.max(0, parseInt(base.hora)||0)),
+      diasVentana: parseInt(base.diasVentana)||7,
+      pv: base.pv ? parseInt(base.pv) : null,
+      avisarMail: base.avisarMail!==false,
+      esperaDias: Math.min(10, Math.max(0, parseInt(base.esperaDias)||0)),
+      cierreMes: base.cierreMes!==false,
+      ncAuto: base.ncAuto===true,
     };
+  }
+
+  async function probarAutopilot() {
+    if(!cuitSel || !apCfg || apSimLoading) return;
+    setApSimLoading(true); setApSim(null);
+    try {
+      const d = await api("autopilot_simular","POST",{cuit:cuitSel, config:apCfgParaGuardar(apCfg)});
+      if(d.error){ toast("No se pudo probar: "+d.error,"error"); return; }
+      setApSim(d);
+    } catch(e) {
+      toast("No se pudo probar: "+(e?.message||"error de conexión"),"error");
+    } finally { setApSimLoading(false); }
+  }
+
+  async function handleSaveAutopilot(override) {
+    if(!cuitSel || !apCfg || apSaving) return;
+    const cfg = apCfgParaGuardar({...apCfg, ...(override&&typeof override==="object"&&!override.nativeEvent?override:{})});
     if(cfg.enabled && cfg.canales.length===0) return toast("Elegí al menos un canal para que el piloto sepa qué facturar","warning");
     setApSaving(true);
     try {
       const d = await api("save_autopilot","POST",{cuit:cuitSel, config:cfg});
-      if(d.error){ toast("Error: "+d.error,"error"); return; }
-      toast(cfg.enabled?"Piloto automático activado":"Reglas del piloto guardadas","success");
+      if(d.error){ toast("Error: "+d.error,"error"); if(override&&"enabled" in override) setApCfg(p=>({...p, enabled:!override.enabled})); return; }
+      toast(override&&"enabled" in override ? (cfg.enabled?"Piloto automático activado":"Piloto automático apagado") : "Reglas del piloto guardadas","success");
     } catch(e) {
+      if(override&&"enabled" in override) setApCfg(p=>({...p, enabled:!override.enabled}));
       toast("No se pudieron guardar las reglas: "+(e?.message||"error de conexión"),"error");
     } finally { setApSaving(false); }
   }
@@ -31122,22 +31161,42 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     } finally { setEmitting(false); setNotaOp(null); }
   }
 
+  // Aviso de devueltas con factura activa arriba de Facturar: una consulta por CUIT al entrar.
+  useEffect(()=>{
+    if(tab!=="facturar" || !uid || !cuitSel || devAviso?.cuit===cuitSel) return;
+    let vivo = true;
+    api("devoluciones_con_factura","GET",null,{cuit:cuitSel}).then(d=>{
+      if(!vivo || d.error) return;
+      setDevAviso({ cuit: cuitSel, total: (d.rows||[]).filter(r=>!r.requiere_manual).length, aMano: (d.rows||[]).filter(r=>r.requiere_manual).length + (d.parciales||[]).length });
+    }).catch(()=>{});
+    return ()=>{ vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[tab, uid, cuitSel]);
+  function irADevoluciones() {
+    setSidebarTab&&setSidebarTab("registros");
+    setTimeout(()=>{ try{ document.getElementById("gh-arca-devoluciones")?.scrollIntoView({behavior:"smooth",block:"start"}); }catch(_){} }, 600);
+  }
+
   // ── Canceladas con factura activa: cargar + emitir sus NC en lote ──────────
   async function loadCanceladas(sinceAmplio=false) {
     if (!uid || !cuitSel) { setCancData(null); return; }
     setCancLoading(true);
     try {
-      const extra = sinceAmplio
-        ? { cuit: cuitSel, since: "2023-01-01", until: regHasta }
-        : { cuit: cuitSel, since: regDesde, until: regHasta };
-      const d = await api("cancelled_with_invoice", "GET", null, extra);
-      if (!d.error) setCancData({ rows: d.rows||[], count: d.count||0, truncated: !!d.truncated, amplio: sinceAmplio });
+      // Por defecto mira los últimos 90 días por fecha de la factura (no el período de Registros): una venta
+      // facturada un mes y devuelta el siguiente también aparece.
+      const d = sinceAmplio
+        ? await api("cancelled_with_invoice", "GET", null, { cuit: cuitSel, since: "2023-01-01", until: hoyAR() })
+        : await api("devoluciones_con_factura", "GET", null, { cuit: cuitSel });
+      if (!d.error) {
+        setCancData({ rows: d.rows||[], count: d.count||0, truncated: !!d.truncated, amplio: sinceAmplio, parciales: d.parciales||[] });
+        setDevAviso({ cuit: cuitSel, total: (d.rows||[]).filter(r=>!r.requiere_manual).length, aMano: (d.rows||[]).filter(r=>r.requiere_manual).length + (d.parciales||[]).length });
+      }
     } catch(e) {
       // silencioso: sección secundaria, no rompe Registros
     } finally { setCancLoading(false); }
   }
   async function emitirNCCanceladas() {
-    const filas = cancData?.rows || [];
+    const filas = (cancData?.rows || []).filter(r => !r.requiere_manual);
     if (!cuitSel || !filas.length || emitting) return;
     const cuitActivoData = cuits.find(c => c.cuit === cuitSel);
     const emisorInfo = cuitActivoData
@@ -31772,6 +31831,15 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
             {tab==="facturar"&&(
             <div>
+              {devAviso&&devAviso.cuit===cuitSel&&(devAviso.total+devAviso.aMano)>0&&(
+                <div style={{marginBottom:16,padding:"12px 14px",background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:12,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:220,fontSize:12,color:T.text,lineHeight:1.5}}>
+                    <strong>{devAviso.total+devAviso.aMano} venta{devAviso.total+devAviso.aMano===1?"":"s"} devuelta{devAviso.total+devAviso.aMano===1?"":"s"} o cancelada{devAviso.total+devAviso.aMano===1?"":"s"} con la factura activa</strong>
+                    <div style={{color:T.textMd}}>{devAviso.total?`${devAviso.total} para anular con nota de crédito`:""}{devAviso.total&&devAviso.aMano?" · ":""}{devAviso.aMano?`${devAviso.aMano} con devolución parcial (nota de crédito por lo devuelto)`:""}. Últimos 90 días.</div>
+                  </div>
+                  <Btn T={T} variant="secondary" size="sm" onClick={irADevoluciones}>Ver y resolver</Btn>
+                </div>
+              )}
               {showGuia&&(
                 <div style={{marginBottom:16,padding:16,background:T.card,border:"1px solid "+T.border,borderRadius:12}}>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:20}}>
@@ -33130,7 +33198,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   const RENDER_CAP = 200;
                   return (
                     <Card T={T} padding="lg" style={{marginTop:16,border:`1px solid ${T.border}`}}>
-                      <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:cCount?12:0}}>
+                      <div id="gh-arca-devoluciones" style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:cCount?12:0}}>
                         <div style={{flex:1,minWidth:220}}>
                           <div style={{fontSize:14,fontWeight:700,color:T.text}}>Ventas canceladas con factura emitida</div>
                           <div style={{fontSize:12,color:T.textSm,marginTop:2,lineHeight:1.5}}>Ventas de Shopify/ML que se cancelaron, reembolsaron o tuvieron contracargo y <strong style={{color:T.textMd}}>todavía tienen su factura activa</strong>. Emití la nota de crédito de cada una. Las canceladas sin factura no aparecen (nunca se facturan).</div>
@@ -33142,7 +33210,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {cancLoading && !cRows.length ? (
                         <div style={{fontSize:12,color:T.textSm,padding:"12px 0"}}>Buscando ventas canceladas…</div>
                       ) : cCount===0 ? (
-                        <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}>No hay ventas canceladas con factura activa en {cancData?.amplio?"el histórico":"este período"}. </div>
+                        <div style={{fontSize:12,color:T.textSm,padding:"8px 0"}}>No hay ventas canceladas con factura activa en {cancData?.amplio?"el histórico":"los últimos 90 días"}. </div>
                       ) : (
                         <>
                           {cancData?.truncated && <div style={{fontSize:11,color:T.orange,marginBottom:8}}>Hay muchas canceladas: puede faltar alguna. Reprocesá por períodos más cortos para cubrir todo.</div>}
@@ -33154,7 +33222,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                                 <span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:motivoColor(r._motivo)+"1a",color:motivoColor(r._motivo),fontWeight:700,border:`1px solid ${motivoColor(r._motivo)}44`,whiteSpace:"nowrap",flexShrink:0}}>{r._motivo_lbl}</span>
                                 <div style={{flex:1,minWidth:0,overflow:"hidden"}}>
                                   <div style={{fontSize:12,fontWeight:500,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.order_id}{r.cliente?` · ${r.cliente}`:""}</div>
-                                  <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")}</div>
+                                  <div style={{fontSize:11,color:T.textSm}}>N° {String(r.comprobante).padStart(8,"0")}{r.requiere_manual?" · ya tiene nota de crédito parcial: anulala desde Registros (⋯ → Anular), acredita solo lo que queda":""}</div>
                                 </div>
                                 <div style={{fontSize:12,fontWeight:600,color:T.text,flexShrink:0}}>{money(r.total)}</div>
                               </div>
@@ -33163,10 +33231,28 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <span style={{fontSize:12,color:T.textMd}}>{cCount} venta{cCount===1?"":"s"} · total a revertir <span style={{fontWeight:700,color:T.text}}>{money(totalCanc)}</span></span>
                             <button onClick={emitirNCCanceladas} disabled={emitting||cancLoading} style={{marginLeft:"auto",background:T.red,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:(emitting||cancLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(emitting||cancLoading)?0.6:1,whiteSpace:"nowrap"}}>
-                              {emitting ? "Emitiendo…" : `Emitir ${cCount} nota${cCount===1?"":"s"} de crédito`}
+                              {emitting ? "Emitiendo…" : (()=>{ const k=cRows.filter(r=>!r.requiere_manual).length; return `Emitir ${k} nota${k===1?"":"s"} de crédito`; })()}
                             </button>
                           </div>
                         </>
+                      )}
+                      {(cancData?.parciales||[]).length>0&&(
+                        <div style={{marginTop:16}}>
+                          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Devoluciones parciales</div>
+                          <div style={{fontSize:12,color:T.textSm,marginTop:2,marginBottom:10,lineHeight:1.5}}>Devolvieron una parte de la venta. La factura queda, y se hace una nota de crédito solo por lo devuelto: tocá "Hacer la nota de crédito" y en la factura elegí ⋯ → Nota de crédito parcial.</div>
+                          <div style={{border:`1px solid ${T.borderL}`,borderRadius:DS.r.lg,overflow:"hidden"}}>
+                            {cancData.parciales.slice(0,100).map((r,i)=>(
+                              <div key={r.order_id+"_p"+i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderBottom:i<Math.min(cancData.parciales.length,100)-1?`1px solid ${T.borderL}`:"none",flexWrap:"wrap"}}>
+                                <BrandIcon name={r._platform==="mercadolibre"?"ml":r._platform==="shopify"?"shopify":"tn"} size={15}/>
+                                <div style={{flex:1,minWidth:180}}>
+                                  <div style={{fontSize:12,fontWeight:500,color:T.text}}>{r.order_id}{r.cliente?` · ${r.cliente}`:""}</div>
+                                  <div style={{fontSize:11,color:T.textSm}}>Factura {r.letra} N° {String(r.comprobante).padStart(8,"0")} por {money(r.total)}{r.devuelto!=null?` · devolvieron ${money(r.devuelto)}`:" · la tienda no informa cuánto se devolvió"}{r.nc_parciales_total>0?` · ya acreditado ${money(r.nc_parciales_total)}`:""}</div>
+                                </div>
+                                <Btn T={T} variant="secondary" size="sm" onClick={()=>{ setRegBusq(String(r.order_id).replace(/^(TN|ML|SH)-/,"")); try{ window.scrollTo({top:0,behavior:"smooth"}); }catch(_){} }}>Hacer la nota de crédito</Btn>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </Card>
                   );
@@ -33224,7 +33310,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                   <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
                     <div style={{flex:1,minWidth:240}}>
                       <div style={{fontSize:14,fontWeight:700,color:T.text}}>Piloto automático de facturación</div>
-                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Growith factura solo tus ventas nuevas, sin que entres a la app.</div>
+                      <div style={{fontSize:12,color:T.textSm,marginTop:2}}>Growith factura solo tus ventas nuevas, sin que entres a la app. Elegí las reglas, probalas y después activalo.</div>
                       <div style={{fontSize:11,color:T.textSm,marginTop:4}}>CUIT activo: {formatCuit(cuitActivo.cuit)} · {cuitActivo.nombre_fantasia||cuitActivo.razon_social}</div>
                     </div>
                     {apLoading || !apCfg ? (
@@ -33236,7 +33322,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     )}
                   </div>
-                  {apCfg && apCfg.enabled && (
+                  {apCfg && (
                     <div style={{marginTop:16,display:"flex",flexDirection:"column",gap:14}}>
                       {/* Canales */}
                       <div>
@@ -33294,7 +33380,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     </div>
                   )}
-                  {apCfg && apCfg.enabled && (
+                  {apCfg && (
                     <div style={{marginTop:14,display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
                       {(cuitActivo?.puntos_venta||[]).length>0&&<div style={{display:"flex",alignItems:"center",gap:8}}>
                         <span style={{fontSize:12,color:T.textMd}}>Punto de venta</span>
@@ -33309,6 +33395,72 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     </div>
                   )}
+                  {/* Espera, cierre de mes y notas de crédito automáticas (31/oct/2026) */}
+                  {apCfg && (
+                    <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:12,paddingTop:14,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                      <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:12,color:T.textMd}}>Facturar</span>
+                          <select value={apCfg.esperaDias} onChange={e=>setApCfg(p=>({...p, esperaDias:parseInt(e.target.value)}))} style={{...iS,width:"auto",padding:"7px 10px",fontSize:12}}>
+                            <option value={0}>apenas se paga</option>
+                            {[1,2,3,4,5,7,10].map(d=><option key={d} value={d}>{d} día{d===1?"":"s"} después de la compra</option>)}
+                          </select>
+                        </div>
+                        {apCfg.esperaDias>0 && (
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <DSToggle T={T} active={apCfg.cierreMes!==false} onToggle={()=>setApCfg(p=>({...p, cierreMes:p.cierreMes===false}))}/>
+                            <span style={{fontSize:12,color:T.text}}>El último día del mes facturar todo lo del mes</span>
+                          </div>
+                        )}
+                      </div>
+                      {apCfg.esperaDias>0 && (
+                        <div style={{fontSize:11,color:T.textSm,lineHeight:1.55}}>Esperar unos días evita facturar ventas que después se cancelan o se devuelven. {apCfg.cierreMes!==false ? "El último día del mes sale todo lo vendido en el mes aunque no se haya cumplido la espera, así cada venta queda en el IVA de su mes." : "Ojo: sin el cierre de mes, una venta de fin de mes se factura el mes siguiente y su IVA cae en otro período."}</div>
+                      )}
+                      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                        <DSToggle T={T} active={!!apCfg.ncAuto} onToggle={toggleNcAuto}/>
+                        <div>
+                          <div style={{fontSize:12,color:T.text}}>Anular solo las ventas canceladas o devueltas enteras</div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.55}}>Una vez por día emite la nota de crédito de cada venta facturada que se canceló, se reembolsó o tuvo contracargo en los últimos 60 días. En Mercado Libre también saca la factura de la venta. Las devoluciones parciales te las avisa en Registros para que hagas la nota de crédito por lo devuelto.</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {/* Resultado de "Probar reglas": qué facturaría ahora, sin emitir nada */}
+                  {apSim && (()=>{
+                    const money=(v)=>"$ "+(Number(v)||0).toLocaleString("es-AR",{maximumFractionDigits:0});
+                    const ex=apSim.excluidas||{};
+                    const exTxt=[ex.canal?`${ex.canal} de otro canal`:"",ex.sinPago?`${ex.sinPago} sin pago acreditado`:"",ex.tope?`${ex.tope} arriba del tope`:"",ex.sinTotal?`${ex.sinTotal} sin total`:""].filter(Boolean).join(" · ");
+                    const fila=(x,extra)=>(<div key={x.id} style={{display:"flex",gap:10,alignItems:"center",padding:"7px 12px",borderTop:`1px solid ${T.borderL||T.border}`,fontSize:12}}>
+                      {x.plataforma&&<BrandIcon name={x.plataforma==="mercadolibre"?"ml":x.plataforma==="shopify"?"shopify":"tn"} size={14}/>}
+                      <strong style={{color:T.text,minWidth:100}}>{x.id}</strong>
+                      <span style={{flex:1,minWidth:0,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre||x.cliente||""}</span>
+                      {extra&&<span style={{color:T.textSm,whiteSpace:"nowrap"}}>{extra}</span>}
+                      <span style={{color:T.text,fontWeight:600,whiteSpace:"nowrap"}}>{money(x.total)}</span>
+                    </div>);
+                    const fmtDia=(ymd)=>ymd?ymd.slice(8,10)+"/"+ymd.slice(5,7):"";
+                    return (
+                      <div style={{marginTop:14,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden"}}>
+                        <div style={{padding:"10px 12px",background:T.surface||T.card,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <div style={{flex:1,minWidth:200,fontSize:12,color:T.text,fontWeight:600}}>
+                            {apSim.demo ? "Tienda demo: el piloto no factura nada." : <>Si corriera ahora facturaría {apSim.listasN} venta{apSim.listasN===1?"":"s"}{apSim.listasN>apSim.max?` (de a ${apSim.max} por corrida)`:""}{apSim.esperandoN?` · ${apSim.esperandoN} esperando los días de espera`:""}</>}
+                            {exTxt&&<div style={{fontSize:11,color:T.textSm,fontWeight:400,marginTop:2}}>Quedan afuera: {exTxt}</div>}
+                            {apSim.ultimoDiaMes&&apCfg.esperaDias>0&&apCfg.cierreMes!==false&&<div style={{fontSize:11,color:T.textSm,fontWeight:400,marginTop:2}}>Hoy es el último día del mes: sale todo lo del mes.</div>}
+                          </div>
+                          <Btn T={T} variant="ghost" size="sm" onClick={()=>setApSim(null)}>Cerrar</Btn>
+                        </div>
+                        <div style={{maxHeight:280,overflowY:"auto"}}>
+                          {(apSim.listas||[]).map(x=>fila(x,null))}
+                          {(apSim.esperando||[]).map(x=>fila(x,`sale el ${fmtDia(x.sale)}`))}
+                          {apSim.nc&&!apSim.nc.error&&(apSim.nc.anular||[]).map(x=>fila(x,`nota de crédito · ${x.motivo}`))}
+                        </div>
+                        {apSim.nc&&(
+                          <div style={{padding:"8px 12px",borderTop:`1px solid ${T.borderL||T.border}`,fontSize:11,color:T.textSm}}>
+                            {apSim.nc.error ? `No se pudieron revisar las devoluciones: ${apSim.nc.error}` : `Notas de crédito automáticas: ${(apSim.nc.anular||[]).length} venta${(apSim.nc.anular||[]).length===1?"":"s"} para anular${apSim.nc.aMano?` · ${apSim.nc.aMano} devolución${apSim.nc.aMano===1?"":"es"} parcial${apSim.nc.aMano===1?"":"es"} para hacer a mano en Registros`:""}.`}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {/* Ventas que el piloto no pudo facturar: persisten hasta que se facturan */}
                   {apCfg && Object.keys(apCfg.erroresPendientes||{}).length>0 && (()=>{ const lst=Object.entries(apCfg.erroresPendientes).sort((a,b)=>String(b[1].at).localeCompare(String(a[1].at))); return (
                     <div style={{marginTop:14,border:`1px solid ${T.yellow}55`,borderRadius:10,overflow:"hidden"}}>
@@ -33329,13 +33481,17 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const col = errores>0 ? T.yellow : T.green;
                     return (
                       <div style={{marginTop:14,padding:"9px 12px",background:col+"12",border:`1px solid ${col}44`,borderRadius:8,fontSize:12,color:col,fontWeight:600}}>
-                        Última corrida: {fechaStr} · {emitidas} factura{emitidas===1?"":"s"} emitida{emitidas===1?"":"s"}{errores>0?`, ${errores} error${errores===1?"":"es"}`:""}
+                        Última corrida: {fechaStr} · {emitidas} factura{emitidas===1?"":"s"} emitida{emitidas===1?"":"s"}{errores>0?`, ${errores} error${errores===1?"":"es"}`:""}{apUltimo.esperando?` · ${apUltimo.esperando} esperando los días de espera`:""}
+                        {apNc && <div style={{fontWeight:500,marginTop:3,color:T.textMd}}>Notas de crédito automáticas ({new Date(apNc.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}): {apNc.emitidas||0} emitida{apNc.emitidas===1?"":"s"}{apNc.errores?`, ${apNc.errores} con error`:""}{apNc.parciales?` · ${apNc.parciales} devolución${apNc.parciales===1?"":"es"} para hacer a mano en Registros`:""}{(apNc.detalle||[]).filter(x=>x.ok).slice(0,6).map(x=>x.orden_id).join(", ") ? ` · ${(apNc.detalle||[]).filter(x=>x.ok).slice(0,6).map(x=>x.orden_id).join(", ")}` : ""}</div>}
                       </div>
                     );
                   })()}
                   {apCfg && (
                     <div style={{display:"flex",justifyContent:"flex-end",marginTop:14}}>
-                      <Btn T={T} variant="primary" size="sm" onClick={handleSaveAutopilot} disabled={apSaving}>{apSaving?"Guardando…":"Guardar reglas"}</Btn>
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                        <Btn T={T} variant="secondary" size="sm" onClick={probarAutopilot} disabled={apSimLoading}>{apSimLoading?"Probando…":"Probar reglas"}</Btn>
+                        <Btn T={T} variant="primary" size="sm" onClick={handleSaveAutopilot} disabled={apSaving}>{apSaving?"Guardando…":"Guardar reglas"}</Btn>
+                      </div>
                     </div>
                   )}
                 </Card>

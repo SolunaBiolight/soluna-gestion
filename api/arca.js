@@ -3454,6 +3454,423 @@ async function obtenerPendientes(db, uid, cuitParam, { sinceDate, untilDate, for
       return { connections, ordenes, tnDebug };
 }
 
+// ─── Reglas del piloto (puras, testeadas en scripts/arca_test.cjs) ─────────
+const ymdAR = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+// Último día del mes en Argentina (el cierre de mes factura lo pendiente aunque no pasó la espera).
+export function esUltimoDiaMes(hoyYmd) {
+  const d = new Date(Date.parse(hoyYmd + "T12:00:00-03:00") + 86400000);
+  return ymdAR(d).slice(0, 7) !== hoyYmd.slice(0, 7);
+}
+export function sumarDiasYmd(ymd, n) { return ymdAR(new Date(Date.parse(ymd + "T12:00:00-03:00") + n * 86400000)); }
+// Corre ahora una cuenta "una vez al día": la primera vuelta del cron DESPUÉS de la hora elegida en que
+// todavía no corrió ese día (antes: solo en esa hora exacta; si esa vuelta se cortaba, se perdía el día).
+export function autopilotTocaHoy(ap, horaAR, hoyYmd) {
+  if (ap.frecuencia !== "diaria") return true;
+  const h = parseInt(ap.hora); const hora = Number.isFinite(h) ? h : 9;
+  return horaAR >= hora && ap.ultimaCorridaDia !== hoyYmd;
+}
+// Separa las ventas pendientes en: listas para facturar ahora, esperando (todavía no pasaron los días
+// de espera) y excluidas por las reglas. `ordenes` = salida de obtenerPendientes.
+export function autopilotCandidatas(ordenes, ap, hoyYmd) {
+  const canales = (Array.isArray(ap.canales) && ap.canales.length) ? ap.canales : null;
+  const soloPagadas = ap.soloPagadas !== false;
+  const tope = (ap.topeMonto === null || ap.topeMonto === undefined || ap.topeMonto === "") ? null : Number(ap.topeMonto);
+  const espera = Math.min(Math.max(parseInt(ap.esperaDias) || 0, 0), 10);
+  const cierre = ap.cierreMes !== false && esUltimoDiaMes(hoyYmd);
+  const mesHoy = hoyYmd.slice(0, 7);
+  const listas = [], esperando = [];
+  const excluidas = { canal: 0, sinPago: 0, sinTotal: 0, tope: 0 };
+  for (const [id, o] of Object.entries(ordenes || {})) {
+    if (!o || o._billed) continue;                                              // ya facturada
+    if (canales && !canales.includes(o._platform)) { excluidas.canal++; continue; }
+    if (soloPagadas && o.estado_pago !== "paid") { excluidas.sinPago++; continue; } // authorized/partially_paid quedan afuera
+    if (!Number.isFinite(Number(o.total)) || Number(o.total) <= 0) { excluidas.sinTotal++; continue; }
+    if (tope !== null && Number.isFinite(tope) && Number(o.total) > tope) { excluidas.tope++; continue; }
+    const t = Date.parse(o.fecha || "");
+    const dia = Number.isFinite(t) ? ymdAR(new Date(t)) : null;
+    if (espera > 0 && dia) {
+      const sale = sumarDiasYmd(dia, espera);
+      // Cierre de mes: lo vendido este mes (o antes) sale hoy aunque no pasó la espera, así no cae en
+      // el IVA de otro período.
+      if (sale > hoyYmd && !(cierre && dia.slice(0, 7) <= mesHoy)) { esperando.push([id, o, sale]); continue; }
+    }
+    listas.push([id, o]);
+  }
+  const porFecha = (a, b) => String(a[1].fecha || "").localeCompare(String(b[1].fecha || ""));
+  listas.sort(porFecha); esperando.sort(porFecha); // más viejas primero
+  return { listas, esperando, excluidas, espera };
+}
+
+// ─── Notas de crédito en lote (anulación total de cada factura) ─────────────
+// Núcleo de emit_nc_batch, también lo usa el piloto automático para las ventas
+// canceladas / devueltas enteras. Devuelve { total, ok_count, errors, results }.
+async function emitirNCLote(db, uid, cuitEmit, facturas) {
+  const cfg = await loadCuitConfig(db, uid, cuitEmit);
+  if (!cfg?.cert_pem || !cfg?.key_pem) return { error: "CUIT sin certificado configurado" };
+  {
+    const { wsfe } = arcaUrls(cfg.arca_prod);
+    const { token, sign } = await obtenerTA(db, uid, cfg);
+    const cuitNum = parseInt(cfg.cuit);
+    const pv = parseInt(cfg.punto_venta) || 1;
+
+    // Cache último cbte por PV+tipo NC para minimizar API calls
+    const ultimosNC = {};
+    const results = [];
+
+    // Dedupe defensivo por (punto_venta, comprobante): un doble-click del
+    // front no puede emitir dos NC de la misma factura.
+    const vistosNC = new Set();
+    const facturasUnicas = facturas.filter(f => {
+      const k = `${f.punto_venta || ""}_${f.comprobante}`;
+      if (vistosNC.has(k)) return false;
+      vistosNC.add(k);
+      return true;
+    });
+
+    for (const factura of facturasUnicas) {
+      const tipoFactura = parseInt(factura.tipo) || 6;
+      const tipoNC = tipoNCparaFactura(tipoFactura);
+      // La NC sale por el MISMO punto de venta que la factura original
+      const pvNC = parseInt(factura.punto_venta) || pv;
+      try {
+        // Si la factura ya está anulada, no emitir otra NC. De paso se toma
+        // el flag exento fiable del comprobante guardado (no del front).
+        let compNC = null;
+        try {
+          const cuitDig = String(cuitEmit).replace(/\D/g, "");
+          const nro8 = String(factura.comprobante).padStart(8, "0");
+          for (const docId of [`${cuitDig}_${pvNC}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+            const s = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).get();
+            if (s.exists) { compNC = s.data(); break; }
+          }
+        } catch (_) {}
+        if (compNC?.anulada) {
+          results.push({ ok: false, factura_comprobante: factura.comprobante, error: `ya anulada (NC ${compNC.nc_nro || "?"})` });
+          continue;
+        }
+        // Con notas de crédito parciales, la anulación tiene que acreditar SOLO lo que queda: eso lo
+        // hace la anulación individual (emit_nc), no el lote, que manda el total de la factura.
+        if (Number(compNC?.nc_parciales_total) > 0) {
+          results.push({ ok: false, factura_comprobante: factura.comprobante, error: "tiene una nota de crédito parcial: anulala desde Registros → Anular con nota de crédito (acredita solo lo que queda)" });
+          continue;
+        }
+        if (compNC) factura.exento = !!compNC.exento;
+        // Factura A sin CUIT en Firestore: recuperarlo desde ARCA y persistirlo.
+        if ([1, 2, 3].includes(tipoFactura) && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
+          // Probar con el PV del comprobante y, si difiere, con el PV del CUIT.
+          const pvCandidatos = [...new Set([parseInt(factura.punto_venta) || pv, pv])];
+          let consultaArca = null;
+          for (const pvTry of pvCandidatos) {
+            consultaArca = await consultarComprobante(token, sign, cuitNum, pvTry, tipoFactura, parseInt(factura.comprobante), wsfe);
+            if (consultaArca && !consultaArca.error && consultaArca.doc_tipo) break;
+          }
+          if (consultaArca && consultaArca.doc_tipo === "CUIT" && consultaArca.doc_nro) {
+            factura.doc_tipo = "CUIT";
+            factura.doc_nro = consultaArca.doc_nro;
+            // update() falla si el doc no existe — nunca crea registros fantasma
+            try {
+              const cuitDig = String(cuitEmit).replace(/\D/g, "");
+              const nro8 = String(factura.comprobante).padStart(8, "0");
+              for (const docId of [`${cuitDig}_${pvNC}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+                try {
+                  await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                    .update({ doc_tipo: "CUIT", doc_nro: consultaArca.doc_nro });
+                  break;
+                } catch (_) {}
+              }
+            } catch (_) {}
+          } else {
+            // No pudimos recuperar el CUIT desde ARCA. Devolver error diagnóstico.
+            const diag = consultaArca?.error ? consultaArca.error :
+              consultaArca?.doc_tipo === "CF" ? "ARCA registra el comprobante como Consumidor Final (sin CUIT). ¿Es realmente Factura A?" :
+              `ARCA devolvió doc_tipo="${consultaArca?.doc_tipo}" doc_nro="${consultaArca?.doc_nro}"`;
+            results.push({ ok: false, factura_comprobante: factura.comprobante, error: `[consulta-arca pv=${pvCandidatos.join("/")}] ${diag}` });
+            continue;
+          }
+        }
+        // Marca de idempotencia por factura (31/oct/2026, lo necesita el piloto que anula solo):
+        // dos corridas a la vez, o un reintento después de que la NC salió pero no se pudo marcar
+        // la factura, no emiten otra. Una marca sin ok de más de 10 min (corte a mitad) se libera.
+        const marcaRef = db.collection("users").doc(uid).collection("arca_nc_marcas").doc(`${String(cuitEmit).replace(/\D/g, "")}_${parseInt(factura.punto_venta) || pv}_${tipoFactura}_${String(factura.comprobante).padStart(8, "0")}`);
+        const marcaOk = await db.runTransaction(async tx => {
+          const m = await tx.get(marcaRef);
+          const md = m.exists ? m.data() : null;
+          if (md && (md.ok || Date.now() - Date.parse(md.at || 0) < 10 * 60000)) return md;
+          tx.set(marcaRef, { at: new Date().toISOString(), order_id: factura.order_id || null });
+          return null;
+        });
+        if (marcaOk) {
+          results.push({ ok: false, factura_comprobante: factura.comprobante, error: marcaOk.ok ? `ya tiene nota de crédito (NC ${marcaOk.nc || "?"})` : "hay una nota de crédito de esta factura en curso: esperá unos minutos" });
+          continue;
+        }
+        const ncKey = `${pvNC}_${tipoNC}`;
+        if (ultimosNC[ncKey] === undefined) {
+          ultimosNC[ncKey] = await getUltimoCbte(token, sign, cuitNum, pvNC, tipoNC, wsfe);
+        }
+        const ncNro = ++ultimosNC[ncKey];
+        const result = await emitirNotaCredito(token, sign, cuitNum, pvNC, ncNro, factura, wsfe);
+        if (result.resultado !== "A" || !result.cae) {
+          try { await marcaRef.delete(); } catch (_) {}
+          results.push({ ok: false, factura_comprobante: factura.comprobante, error: result.obs || "rechazada" });
+          // Tras un rechazo no se decrementa en memoria: se re-consulta AFIP
+          // en el próximo uso para no desincronizar el numerador.
+          delete ultimosNC[ncKey];
+          continue;
+        }
+        try { await marcaRef.set({ ok: true, nc: ncNro, cae: result.cae, okAt: new Date().toISOString() }, { merge: true }); } catch (_) {}
+        const letra = tipoNC === 3 ? "A" : tipoNC === 8 ? "B" : "C";
+        const ncFactData = {
+          comprobante: ncNro, cae: result.cae, cae_vto: result.cae_vto,
+          fecha: new Date().toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
+          cliente: factura.cliente || "Consumidor Final",
+          doc_tipo: factura.doc_tipo, doc_nro: factura.doc_nro || "",
+          letra, tipo_cbte: tipoNC, punto_venta: pvNC,
+          domicilio: factura.domicilio || "",
+          total: parseFloat(factura.total) || 0,
+          exento: !!factura.exento,
+          items: factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }],
+          _is_nc: true,
+          _cbte_asoc: factura.comprobante,
+          _pv_asoc: factura.punto_venta || pvNC,
+        };
+        const pdfBytes = await generarPDF(ncFactData, cfg);
+        const pdfB64 = Buffer.from(pdfBytes).toString("base64");
+
+        // Persistir
+        try {
+          await db.collection("users").doc(uid).collection("arca_notas_credito").add({
+            cuit: String(cuitEmit), tipo: tipoNC, letra,
+            punto_venta: pvNC, comprobante: ncNro,
+            cae: result.cae, cae_vto: result.cae_vto,
+            total: parseFloat(factura.total) || 0,
+            cliente: factura.cliente || "",
+            doc_tipo: factura.doc_tipo || "", doc_nro: factura.doc_nro || "",
+            factura_origen: { tipo: tipoFactura, comprobante: factura.comprobante, punto_venta: factura.punto_venta || pv },
+            fecha: new Date().toISOString(),
+            pdf_b64: pdfB64.length < 900000 ? pdfB64 : null,
+          });
+        } catch (e) {}
+
+        // Marcar orden anulada + marcar el comprobante como anulada:true en
+        // arca_comprobantes (NO se borra: queda visible en Registros con badge
+        // ANULADA). Todos los lectores tratan anulada:true como NO facturado,
+        // así la orden vuelve a aparecer como pendiente de facturar.
+        let mlDetached = false;
+        if (factura.order_id) {
+          try {
+            await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
+              .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
+            // Filtro por cuit_emisor: la misma orden pudo facturarse desde
+            // otro CUIT — la NC de este no puede marcarle la anulación.
+            const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+              .where("cuit_emisor", "==", String(cuitEmit).replace(/\D/g, ""))
+              .where("orden_id", "==", factura.order_id).get();
+            const batchUpd = db.batch();
+            compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
+            if (!compSnap.empty) await batchUpd.commit();
+            try { await db.collection("users").doc(uid).collection("arca_emisiones").doc(marcaEmisionId(cuitEmit, factura.order_id)).delete(); } catch (_) {}
+          } catch (_) {}
+          // ML: desadjuntar factura original del pack/orden
+          if (String(factura.order_id).startsWith("ML-")) {
+            const mlR = await desadjuntarFacturaML(db, uid, factura.order_id);
+            mlDetached = mlR.ok;
+          }
+        } else {
+          // Sin order_id (manual / recuperada de AFIP): marcar por docId.
+          // update() falla si el doc no existe — nunca crea registros fantasma.
+          const cuitDig = String(cuitEmit).replace(/\D/g, "");
+          const nro8 = String(factura.comprobante).padStart(8, "0");
+          const pvComp = parseInt(factura.punto_venta) || pv;
+          for (const docId of [`${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
+            try {
+              await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
+                .update({ anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro });
+              break;
+            } catch (_) {}
+          }
+        }
+        results.push({
+          ok: true,
+          factura_comprobante: factura.comprobante,
+          nc: { tipo: tipoNC, letra, punto_venta: pvNC, comprobante: ncNro, cae: result.cae, total: result.total, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`, pdf_b64: pdfB64 },
+          ml_detached: mlDetached,
+        });
+      } catch (e) {
+        results.push({ ok: false, factura_comprobante: factura.comprobante, error: e.message });
+      }
+    }
+    const okCount = results.filter(r => r.ok).length;
+    return { total: facturasUnicas.length, ok_count: okCount, errors: results.filter(r => !r.ok), results };
+  }
+}
+
+// ─── Ventas canceladas / devueltas con factura ACTIVA ───────────────────────
+// Solo LEE: comprobantes activos del CUIT (por fecha del comprobante) cruzados con
+// las canceladas / reembolsadas / con contracargo de las tiendas (por fecha de la
+// venta, con 15 días de margen hacia atrás porque la factura puede ser posterior).
+// Devoluciones PARCIALES (31/oct/2026): fila con parcial:true y devuelto (si la
+// tienda lo informa); salen si las NC parciales ya cubren lo devuelto.
+async function canceladasConFactura(db, uid, cuitParam, { sinceDate, untilDate }) {
+  // 1) Comprobantes ACTIVOS (no anulados) del CUIT → map por orden_id. Se leen
+  //    los mismos campos que list_batches: emit_nc_batch revierte 100% por total
+  //    con línea única, no necesita items/domicilio.
+  const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
+    .where("cuit_emisor", "==", cuitParam)
+    .select("orden_id", "nro", "letra", "tipo_cbte", "punto_venta", "total",
+      "doc_tipo", "doc_nro", "cliente", "fecha_cbte", "emitido_at", "anulada", "nc_parciales_total")
+    .get();
+  const activeByOrder = new Map();
+  for (const d of compSnap.docs) {
+    const c = d.data();
+    if (!c.orden_id || c.anulada) continue;
+    const key = c.fecha_cbte || (c.emitido_at || "").slice(0, 10);
+    if (key && (key < sinceDate || key > untilDate)) continue; // ventana por fecha del comprobante
+    if (!activeByOrder.has(c.orden_id)) activeByOrder.set(c.orden_id, c);
+  }
+  if (!activeByOrder.size) return { rows: [], connections: [], truncated: false };
+
+  // 2) Fetch ISLA de canceladas/reembolsadas de las tiendas (Shopify + ML).
+  const userSnap0 = await db.collection("users").doc(uid).get();
+  const stores0 = userSnap0.data()?.stores || [];
+  const shStore = stores0.find(s => s.type === "shopify");
+  const mlStore = stores0.find(s => s.type === "mercadolibre");
+  const tnStore = stores0.find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
+  if (shStore) await ensureShopifyToken(db, uid, shStore);
+  const connections = [];
+  const canceladas = new Map(); // orderId -> motivo
+  const devueltoDe = new Map(); // orderId -> monto devuelto (solo devoluciones parciales, si la tienda lo informa)
+  // Las ventas se buscan desde 15 días antes: la factura puede ser de días después de la venta.
+  const desdeVenta = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(Date.parse(sinceDate + "T12:00:00-03:00") - 15 * 86400000));
+  let truncated = false;
+
+  // Tienda Nube (17/oct/2026; antes no se revisaba): canceladas (status=cancelled) y
+  // reembolsadas por completo (payment_status=refunded).
+  if (tnStore) {
+    connections.push("tiendanube");
+    const pullTN = async (qs, motivo) => {
+      for (let page = 1; page <= 25; page++) {
+        const r = await fetch(`https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&${qs}&created_at_min=${desdeVenta}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&fields=id,number,status,payment_status`, { headers: { "Authentication": `bearer ${tnStore.accessToken}`, "User-Agent": "Growith (contacto.growith@gmail.com)" } });
+        if (r.status === 404) break; // fin de la paginación en TN
+        if (!r.ok) break;
+        const data = await r.json().catch(() => []);
+        if (!Array.isArray(data) || !data.length) break;
+        for (const o of data) { const oid = "TN-" + String(o.number || o.id); if (!canceladas.has(oid)) canceladas.set(oid, motivo); }
+        if (data.length < 200) break;
+        if (page === 25) truncated = true;
+      }
+    };
+    try { await pullTN("status=cancelled", "cancelada"); } catch (_) {}
+    try { await pullTN("payment_status=refunded", "reembolso"); } catch (_) {}
+    try { await pullTN("payment_status=partially_refunded", "parcial"); } catch (_) {}
+  }
+
+  // Shopify: canceladas (status=cancelled) + reembolsos TOTALES (financial_status=refunded)
+  if (shStore?.accessToken && shStore?.shop) {
+    connections.push("shopify");
+    const pullSH = async (extraQS, motivo, detect) => {
+      let url = `https://${shStore.shop}/admin/api/2026-07/orders.json?limit=250&order=created_at+desc&created_at_min=${desdeVenta}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&${extraQS}`;
+      for (let i = 0; i < 40 && url; i++) {
+        if (i === 39) truncated = true;
+        const r = await fetch(url, { headers: { "X-Shopify-Access-Token": shStore.accessToken } });
+        if (!r.ok) break;
+        const data = await r.json();
+        for (const o of (data.orders || [])) {
+          if (detect && !detect(o)) continue;
+          const oid = "SH-" + (o.name || String(o.order_number || o.id));
+          if (!canceladas.has(oid)) canceladas.set(oid, motivo);
+          if (motivo === "parcial") { const dev = (parseFloat(o.total_price) || 0) - (parseFloat(o.current_total_price) || 0); if (dev > 0) devueltoDe.set(oid, Math.round(dev * 100) / 100); }
+        }
+        const link = r.headers.get("link") || r.headers.get("Link") || "";
+        const m = link.match(/<([^>]+)>;\s*rel="next"/);
+        url = m ? m[1] : null;
+      }
+    };
+    try { await pullSH("status=cancelled", "cancelada"); } catch (_) {}
+    try { await pullSH("status=any&financial_status=refunded", "reembolso", o => !o.cancelled_at); } catch (_) {}
+    try { await pullSH("status=any&financial_status=partially_refunded", "parcial", o => !o.cancelled_at); } catch (_) {}
+  }
+
+  // ML: canceladas (order.status=cancelled) + reembolsos/contracargos sobre las
+  // pagas (misma lógica que api/stock.js: payments[].status refunded/charged_back,
+  // neto cobrado = cobrado − devuelto; cancelled/rejected = intento fallido).
+  if (mlStore?.userId) {
+    connections.push("mercadolibre");
+    try {
+      const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
+      const accessToken = ml?.accessToken, userId = ml?.userId || mlStore.userId;
+      if (accessToken) {
+        const pullML = async (statusQS, evaluar) => {
+          const pageUrl = (offset) => `https://api.mercadolibre.com/orders/search?seller=${userId}&${statusQS}&order.date_created.from=${desdeVenta}T00:00:00.000-03:00&order.date_created.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
+          let offset = 0;
+          for (let i = 0; i < 40; i++) {
+            const r = await fetch(pageUrl(offset), { headers: { Authorization: `Bearer ${accessToken}` } });
+            if (!r.ok) break;
+            const data = await r.json();
+            const results = data.results || [];
+            for (const o of results) {
+              const motivo = evaluar(o);
+              if (!motivo) continue;
+              const oid = "ML-" + String(o.id);
+              if (!canceladas.has(oid)) canceladas.set(oid, motivo);
+            }
+            const total = parseInt(data.paging?.total) || 0;
+            offset += 50;
+            if (results.length < 50 || offset >= Math.min(total, 2000)) { if (offset < total) truncated = true; break; }
+            await new Promise(res2 => setTimeout(res2, 250));
+          }
+        };
+        await pullML("order.status=cancelled", () => "cancelada");
+        await pullML("order.status=paid", (o) => {
+          let cobrado = 0, devuelto = 0, cargoback = false;
+          for (const p of (o.payments || [])) {
+            const st = String(p.status || "").toLowerCase();
+            const amt = parseFloat(p.transaction_amount) || 0;
+            const tar = parseFloat(p.transaction_amount_refunded) || 0;
+            if (st === "approved") { cobrado += amt; devuelto += tar; }
+            else if (st === "refunded" || st === "charged_back") { cobrado += amt; devuelto += (amt > 0 ? amt : tar); if (st === "charged_back") cargoback = true; }
+          }
+          if (cobrado > 0 && (cobrado - devuelto) <= cobrado * 0.01) return cargoback ? "contracargo" : "reembolso";
+          if (cobrado > 0 && devuelto > 0) { devueltoDe.set("ML-" + String(o.id), Math.round(devuelto * 100) / 100); return "parcial"; }
+          return null;
+        });
+      }
+    } catch (_) {}
+  }
+
+  // 3) Intersección: canceladas que tienen comprobante ACTIVO → filas para emit_nc_batch.
+  const MOTIVO_LBL = { cancelada: "Cancelada", reembolso: "Reembolso", contracargo: "Contracargo", parcial: "Devolución parcial" };
+  const rows = [];
+  for (const [orderId, comp] of activeByOrder) {
+    const motivo = canceladas.get(orderId);
+    if (!motivo) continue;
+    const yaNcParcial = Number(comp.nc_parciales_total) || 0;
+    const parcial = motivo === "parcial";
+    const devuelto = parcial ? (devueltoDe.get(orderId) ?? null) : null;
+    // Parcial ya cubierta por las NC parciales emitidas → no queda nada para hacer.
+    if (parcial && (devuelto !== null ? yaNcParcial >= devuelto - 1 : yaNcParcial > 0)) continue;
+    rows.push({
+      parcial, devuelto, nc_parciales_total: yaNcParcial,
+      // Anulación total de una factura que ya tiene NC parciales: va por Registros (acredita solo el saldo).
+      requiere_manual: !parcial && yaNcParcial > 0,
+      order_id: orderId,
+      tipo: comp.tipo_cbte,
+      letra: comp.letra,
+      punto_venta: comp.punto_venta || null,
+      comprobante: comp.nro,
+      total: comp.total || 0,
+      doc_tipo: comp.doc_tipo || "",
+      doc_nro: comp.doc_nro || "",
+      cliente: comp.cliente || "",
+      fecha_cbte: comp.fecha_cbte || null,
+      _motivo: motivo,
+      _motivo_lbl: MOTIVO_LBL[motivo] || motivo,
+      _platform: orderId.startsWith("ML-") ? "mercadolibre" : orderId.startsWith("TN-") ? "tiendanube" : "shopify",
+    });
+  }
+  rows.sort((a, b) => String(b.fecha_cbte || "").localeCompare(String(a.fecha_cbte || "")));
+  return { rows, connections, truncated };
+}
+
 // ─── Piloto automático (cron_autopilot) ─────────────────────────────────────
 // Recorre las cuentas con piloto habilitado (colección top-level arca_autopilot,
 // docId `${uid}_${cuit}`), trae sus órdenes pendientes con obtenerPendientes y
@@ -3502,7 +3919,7 @@ async function cronAutopilot(req, res) {
     if (!apUid || !apCuit) continue;
     // "diaria": corre solo en la hora elegida (hora AR). "1h": corre siempre
     // (la frecuencia real la da el cron de vercel.json).
-    if (ap.frecuencia === "diaria" && parseInt(ap.hora) !== horaAR) continue;
+    if (!autopilotTocaHoy(ap, horaAR, hoyARs)) continue;
     cuentas++;
     const nowIso = new Date().toISOString();
     // Un error en una cuenta NUNCA corta la corrida de las demás.
@@ -3514,22 +3931,14 @@ async function cronAutopilot(req, res) {
       if (!cfg?.cert_pem || !cfg?.key_pem) throw new Error("CUIT sin certificado configurado");
 
       const dias = Math.min(Math.max(parseInt(ap.diasVentana) || 7, 1), 30);
-      const sinceDate = argYmd(new Date(Date.now() - (dias - 1) * 86400000));
+      const espera = Math.min(Math.max(parseInt(ap.esperaDias) || 0, 0), 10);
+      // Con espera la ventana se corre hacia atrás: lo vendido hace N días tiene que seguir entrando.
+      const sinceDate = argYmd(new Date(Date.now() - (dias - 1 + espera) * 86400000));
       const untilDate = argYmd(new Date());
       const { ordenes } = await obtenerPendientes(db, apUid, apCuit, { sinceDate, untilDate });
 
-      // Reglas del piloto: canales, solo pagas, tope de monto, datos mínimos.
-      const canales = (Array.isArray(ap.canales) && ap.canales.length) ? ap.canales : null;
-      const soloPagadas = ap.soloPagadas !== false;
-      const tope = (ap.topeMonto === null || ap.topeMonto === undefined) ? null : Number(ap.topeMonto);
-      const candidatas = Object.entries(ordenes || {}).filter(([, o]) => {
-        if (o._billed) return false;                                     // ya facturada
-        if (canales && !canales.includes(o._platform)) return false;     // canal excluido
-        if (soloPagadas && o.estado_pago !== "paid") return false;       // pago no acreditado (authorized/partially_paid quedan afuera)
-        if (!Number.isFinite(Number(o.total)) || Number(o.total) <= 0) return false; // sin total válido no se factura
-        if (Number.isFinite(tope) && tope !== null && Number(o.total) > tope) return false; // arriba del tope
-        return true;
-      }).sort(([, a], [, b]) => String(a.fecha || "").localeCompare(String(b.fecha || ""))); // más viejas primero
+      // Reglas del piloto: canales, solo pagas, tope de monto, datos mínimos y días de espera.
+      const { listas: candidatas, esperando } = autopilotCandidatas(ordenes, ap, hoyARs);
 
       const max = Math.min(Math.max(parseInt(ap.maxPorCorrida) || 40, 1), 100);
       const lote = Object.fromEntries(candidatas.slice(0, max));
@@ -3557,12 +3966,34 @@ async function cronAutopilot(req, res) {
       for (const [id, e] of Object.entries(prevErr)) if (!facturadasYa.has(id) && Date.now() - Date.parse(e.at || 0) < 15 * 86400000) errPend[id] = e;
       for (const x of detalle) { if (x.ok) delete errPend[x.orden_id]; else errPend[x.orden_id] = { obs: x.obs, at: nowIso, veces: (prevErr[x.orden_id]?.veces || 0) + 1, total: Number(lote[x.orden_id]?.total) || null, nombre: String(lote[x.orden_id]?.nombre || "").slice(0, 60) }; }
       const errPendLim = Object.fromEntries(Object.entries(errPend).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).slice(0, 60));
+      // Notas de crédito automáticas (opcional): una vez por día, las ventas facturadas que se cancelaron
+      // o se devolvieron ENTERAS en los últimos 60 días. Las parciales no: se avisan en el Facturador.
+      let nc = null;
+      if (ap.ncAuto === true && ap.ncDia !== hoyARs && Date.now() < DEADLINE - 15000) {
+        try {
+          const { rows } = await canceladasConFactura(db, apUid, apCuit, { sinceDate: argYmd(new Date(Date.now() - 59 * 86400000)), untilDate: hoyARs });
+          const anular = rows.filter(r => !r.parcial && !r.requiere_manual).slice(0, 20);
+          nc = { at: nowIso, emitidas: 0, errores: 0, detalle: [], parciales: rows.filter(r => r.parcial || r.requiere_manual).length };
+          if (anular.length) {
+            const rn = await emitirNCLote(db, apUid, apCuit, anular.map(r => ({ tipo: r.tipo || (r.letra === "A" ? 1 : r.letra === "C" ? 11 : 6), punto_venta: r.punto_venta || null, comprobante: r.comprobante, total: r.total, doc_tipo: r.doc_tipo || "", doc_nro: r.doc_nro || "", cliente: r.cliente || "", order_id: r.order_id })));
+            for (const x of (rn.results || [])) {
+              const row = anular.find(r => String(r.comprobante) === String(x.factura_comprobante));
+              if (x.ok) nc.emitidas++; else nc.errores++;
+              nc.detalle.push({ orden_id: row?.order_id || "", ok: !!x.ok, motivo: row?._motivo_lbl || "", nc: x.nc?.comprobante || null, obs: x.ok ? (x.ml_detached === false ? "No se pudo sacar la factura de Mercado Libre: borrala a mano" : "") : String(x.error || "").slice(0, 140) });
+            }
+            if (rn.error) { nc.errores++; nc.detalle.push({ orden_id: "Notas de crédito", ok: false, obs: rn.error }); }
+          }
+        } catch (e) { nc = { at: nowIso, emitidas: 0, errores: 1, detalle: [{ orden_id: "Notas de crédito", ok: false, obs: String(e.message || "").slice(0, 140) }] }; }
+      }
       await d.ref.set({
         ultimaCorrida: nowIso,
-        ultimoResultado: { at: nowIso, emitidas, errores, detalle: detalle.slice(0, 50) },
+        ultimaCorridaDia: hoyARs,
+        ultimoResultado: { at: nowIso, emitidas, errores, esperando: esperando.length, detalle: detalle.slice(0, 50) },
         erroresPendientes: errPendLim,
-      }, { mergeFields: ["ultimaCorrida", "ultimoResultado", "erroresPendientes"] });
-      if (errores) await avisar(ap, d.ref, apUser.data(), errores, detalle.filter(x => !x.ok));
+        ...(nc ? { ncDia: hoyARs, ncUltimo: { ...nc, detalle: nc.detalle.slice(0, 30) } } : {}),
+      }, { mergeFields: ["ultimaCorrida", "ultimaCorridaDia", "ultimoResultado", "erroresPendientes", ...(nc ? ["ncDia", "ncUltimo"] : [])] });
+      const ncErr = nc ? nc.detalle.filter(x => !x.ok || x.obs).map(x => ({ orden_id: x.orden_id, obs: "Nota de crédito: " + (x.obs || "error") })) : [];
+      if (errores || ncErr.length) await avisar(ap, d.ref, apUser.data(), errores + ncErr.length, [...detalle.filter(x => !x.ok), ...ncErr]);
       resumen.push({ uid: apUid, cuit: apCuit, pendientes: candidatas.length, emitidas, errores });
       console.log(`[arca autopilot] uid=${apUid} cuit=${apCuit} pendientes=${candidatas.length} emitidas=${emitidas} errores=${errores}`);
     } catch (e) {
@@ -3570,6 +4001,7 @@ async function cronAutopilot(req, res) {
       try {
         await d.ref.set({
           ultimaCorrida: nowIso,
+          ultimaCorridaDia: hoyARs,
           ultimoResultado: { at: nowIso, emitidas: 0, errores: 1, detalle: [{ error: String(e.message || "").slice(0, 140) }] },
         }, { merge: true });
         const uS = await db.collection("users").doc(apUid).get().catch(() => null);
@@ -3998,6 +4430,9 @@ async function accionArcaDemo(req, res, db, uid, action, cuit) {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
     return responder({ rows: [], count: 0, connections: ["mercadolibre"], truncated: false });
   }
+
+  if (action === "devoluciones_con_factura" && M === "GET") return responder({ rows: [], count: 0, parciales: [], truncated: false });
+  if (action === "autopilot_simular" && M === "POST") return responder({ demo: true, hoy: null, max: 0, listas: [], listasN: 0, esperando: [], esperandoN: 0, excluidas: { canal: 0, sinPago: 0, sinTotal: 0, tope: 0 }, nc: null });
 
   if (action === "resync_afip" && M === "POST") {
     const body = await leerBody();
@@ -4505,6 +4940,8 @@ export default async function handler(req, res) {
         const validos = [parseInt(cfgCuit.punto_venta), ...(Array.isArray(cfgCuit.puntos_venta) ? cfgCuit.puntos_venta.map(x => parseInt(x?.numero)) : [])].filter(Boolean);
         if (!validos.includes(pv)) return res.status(400).json({ error: "Ese punto de venta no está configurado en este CUIT" });
       }
+      const esperaDias = c.esperaDias === undefined || c.esperaDias === null || c.esperaDias === "" ? 0 : parseInt(c.esperaDias);
+      if (!(esperaDias >= 0 && esperaDias <= 10)) return res.status(400).json({ error: "esperaDias debe estar entre 0 y 10" });
       let topeMonto = null;
       if (c.topeMonto !== null && c.topeMonto !== undefined && c.topeMonto !== "") {
         topeMonto = Number(c.topeMonto);
@@ -4524,11 +4961,53 @@ export default async function handler(req, res) {
         diasVentana,
         pv,
         avisarMail: c.avisarMail !== false,
+        esperaDias,
+        cierreMes: c.cierreMes !== false,
+        ncAuto: c.ncAuto === true,
         updatedAt: new Date().toISOString(),
       };
       // merge: preserva ultimaCorrida/ultimoResultado de corridas anteriores
       await db.collection("arca_autopilot").doc(`${uid}_${cuitNorm}`).set(docAp, { merge: true });
       return res.json({ ok: true, config: docAp });
+    }
+
+    // ── PILOTO AUTOMÁTICO: probar reglas (no emite nada) ──
+    // Con la config que está en pantalla (guardada o no): qué facturaría ahora, qué está esperando los días
+    // de espera, cuántas quedan afuera por cada regla y, con las NC automáticas, qué anularía.
+    if (action === "autopilot_simular" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const cuitNorm = String(body.cuit || "").replace(/\D/g, "");
+      if (!cuitNorm) return res.status(400).json({ error: "Falta cuit" });
+      const c = body.config || {};
+      const ymd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+      const hoy = ymd(new Date());
+      const dias = Math.min(Math.max(parseInt(c.diasVentana) || 7, 1), 30);
+      const espera = Math.min(Math.max(parseInt(c.esperaDias) || 0, 0), 10);
+      const { ordenes } = await obtenerPendientes(db, uid, cuitNorm, { sinceDate: ymd(new Date(Date.now() - (dias - 1 + espera) * 86400000)), untilDate: hoy });
+      const r = autopilotCandidatas(ordenes, c, hoy);
+      const max = Math.min(Math.max(parseInt(c.maxPorCorrida) || 40, 1), 100);
+      const fila = ([id, o, sale]) => ({ id, nombre: String(o.nombre || "").slice(0, 60), total: Number(o.total) || 0, fecha: o.fecha || null, plataforma: o._platform || null, ...(sale ? { sale } : {}) });
+      let nc = null;
+      if (c.ncAuto === true) {
+        try {
+          const { rows } = await canceladasConFactura(db, uid, cuitNorm, { sinceDate: ymd(new Date(Date.now() - 59 * 86400000)), untilDate: hoy });
+          nc = { anular: rows.filter(x => !x.parcial && !x.requiere_manual).map(x => ({ id: x.order_id, motivo: x._motivo_lbl, total: x.total, cliente: x.cliente })), aMano: rows.filter(x => x.parcial || x.requiere_manual).length };
+        } catch (e) { nc = { error: e.message }; }
+      }
+      return res.json({ hoy, ultimoDiaMes: esUltimoDiaMes(hoy), max, listas: r.listas.slice(0, 100).map(fila), listasN: r.listas.length, esperando: r.esperando.slice(0, 100).map(fila), esperandoN: r.esperando.length, excluidas: r.excluidas, nc });
+    }
+
+    // ── Devoluciones con factura activa (aviso del Facturador) ──
+    // Mira 90 días por fecha de la FACTURA (no el período de Registros): una venta de un mes devuelta el
+    // mes siguiente también aparece. Totales (para anular) y parciales (NC parcial a mano).
+    if (action === "devoluciones_con_factura" && req.method === "GET") {
+      const cuitNorm = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitNorm) return res.status(400).json({ error: "Falta cuit" });
+      const ymd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+      const r = await canceladasConFactura(db, uid, cuitNorm, { sinceDate: ymd(new Date(Date.now() - 89 * 86400000)), untilDate: ymd(new Date()) });
+      const rows = r.rows.filter(x => !x.parcial);
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      return res.json({ rows, count: rows.length, parciales: r.rows.filter(x => x.parcial), truncated: r.truncated });
     }
 
     // ── PILOTO AUTOMÁTICO: leer configuración ──────────
@@ -4683,185 +5162,10 @@ export default async function handler(req, res) {
       if (!cuitEmit || !Array.isArray(facturas) || facturas.length === 0) {
         return res.status(400).json({ error: "Faltan cuit o lista de facturas" });
       }
-      const cfg = await loadCuitConfig(db, uid, cuitEmit);
-      if (!cfg?.cert_pem || !cfg?.key_pem) return res.status(400).json({ error: "CUIT sin certificado configurado" });
       try {
-        const { wsfe } = arcaUrls(cfg.arca_prod);
-        const { token, sign } = await obtenerTA(db, uid, cfg);
-        const cuitNum = parseInt(cfg.cuit);
-        const pv = parseInt(cfg.punto_venta) || 1;
-
-        // Cache último cbte por PV+tipo NC para minimizar API calls
-        const ultimosNC = {};
-        const results = [];
-
-        // Dedupe defensivo por (punto_venta, comprobante): un doble-click del
-        // front no puede emitir dos NC de la misma factura.
-        const vistosNC = new Set();
-        const facturasUnicas = facturas.filter(f => {
-          const k = `${f.punto_venta || ""}_${f.comprobante}`;
-          if (vistosNC.has(k)) return false;
-          vistosNC.add(k);
-          return true;
-        });
-
-        for (const factura of facturasUnicas) {
-          const tipoFactura = parseInt(factura.tipo) || 6;
-          const tipoNC = tipoNCparaFactura(tipoFactura);
-          // La NC sale por el MISMO punto de venta que la factura original
-          const pvNC = parseInt(factura.punto_venta) || pv;
-          try {
-            // Si la factura ya está anulada, no emitir otra NC. De paso se toma
-            // el flag exento fiable del comprobante guardado (no del front).
-            let compNC = null;
-            try {
-              const cuitDig = String(cuitEmit).replace(/\D/g, "");
-              const nro8 = String(factura.comprobante).padStart(8, "0");
-              for (const docId of [`${cuitDig}_${pvNC}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
-                const s = await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId).get();
-                if (s.exists) { compNC = s.data(); break; }
-              }
-            } catch (_) {}
-            if (compNC?.anulada) {
-              results.push({ ok: false, factura_comprobante: factura.comprobante, error: `ya anulada (NC ${compNC.nc_nro || "?"})` });
-              continue;
-            }
-            // Con notas de crédito parciales, la anulación tiene que acreditar SOLO lo que queda: eso lo
-            // hace la anulación individual (emit_nc), no el lote, que manda el total de la factura.
-            if (Number(compNC?.nc_parciales_total) > 0) {
-              results.push({ ok: false, factura_comprobante: factura.comprobante, error: "tiene una nota de crédito parcial: anulala desde Registros → Anular con nota de crédito (acredita solo lo que queda)" });
-              continue;
-            }
-            if (compNC) factura.exento = !!compNC.exento;
-            // Factura A sin CUIT en Firestore: recuperarlo desde ARCA y persistirlo.
-            if ([1, 2, 3].includes(tipoFactura) && (factura.doc_tipo !== "CUIT" || !factura.doc_nro)) {
-              // Probar con el PV del comprobante y, si difiere, con el PV del CUIT.
-              const pvCandidatos = [...new Set([parseInt(factura.punto_venta) || pv, pv])];
-              let consultaArca = null;
-              for (const pvTry of pvCandidatos) {
-                consultaArca = await consultarComprobante(token, sign, cuitNum, pvTry, tipoFactura, parseInt(factura.comprobante), wsfe);
-                if (consultaArca && !consultaArca.error && consultaArca.doc_tipo) break;
-              }
-              if (consultaArca && consultaArca.doc_tipo === "CUIT" && consultaArca.doc_nro) {
-                factura.doc_tipo = "CUIT";
-                factura.doc_nro = consultaArca.doc_nro;
-                // update() falla si el doc no existe — nunca crea registros fantasma
-                try {
-                  const cuitDig = String(cuitEmit).replace(/\D/g, "");
-                  const nro8 = String(factura.comprobante).padStart(8, "0");
-                  for (const docId of [`${cuitDig}_${pvNC}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
-                    try {
-                      await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
-                        .update({ doc_tipo: "CUIT", doc_nro: consultaArca.doc_nro });
-                      break;
-                    } catch (_) {}
-                  }
-                } catch (_) {}
-              } else {
-                // No pudimos recuperar el CUIT desde ARCA. Devolver error diagnóstico.
-                const diag = consultaArca?.error ? consultaArca.error :
-                  consultaArca?.doc_tipo === "CF" ? "ARCA registra el comprobante como Consumidor Final (sin CUIT). ¿Es realmente Factura A?" :
-                  `ARCA devolvió doc_tipo="${consultaArca?.doc_tipo}" doc_nro="${consultaArca?.doc_nro}"`;
-                results.push({ ok: false, factura_comprobante: factura.comprobante, error: `[consulta-arca pv=${pvCandidatos.join("/")}] ${diag}` });
-                continue;
-              }
-            }
-            const ncKey = `${pvNC}_${tipoNC}`;
-            if (ultimosNC[ncKey] === undefined) {
-              ultimosNC[ncKey] = await getUltimoCbte(token, sign, cuitNum, pvNC, tipoNC, wsfe);
-            }
-            const ncNro = ++ultimosNC[ncKey];
-            const result = await emitirNotaCredito(token, sign, cuitNum, pvNC, ncNro, factura, wsfe);
-            if (result.resultado !== "A" || !result.cae) {
-              results.push({ ok: false, factura_comprobante: factura.comprobante, error: result.obs || "rechazada" });
-              // Tras un rechazo no se decrementa en memoria: se re-consulta AFIP
-              // en el próximo uso para no desincronizar el numerador.
-              delete ultimosNC[ncKey];
-              continue;
-            }
-            const letra = tipoNC === 3 ? "A" : tipoNC === 8 ? "B" : "C";
-            const ncFactData = {
-              comprobante: ncNro, cae: result.cae, cae_vto: result.cae_vto,
-              fecha: new Date().toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
-              cliente: factura.cliente || "Consumidor Final",
-              doc_tipo: factura.doc_tipo, doc_nro: factura.doc_nro || "",
-              letra, tipo_cbte: tipoNC, punto_venta: pvNC,
-              domicilio: factura.domicilio || "",
-              total: parseFloat(factura.total) || 0,
-              exento: !!factura.exento,
-              items: factura.items || [{ nombre: `Anulación Factura ${letra} ${String(factura.comprobante).padStart(8,"0")}`, cantidad: 1, precio: parseFloat(factura.total) || 0 }],
-              _is_nc: true,
-              _cbte_asoc: factura.comprobante,
-              _pv_asoc: factura.punto_venta || pvNC,
-            };
-            const pdfBytes = await generarPDF(ncFactData, cfg);
-            const pdfB64 = Buffer.from(pdfBytes).toString("base64");
-
-            // Persistir
-            try {
-              await db.collection("users").doc(uid).collection("arca_notas_credito").add({
-                cuit: String(cuitEmit), tipo: tipoNC, letra,
-                punto_venta: pvNC, comprobante: ncNro,
-                cae: result.cae, cae_vto: result.cae_vto,
-                total: parseFloat(factura.total) || 0,
-                cliente: factura.cliente || "",
-                doc_tipo: factura.doc_tipo || "", doc_nro: factura.doc_nro || "",
-                factura_origen: { tipo: tipoFactura, comprobante: factura.comprobante, punto_venta: factura.punto_venta || pv },
-                fecha: new Date().toISOString(),
-                pdf_b64: pdfB64.length < 900000 ? pdfB64 : null,
-              });
-            } catch (e) {}
-
-            // Marcar orden anulada + marcar el comprobante como anulada:true en
-            // arca_comprobantes (NO se borra: queda visible en Registros con badge
-            // ANULADA). Todos los lectores tratan anulada:true como NO facturado,
-            // así la orden vuelve a aparecer como pendiente de facturar.
-            let mlDetached = false;
-            if (factura.order_id) {
-              try {
-                await db.collection("users").doc(uid).collection("arca_facturadas").doc(String(factura.order_id))
-                  .set({ anulada: true, anulada_at: new Date().toISOString(), nc_comprobante: ncNro }, { merge: true });
-                // Filtro por cuit_emisor: la misma orden pudo facturarse desde
-                // otro CUIT — la NC de este no puede marcarle la anulación.
-                const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-                  .where("cuit_emisor", "==", String(cuitEmit).replace(/\D/g, ""))
-                  .where("orden_id", "==", factura.order_id).get();
-                const batchUpd = db.batch();
-                compSnap.docs.forEach(d => batchUpd.set(d.ref, { anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro }, { merge: true }));
-                if (!compSnap.empty) await batchUpd.commit();
-                try { await db.collection("users").doc(uid).collection("arca_emisiones").doc(marcaEmisionId(cuitEmit, factura.order_id)).delete(); } catch (_) {}
-              } catch (_) {}
-              // ML: desadjuntar factura original del pack/orden
-              if (String(factura.order_id).startsWith("ML-")) {
-                const mlR = await desadjuntarFacturaML(db, uid, factura.order_id);
-                mlDetached = mlR.ok;
-              }
-            } else {
-              // Sin order_id (manual / recuperada de AFIP): marcar por docId.
-              // update() falla si el doc no existe — nunca crea registros fantasma.
-              const cuitDig = String(cuitEmit).replace(/\D/g, "");
-              const nro8 = String(factura.comprobante).padStart(8, "0");
-              const pvComp = parseInt(factura.punto_venta) || pv;
-              for (const docId of [`${cuitDig}_${pvComp}_${tipoFactura}_${nro8}`, `${cuitDig}_${tipoFactura}_${nro8}`]) {
-                try {
-                  await db.collection("users").doc(uid).collection("arca_comprobantes").doc(docId)
-                    .update({ anulada: true, anulada_at: new Date().toISOString(), nc_nro: ncNro });
-                  break;
-                } catch (_) {}
-              }
-            }
-            results.push({
-              ok: true,
-              factura_comprobante: factura.comprobante,
-              nc: { tipo: tipoNC, letra, punto_venta: pvNC, comprobante: ncNro, cae: result.cae, total: result.total, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf`, pdf_b64: pdfB64 },
-              ml_detached: mlDetached,
-            });
-          } catch (e) {
-            results.push({ ok: false, factura_comprobante: factura.comprobante, error: e.message });
-          }
-        }
-        const okCount = results.filter(r => r.ok).length;
-        return res.json({ ok: true, total: facturasUnicas.length, ok_count: okCount, errors: results.filter(r => !r.ok), results });
+        const r = await emitirNCLote(db, uid, cuitEmit, facturas);
+        if (r.error) return res.status(400).json({ error: r.error });
+        return res.json({ ok: true, ...r });
       } catch (e) {
         return res.status(500).json({ error: e.message });
       }
@@ -5967,154 +6271,11 @@ export default async function handler(req, res) {
       const argYmd0 = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
       const sinceDate = req.query.since ? String(req.query.since).slice(0, 10) : argYmd0(new Date(Date.now() - 30 * 86400000));
       const untilDate = req.query.until ? String(req.query.until).slice(0, 10) : argYmd0(new Date());
-
-      // 1) Comprobantes ACTIVOS (no anulados) del CUIT → map por orden_id. Se leen
-      //    los mismos campos que list_batches: emit_nc_batch revierte 100% por total
-      //    con línea única, no necesita items/domicilio.
-      const compSnap = await db.collection("users").doc(uid).collection("arca_comprobantes")
-        .where("cuit_emisor", "==", cuitParam)
-        .select("orden_id", "nro", "letra", "tipo_cbte", "punto_venta", "total",
-          "doc_tipo", "doc_nro", "cliente", "fecha_cbte", "emitido_at", "anulada")
-        .get();
-      const activeByOrder = new Map();
-      for (const d of compSnap.docs) {
-        const c = d.data();
-        if (!c.orden_id || c.anulada) continue;
-        const key = c.fecha_cbte || (c.emitido_at || "").slice(0, 10);
-        if (key && (key < sinceDate || key > untilDate)) continue; // ventana por fecha del comprobante
-        if (!activeByOrder.has(c.orden_id)) activeByOrder.set(c.orden_id, c);
-      }
-      if (!activeByOrder.size) {
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
-        return res.json({ rows: [], count: 0, connections: [], truncated: false });
-      }
-
-      // 2) Fetch ISLA de canceladas/reembolsadas de las tiendas (Shopify + ML).
-      const userSnap0 = await db.collection("users").doc(uid).get();
-      const stores0 = userSnap0.data()?.stores || [];
-      const shStore = stores0.find(s => s.type === "shopify");
-      const mlStore = stores0.find(s => s.type === "mercadolibre");
-      const tnStore = stores0.find(s => s.type === "tiendanube" && s.accessToken && s.storeId);
-      if (shStore) await ensureShopifyToken(db, uid, shStore);
-      const connections = [];
-      const canceladas = new Map(); // orderId -> motivo
-      let truncated = false;
-
-      // Tienda Nube (17/oct/2026; antes no se revisaba): canceladas (status=cancelled) y
-      // reembolsadas por completo (payment_status=refunded).
-      if (tnStore) {
-        connections.push("tiendanube");
-        const pullTN = async (qs, motivo) => {
-          for (let page = 1; page <= 25; page++) {
-            const r = await fetch(`https://api.tiendanube.com/v1/${tnStore.storeId}/orders?per_page=200&page=${page}&${qs}&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&fields=id,number,status,payment_status`, { headers: { "Authentication": `bearer ${tnStore.accessToken}`, "User-Agent": "Growith (contacto.growith@gmail.com)" } });
-            if (r.status === 404) break; // fin de la paginación en TN
-            if (!r.ok) break;
-            const data = await r.json().catch(() => []);
-            if (!Array.isArray(data) || !data.length) break;
-            for (const o of data) { const oid = "TN-" + String(o.number || o.id); if (!canceladas.has(oid)) canceladas.set(oid, motivo); }
-            if (data.length < 200) break;
-            if (page === 25) truncated = true;
-          }
-        };
-        try { await pullTN("status=cancelled", "cancelada"); } catch (_) {}
-        try { await pullTN("payment_status=refunded", "reembolso"); } catch (_) {}
-      }
-
-      // Shopify: canceladas (status=cancelled) + reembolsos TOTALES (financial_status=refunded)
-      if (shStore?.accessToken && shStore?.shop) {
-        connections.push("shopify");
-        const pullSH = async (extraQS, motivo, detect) => {
-          let url = `https://${shStore.shop}/admin/api/2026-07/orders.json?limit=250&order=created_at+desc&created_at_min=${sinceDate}T00:00:00-03:00&created_at_max=${untilDate}T23:59:59-03:00&${extraQS}`;
-          for (let i = 0; i < 40 && url; i++) {
-            if (i === 39) truncated = true;
-            const r = await fetch(url, { headers: { "X-Shopify-Access-Token": shStore.accessToken } });
-            if (!r.ok) break;
-            const data = await r.json();
-            for (const o of (data.orders || [])) {
-              if (detect && !detect(o)) continue;
-              const oid = "SH-" + (o.name || String(o.order_number || o.id));
-              if (!canceladas.has(oid)) canceladas.set(oid, motivo);
-            }
-            const link = r.headers.get("link") || r.headers.get("Link") || "";
-            const m = link.match(/<([^>]+)>;\s*rel="next"/);
-            url = m ? m[1] : null;
-          }
-        };
-        try { await pullSH("status=cancelled", "cancelada"); } catch (_) {}
-        try { await pullSH("status=any&financial_status=refunded", "reembolso", o => !o.cancelled_at); } catch (_) {}
-      }
-
-      // ML: canceladas (order.status=cancelled) + reembolsos/contracargos sobre las
-      // pagas (misma lógica que api/stock.js: payments[].status refunded/charged_back,
-      // neto cobrado = cobrado − devuelto; cancelled/rejected = intento fallido).
-      if (mlStore?.userId) {
-        connections.push("mercadolibre");
-        try {
-          const ml = await getValidMLToken(db, uid, await mlVentasAcc(db, uid));
-          const accessToken = ml?.accessToken, userId = ml?.userId || mlStore.userId;
-          if (accessToken) {
-            const pullML = async (statusQS, evaluar) => {
-              const pageUrl = (offset) => `https://api.mercadolibre.com/orders/search?seller=${userId}&${statusQS}&order.date_created.from=${sinceDate}T00:00:00.000-03:00&order.date_created.to=${untilDate}T23:59:59.999-03:00&limit=50&offset=${offset}&sort=date_desc`;
-              let offset = 0;
-              for (let i = 0; i < 40; i++) {
-                const r = await fetch(pageUrl(offset), { headers: { Authorization: `Bearer ${accessToken}` } });
-                if (!r.ok) break;
-                const data = await r.json();
-                const results = data.results || [];
-                for (const o of results) {
-                  const motivo = evaluar(o);
-                  if (!motivo) continue;
-                  const oid = "ML-" + String(o.id);
-                  if (!canceladas.has(oid)) canceladas.set(oid, motivo);
-                }
-                const total = parseInt(data.paging?.total) || 0;
-                offset += 50;
-                if (results.length < 50 || offset >= Math.min(total, 2000)) { if (offset < total) truncated = true; break; }
-                await new Promise(res2 => setTimeout(res2, 250));
-              }
-            };
-            await pullML("order.status=cancelled", () => "cancelada");
-            await pullML("order.status=paid", (o) => {
-              let cobrado = 0, devuelto = 0, cargoback = false;
-              for (const p of (o.payments || [])) {
-                const st = String(p.status || "").toLowerCase();
-                const amt = parseFloat(p.transaction_amount) || 0;
-                const tar = parseFloat(p.transaction_amount_refunded) || 0;
-                if (st === "approved") { cobrado += amt; devuelto += tar; }
-                else if (st === "refunded" || st === "charged_back") { cobrado += amt; devuelto += (amt > 0 ? amt : tar); if (st === "charged_back") cargoback = true; }
-              }
-              if (cobrado > 0 && (cobrado - devuelto) <= cobrado * 0.01) return cargoback ? "contracargo" : "reembolso";
-              return null;
-            });
-          }
-        } catch (_) {}
-      }
-
-      // 3) Intersección: canceladas que tienen comprobante ACTIVO → filas para emit_nc_batch.
-      const MOTIVO_LBL = { cancelada: "Cancelada", reembolso: "Reembolso", contracargo: "Contracargo" };
-      const rows = [];
-      for (const [orderId, comp] of activeByOrder) {
-        const motivo = canceladas.get(orderId);
-        if (!motivo) continue;
-        rows.push({
-          order_id: orderId,
-          tipo: comp.tipo_cbte,
-          letra: comp.letra,
-          punto_venta: comp.punto_venta || null,
-          comprobante: comp.nro,
-          total: comp.total || 0,
-          doc_tipo: comp.doc_tipo || "",
-          doc_nro: comp.doc_nro || "",
-          cliente: comp.cliente || "",
-          fecha_cbte: comp.fecha_cbte || null,
-          _motivo: motivo,
-          _motivo_lbl: MOTIVO_LBL[motivo] || motivo,
-          _platform: orderId.startsWith("ML-") ? "mercadolibre" : orderId.startsWith("TN-") ? "tiendanube" : "shopify",
-        });
-      }
-      rows.sort((a, b) => String(b.fecha_cbte || "").localeCompare(String(a.fecha_cbte || "")));
+      const r = await canceladasConFactura(db, uid, cuitParam, { sinceDate, untilDate });
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
-      return res.json({ rows, count: rows.length, connections, truncated });
+      // Las devoluciones parciales viajan aparte: no se anulan en lote (llevan una NC parcial por lo devuelto).
+      const rows = r.rows.filter(x => !x.parcial);
+      return res.json({ rows, count: rows.length, parciales: r.rows.filter(x => x.parcial), connections: r.connections, truncated: r.truncated });
     }
 
     if (action === "pending_orders" && req.method === "GET") {
