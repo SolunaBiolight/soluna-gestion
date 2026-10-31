@@ -36950,13 +36950,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                 {NIVELES.map(l=>{
                                   const act = lv===l.id; const n = aSel[l.id].size;
                                   return (
-                                    <div key={l.id} role="tab" aria-selected={act} onClick={()=>{ if(!act) elegirNivelCta(k,l.id); }} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,border:`1px solid ${act?T.accent:T.border}`,background:act?T.accent+"1a":T.card,cursor:act?"default":"pointer",userSelect:"none"}}>
-                                      <span style={{color:act?T.accent:T.textMd,display:"inline-flex"}}><GhI n={l.icon} size={13}/></span>
-                                      <span style={{fontSize:12,fontWeight:700,color:act?T.accent:T.text,whiteSpace:"nowrap"}}>{l.label}</span>
+                                    <div key={l.id} role="tab" aria-selected={act} onClick={()=>{ if(!act) elegirNivelCta(k,l.id); }} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 18px",borderRadius:12,border:`1px solid ${act?T.accentSolid:T.border}`,background:act?T.accentSolid:T.surface,cursor:act?"default":"pointer",userSelect:"none"}}>
+                                      <span style={{color:act?"#fff":T.textMd,display:"inline-flex"}}><GhI n={l.icon} size={17}/></span>
+                                      <span style={{fontSize:DS.font.xl,fontWeight:DS.w.bold,color:act?"#fff":T.textMd,whiteSpace:"nowrap"}}>{l.label}</span>
                                       {n>0 && (
-                                        <span style={{display:"inline-flex",alignItems:"center",gap:5,background:T.accent+"26",color:T.accent,borderRadius:999,padding:"1px 6px 1px 7px",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
+                                        <span style={{display:"inline-flex",alignItems:"center",gap:5,background:act?"rgba(255,255,255,0.22)":T.accent+"26",color:act?"#fff":T.accent,borderRadius:999,padding:"2px 7px 2px 8px",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
                                           {n}
-                                          <button onClick={e=>{e.stopPropagation(); selLimpiar(l.id);}} title="Quitar la selección" style={{background:"transparent",border:"none",color:T.accent,cursor:"pointer",padding:0,lineHeight:0,fontFamily:"inherit"}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                                          <button onClick={e=>{e.stopPropagation(); selLimpiar(l.id);}} title="Quitar la selección" style={{background:"transparent",border:"none",color:"inherit",cursor:"pointer",padding:0,lineHeight:0,fontFamily:"inherit"}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                                         </span>
                                       )}
                                     </div>
