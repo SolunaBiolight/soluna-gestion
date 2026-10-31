@@ -318,6 +318,61 @@ async function stripeComisiones(db, uid, cfg, ordenes, desdeMs, hastaMs) {
   return { conectado: true, cruzadas, transacciones: txs.length, sueltos };
 }
 
+// ── Stripe: reembolsos y disputas hechos fuera de Growith ──
+// Se guardan por balance_transaction del cobro (el mismo o.stripe.bt de la venta), así se cruzan aunque la venta
+// sea vieja. Doc impultienda_cfg/stripe_movs {at, ch:{cobro: bt}, m:{bt:{txId:{t, usd, fee, at}}}}.
+const STRIPE_MOV_TIPOS = ["refund", "refund_failure", "payment_refund", "payment_failure_refund", "adjustment"];
+async function stripeMovimientos(db, uid, cfg) {
+  const key = descifrar(cfg.stripeEnc);
+  if (!key) return { m: {} };
+  const ref = db.collection("users").doc(uid).collection("impultienda_cfg").doc("stripe_movs");
+  const prev = (await ref.get()).data() || {};
+  const m = prev.m || {}, ch = prev.ch || {};
+  const ahora = Date.now();
+  if (prev.at && ahora - prev.at < 10 * 60000) return { m };
+  const desde = Math.floor((prev.at ? prev.at - 2 * 86400000 : ahora - 180 * 86400000) / 1000);
+  const st = (u) => fetch("https://api.stripe.com/v1/" + u, { headers: { Authorization: `Bearer ${key}` } }).then(r => r.json());
+  try {
+    const listas = await Promise.all(STRIPE_MOV_TIPOS.map(async (tipo) => {
+      const out = [];
+      let url = `balance_transactions?limit=100&type=${tipo}&created[gte]=${desde}&expand[]=data.source`;
+      for (let i = 0; i < 20; i++) {
+        const j = await st(url);
+        if (j.error) throw new Error(j.error.message);
+        out.push(...(j.data || []));
+        if (!j.has_more || !j.data?.length) break;
+        url = url.replace(/&starting_after=[^&]*/, "") + `&starting_after=${j.data[j.data.length - 1].id}`;
+      }
+      return out;
+    }));
+    const fx = await fxPorUsd();
+    for (const t of listas.flat()) {
+      const disputa = t.reporting_category === "dispute" || t.reporting_category === "dispute_reversal" || t.source?.object === "dispute";
+      if (t.type === "adjustment" && !disputa) continue;
+      const chId = typeof t.source?.charge === "string" ? t.source.charge : t.source?.charge?.id;
+      if (!chId) continue;
+      if (!ch[chId]) {
+        const c = await st(`charges/${chId}`);
+        if (c.error) throw new Error(c.error.message);
+        ch[chId] = typeof c.balance_transaction === "string" ? c.balance_transaction : c.balance_transaction?.id || "";
+      }
+      if (!ch[chId]) continue;
+      // amount es negativo cuando la plata sale (reembolso, disputa) y positivo cuando vuelve (disputa ganada, reembolso fallido).
+      const usd = aUsd(Math.abs(t.amount) / 100, t.currency, fx), fee = aUsd(Math.abs(t.fee) / 100, t.currency, fx);
+      if (usd == null || fee == null) continue;
+      (m[ch[chId]] || (m[ch[chId]] = {}))[t.id] = { t: disputa ? "disputa" : "reembolso", usd: t.amount < 0 ? usd : -usd, fee: t.fee < 0 ? -fee : fee, at: new Date(t.created * 1000).toISOString() };
+    }
+    await ref.set({ at: ahora, m, ch });
+    return { m };
+  } catch (e) { return { m, error: e.message }; }
+}
+function resumenMovs(txs) {
+  const r = { reembolso: 0, disputa: 0, feeDisputa: 0, feeOtros: 0 };
+  for (const x of Object.values(txs || {})) { r[x.t] += x.usd; if (x.t === "disputa") r.feeDisputa += x.fee; else r.feeOtros += x.fee; }
+  r.total = r.reembolso + r.disputa + r.feeDisputa + r.feeOtros;
+  return r;
+}
+
 // ── Mercado Pago: comisión real por venta (cuenta conectada como "Mercado Pago") ──
 async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
   const deMp = ordenes.filter(o => o.pasarela === "mercadopago" && !o.mp?.id);
@@ -600,7 +655,8 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const ordenes = todas.filter(o => !o.importado || !delWebhook.has(String(o.orden)));
   const fx = await fxPorUsd();
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
-  const [stripe, mp] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs)]);
+  const [stripe, mp, movs] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs), stripeMovimientos(db, uid, cfg)]);
+  if (movs.error) stripe.errorMovimientos = movs.error;
   // Con Stripe conectado, la comisión de las ventas que no se pudieron cruzar es el PROMEDIO REAL de las cruzadas
   // (no un % cargado a mano). Sin Stripe o con pocas cruzadas, el estimado del cliente.
   const conFee = ordenes.filter(o => o.stripe?.fee != null);
@@ -644,14 +700,16 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       f.comisiones += com; if (real == null) f.comisionesEstimadas += com;
       // Reembolso/contracargo: se resta en el DÍA DE LA VENTA (para que el profit de ese día sea el real).
       // Stripe no devuelve la comisión: la comisión queda y se resta todo lo devuelto.
-      const reemb = o.reembolso?.usd != null ? o.reembolso.usd : (o.ev_refunded || o.ev_chargeback ? usd : 0);
+      // Lo que dice Stripe manda: ve lo hecho fuera de Growith y los US$ de la disputa, que también restan.
+      const mov = o.stripe?.bt && movs.m[o.stripe.bt] ? resumenMovs(movs.m[o.stripe.bt]) : null;
+      const reemb = mov ? mov.total : o.reembolso?.usd != null ? o.reembolso.usd : (o.ev_refunded || o.ev_chargeback ? usd : 0);
       f.reembolsos += reemb;
       cv.comisiones += com;
       ventasLista.push({ tid, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
         total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
         comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
         pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: (o.utm?.utm_content && idxUtm?.a?.[o.utm.utm_content]?.[0]) || o.utm?.utm_content || null, importado: !!o.importado,
-        reembolsada: !!(o.ev_refunded || o.ev_chargeback || o.reembolso), reembolso: o.reembolso || null, reembolsoUsd: reemb, email: o.email || null,
+        reembolsada: mov ? mov.reembolso + mov.disputa > 0.005 : !!(o.ev_refunded || o.ev_chargeback || o.reembolso), reembolso: o.reembolso || null, reembolsoUsd: reemb, disputa: mov && Object.values(movs.m[o.stripe.bt]).some(x => x.t === "disputa") ? { usd: mov.disputa, fee: mov.feeDisputa, perdida: mov.disputa > 0.005 } : null, email: o.email || null,
         order_id: o.order_id });
     }
   }
