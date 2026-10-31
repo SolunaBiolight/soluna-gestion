@@ -108,7 +108,7 @@ const META_RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80004]);
 const META_RETRY_DELAYS_MS = [1500, 3500, 7500]; // total ~12.5s antes de rendirse
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function metaGet(path, params, token) {
+async function metaGet(path, params, token, { sinReintento = false } = {}) {
   const url = new URL(`${META_BASE}/${path.replace(/^\//, "")}`);
   url.searchParams.set("access_token", token);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
@@ -125,7 +125,7 @@ async function metaGet(path, params, token) {
     const detalle = [e.error_user_title, e.error_user_msg, e.error_data ? (typeof e.error_data === "string" ? e.error_data : JSON.stringify(e.error_data)) : ""].filter(Boolean).join(" — ")
       || JSON.stringify({ ...e, message: undefined, code: undefined, fbtrace_id: undefined }).slice(0, 300);
     const errMsg = `Meta · ${e.message} (${code}${e.error_subcode ? `/${e.error_subcode}` : ""})${detalle && detalle !== "{}" ? `: ${detalle}` : ""}`;
-    if (!META_RATE_LIMIT_CODES.has(code) || attempt === META_RETRY_DELAYS_MS.length) {
+    if (sinReintento || !META_RATE_LIMIT_CODES.has(code) || attempt === META_RETRY_DELAYS_MS.length) {
       throw new Error(errMsg);
     }
     lastErr = errMsg;
@@ -1812,7 +1812,7 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             const nodesParams = { fields: nodeFields, limit: 200 };
             if (filteringParam) nodesParams.filtering = filteringParam;
             const edge = level === "campaign" ? "campaigns" : level === "adset" ? "adsets" : "ads";
-            let nodePage = await metaGet(`${cfg.ad_account_id}/${edge}`, nodesParams, cfg.access_token);
+            let nodePage = await metaGet(`${cfg.ad_account_id}/${edge}`, nodesParams, cfg.access_token, { sinReintento: level === "adset" });
             for (const n of (nodePage.data || [])) nodeMap[n.id] = n;
             let nNext = nodePage.paging?.next || null;
             let nSafety = 0;
@@ -1826,14 +1826,29 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
                 nNext = j.paging?.next || null;
               } catch (_) { break; }
             }
-          } catch (e) { /* seguimos sin status */ }
+          } catch (e) {
+            // Meta limita por separado la lectura de conjuntos: los mismos datos salen anidados en sus anuncios.
+            if (level === "adset") {
+              try {
+                const dePadre = {};
+                if (filteringParam) dePadre.filtering = filteringParam;
+                let pg = await metaGet(`${cfg.ad_account_id}/ads`, { fields: `adset{${nodeFields}}`, limit: 200, ...dePadre }, cfg.access_token);
+                for (let i = 0; i <= 20; i++) {
+                  for (const a of pg.data || []) if (a.adset?.id) nodeMap[a.adset.id] = a.adset;
+                  if (!pg.paging?.next) break;
+                  pg = await (await fetch(pg.paging.next, { signal: AbortSignal.timeout(25000) })).json();
+                  if (pg.error) break;
+                }
+              } catch (_) { /* seguimos sin status */ }
+            }
+          }
           // Meta deja ACTIVE una campaña con todos sus conjuntos apagados (y un conjunto sin anuncios activos): no está entregando.
           if (level !== "ad") {
             try {
               const padre = level === "campaign" ? "campaign_id" : "adset_id";
               const conActivos = new Set();
               const filt = [...(filteringParam ? JSON.parse(filteringParam) : []), { field: "effective_status", operator: "IN", value: ["ACTIVE"] }];
-              let pg = await metaGet(`${cfg.ad_account_id}/${level === "campaign" ? "adsets" : "ads"}`, { fields: padre, limit: 500, filtering: JSON.stringify(filt) }, cfg.access_token);
+              let pg = await metaGet(`${cfg.ad_account_id}/ads`, { fields: padre, limit: 500, filtering: JSON.stringify(filt) }, cfg.access_token);
               let completo = true;
               for (let i = 0; ; i++) {
                 for (const h of pg.data || []) conActivos.add(String(h[padre]));
