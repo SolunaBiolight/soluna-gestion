@@ -4321,15 +4321,15 @@ function DateRangePicker({ T, since, until, onChange, presets, onPreset, labelTe
         return (<>
         {esMobile && <div onClick={()=>setOpen(false)} className="gh-modal-backdrop" style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,0.45)"}}/>}
         <div ref={ddRef} className="gh-dropdown" style={sheetStyle}>
-          {/* Presets */}
-          <div style={{display:"grid",gridTemplateColumns:`repeat(${esMobile?2:3}, 1fr)`,gap:esMobile?8:6,marginBottom:10}}>
+          {/* Presets (presets=[] = solo calendario, como en Envíos) */}
+          {PRESETS.length>0&&<div style={{display:"grid",gridTemplateColumns:`repeat(${esMobile?2:3}, 1fr)`,gap:esMobile?8:6,marginBottom:10}}>
             {PRESETS.map(p => {
               const act=presetActivo(p);
               return (
               <button key={p.id} onClick={()=>applyPreset(p)} style={{padding:esMobile?"10px 10px":"6px 10px",fontSize:esMobile?12:11,fontWeight:act?700:500,border:`1px solid ${act?T.accent:T.border}`,borderRadius:8,background:act?T.accent+"1c":T.surface,color:act?T.accent:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.label}</button>
               );
             })}
-          </div>
+          </div>}
           {/* Month nav */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
             <button onClick={()=>setViewMonth(new Date(year, month-1, 1))} style={{background:T.surface,border:`1px solid ${T.border}`,color:T.text,borderRadius:8,padding:"4px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>‹</button>
@@ -10523,7 +10523,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [tabCounts,setTabCounts]=useState({empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [filterMedio,setFilterMedio]=useState(""); // medio de envío exacto ("" = todos)
-  const [filterDia,setFilterDia]=useState("todos"); // todos | hoy | ayer | 3d | 7d | YYYY-MM-DD (día del pedido, hora AR)
+  const [filterDesde,setFilterDesde]=useState(""); // rango de días del pedido (hora AR); "" = todos los días
+  const [filterHasta,setFilterHasta]=useState("");
   const [tabOrders,setTabOrders]=useState([]);
   const [tabLoading,setTabLoading]=useState(false);
   const [tabError,setTabError]=useState(false); // el último fetch del tab falló (con o sin cache pintada)
@@ -10795,20 +10796,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(filterTipoEnvio==="sucursal") base=base.filter(o=>isSucursalOrder(o));
     // (el desplegable "Medio de envío" se quitó de la pantalla el 10/oct/2026; filterMedio queda siempre vacío)
     if(filterMedio) base=base.filter(o=>String(o.medioEnvio||"--")===filterMedio);
-    if(filterDia!=="todos"){
-      const ymd=(ms)=>new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(ms));
-      const hoy=ymd(Date.now());
-      const ok = filterDia==="hoy" ? (d=>d===hoy) : filterDia==="ayer" ? (d=>d===ymd(Date.now()-86400000))
-        : filterDia==="3d" ? (d=>d>=ymd(Date.now()-2*86400000)) : filterDia==="7d" ? (d=>d>=ymd(Date.now()-6*86400000))
-        : filterDia==="viejos" ? (d=>d&&d<ymd(Date.now()-6*86400000)) : (d=>d===filterDia);
-      base=base.filter(o=>ok(ghDiaPedido(o)));
-    }
+    if(filterDesde){ const h=filterHasta||filterDesde; base=base.filter(o=>{ const d=ghDiaPedido(o); return d&&d>=filterDesde&&d<=h; }); }
     if(searchEnvios){
       const s=searchEnvios.toLowerCase();
       return base.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
     }
     return base;
-  },[tabOrders,searchEnvios,filterTipoEnvio,filterMedio,filterDia]);
+  },[tabOrders,searchEnvios,filterTipoEnvio,filterMedio,filterDesde,filterHasta]);
   // Medios de envío presentes en la pestaña (con cantidad), para el filtro
   const mediosEnvio=useMemo(()=>{
     const m=new Map();
@@ -10833,7 +10827,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
   // Paginación de pedidos — 50 por página
   const PAGE_SIZE=50;
-  useEffect(()=>setOrderPage(0),[tabEnvio,filterTipoEnvio,filterMedio,filterDia,searchEnvios]);
+  useEffect(()=>setOrderPage(0),[tabEnvio,filterTipoEnvio,filterMedio,filterDesde,filterHasta,searchEnvios]);
   const totalPages=Math.max(1,Math.ceil(exportables.length/PAGE_SIZE));
   const pageOrders=exportables.slice(orderPage*PAGE_SIZE,(orderPage+1)*PAGE_SIZE);
   const pageNums=pageOrders.map(o=>o.numero);
@@ -13424,24 +13418,15 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{height:30,padding:"0 16px",fontSize:13,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.surface:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?700:500,transition:"all 0.1s",boxShadow:"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
                 ))}
               </div>}
-              {tabEnvio!=="buscar"&&(()=>{
-                // Filtro por día del pedido (1/nov/2026). Los días que hay en la pestaña, con cantidad.
-                const dias=new Map(); for(const o of tabOrders){ const d=ghDiaPedido(o); if(d) dias.set(d,(dias.get(d)||0)+1); }
-                const lista=[...dias.entries()].sort((a,b)=>b[0].localeCompare(a[0]));
-                const act=filterDia!=="todos";
-                return (
-                  <select value={filterDia} onChange={e=>{setFilterDia(e.target.value);setSelected(new Map());}} title="Filtrar por el día en que se hizo el pedido"
-                    style={{height:40,padding:"0 14px",fontSize:13,borderRadius:DS.r.full,border:`1px solid ${act?T.accent:T.border}`,background:T.card,color:act?T.text:T.textMd,fontWeight:act?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    <option value="todos">Todos los días</option>
-                    <option value="hoy">Hoy</option>
-                    <option value="ayer">Ayer</option>
-                    <option value="3d">Últimos 3 días</option>
-                    <option value="7d">Últimos 7 días</option>
-                    <option value="viejos">Más de 7 días</option>
-                    {lista.length>0&&<optgroup label="Un día">{lista.map(([d,n])=><option key={d} value={d}>{`${d.slice(8,10)}/${d.slice(5,7)} · ${n} pedido${n===1?"":"s"}`}</option>)}</optgroup>}
-                  </select>
-                );
-              })()}
+              {tabEnvio!=="buscar"&&(
+                // Filtro por día del pedido (1/nov/2026): calendario como el del Facturador, sin atajos.
+                <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+                  <DateRangePicker T={T} since={filterDesde} until={filterHasta||filterDesde} presets={[]} labelText={filterDesde?undefined:"Todos los días"}
+                    onChange={(d,h)=>{ setFilterDesde(d||""); setFilterHasta(h||d||""); setSelected(new Map()); }}/>
+                  {filterDesde&&<button onClick={()=>{ setFilterDesde(""); setFilterHasta(""); setSelected(new Map()); }} title="Ver todos los días"
+                    style={{height:30,padding:"0 12px",fontSize:12,borderRadius:DS.r.full,border:`1px solid ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Todos los días</button>}
+                </span>
+              )}
               <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
                 style={{fontSize:12,color:T.textSm,marginLeft:"auto",order:3,display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
