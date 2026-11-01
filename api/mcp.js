@@ -668,6 +668,69 @@ const PAIS_TZ = {
 const hoyEn = (tz) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
 const sumaDias = (ymd, n) => new Date(Date.parse(ymd + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
 
+// Métricas completas de una fila de insights (1/nov/2026, pedido de Lautaro: "todas las métricas que tengo en
+// el Administrador de anuncios" para la oficina de agentes). Meta no expone por API las columnas guardadas
+// de cada usuario, así que se traen TODAS las estándar + el detalle de cada acción (incluye conversiones
+// personalizadas: offsite_conversion.custom.<id>). Solo lo que tiene dato.
+const ACC = {
+  vista_pagina: ["landing_page_view", "omni_landing_page_view"],
+  ver_contenido: ["view_content", "offsite_conversion.fb_pixel_view_content", "omni_view_content"],
+  carrito: ["add_to_cart", "offsite_conversion.fb_pixel_add_to_cart", "omni_add_to_cart"],
+  info_pago: ["add_payment_info", "offsite_conversion.fb_pixel_add_payment_info"],
+  pago: ["initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout", "omni_initiated_checkout"],
+  compra: ["purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase"],
+  lead: ["lead", "offsite_conversion.fb_pixel_lead", "onsite_conversion.lead_grouped"],
+  registro: ["complete_registration", "offsite_conversion.fb_pixel_complete_registration"],
+  video_3s: ["video_view"],
+  interaccion: ["post_engagement"], reaccion: ["post_reaction"], comentario: ["comment"], compartido: ["post"], guardado: ["onsite_conversion.post_save"],
+  mensajes: ["onsite_conversion.messaging_conversation_started_7d"],
+};
+function accVal(lista, tipos) {
+  const m = {}; for (const a of lista || []) m[a.action_type] = parseFloat(a.value) || 0;
+  for (const t of tipos) if (m[t] != null) return m[t];
+  return null;
+}
+function metricasCompletas(r, gasto, nivel, crudas) {
+  if (!r) return null;
+  const a = r.actions || [], v = r.action_values || [];
+  const n = (k) => accVal(a, ACC[k]);
+  const costo = (x) => x ? r2(gasto / x) : null;
+  const pct = (x, y) => x != null && y ? r2(x / y * 100) : null;
+  const impr = parseInt(r.impressions) || 0;
+  const linkClicks = r.inline_link_clicks != null ? parseInt(r.inline_link_clicks) : accVal(a, ["link_click"]);
+  const salientes = accVal(r.outbound_clicks, ["outbound_click"]);
+  const vista = n("vista_pagina"), carrito = n("carrito"), pago = n("pago"), compra = n("compra"), v3 = n("video_3s");
+  const thru = accVal(r.video_thruplay_watched_actions, ["video_view"]);
+  const valorCompra = accVal(v, ACC.compra);
+  const limpio = (o) => { const x = {}; for (const [k, val] of Object.entries(o)) if (val != null && val !== 0 && !(typeof val === "object" && !Object.keys(val).length)) x[k] = val; return x; };
+  const out = limpio({
+    alcance: r.reach != null ? parseInt(r.reach) : null, impresiones: impr || null,
+    clics_todos: r.clicks != null ? parseInt(r.clicks) : null, clics_enlace: linkClicks,
+    ctr_enlace_pct: r.inline_link_click_ctr != null ? r2(r.inline_link_click_ctr) : pct(linkClicks, impr),
+    cpc_enlace: r.cost_per_inline_link_click != null ? r2(r.cost_per_inline_link_click) : costo(linkClicks),
+    clics_salientes: salientes, costo_clic_saliente: costo(salientes),
+    vistas_pagina_destino: vista, costo_vista_pagina: costo(vista),
+    ver_contenido: n("ver_contenido"), agregados_carrito: carrito, costo_agregado_carrito: costo(carrito),
+    info_pago_agregada: n("info_pago"), pagos_iniciados_pixel: pago, compras_pixel: compra, costo_compra_pixel: costo(compra),
+    valor_compras_pixel: valorCompra != null ? r2(valorCompra) : null, roas_pixel: accVal(r.purchase_roas, ACC.compra) != null ? r2(accVal(r.purchase_roas, ACC.compra)) : (valorCompra && gasto ? r2(valorCompra / gasto) : null),
+    leads: n("lead"), registros: n("registro"), conversaciones_iniciadas: n("mensajes"),
+    embudo_pct: limpio({ clic_a_vista: pct(vista, linkClicks), vista_a_carrito: pct(carrito, vista), carrito_a_pago: pct(pago, carrito), pago_a_compra: pct(compra, pago), clic_a_compra: pct(compra, linkClicks) }),
+    video: limpio({ reproducciones_3s: v3, thruplays: thru, p25: accVal(r.video_p25_watched_actions, ["video_view"]), p50: accVal(r.video_p50_watched_actions, ["video_view"]), p75: accVal(r.video_p75_watched_actions, ["video_view"]), p100: accVal(r.video_p100_watched_actions, ["video_view"]), hook_rate_pct: pct(v3, impr), hold_rate_pct: pct(thru, v3), costo_thruplay: costo(thru) }),
+    interaccion: limpio({ con_la_publicacion: n("interaccion"), reacciones: n("reaccion"), comentarios: n("comentario"), compartidos: n("compartido"), guardados: n("guardado") }),
+    ...(nivel === "ad" ? { calidad: limpio({ ranking_calidad: r.quality_ranking && r.quality_ranking !== "UNKNOWN" ? r.quality_ranking : null, ranking_interaccion: r.engagement_rate_ranking && r.engagement_rate_ranking !== "UNKNOWN" ? r.engagement_rate_ranking : null, ranking_conversion: r.conversion_rate_ranking && r.conversion_rate_ranking !== "UNKNOWN" ? r.conversion_rate_ranking : null }) } : {}),
+  });
+  // Todas las acciones tal como las da Meta (cantidad, valor y costo por acción): ahí aparecen las
+  // conversiones personalizadas y cualquier evento que el usuario tenga como columna.
+  if (crudas) {
+    const map = {};
+    for (const x of a) (map[x.action_type] = map[x.action_type] || {}).cantidad = r2(x.value);
+    for (const x of v) (map[x.action_type] = map[x.action_type] || {}).valor = r2(x.value);
+    for (const x of r.cost_per_action_type || []) (map[x.action_type] = map[x.action_type] || {}).costo = r2(x.value);
+    if (Object.keys(map).length) out.acciones = map;
+  }
+  return out;
+}
+
 async function metaAdministrador(db, uid, args) {
   const hoy = hoyAR();
   // ventana: "rango" (desde/hasta en hora Argentina), "hoy_local" (desde las 00:00 de la hora local
@@ -679,6 +742,8 @@ async function metaAdministrador(db, uid, args) {
   const hasta = ventana !== "rango" ? sumaDias(hoy, 1) : ISO.test(args.hasta || "") ? args.hasta : desde;
   if (hasta < desde || difDias(desde, hasta) > 92) throw new Error("rango inválido (máximo 92 días).");
   const nivel = ["campaign", "adset", "ad"].includes(args.nivel) ? args.nivel : "campaign";
+  const metCompletas = args.metricas !== "basicas";
+  const crudas = args.acciones_detalle === true;
   const campId = /^\d+$/.test(String(args.campana_id || "")) ? String(args.campana_id) : null;
   const tokens = await metaTokens(db, uid);
   if (!tokens.length) return { conectado: false, aviso: "El cliente no tiene Meta conectado en Growith." };
@@ -764,7 +829,7 @@ async function metaAdministrador(db, uid, args) {
       const filtro = campId ? { filtering: JSON.stringify([{ field: "campaign.id", operator: "EQUAL", value: campId }]) } : {};
       const edge = nivel === "campaign" ? "campaigns" : nivel === "adset" ? "adsets" : "ads";
       const [ins, nodos] = await Promise.all([
-        ventana !== "rango" ? insVentana(c, filtro) : metaTodo(`${c.id}/insights`, { level: nivel, fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,ctr,cpc,cpm,frequency,actions,action_values,video_avg_time_watched_actions", time_range: JSON.stringify({ since: desde, until: hasta }), limit: "500", ...filtro }, c.tok),
+        ventana !== "rango" ? insVentana(c, filtro) : metaTodo(`${c.id}/insights`, { level: nivel, fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,ctr,cpc,cpm,frequency,actions,action_values,video_avg_time_watched_actions" + (metCompletas ? ",reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,outbound_clicks,cost_per_action_type,purchase_roas,video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions" + (nivel === "ad" ? ",quality_ranking,engagement_rate_ranking,conversion_rate_ranking" : "") : ""), time_range: JSON.stringify({ since: desde, until: hasta }), limit: "500", ...filtro }, c.tok),
         metaTodo(`${c.id}/${edge}`, { fields: `id,name,effective_status,daily_budget,lifetime_budget,bid_strategy${nivel === "adset" ? ",bid_amount" : ""}${nivel !== "campaign" ? ",campaign_id" : ""}`, limit: "300", ...filtro }, c.tok, 5).catch(() => []),
       ]);
       const nodo = Object.fromEntries(nodos.map(n => [String(n.id), n]));
@@ -798,6 +863,7 @@ async function metaAdministrador(db, uid, args) {
           pagos_iniciados: chk, costo_pago_iniciado: chk ? r2(gasto / chk) : null,
           retencion_3s_pct: impr ? r2(v3 / impr * 100) : null,
           tiempo_prom_video_s: r2((r?.video_avg_time_watched_actions || [])[0]?.value),
+          ...(metCompletas && r ? { metricas_meta: metricasCompletas(r, gasto, nivel, crudas) } : {}),
         };
       };
       for (const r of ins) { const id = String(r[idF]); conGasto.add(id); filas.push(fila(id, r)); }
@@ -1103,8 +1169,8 @@ const TOOLS = [
     "Campañas de Meta Ads, Google Ads y TikTok Ads conectadas a Growith con métricas del período: estado, presupuesto, gasto, impresiones, clicks, CTR, CPC, conversiones o compras, valor y ROAS según cada plataforma. Cada cuenta indica su moneda. Por defecto, últimos 7 días de todas las plataformas.",
     { type: "object", properties: { plataforma: { type: "string", enum: ["todas", "meta", "google", "tiktok"], description: "Plataforma a consultar (por defecto todas)." }, ...PROPS_PERIODO }, additionalProperties: false }),
   tool("meta_administrador", "Administrador de Meta Ads con ventas reales",
-    "Todas las campañas de Meta de las cuentas publicitarias del cliente (las elegidas en Growith), agrupadas por tienda, como el Administrador de anuncios pero con ventas REALES: ventas, revenue (USD), ROAS, CPA y AOV salen de las ventas de Impultienda cruzadas por UTM; gasto, CPC, CTR, CPM, frecuencia, pagos iniciados, retención 3 s y tiempo promedio de video salen de Meta. Cada fila trae id (para meta_accion), estado, presupuesto diario y la cuenta. 'puede_editar' dice si se pueden aplicar cambios con meta_accion. nivel: campaign (default), adset o ad; con campana_id se ven solo los conjuntos/anuncios de esa campaña. desde/hasta AAAA-MM-DD (por defecto hoy, hora Argentina). Con ventana=hoy_local da lo que va del día desde las 00:00 de la hora local del país de cada campaña (gasto y ventas), y con ventana=ultimas_horas las últimas N horas (por ejemplo 2). Todo se lee en vivo en cada llamada (ventas por webhook en segundos; gasto de Meta con su atraso de 15 a 60 min, el gasto que Meta todavía no repartió por hora se suma a la fila); 'datos' dice cuándo se leyó y la última hora con gasto de cada cuenta. Las filas de conjuntos traen estrategia_puja y puja. Se puede llamar cada 1 minuto.",
-    { type: "object", properties: { nivel: { type: "string", enum: ["campaign", "adset", "ad"], description: "Nivel (default campaign)." }, campana_id: { type: "string", description: "Opcional: id de campaña para ver sus conjuntos o anuncios." }, ventana: { type: "string", enum: ["rango", "hoy_local", "ultimas_horas"], description: "rango (default, usa desde/hasta en hora Argentina), hoy_local (en lo que va del día desde las 00:00 de la hora local del país de cada campaña) o ultimas_horas (las últimas 'horas' horas hasta ahora)." }, horas: { type: "number", description: "Para ventana=ultimas_horas: 1 a 48 (default 2)." }, desde: { type: "string", description: "AAAA-MM-DD" }, hasta: { type: "string", description: "AAAA-MM-DD" } }, additionalProperties: false }),
+    "Todas las campañas de Meta de las cuentas publicitarias del cliente (las elegidas en Growith), agrupadas por tienda, como el Administrador de anuncios pero con ventas REALES: ventas, revenue (USD), ROAS, CPA y AOV salen de las ventas de Impultienda cruzadas por UTM; gasto, CPC, CTR, CPM, frecuencia, pagos iniciados, retención 3 s y tiempo promedio de video salen de Meta. Además cada fila trae metricas_meta con TODO lo que muestra el Administrador de anuncios (por defecto): alcance, impresiones, clics (todos, en el enlace, salientes), CTR y CPC del enlace, vistas de la página de destino, ver contenido, agregados al carrito, info de pago, pagos iniciados, compras, valor y ROAS del píxel con el costo de cada uno, embudo en % (clic → vista → carrito → pago → compra), video (3 s, ThruPlays, 25/50/75/100 %, hook rate y hold rate), interacciones (reacciones, comentarios, compartidos, guardados), leads, registros, conversaciones y, en nivel ad, los rankings de calidad, interacción y conversión. Los costos van en la moneda de la cuenta. Con acciones_detalle=true suma cada acción tal como la da Meta (cantidad, valor y costo), incluidas las conversiones personalizadas. metricas=basicas devuelve solo lo de antes (más liviano). Cada fila trae id (para meta_accion), estado, presupuesto diario y la cuenta. 'puede_editar' dice si se pueden aplicar cambios con meta_accion. nivel: campaign (default), adset o ad; con campana_id se ven solo los conjuntos/anuncios de esa campaña. desde/hasta AAAA-MM-DD (por defecto hoy, hora Argentina). Con ventana=hoy_local da lo que va del día desde las 00:00 de la hora local del país de cada campaña (gasto y ventas), y con ventana=ultimas_horas las últimas N horas (por ejemplo 2). Todo se lee en vivo en cada llamada (ventas por webhook en segundos; gasto de Meta con su atraso de 15 a 60 min, el gasto que Meta todavía no repartió por hora se suma a la fila); 'datos' dice cuándo se leyó y la última hora con gasto de cada cuenta. Las filas de conjuntos traen estrategia_puja y puja. Se puede llamar cada 1 minuto.",
+    { type: "object", properties: { nivel: { type: "string", enum: ["campaign", "adset", "ad"], description: "Nivel (default campaign)." }, metricas: { type: "string", enum: ["completas", "basicas"], description: "completas (default): todas las métricas del Administrador de anuncios en metricas_meta. basicas: solo gasto, CPC, CTR, CPM, frecuencia, pagos iniciados y video." }, acciones_detalle: { type: "boolean", description: "true: suma en metricas_meta.acciones cada acción de Meta con cantidad, valor y costo (incluye conversiones personalizadas). Más pesado: usalo con nivel campaign o con campana_id." }, campana_id: { type: "string", description: "Opcional: id de campaña para ver sus conjuntos o anuncios." }, ventana: { type: "string", enum: ["rango", "hoy_local", "ultimas_horas"], description: "rango (default, usa desde/hasta en hora Argentina), hoy_local (en lo que va del día desde las 00:00 de la hora local del país de cada campaña) o ultimas_horas (las últimas 'horas' horas hasta ahora)." }, horas: { type: "number", description: "Para ventana=ultimas_horas: 1 a 48 (default 2)." }, desde: { type: "string", description: "AAAA-MM-DD" }, hasta: { type: "string", description: "AAAA-MM-DD" } }, additionalProperties: false }),
   tool("reglas_crear", "Crear una regla de escala automática (JSON)",
     "Crea UNA regla de escala de Meta en JSON estructurado, validado contra el esquema (nada de texto libre ni IA: el motor es determinístico). Si no cumple el esquema se rechaza con el error exacto. Queda activa y Growith la corre cada 15 min (:00 :15 :30 :45) con ventas reales y actúa en Meta. 'texto_original' es solo referencia (lo que vos escribiste); el motor ejecuta el JSON. Devuelve la regla guardada, su texto legible y (simular_ahora=true, default) qué haría AHORA con los datos actuales sin tocar nada. Consejo: primero reglas_simular con el JSON, después reglas_crear.",
     { type: "object", properties: { ...CLIENTE_OPC, regla: { type: "object", description: "La regla en JSON (ver reglas_listar → esquema): {nombre, prioridad, activa, alcance, horario, condiciones, accion, limites}." }, texto_original: { type: "string", description: "La regla en tus palabras, solo como referencia." }, simular_ahora: { type: "boolean", description: "default true: devuelve también qué haría ahora." } }, required: ["regla"], additionalProperties: false },
