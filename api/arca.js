@@ -3470,6 +3470,34 @@ export function autopilotTocaHoy(ap, horaAR, hoyYmd) {
   const h = parseInt(ap.hora); const hora = Number.isFinite(h) ? h : 9;
   return horaAR >= hora && ap.ultimaCorridaDia !== hoyYmd;
 }
+// Mes anterior (YYYY-MM) de un día YYYY-MM-DD.
+export function mesAnteriorDe(hoyYmd) {
+  const y = parseInt(hoyYmd.slice(0, 4)), m = parseInt(hoyYmd.slice(5, 7));
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+}
+// ¿Tiene que esperar a que se cierre el mes anterior? (1/nov/2026) ARCA exige que las facturas de un mismo
+// punto de venta y tipo vayan en orden de fecha: si el piloto emite el 1/11 una B por el punto principal, ya
+// no se puede emitir por ese punto una B con fecha 31/10 para lo que falta de octubre. Los primeros 5 días
+// (lo que ARCA deja facturar hacia atrás), si el piloto usa el punto de venta principal y el dueño no avisó
+// que cerró el mes, devuelve el mes a revisar; el cron espera si ese mes tiene ventas sin facturar.
+export function autopilotMesAEsperar(ap, pvPrincipal, hoyYmd) {
+  if (ap.esperarMesAnterior === false) return null;
+  if (parseInt(hoyYmd.slice(8, 10)) > 5) return null;
+  const pv = parseInt(ap.pv) || 0;
+  if (pv && pv !== (parseInt(pvPrincipal) || 0)) return null; // punto de venta propio: no choca
+  const mes = mesAnteriorDe(hoyYmd);
+  return ap.mesCerrado === mes ? null : mes;
+}
+// Ventas del mes `mes` pagas y sin facturar (de cualquier canal: lo que falta facturar a mano también cuenta).
+export function pendientesDelMes(ordenes, mes) {
+  let n = 0;
+  for (const o of Object.values(ordenes || {})) {
+    if (!o || o._billed || o.estado_pago !== "paid" || !(Number(o.total) > 0)) continue;
+    const t = Date.parse(o.fecha || ""); if (!Number.isFinite(t)) continue;
+    if (ymdAR(new Date(t)).slice(0, 7) === mes) n++;
+  }
+  return n;
+}
 // Separa las ventas pendientes en: listas para facturar ahora, esperando (todavía no pasaron los días
 // de espera) y excluidas por las reglas. `ordenes` = salida de obtenerPendientes.
 export function autopilotCandidatas(ordenes, ap, hoyYmd) {
@@ -3946,9 +3974,20 @@ async function cronAutopilot(req, res) {
       const dias = Math.min(Math.max(parseInt(ap.diasVentana) || 7, 1), 30);
       const espera = Math.min(Math.max(parseInt(ap.esperaDias) || 0, 0), 10);
       // Con espera la ventana se corre hacia atrás: lo vendido hace N días tiene que seguir entrando.
-      const sinceDate = argYmd(new Date(Date.now() - (dias - 1 + espera) * 86400000));
+      let sinceDate = argYmd(new Date(Date.now() - (dias - 1 + espera) * 86400000));
       const untilDate = argYmd(new Date());
+      const mesEsperar = autopilotMesAEsperar(ap, cfg.punto_venta, hoyARs);
+      if (mesEsperar && `${mesEsperar}-01` < sinceDate) sinceDate = `${mesEsperar}-01`;
       const { ordenes } = await obtenerPendientes(db, apUid, apCuit, { sinceDate, untilDate });
+      if (mesEsperar) {
+        const nPrev = pendientesDelMes(ordenes, mesEsperar);
+        if (nPrev > 0) {
+          // No emite nada (tampoco notas de crédito, que tienen el mismo orden de fechas) hasta que se cierre el mes.
+          await d.ref.set({ ultimaCorrida: nowIso, ultimoResultado: { at: nowIso, emitidas: 0, errores: 0, pausado: "mes_anterior", mes: mesEsperar, pendientesMesAnterior: nPrev } }, { mergeFields: ["ultimaCorrida", "ultimoResultado"] });
+          resumen.push({ uid: apUid, cuit: apCuit, pausado: mesEsperar, pendientesMesAnterior: nPrev });
+          continue;
+        }
+      }
 
       // Reglas del piloto: canales, solo pagas, tope de monto, datos mínimos y días de espera.
       const { listas: candidatas, esperando } = autopilotCandidatas(ordenes, ap, hoyARs);
@@ -4978,11 +5017,24 @@ export default async function handler(req, res) {
         esperaDias,
         cierreMes: c.cierreMes !== false,
         ncAuto: c.ncAuto === true,
+        esperarMesAnterior: c.esperarMesAnterior !== false,
         updatedAt: new Date().toISOString(),
       };
       // merge: preserva ultimaCorrida/ultimoResultado de corridas anteriores
       await db.collection("arca_autopilot").doc(`${uid}_${cuitNorm}`).set(docAp, { merge: true });
       return res.json({ ok: true, config: docAp });
+    }
+
+    // ── PILOTO AUTOMÁTICO: "ya terminé de facturar el mes anterior" → deja de esperar ──
+    if (action === "autopilot_mes_cerrado" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)).toString());
+      const cuitNorm = String(body.cuit || "").replace(/\D/g, "");
+      const mes = String(body.mes || "");
+      if (!cuitNorm || !/^\d{4}-\d{2}$/.test(mes)) return res.status(400).json({ error: "Faltan cuit o mes" });
+      const ref = db.collection("arca_autopilot").doc(`${uid}_${cuitNorm}`);
+      if (!(await ref.get()).exists) return res.status(404).json({ error: "El piloto no está configurado para ese CUIT" });
+      await ref.set({ mesCerrado: mes, mesCerradoAt: new Date().toISOString() }, { merge: true });
+      return res.json({ ok: true, mesCerrado: mes });
     }
 
     // ── PILOTO AUTOMÁTICO: probar reglas (no emite nada) ──
@@ -4997,8 +5049,13 @@ export default async function handler(req, res) {
       const hoy = ymd(new Date());
       const dias = Math.min(Math.max(parseInt(c.diasVentana) || 7, 1), 30);
       const espera = Math.min(Math.max(parseInt(c.esperaDias) || 0, 0), 10);
-      const { ordenes } = await obtenerPendientes(db, uid, cuitNorm, { sinceDate: ymd(new Date(Date.now() - (dias - 1 + espera) * 86400000)), untilDate: hoy });
+      const [cfgS, apS] = await Promise.all([loadCuitConfig(db, uid, cuitNorm), db.collection("arca_autopilot").doc(`${uid}_${cuitNorm}`).get()]);
+      const mesEsperar = autopilotMesAEsperar({ ...c, mesCerrado: apS.exists ? apS.data().mesCerrado : null }, cfgS?.punto_venta, hoy);
+      let desdeSim = ymd(new Date(Date.now() - (dias - 1 + espera) * 86400000));
+      if (mesEsperar && `${mesEsperar}-01` < desdeSim) desdeSim = `${mesEsperar}-01`;
+      const { ordenes } = await obtenerPendientes(db, uid, cuitNorm, { sinceDate: desdeSim, untilDate: hoy });
       const r = autopilotCandidatas(ordenes, c, hoy);
+      const pausa = mesEsperar ? pendientesDelMes(ordenes, mesEsperar) : 0;
       const max = Math.min(Math.max(parseInt(c.maxPorCorrida) || 40, 1), 100);
       const fila = ([id, o, sale]) => ({ id, nombre: String(o.nombre || "").slice(0, 60), total: Number(o.total) || 0, fecha: o.fecha || null, plataforma: o._platform || null, ...(sale ? { sale } : {}) });
       let nc = null;
@@ -5008,7 +5065,7 @@ export default async function handler(req, res) {
           nc = { anular: rows.filter(x => !x.parcial && !x.requiere_manual).map(x => ({ id: x.order_id, motivo: x._motivo_lbl, total: x.total, cliente: x.cliente })), aMano: rows.filter(x => x.parcial || x.requiere_manual).length };
         } catch (e) { nc = { error: e.message }; }
       }
-      return res.json({ hoy, ultimoDiaMes: esUltimoDiaMes(hoy), max, listas: r.listas.slice(0, 100).map(fila), listasN: r.listas.length, esperando: r.esperando.slice(0, 100).map(fila), esperandoN: r.esperando.length, excluidas: r.excluidas, nc });
+      return res.json({ hoy, ultimoDiaMes: esUltimoDiaMes(hoy), max, ...(pausa ? { pausa: { mes: mesEsperar, pendientes: pausa } } : {}), listas: r.listas.slice(0, 100).map(fila), listasN: r.listas.length, esperando: r.esperando.slice(0, 100).map(fila), esperandoN: r.esperando.length, excluidas: r.excluidas, nc });
     }
 
     // ── Ventas cobradas por Mercado Pago (link de pago, QR) — PROVISORIO (1/nov/2026) ──
@@ -5662,6 +5719,11 @@ export default async function handler(req, res) {
       const { resultados, pdfs, pendientesIds } = await ejecutarEmision(db, uid, cfg, {
         cuitEmit, ordenes, product_map, fechaImputacion, pvSel, exentoReq: exento, conceptoReq,
       });
+
+      // Fecha anterior a la última factura de ese punto de venta (ARCA exige orden de fecha): explicarlo.
+      if (fechaImputacion) for (const x of resultados) {
+        if (!x.ok && /10016|fecha/i.test(String(x.obs || "")) && !/punto de venta propio/.test(String(x.obs || ""))) x.obs = `${x.obs} · ARCA no acepta una factura con fecha anterior a la última que ya salió por ese punto de venta (por ejemplo, si el piloto automático ya facturó con fecha de hoy). Usá la fecha de esa última factura o una posterior, o facturá por otro punto de venta. Para que no vuelva a pasar, dale al piloto automático un punto de venta propio.`;
+      }
 
       // Lotes grandes: los PDFs en base64 revientan el límite de respuesta de
       // Vercel — el front los regenera con get_batch_pdfs.

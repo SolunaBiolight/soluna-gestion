@@ -20,7 +20,7 @@ eq("excede la K",M.monoResumen({meses:{"2026-10":3e7},hoy:"2026-10-17",topes,cat
 eq("semilla ordenada de menor a mayor",Object.values(M.MONO_SEMILLA.topes).every((v,i,a)=>!i||v>a[i-1]),true);
 // Piloto automático (31/oct/2026): espera, cierre de mes y corrida diaria.
 const pi=src.indexOf("// ─── Reglas del piloto"), pj=src.indexOf("// ─── Notas de crédito en lote");
-const P=new Function(src.slice(pi,pj).replace(/export (const|function)/g,"$1")+"\nreturn {autopilotCandidatas,autopilotTocaHoy,esUltimoDiaMes,sumarDiasYmd};")();
+const P=new Function(src.slice(pi,pj).replace(/export (const|function)/g,"$1")+"\nreturn {autopilotCandidatas,autopilotTocaHoy,esUltimoDiaMes,sumarDiasYmd,autopilotMesAEsperar,pendientesDelMes,mesAnteriorDe};")();
 const ord={a:{_platform:"mercadolibre",estado_pago:"paid",total:100,fecha:"2026-10-20T15:00:00-03:00"},b:{_platform:"mercadolibre",estado_pago:"paid",total:100,fecha:"2026-10-27T15:00:00-03:00"},c:{_platform:"tiendanube",estado_pago:"paid",total:100,fecha:"2026-10-27T15:00:00-03:00"},d:{_platform:"mercadolibre",estado_pago:"pending",total:100,fecha:"2026-10-27T15:00:00-03:00"},e:{_platform:"mercadolibre",estado_pago:"paid",total:100,fecha:"2026-10-27T15:00:00-03:00",_billed:true}};
 const r1=P.autopilotCandidatas(ord,{canales:["mercadolibre"],esperaDias:3,cierreMes:true},"2026-10-28");
 eq("solo ML y con 3 días de espera: sale la del 20, espera la del 27",[r1.listas.map(x=>x[0]),r1.esperando.map(x=>[x[0],x[2]])],[["a"],[["b","2026-10-30"]]]);
@@ -35,4 +35,12 @@ eq("diaria: antes de la hora no corre",P.autopilotTocaHoy({frecuencia:"diaria",h
 eq("diaria: después de la hora corre si no corrió hoy",P.autopilotTocaHoy({frecuencia:"diaria",hora:9},14,"2026-10-28"),true);
 eq("diaria: ya corrió hoy",P.autopilotTocaHoy({frecuencia:"diaria",hora:9,ultimaCorridaDia:"2026-10-28"},14,"2026-10-28"),false);
 eq("cada hora siempre corre",P.autopilotTocaHoy({frecuencia:"1h",ultimaCorridaDia:"2026-10-28"},3,"2026-10-28"),true);
+eq("mes anterior",[P.mesAnteriorDe("2026-11-01"),P.mesAnteriorDe("2026-01-03")],["2026-10","2025-12"]);
+eq("1/11 con el punto principal espera octubre",P.autopilotMesAEsperar({},4,"2026-11-01"),"2026-10");
+eq("con punto de venta propio no espera",P.autopilotMesAEsperar({pv:7},4,"2026-11-01"),null);
+eq("el pv elegido igual al principal sí espera",P.autopilotMesAEsperar({pv:4},4,"2026-11-02"),"2026-10");
+eq("después del día 5 no espera",P.autopilotMesAEsperar({},4,"2026-11-06"),null);
+eq("mes ya cerrado no espera",P.autopilotMesAEsperar({mesCerrado:"2026-10"},4,"2026-11-01"),null);
+eq("apagado no espera",P.autopilotMesAEsperar({esperarMesAnterior:false},4,"2026-11-01"),null);
+eq("cuenta pendientes pagas del mes, de cualquier canal",P.pendientesDelMes({a:{estado_pago:"paid",total:5,fecha:"2026-10-31T20:00:00-03:00",_platform:"tiendanube"},b:{estado_pago:"paid",total:5,fecha:"2026-10-30T10:00:00-03:00",_billed:true},c:{estado_pago:"paid",total:5,fecha:"2026-11-01T01:00:00-03:00"},d:{estado_pago:"pending",total:5,fecha:"2026-10-20T10:00:00-03:00"}},"2026-10"),1);
 console.log(`${n-f}/${n} ok${f?" — "+f+" FALLAS":""}`); if(f) process.exit(1);

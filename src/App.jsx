@@ -30775,9 +30775,10 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   }
 
   // ── Piloto automático: carga al entrar a Config, guardado explícito ──
-  const AP_DEFAULT = {enabled:false, canales:[], soloPagadas:true, topeMonto:"", maxPorCorrida:40, frecuencia:"1h", hora:9, diasVentana:7, pv:"", avisarMail:true, esperaDias:0, cierreMes:true, ncAuto:false};
+  const AP_DEFAULT = {enabled:false, canales:[], soloPagadas:true, topeMonto:"", maxPorCorrida:40, frecuencia:"1h", hora:9, diasVentana:7, pv:"", avisarMail:true, esperaDias:0, cierreMes:true, ncAuto:false, esperarMesAnterior:true};
   useEffect(()=>{
-    if(tab!=="config" || !uid || !cuitSel) return;
+    // También en Facturar: ahí se avisa si el piloto está esperando que se cierre el mes anterior.
+    if((tab!=="config"&&tab!=="facturar") || !uid || !cuitSel) return;
     let vivo = true;
     setApLoading(true); setApCfg(null); setApUltimo(null); setApSim(null); setApNc(null);
     api("get_autopilot","GET",null,{cuit:cuitSel}).then(d=>{
@@ -30790,7 +30791,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
         canales: Array.isArray(c.canales)?c.canales:[],
         topeMonto: c.topeMonto!=null && c.topeMonto!=="" ? String(c.topeMonto) : "",
         pv: c.pv ? String(c.pv) : "", avisarMail: c.avisarMail!==false,
-        esperaDias: parseInt(c.esperaDias)||0, cierreMes: c.cierreMes!==false, ncAuto: c.ncAuto===true,
+        esperaDias: parseInt(c.esperaDias)||0, cierreMes: c.cierreMes!==false, ncAuto: c.ncAuto===true, esperarMesAnterior: c.esperarMesAnterior!==false,
       });
       setApUltimo(d.ultimoResultado || c.ultimoResultado || null);
       setApNc(c.ncUltimo || null);
@@ -30838,8 +30839,38 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       esperaDias: Math.min(10, Math.max(0, parseInt(base.esperaDias)||0)),
       cierreMes: base.cierreMes!==false,
       ncAuto: base.ncAuto===true,
+      esperarMesAnterior: base.esperarMesAnterior!==false,
     };
   }
+
+  // El piloto está esperando que se termine de facturar el mes anterior (primeros 5 días del mes, mismo
+  // punto de venta). "Ya terminé" lo libera para ese mes.
+  const apPausa = (()=>{
+    const u=apUltimo; if(!apCfg?.enabled||u?.pausado!=="mes_anterior"||!u.mes||apCfg.mesCerrado===u.mes) return null;
+    const h=hoyAR(); const y=parseInt(h.slice(0,4)), m=parseInt(h.slice(5,7)); const prev=m===1?`${y-1}-12`:`${y}-${String(m-1).padStart(2,"0")}`;
+    if(u.mes!==prev||parseInt(h.slice(8,10))>5) return null;
+    const nom=new Date(parseInt(u.mes.slice(0,4)),parseInt(u.mes.slice(5,7))-1,1).toLocaleDateString("es-AR",{month:"long"});
+    return {mes:u.mes, nom, n:u.pendientesMesAnterior||0};
+  })();
+  async function cerrarMesAutopilot() {
+    if(!apPausa) return;
+    if(!await appConfirm(`¿Terminaste de facturar ${apPausa.nom}?\n\nEl piloto vuelve a facturar desde la próxima corrida, con fecha de hoy. Después de eso ya no vas a poder facturar ventas de ${apPausa.nom} con fecha de ${apPausa.nom} por el mismo punto de venta.`,{okLabel:"Sí, seguir"})) return;
+    try{
+      const d=await api("autopilot_mes_cerrado","POST",{cuit:cuitSel, mes:apPausa.mes});
+      if(d.error) return toast(d.error,"error");
+      setApCfg(p=>({...p, mesCerrado:apPausa.mes}));
+      toast("Listo: el piloto sigue en la próxima corrida","success");
+    }catch(e){ toast("No se pudo guardar: "+(e?.message||"error de conexión"),"error"); }
+  }
+  const apPausaAviso = apPausa && (
+    <div style={{marginBottom:16,padding:"12px 14px",background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:12,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div style={{flex:1,minWidth:240,fontSize:12,color:T.text,lineHeight:1.5}}>
+        <strong>El piloto automático está esperando que termines de facturar {apPausa.nom}</strong>
+        <div style={{color:T.textMd}}>Quedan {apPausa.n} venta{apPausa.n===1?"":"s"} de {apPausa.nom} sin facturar. Si el piloto facturara hoy por el mismo punto de venta, ARCA ya no te dejaría ponerles fecha de {apPausa.nom}. Espera hasta el día 5 o hasta que le avises.</div>
+      </div>
+      <Btn T={T} variant="secondary" size="sm" onClick={cerrarMesAutopilot}>Ya terminé {apPausa.nom}</Btn>
+    </div>
+  );
 
   async function probarAutopilot() {
     if(!cuitSel || !apCfg || apSimLoading) return;
@@ -31955,6 +31986,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
             {tab==="facturar"&&(
             <div>
+              {apPausaAviso}
               {devAviso&&devAviso.cuit===cuitSel&&(devAviso.total+devAviso.aMano)>0&&(
                 <div style={{marginBottom:16,padding:"12px 14px",background:T.yellow+"12",border:`1px solid ${T.yellow}55`,borderRadius:12,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                   <div style={{flex:1,minWidth:220,fontSize:12,color:T.text,lineHeight:1.5}}>
@@ -33511,6 +33543,24 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     </div>
                   )}
+                  {apCfg && apPausaAviso && <div style={{marginTop:14}}>{apPausaAviso}</div>}
+                  {/* Punto de venta y fin de mes (1/nov/2026): ARCA exige orden de fecha por punto de venta */}
+                  {apCfg && (
+                    <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:8,paddingTop:14,borderTop:`1px solid ${T.borderL||T.border}`}}>
+                      {(!apCfg.pv||String(apCfg.pv)===String(cuitActivo?.punto_venta)) && (
+                        <div style={{fontSize:11,color:T.textMd,lineHeight:1.55,padding:"9px 12px",background:T.accent+"0d",border:`1px solid ${T.accent}33`,borderRadius:10}}>
+                          <strong style={{color:T.text}}>Recomendado: un punto de venta solo para el piloto.</strong> ARCA exige que las facturas de un mismo punto de venta vayan en orden de fecha. Si el piloto factura hoy por el mismo punto que usás vos, ya no podés facturar ventas del mes pasado con fecha del mes pasado. Con un punto propio nunca se chocan. Se crea en ARCA → Administración de puntos de venta y domicilios → Agregar (sistema "RECE para aplicativo y web services" o, si sos monotributista, "Factura Electrónica - Monotributo - Web Services"), se carga en Configuración → Editar el CUIT → puntos de venta, y se elige arriba en "Punto de venta".
+                        </div>
+                      )}
+                      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                        <DSToggle T={T} active={apCfg.esperarMesAnterior!==false} onToggle={()=>setApCfg(p=>({...p, esperarMesAnterior:p.esperarMesAnterior===false}))}/>
+                        <div>
+                          <div style={{fontSize:12,color:T.text}}>Los primeros 5 días del mes, esperar a que termine de facturar el mes anterior</div>
+                          <div style={{fontSize:11,color:T.textSm,marginTop:2,lineHeight:1.55}}>Solo si el piloto usa tu punto de venta principal. Mientras queden ventas del mes pasado sin facturar (de cualquier canal), no factura nada y te avisa arriba de Facturar con un botón "Ya terminé".</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {/* Espera, cierre de mes y notas de crédito automáticas (31/oct/2026) */}
                   {apCfg && (
                     <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:12,paddingTop:14,borderTop:`1px solid ${T.borderL||T.border}`}}>
@@ -33560,6 +33610,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           <div style={{flex:1,minWidth:200,fontSize:12,color:T.text,fontWeight:600}}>
                             {apSim.demo ? "Tienda demo: el piloto no factura nada." : <>Si corriera ahora facturaría {apSim.listasN} venta{apSim.listasN===1?"":"s"}{apSim.listasN>apSim.max?` (de a ${apSim.max} por corrida)`:""}{apSim.esperandoN?` · ${apSim.esperandoN} esperando los días de espera`:""}</>}
                             {exTxt&&<div style={{fontSize:11,color:T.textSm,fontWeight:400,marginTop:2}}>Quedan afuera: {exTxt}</div>}
+                            {apSim.pausa&&<div style={{fontSize:11,color:T.orange,fontWeight:500,marginTop:2}}>Hoy no facturaría nada: quedan {apSim.pausa.pendientes} venta{apSim.pausa.pendientes===1?"":"s"} del mes pasado sin facturar y el piloto espera a que termines.</div>}
                             {apSim.ultimoDiaMes&&apCfg.esperaDias>0&&apCfg.cierreMes!==false&&<div style={{fontSize:11,color:T.textSm,fontWeight:400,marginTop:2}}>Hoy es el último día del mes: sale todo lo del mes.</div>}
                           </div>
                           <Btn T={T} variant="ghost" size="sm" onClick={()=>setApSim(null)}>Cerrar</Btn>
@@ -33597,7 +33648,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     const col = errores>0 ? T.yellow : T.green;
                     return (
                       <div style={{marginTop:14,padding:"9px 12px",background:col+"12",border:`1px solid ${col}44`,borderRadius:8,fontSize:12,color:col,fontWeight:600}}>
-                        Última corrida: {fechaStr} · {emitidas} factura{emitidas===1?"":"s"} emitida{emitidas===1?"":"s"}{errores>0?`, ${errores} error${errores===1?"":"es"}`:""}{apUltimo.esperando?` · ${apUltimo.esperando} esperando los días de espera`:""}
+                        Última corrida: {fechaStr} · {apUltimo.pausado==="mes_anterior"?`esperando que termines de facturar el mes pasado (${apUltimo.pendientesMesAnterior||0} sin facturar)`:<>{emitidas} factura{emitidas===1?"":"s"} emitida{emitidas===1?"":"s"}</>}{errores>0?`, ${errores} error${errores===1?"":"es"}`:""}{apUltimo.esperando?` · ${apUltimo.esperando} esperando los días de espera`:""}
                         {apNc && <div style={{fontWeight:500,marginTop:3,color:T.textMd}}>Notas de crédito automáticas ({new Date(apNc.at).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit"})}): {apNc.emitidas||0} emitida{apNc.emitidas===1?"":"s"}{apNc.errores?`, ${apNc.errores} con error`:""}{apNc.parciales?` · ${apNc.parciales} devolución${apNc.parciales===1?"":"es"} para hacer a mano en Registros`:""}{(apNc.detalle||[]).filter(x=>x.ok).slice(0,6).map(x=>x.orden_id).join(", ") ? ` · ${(apNc.detalle||[]).filter(x=>x.ok).slice(0,6).map(x=>x.orden_id).join(", ")}` : ""}</div>}
                       </div>
                     );
