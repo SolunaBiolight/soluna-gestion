@@ -21694,6 +21694,8 @@ function ghDepPicking(pedidos){
   return [...m.entries()].map(([sku,cant])=>({sku,cant})).sort((a,b)=>b.cant-a.cant||a.sku.localeCompare(b.sku));
 }
 // Los pedidos iguales salen juntos: primero los de un solo producto, por SKU.
+// Orden de las tandas en pantalla (1/nov/2026): la última que se mandó, arriba (por createdAt; sin él, por despacho).
+function ghDepRecientes(lista){ return [...(lista||[])].sort((a,b)=>(Number(b.createdAt)||0)-(Number(a.createdAt)||0)||String(b.fechaDespacho||"").localeCompare(String(a.fechaDespacho||""))); }
 function ghDepFirma(items){ return [...(items||[])].map(String).sort().join(" + "); }
 function ghDepOrdenar(lista,itemsDe){ return [...lista].sort((a,b)=>{ const A=itemsDe(a)||[], B=itemsDe(b)||[]; if(!A.length!==!B.length) return A.length?-1:1; return (A.length-B.length)||ghDepFirma(A).localeCompare(ghDepFirma(B)); }); }
 // Por defecto: hoy si todavía es temprano (antes de las 15 AR), si no mañana.
@@ -22147,8 +22149,8 @@ function DepositoClienteView({T,api,portal=false,tiendaUid=null}){
   // Dos pasos: pendiente → impresa. Todo lo que no está pendiente ni cancelado ya salió impreso.
   const colorCanal=t=>t.tipo==="especial"?T.purple:t.canal==="andreani"?T.red:t.canal==="ml"?T.yellow:t.canal==="retiro"?T.blue:T.textMd;
   const estadoDe=t=>t.estado==="cancelada"?["Cancelada",T.textSm]:t.estado==="pendiente"?["Pendiente",T.yellow]:t.estado==="entregada"?["Lista",T.green]:["Impresa",T.accent];
-  const vivas=st.tandas.filter(t=>t.estado==="pendiente").sort((a,b)=>(a.fechaDespacho||"").localeCompare(b.fechaDespacho||""));
-  const cerradas=st.tandas.filter(t=>t.estado!=="pendiente");
+  const vivas=ghDepRecientes(st.tandas.filter(t=>t.estado==="pendiente"));
+  const cerradas=ghDepRecientes(st.tandas.filter(t=>t.estado!=="pendiente"));
   const nVivos=vivas.reduce((a,t)=>a+(t.n||0),0), nHoy=vivas.filter(t=>t.fechaDespacho<=hoy).reduce((a,t)=>a+(t.n||0),0);
   // Avisos del depósito: pedidos apartados sin resolver, pedidos que canceló y notas en tandas pendientes.
   const avisos=[];
@@ -22949,10 +22951,10 @@ function DepositoCola({T,api,owner,ver=null,enVivo=null}){
   if(err) return <DSEmpty T={T} title="No pudimos cargar la cola" subtitle={err} action={<DepBtn T={T} variant="secondary" onClick={cargar}>Reintentar</DepBtn>}/>;
   if(!st) return <div style={{display:"flex",justifyContent:"center",padding:60}}><Spinner size={28} color={T.accent}/></div>;
   // En la cola solo lo que falta imprimir; lo impreso (incluidas tandas del flujo viejo) va a "recientes".
-  const vivas=st.tandas.filter(t=>t.estado==="pendiente");
-  const hechas=st.tandas.filter(t=>t.estado==="entregada");
+  const vivas=ghDepRecientes(st.tandas.filter(t=>t.estado==="pendiente"));
+  const hechas=ghDepRecientes(st.tandas.filter(t=>t.estado==="entregada"));
   // Paso del medio: ya impresas, falta marcarlas como listas (cuando el pedido quedó armado y cerrado).
-  const impresas=st.tandas.filter(t=>["impresa","armada"].includes(t.estado));
+  const impresas=ghDepRecientes(st.tandas.filter(t=>["impresa","armada"].includes(t.estado)));
   async function listasTodas(l){ if(!l.length) return; if(!(await appConfirm(`¿Marcar como listas las ${l.length} tandas impresas (${l.reduce((a,t)=>a+t.n,0)} pedidos)?`,{okLabel:"Marcar como listas"}))) return;
     setBusy("listas"); const fallas=[]; for(const t of l){ try{ await api("tanda_estado",{id:t.id,estado:"entregada"}); }catch(x){ fallas.push(t.clienteNombre); } }
     if(fallas.length) toast(`No se pudieron marcar: ${fallas.join(", ")}`,"error",7000); else toast("Tandas marcadas como listas","success"); await cargar(); setBusy(null); }
