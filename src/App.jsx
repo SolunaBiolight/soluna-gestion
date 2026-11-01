@@ -1456,6 +1456,20 @@ function ghTelAR(raw){
   return {cod,num};
 }
 const GH_ENVIO_GRID="24px minmax(230px,1.15fr) minmax(220px,1.35fr) minmax(190px,1fr) 150px";
+// Día del pedido en hora Argentina (YYYY-MM-DD) y su texto corto (ghFechaPedidoCorta) para la fila ("hoy 14:32", "ayer", "28/10").
+function ghDiaPedido(o){
+  if(o?.fechaIso){ const t=Date.parse(o.fechaIso); if(Number.isFinite(t)) return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(t)); }
+  const m=String(o?.fecha||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m?`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`:"";
+}
+function ghFechaPedidoCorta(o){
+  const d=ghDiaPedido(o); if(!d) return "";
+  const hoy=hoyAR(), ayer=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(Date.now()-86400000));
+  const hora=o.fechaIso&&Number.isFinite(Date.parse(o.fechaIso))?new Date(o.fechaIso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Argentina/Buenos_Aires"}):"";
+  if(d===hoy) return `hoy${hora?" "+hora:""}`;
+  if(d===ayer) return `ayer${hora?" "+hora:""}`;
+  return `${d.slice(8,10)}/${d.slice(5,7)}${hora?" "+hora:""}`;
+}
+
 function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,idx=0,verEstado=false}){
   const [h,setH]=useState(false);
   const tc=o.esSucursal?T.purple:T.blue;
@@ -1477,7 +1491,10 @@ function EnvioFilaCard({T,o,sel,exportedOn,ec,canje,cot,nombre,onToggle,onOpen,i
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:12,minWidth:0}}>
-        <span style={{minWidth:76,fontSize:DS.font.xl+1,fontWeight:800,color:T.accent,letterSpacing:-0.3,fontVariantNumeric:"tabular-nums",flexShrink:0}}>#{o.numero}</span>
+        <span style={{minWidth:76,display:"flex",flexDirection:"column",flexShrink:0}}>
+          <span style={{fontSize:DS.font.xl+1,fontWeight:800,color:T.accent,letterSpacing:-0.3,fontVariantNumeric:"tabular-nums"}}>#{o.numero}</span>
+          {ghFechaPedidoCorta(o)&&<span title={o.fechaIso?new Date(o.fechaIso).toLocaleString("es-AR",{timeZone:"America/Argentina/Buenos_Aires"}):o.fecha} style={{fontSize:DS.font.xs,color:T.textSm,marginTop:1,fontVariantNumeric:"tabular-nums"}}>{ghFechaPedidoCorta(o)}</span>}
+        </span>
         <div style={{minWidth:0}}>
           <div style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
             <span style={{fontSize:DS.font.lg,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador}</span>
@@ -4641,6 +4658,7 @@ function buildOrdersFromAPI(data) {
       numero:String(o.number||o.id||""),
       tnId:String(o.id||""), // id REAL de la orden en TN (para acciones como /pack)
       fecha:o.created_at?new Date(o.created_at).toLocaleDateString('es-AR'):'',
+      fechaIso:o.created_at||'', // para el filtro por día y la fecha de cada fila del panel de Envíos
       comprador:(`${sh.name||''} ${sh.last_name||''}`.trim()||o.contact_name||o.billing_address?.name||'').trim(),
       compNombre:sh.last_name?String(sh.name||'').trim():'', compApellido:sh.last_name?String(sh.last_name).trim():'',
       email:o.contact_email||o.billing_address?.email||'',
@@ -10505,6 +10523,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const [tabCounts,setTabCounts]=useState({empaquetar:null,enviar:null});
   const [filterTipoEnvio,setFilterTipoEnvio]=useState("todos");
   const [filterMedio,setFilterMedio]=useState(""); // medio de envío exacto ("" = todos)
+  const [filterDia,setFilterDia]=useState("todos"); // todos | hoy | ayer | 3d | 7d | YYYY-MM-DD (día del pedido, hora AR)
   const [tabOrders,setTabOrders]=useState([]);
   const [tabLoading,setTabLoading]=useState(false);
   const [tabError,setTabError]=useState(false); // el último fetch del tab falló (con o sin cache pintada)
@@ -10776,12 +10795,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     if(filterTipoEnvio==="sucursal") base=base.filter(o=>isSucursalOrder(o));
     // (el desplegable "Medio de envío" se quitó de la pantalla el 10/oct/2026; filterMedio queda siempre vacío)
     if(filterMedio) base=base.filter(o=>String(o.medioEnvio||"--")===filterMedio);
+    if(filterDia!=="todos"){
+      const ymd=(ms)=>new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(ms));
+      const hoy=ymd(Date.now());
+      const ok = filterDia==="hoy" ? (d=>d===hoy) : filterDia==="ayer" ? (d=>d===ymd(Date.now()-86400000))
+        : filterDia==="3d" ? (d=>d>=ymd(Date.now()-2*86400000)) : filterDia==="7d" ? (d=>d>=ymd(Date.now()-6*86400000))
+        : filterDia==="viejos" ? (d=>d&&d<ymd(Date.now()-6*86400000)) : (d=>d===filterDia);
+      base=base.filter(o=>ok(ghDiaPedido(o)));
+    }
     if(searchEnvios){
       const s=searchEnvios.toLowerCase();
       return base.filter(o=>o.numero.includes(s)||o.comprador.toLowerCase().includes(s)||o.email.toLowerCase().includes(s));
     }
     return base;
-  },[tabOrders,searchEnvios,filterTipoEnvio,filterMedio]);
+  },[tabOrders,searchEnvios,filterTipoEnvio,filterMedio,filterDia]);
   // Medios de envío presentes en la pestaña (con cantidad), para el filtro
   const mediosEnvio=useMemo(()=>{
     const m=new Map();
@@ -10806,7 +10833,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
   // Paginación de pedidos — 50 por página
   const PAGE_SIZE=50;
-  useEffect(()=>setOrderPage(0),[tabEnvio,filterTipoEnvio,filterMedio,searchEnvios]);
+  useEffect(()=>setOrderPage(0),[tabEnvio,filterTipoEnvio,filterMedio,filterDia,searchEnvios]);
   const totalPages=Math.max(1,Math.ceil(exportables.length/PAGE_SIZE));
   const pageOrders=exportables.slice(orderPage*PAGE_SIZE,(orderPage+1)*PAGE_SIZE);
   const pageNums=pageOrders.map(o=>o.numero);
@@ -13397,6 +13424,24 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
                   <button key={v} onClick={()=>{setFilterTipoEnvio(v);setSelected(new Map());}} style={{height:30,padding:"0 16px",fontSize:13,border:"none",borderRadius:DS.r.full,background:filterTipoEnvio===v?T.surface:"transparent",color:filterTipoEnvio===v?T.text:T.textMd,cursor:"pointer",fontWeight:filterTipoEnvio===v?700:500,transition:"all 0.1s",boxShadow:"none",whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
                 ))}
               </div>}
+              {tabEnvio!=="buscar"&&(()=>{
+                // Filtro por día del pedido (1/nov/2026). Los días que hay en la pestaña, con cantidad.
+                const dias=new Map(); for(const o of tabOrders){ const d=ghDiaPedido(o); if(d) dias.set(d,(dias.get(d)||0)+1); }
+                const lista=[...dias.entries()].sort((a,b)=>b[0].localeCompare(a[0]));
+                const act=filterDia!=="todos";
+                return (
+                  <select value={filterDia} onChange={e=>{setFilterDia(e.target.value);setSelected(new Map());}} title="Filtrar por el día en que se hizo el pedido"
+                    style={{height:40,padding:"0 14px",fontSize:13,borderRadius:DS.r.full,border:`1px solid ${act?T.accent:T.border}`,background:T.card,color:act?T.text:T.textMd,fontWeight:act?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                    <option value="todos">Todos los días</option>
+                    <option value="hoy">Hoy</option>
+                    <option value="ayer">Ayer</option>
+                    <option value="3d">Últimos 3 días</option>
+                    <option value="7d">Últimos 7 días</option>
+                    <option value="viejos">Más de 7 días</option>
+                    {lista.length>0&&<optgroup label="Un día">{lista.map(([d,n])=><option key={d} value={d}>{`${d.slice(8,10)}/${d.slice(5,7)} · ${n} pedido${n===1?"":"s"}`}</option>)}</optgroup>}
+                  </select>
+                );
+              })()}
               <span title="Atajos: Ctrl+A selecciona todos · Shift+click selecciona un rango · Esc limpia la selección · Enter exporta"
                 style={{fontSize:12,color:T.textSm,marginLeft:"auto",order:3,display:"flex",gap:10,alignItems:"center",cursor:"help"}}>
                 <span>{exportables.length} {exportables.length===1?"pedido":"pedidos"}{totalPages>1?` · pág. ${orderPage+1}/${totalPages}`:""}</span>
