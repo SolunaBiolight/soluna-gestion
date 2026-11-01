@@ -29715,6 +29715,9 @@ function ArcaMercadoPagoVentas({T,api,cuit,desde,hasta}){
   const [d,setD]=useState(null); const [cargando,setCargando]=useState(false);
   const [sel,setSel]=useState({}); const [verTienda,setVerTienda]=useState(false);
   const [emitiendo,setEmitiendo]=useState(false);
+  // Fecha de la factura: hoy por defecto; ARCA acepta hasta 5 días atrás en productos (10 en servicios).
+  const hoyMp=hoyAR(); const minMp=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(Date.now()-10*86400000));
+  const [fechaFac,setFechaFac]=useState(hoyMp);
   const cargar=async()=>{
     setCargando(true);
     try{ const r=await api("mp_pagos","GET",null,{cuit,desde:desde||"",hasta:hasta||""}); if(r.error){ toast(r.error,"error"); return; } setD(r); setSel({}); }
@@ -29738,7 +29741,9 @@ function ArcaMercadoPagoVentas({T,api,cuit,desde,hasta}){
     const grandes=elegidos.filter(p=>docDe(p).doc_tipo==="CF"&&p.total>=10000000);
     if(grandes.length) return appAlert(`${grandes.length} cobro${grandes.length===1?"":"s"} de $10.000.000 o más no traen documento del comprador y ARCA exige identificarlo. Destildalos y hacelos con Factura manual cargando el CUIT o DNI.`);
     const total=elegidos.reduce((a,p)=>a+p.total,0);
-    if(!await appConfirm(`¿Facturar ${elegidos.length} cobro${elegidos.length===1?"":"s"} de Mercado Pago por ${$(total)}?\n\nSale una factura por cada cobro, con fecha de hoy, a nombre del comprador si Mercado Pago trae su documento y si no a Consumidor Final. Quedan en Registros.`,{okLabel:`Facturar ${elegidos.length}`})) return;
+    if(!fechaFac||fechaFac>hoyMp||fechaFac<minMp) return toast("Elegí una fecha de hoy o de hasta 10 días atrás","warning");
+    const fechaTxt=fechaFac===hoyMp?"de hoy":`del ${fechaFac.slice(8,10)}/${fechaFac.slice(5,7)}/${fechaFac.slice(0,4)}`;
+    if(!await appConfirm(`¿Facturar ${elegidos.length} cobro${elegidos.length===1?"":"s"} de Mercado Pago por ${$(total)}?\n\nSale una factura por cada cobro, con fecha ${fechaTxt}, a nombre del comprador si Mercado Pago trae su documento y si no a Consumidor Final. Quedan en Registros.`,{okLabel:`Facturar ${elegidos.length}`})) return;
     setEmitiendo(true);
     let ok=0; const errs=[];
     try{
@@ -29751,7 +29756,7 @@ function ArcaMercadoPagoVentas({T,api,cuit,desde,hasta}){
             fecha:String(p.fecha||"").slice(0,10), ciudad:"", provincia:"", metodo_pago:"Mercado Pago",
             items:items.map(it=>({nombre:it.nombre,nombre_original:it.nombre,cantidad:it.cantidad,precio:it.precio,descuento_item:0})) };
         }
-        const r=await api("emit","POST",{cuit,ordenes,product_map:{}});
+        const r=await api("emit","POST",{cuit,ordenes,product_map:{},fecha_factura:fechaFac.replace(/-/g,"")});
         if(r.error){ errs.push(r.error); break; }
         for(const x of (r.resultados||[])){ if(x.ok) ok++; else errs.push(`${x.orden_id}: ${x.obs||"error"}`); }
       }
@@ -29801,7 +29806,9 @@ function ArcaMercadoPagoVentas({T,api,cuit,desde,hasta}){
               </div>
             )}
             {elegidos.length>0&&(
-              <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+              <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:10,marginTop:12,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:T.textMd}}>Fecha de la factura</span>
+                <input type="date" value={fechaFac} min={minMp} max={hoyMp} onChange={e=>setFechaFac(e.target.value)} style={{...InputStyle(T),width:"auto",padding:"8px 12px",fontSize:13,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                 <Btn T={T} variant="primary" size="md" onClick={facturar} disabled={emitiendo}>{emitiendo?"Facturando…":`Facturar ${elegidos.length} · ${$(elegidos.reduce((a,p)=>a+p.total,0))}`}</Btn>
               </div>
             )}
