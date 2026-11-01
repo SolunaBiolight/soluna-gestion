@@ -35173,11 +35173,14 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // Columnas visibles (persiste)
   // Columnas en el MISMO orden que la vista del Administrador de anuncios del usuario (29/oct/2026).
   // El usuario elige cuáles ver; el orden es fijo, como en Meta.
-  const META_COL_ORDER = ["spend","roas","cpa","purchases","checkouts","cost_checkout","wishlist","cost_cart","link_ctr","link_cpc","cpm","link_clicks","lpv","reach","frequency","hook","avg_watch","purchase_value","aov","ctr","cpc","impressions","clicks"];
+  // Orden = el del Administrador de anuncios de Lautaro (1/nov/2026): alcance, impresiones, frecuencia, ROAS,
+  // conversión, resultados, costo por resultado, gasto, % de reproducción, CPM, CPC, CTR, clics, visitas, carrito,
+  // pagos iniciados y compras; el resto, opcional al final.
+  const META_COL_ORDER = ["reach","impressions","frequency","roas","conv_rate","results","cpa","spend","hook","cpm","link_cpc","link_ctr","link_clicks","lpv","carts","checkouts","purchases","cost_checkout","cost_cart","wishlist","avg_watch","purchase_value","aov","ctr","cpc","clicks"];
   const DEFAULT_COLS = META_COL_ORDER.slice(0,17);
   const ordenarCols = (c) => META_COL_ORDER.filter(k=>c.includes(k));
   const [aCols,setACols]=useState(()=>{ try {
-    const s5=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v5"))||"null"); if(Array.isArray(s5)&&s5.length) return ordenarCols(s5);
+    const s6=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v6"))||"null"); if(Array.isArray(s6)&&s6.length) return ordenarCols(s6);
     return DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
   // Selección con casilla por fila, como en Meta: lo tildado en Campañas filtra la pestaña Conjuntos; lo tildado en
   // Conjuntos filtra Anuncios (sin nada tildado se ven todos). Es un filtro del navegador: no vuelve a pedir a Meta.
@@ -35858,7 +35861,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Persistir ROAS BE y columnas
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_roas_be"), String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
-  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v5"), JSON.stringify(ordenarCols(aCols))); } catch(_) {} }, [aCols]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v6"), JSON.stringify(ordenarCols(aCols))); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" || row.effective_status === "SIN_ACTIVOS" ? "PAUSED" : "ACTIVE";
@@ -37104,7 +37107,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     t.ctr = t.impr>0 ? t.clicks/t.impr*100 : 0; t.cpm = t.impr>0 ? t.spend/t.impr*1000 : 0; t.cpc = t.clicks>0 ? t.spend/t.clicks : 0;
                     t.hook = t.impr>0 ? t.v3/t.impr*100 : 0; t.cpChk = t.chk>0 ? t.spend/t.chk : 0;
                     t.linkCtr = t.impr>0 ? t.lc/t.impr*100 : 0; t.linkCpc = t.lc>0 ? t.spend/t.lc : 0; t.cpCart = t.carts>0 ? t.spend/t.carts : 0;
-                    t.freq = t.reach>0 ? t.impr/t.reach : 0; t.watch = t.watchN>0 ? t.watchW/t.watchN : 0;
+                    t.freq = t.reach>0 ? t.impr/t.reach : 0; t.watch = t.watchN>0 ? t.watchW/t.watchN : 0; t.conv = t.lpv>0 ? t.n/t.lpv*100 : 0;
                     return t;
                   };
                   const tot = sumas(filteredTodo);
@@ -37122,6 +37125,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     roas:           { label:"ROAS de resultados", sub:"Valor,compra", render: r => r.roas ? fmt(r.roas) : "—", total: t => t.roas ? fmt(t.roas) : "—", color: r => {const be=effectiveBeForRow(r,r._lvl||aLevel,aRoasBe); if(!be||be<=0||!r.roas) return T.text; return r.roas>=be?T.green:T.red;} },
                     cpa:            { label:"Costo por resultado", sub:"Por compra", rowSub:"Por compra", render: r => money(r.cpa), total: t => money(t.cpa), dotted:true },
                     purchases:      { label:"Compras", sub:"Total", render: r => cnt(r.purchases), total: t => cnt(t.n), dotted:true },
+                    results:        { label:"Resultados", sub:"Compras en el sitio web", rowSub:"Compras en el sitio web", render: r => cnt(r.purchases), total: t => cnt(t.n), dotted:true },
+                    conv_rate:      { label:"Conversión", sub:"Compras / visitas a la página", render: r => r.lpv&&r.purchases ? fmt(r.purchases/r.lpv*100)+"%" : "—", total: t => t.conv ? fmt(t.conv)+"%" : "—", dotted:true },
+                    carts:          { label:"Artículos agregados al carrito", sub:"Total", render: r => cnt(r.carts), total: t => cnt(t.carts), dotted:true },
                     checkouts:      { label:"Pagos iniciados", sub:"Total", render: r => cnt(r.checkouts), total: t => cnt(t.chk), dotted:true },
                     cost_checkout:  { label:"Costo por pago iniciado", sub:"Por acción", render: r => r.checkouts&&r.spend ? cur+fmt(r.spend/r.checkouts) : "—", total: t => money(t.cpChk), dotted:true },
                     wishlist:       { label:"Artículos agregados a la lista de deseos", sub:"Total", render: r => cnt(r.wishlist), total: t => cnt(t.wish), dotted:true },
@@ -37133,7 +37139,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     lpv:            { label:"Visitas a la página de destino", sub:"Total", render: r => cnt(r.lpv), total: t => cnt(t.lpv), dotted:true },
                     reach:          { label:"Alcance", sub:"Cuentas de Meta", render: r => cnt(r.reach), total: t => cnt(t.reach) },
                     frequency:      { label:"Frecuencia", sub:"Por cuenta de Meta", render: r => r.frequency ? fmt(r.frequency) : "—", total: t => t.freq ? fmt(t.freq) : "—" },
-                    hook:           { label:"Porcentaje de retención del video", sub:"Promedio", render: r => r.hook ? fmt(r.hook)+"%" : "—", total: t => t.hook ? fmt(t.hook)+"%" : "—" },
+                    hook:           { label:"% de reproducción del video (3 s)", sub:"Promedio", render: r => r.hook ? fmt(r.hook)+"%" : "—", total: t => t.hook ? fmt(t.hook)+"%" : "—" },
                     avg_watch:      { label:"Tiempo promedio de reproducción del video", sub:"Promedio", render: r => r.avg_watch ? mmss(r.avg_watch) : "—", total: t => t.watch ? mmss(t.watch) : "—" },
                     purchase_value: { label:"Valor de conversión de compras", sub:"Total", render: r => money(r.purchase_value), total: t => money(t.rev) },
                     aov:            { label:"Valor promedio por compra", sub:"Por compra", render: r => money(r.aov), total: t => money(t.aov) },

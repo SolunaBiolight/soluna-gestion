@@ -713,6 +713,7 @@ function metricasCompletas(r, gasto, nivel, crudas) {
     ver_contenido: n("ver_contenido"), agregados_carrito: carrito, costo_agregado_carrito: costo(carrito),
     info_pago_agregada: n("info_pago"), pagos_iniciados_pixel: pago, compras_pixel: compra, costo_compra_pixel: costo(compra),
     valor_compras_pixel: valorCompra != null ? r2(valorCompra) : null, roas_pixel: accVal(r.purchase_roas, ACC.compra) != null ? r2(accVal(r.purchase_roas, ACC.compra)) : (valorCompra && gasto ? r2(valorCompra / gasto) : null),
+    tasa_conversion_pct: pct(compra, vista), // compras / visitas a la página de destino ("Conversión" en el Administrador de Lautaro)
     leads: n("lead"), registros: n("registro"), conversaciones_iniciadas: n("mensajes"),
     embudo_pct: limpio({ clic_a_vista: pct(vista, linkClicks), vista_a_carrito: pct(carrito, vista), carrito_a_pago: pct(pago, carrito), pago_a_compra: pct(compra, pago), clic_a_compra: pct(compra, linkClicks) }),
     video: limpio({ reproducciones_3s: v3, thruplays: thru, p25: accVal(r.video_p25_watched_actions, ["video_view"]), p50: accVal(r.video_p50_watched_actions, ["video_view"]), p75: accVal(r.video_p75_watched_actions, ["video_view"]), p100: accVal(r.video_p100_watched_actions, ["video_view"]), hook_rate_pct: pct(v3, impr), hold_rate_pct: pct(thru, v3), costo_thruplay: costo(thru) }),
@@ -830,7 +831,7 @@ async function metaAdministrador(db, uid, args) {
       const edge = nivel === "campaign" ? "campaigns" : nivel === "adset" ? "adsets" : "ads";
       const [ins, nodos] = await Promise.all([
         ventana !== "rango" ? insVentana(c, filtro) : metaTodo(`${c.id}/insights`, { level: nivel, fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,ctr,cpc,cpm,frequency,actions,action_values,video_avg_time_watched_actions" + (metCompletas ? ",reach,inline_link_clicks,inline_link_click_ctr,cost_per_inline_link_click,outbound_clicks,cost_per_action_type,purchase_roas,video_thruplay_watched_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions" + (nivel === "ad" ? ",quality_ranking,engagement_rate_ranking,conversion_rate_ranking" : "") : ""), time_range: JSON.stringify({ since: desde, until: hasta }), limit: "500", ...filtro }, c.tok),
-        metaTodo(`${c.id}/${edge}`, { fields: `id,name,effective_status,daily_budget,lifetime_budget,bid_strategy${nivel === "adset" ? ",bid_amount" : ""}${nivel !== "campaign" ? ",campaign_id" : ""}`, limit: "300", ...filtro }, c.tok, 5).catch(() => []),
+        metaTodo(`${c.id}/${edge}`, { fields: `id,name,effective_status,daily_budget,lifetime_budget,bid_strategy${nivel === "adset" ? ",bid_amount" : ""}${nivel !== "campaign" ? ",campaign_id,campaign{daily_budget,lifetime_budget}" : ""}${nivel === "ad" ? ",adset{daily_budget,lifetime_budget}" : ""}`, limit: "300", ...filtro }, c.tok, 5).catch(() => []),
       ]);
       const nodo = Object.fromEntries(nodos.map(n => [String(n.id), n]));
       const kfx = String(c.moneda || "USD").toUpperCase() === "USD" ? 1 : Number(fx?.[String(c.moneda).toUpperCase()]) || null;
@@ -850,8 +851,12 @@ async function metaAdministrador(db, uid, args) {
           id, nombre: r?.[nivel + "_name"] || n.name || "", cuenta: c.nombre, cuenta_id: c.id, moneda_cuenta: c.moneda,
           ...(nivel !== "campaign" ? { campana_id: r?.campaign_id || n.campaign_id || null } : {}),
           estado: n.effective_status || null,
-          presupuesto_diario: n.daily_budget ? r2(n.daily_budget / 100) : null,
-          presupuesto_total: n.lifetime_budget && n.lifetime_budget !== "0" ? r2(n.lifetime_budget / 100) : null,
+          // Los anuncios no tienen presupuesto: va el del conjunto (ABO) o el de la campaña (CBO), como en Meta.
+          ...(() => { const con = (x) => x && ((x.daily_budget && x.daily_budget !== "0") || (x.lifetime_budget && x.lifetime_budget !== "0"));
+            const src = con(n) ? n : con(n.adset) ? n.adset : con(n.campaign) ? n.campaign : n;
+            return { presupuesto_diario: src.daily_budget && src.daily_budget !== "0" ? r2(src.daily_budget / 100) : null,
+              presupuesto_total: src.lifetime_budget && src.lifetime_budget !== "0" ? r2(src.lifetime_budget / 100) : null,
+              ...(src !== n ? { presupuesto_de: src === n.adset ? "conjunto" : "campaña (compartido)" } : {}) }; })(),
           ...(n.bid_strategy ? { estrategia_puja: n.bid_strategy } : {}), ...(n.bid_amount ? { puja: r2(n.bid_amount / 100) } : {}),
           tienda_id: top ? top[0] : null,
           gasto, gasto_usd: gastoUsd != null ? r2(gastoUsd) : null,
