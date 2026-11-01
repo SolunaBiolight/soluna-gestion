@@ -24223,6 +24223,8 @@ function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
   const [mes,setMes]=useState("pendientes"); const [data,setData]=useState(null); const [err,setErr]=useState("");
   const [fiscal,setFiscal]=useState(null); const [desde,setDesde]=useState("");
   const [sel,setSel]=useState({}); const [datos,setDatos]=useState({}); const [cuit,setCuit]=useState(""); const [busy,setBusy]=useState(false); const [res,setRes]=useState(null);
+  // Fecha de las facturas (1/nov/2026): hoy por defecto; hasta 10 días atrás para que cuenten en el IVA del mes anterior.
+  const [fechaFac,setFechaFac]=useState(hoyAR()); const fechaFacMin=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(Date.now()-10*86400000));
   const cargar=async(m=mes)=>{ setData(null); setErr(""); setSel({}); try{ const d=await admAndreani(`admin_cargas_mes&mes=${encodeURIComponent(m)}`); setData(d.cargas||[]); }catch(e){ setErr(e.message); } };
   useEffect(()=>{ cargar(mes); },[mes]);
   useEffect(()=>{ (async()=>{ try{ const g=await admAndreani("admin_config"); setFiscal(g?.fiscal||{}); setDesde(g?.fiscal?.desde||""); if(g?.fiscal?.cuit) setCuit(g.fiscal.cuit); }catch(_){ setFiscal({}); } })(); },[]);
@@ -24238,12 +24240,12 @@ function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
     const elegidas=todas?sin:sin.filter(c=>sel[c.id]);
     if(!elegidas.length) return;
     const cf=elegidas.filter(c=>!datos[c.id]).length;
-    if(!(await appConfirm(`Se emiten ${elegidas.length} factura${elegidas.length===1?"":"s"} en ARCA por ${fmtMoney(tot(elegidas))}${cf?` (${cf} a Consumidor Final)`:""}, con el CUIT ${cuit}. No se puede deshacer (solo con nota de crédito). ¿Seguimos?`))) return;
+    if(!(await appConfirm(`Se emiten ${elegidas.length} factura${elegidas.length===1?"":"s"} en ARCA por ${fmtMoney(tot(elegidas))}${cf?` (${cf} a Consumidor Final)`:""}, con el CUIT ${cuit}, con fecha ${fechaFac===hoyAR()?"de hoy":fechaFac.slice(8,10)+"/"+fechaFac.slice(5,7)+"/"+fechaFac.slice(0,4)}. No se puede deshacer (solo con nota de crédito). ¿Seguimos?`))) return;
     setBusy(true); setRes(null); const out=[];
     try{
       for(let i=0;i<elegidas.length;i+=10){
         const lote=elegidas.slice(i,i+10).map(c=>({id:c.id,...(datos[c.id]||{doc_tipo:"CF"})}));
-        const r=await authFetch("/api/arca?action=admin_facturar_cargas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cuit,cargas:lote})});
+        const r=await authFetch("/api/arca?action=admin_facturar_cargas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cuit,cargas:lote,fecha:fechaFac})});
         const j=await r.json().catch(()=>({})); if(!r.ok||j.error) throw new Error(j.error||`HTTP ${r.status}`);
         out.push(...(j.resultados||[]));
       }
@@ -24264,6 +24266,7 @@ function AdmEnviosFacturacion({T, meses, usuariosPorUid, setCuenta}){
       <select value={cuit} onChange={e=>setCuit(e.target.value)} style={{...InputStyle(T),width:"auto",minWidth:260}}>{cuits===null?<option>Cargando CUITs…</option>:!cuits.length?<option value="">No tenés CUITs en el Facturador</option>:cuits.map(c=>{ const v=String(c.cuit||"").replace(/\D/g,""); return <option key={v} value={v}>{c.razon_social||c.nombre_fantasia||v} · {c.condicion_fiscal==="MONOTRIBUTO"?"Monotributo (C)":"Resp. inscripto (A/B)"}</option>; })}</select>
       {sin.length>0&&<Btn T={T} variant="secondary" size="sm" onClick={()=>setSel(elegidas.length===sin.length?{}:Object.fromEntries(sin.map(c=>[c.id,true])))}>{elegidas.length===sin.length?"Destildar todo":`Seleccionar las ${sin.length} sin facturar`}</Btn>}
       <div style={{flex:1}}/>
+      <label title="ARCA acepta hasta 10 días atrás en servicios y exige que las facturas de un punto de venta vayan en orden de fecha" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}>Fecha de las facturas<input type="date" value={fechaFac} min={fechaFacMin} max={hoyAR()} onChange={e=>setFechaFac(e.target.value||hoyAR())} style={{...InputStyle(T),width:150,padding:"7px 10px"}}/></label>
       <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}>Facturar cargas desde<input type="date" value={desde} onChange={e=>guardarDesde(e.target.value).catch(er=>toast(er.message,"error"))} style={{...InputStyle(T),width:150,padding:"7px 10px"}}/></label>
       <Btn T={T} variant="secondary" disabled={busy||!elegidas.length||!cuit} onClick={()=>facturar(false)}>{elegidas.length?`Facturar solo las ${elegidas.length} tildadas`:"Tildá para facturar algunas"}</Btn>
     </div>

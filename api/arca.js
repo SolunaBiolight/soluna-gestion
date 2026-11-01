@@ -4721,6 +4721,15 @@ export default async function handler(req, res) {
       const lista = (Array.isArray(body.cargas) ? body.cargas : []).slice(0, 40);
       if (!lista.length) return res.status(400).json({ error: "Elegí al menos una carga" });
       const hoyIso = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date());
+      // Fecha de la factura elegida (1/nov/2026: para que cuente en el IVA del mes anterior). Servicios: hasta 10 días atrás.
+      let fechaImp = null;
+      if (body.fecha) {
+        const f = String(body.fecha).replace(/\D/g, "");
+        const fv = /^\d{8}$/.test(f) ? fechaValida(f) : { ok: false, msg: "Fecha inválida" };
+        if (!fv.ok) return res.status(400).json({ error: fv.msg });
+        if (f !== hoyIso.replace(/-/g, "")) fechaImp = f;
+      }
+      const fechaOrden = fechaImp ? `${fechaImp.slice(0, 4)}-${fechaImp.slice(4, 6)}-${fechaImp.slice(6, 8)}` : hoyIso;
       const ordenes = {}, previas = [], receptorDe = {};
       for (const it of lista) {
         const id = String(it.id || "");
@@ -4740,7 +4749,7 @@ export default async function handler(req, res) {
         ordenes[`ENV-${id}`] = {
           nombre, doc_tipo: conDoc ? dt : "CF", doc_nro: conDoc ? dn : "", dni: conDoc ? dn : "",
           ...(conDoc && ["RI", "MONO", "EXENTO", "CF"].includes(String(it.iva_receptor || "")) ? { iva_receptor: it.iva_receptor } : {}),
-          total: monto, subtotal: monto, descuento: 0, envio: 0, estado_pago: "paid", fecha: hoyIso,
+          total: monto, subtotal: monto, descuento: 0, envio: 0, estado_pago: "paid", fecha: fechaOrden,
           ciudad: "", provincia: "", email: "", metodo_pago: c.metodo === "mp" ? "Mercado Pago" : "Transferencia",
           items: [{ nombre: "Servicio de envíos Andreani (carga de saldo prepago)", nombre_original: "Servicio de envíos Andreani", cantidad: 1, precio: monto, descuento_item: 0 }],
           _cargaId: id,
@@ -4748,7 +4757,7 @@ export default async function handler(req, res) {
       }
       let resultados = [];
       if (Object.keys(ordenes).length) {
-        const r = await ejecutarEmision(db0, adminUid, cfg0, { cuitEmit: cuitE, ordenes, product_map: null, fechaImputacion: null, pvSel: parseInt(body.pv) || null, exentoReq: false, conceptoReq: 2, deadline: Date.now() + 50000 });
+        const r = await ejecutarEmision(db0, adminUid, cfg0, { cuitEmit: cuitE, ordenes, product_map: null, fechaImputacion: fechaImp, pvSel: parseInt(body.pv) || null, exentoReq: false, conceptoReq: 2, deadline: Date.now() + 50000 });
         resultados = r.resultados || [];
         for (const x of resultados) {
           const id = String(x.orden_id || "").replace(/^ENV-/, "");
