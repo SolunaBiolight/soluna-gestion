@@ -30261,7 +30261,18 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
   const [regMenu, setRegMenu] = useState(null);         // {id, top, right} menú de acciones abierto
   // Canceladas con factura activa (para emitir sus NC en lote) — sección al final de Registros
   const [cancData, setCancData] = useState(null);   // {rows, count, truncated, amplio, parciales}
-  const [devAviso, setDevAviso] = useState(null);   // {cuit, total, parciales}: aviso de devueltas con factura arriba de Facturar
+  const [devAviso, setDevAviso] = useState(null);
+  // Fecha de las notas de crédito (1/nov/2026): hoy por defecto; hasta 10 días atrás para que cuenten en
+  // el IVA del mes anterior. La usan anular, anular en lote, canceladas y NC parcial.
+  const [ncFecha, setNcFecha] = useState(hoyAR());
+  const ncFechaMin = new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(Date.now()-10*86400000));
+  const ncFechaTxt = ncFecha===hoyAR() ? "con fecha de hoy" : `con fecha ${ncFecha.slice(8,10)}/${ncFecha.slice(5,7)}/${ncFecha.slice(0,4)}`;
+  const ncFechaInput = (
+    <span style={{display:"inline-flex",alignItems:"center",gap:8}}>
+      <span style={{fontSize:12,color:T.textMd}}>Fecha de las notas de crédito</span>
+      <input type="date" value={ncFecha} min={ncFechaMin} max={hoyAR()} onChange={e=>setNcFecha(e.target.value||hoyAR())} style={{...InputStyle(T),width:"auto",padding:"7px 10px",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+    </span>
+  );   // {cuit, total, parciales}: aviso de devueltas con factura arriba de Facturar
   const [cancLoading, setCancLoading] = useState(false);
   // "Adjuntar pendientes a ML" tiene su propio flag (antes compartía `emitting`)
   const [attachingML, setAttachingML] = useState(false);
@@ -31062,7 +31073,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     const emisorInfo = cuitActivoData
       ? `\nCUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})`
       : "";
-    const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\n` +
+    const msg = `¿Anular Factura ${resumen.letra} N° ${String(resumen.comprobante).padStart(8,"0")}?\n\nLa nota de crédito sale ${ncFechaTxt} (se cambia en Registros, arriba).\n\n` +
       `Se emite una Nota de Crédito ${resumen.letra} por $${((resumen.total||0)-(resumen.nc_parciales_total||0)).toLocaleString("es-AR",{minimumFractionDigits:2})} que revierte ${resumen.nc_parciales_total>0?"lo que quedaba de":"100%"} la factura en ARCA. ` +
       `El IVA débito fiscal se descuenta de tu facturado del mes al cerrar el período.${emisorInfo}\n\n` +
       `${resumen.orden_id?.startsWith?.("ML-") ? "Se DESADJUNTA la factura original de Mercado Libre. La venta queda como no facturada.\n\n" : ""}` +
@@ -31083,7 +31094,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setEmitting(true);
     setNotaOp({ titulo:"Emitiendo Nota de Crédito en ARCA…", sub:`NC ${resumen.letra} por $${(resumen.total||0).toLocaleString("es-AR",{minimumFractionDigits:2})} · al terminar se descarga el PDF sola` });
     try {
-      let d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
+      let d = await api("emit_nc", "POST", { cuit: cuitSel, factura, fecha_nc: ncFecha.replace(/-/g,"") });
       // Caso típico: Factura A sin CUIT en Growith — ofrecer cargarlo y retry
       const isMissingCuit = d.error && /CUIT del receptor|doc_tipo=""/i.test(d.detalle || "");
       if (isMissingCuit) {
@@ -31101,7 +31112,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
             if (!u.error) {
               factura.doc_tipo = "CUIT";
               factura.doc_nro = cuitClean;
-              d = await api("emit_nc", "POST", { cuit: cuitSel, factura });
+              d = await api("emit_nc", "POST", { cuit: cuitSel, factura, fecha_nc: ncFecha.replace(/-/g,"") });
             }
           } else {
             toast("CUIT inválido (debe tener 11 dígitos)", "error");
@@ -31221,7 +31232,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       : "";
     const totalAnular = filas.reduce((s,r)=>s+(r.total||0),0);
     const totalLote = totalAnular.toLocaleString("es-AR",{minimumFractionDigits:2});
-    const msg = `¿Anular ${filas.length} de las ${batch.cantidad} facturas del lote?\n\n` +
+    const msg = `¿Anular ${filas.length} de las ${batch.cantidad} facturas del lote?\n\nLas notas de crédito salen ${ncFechaTxt} (se cambia en Registros, arriba).\n\n` +
       `Se emite una Nota de Crédito por CADA una de esas ${filas.length} factura${filas.length===1?"":"s"} (mismo importe, mismo cliente). ` +
       `Total a revertir: $${totalLote}.\n\n` +
       `El IVA débito fiscal se descuenta de tu facturado del mes en ARCA al cerrar el período. ` +
@@ -31243,7 +31254,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     setEmitting(true);
     setNotaOp({ titulo:`Emitiendo ${facturas.length} Nota${facturas.length===1?"":"s"} de Crédito en ARCA…`, sub:"Una NC por cada factura del lote. Puede tardar. No cierres esta ventana." });
     try {
-      const d = await api("emit_nc_batch", "POST", { cuit: cuitSel, facturas });
+      const d = await api("emit_nc_batch", "POST", { cuit: cuitSel, facturas, fecha_nc: ncFecha.replace(/-/g,"") });
       setNotaOp(null); // los avisos de resultado van en modales propios
       if (d.error) { toast(`Error: ${d.error}`, "error"); return; }
       const mlFailResults = (d.results || []).filter(r => r.ok && r.ml_detached === false);
@@ -31316,7 +31327,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       ? `\nCUIT emisor: ${formatCuit(cuitActivoData.cuit)} (${cuitActivoData.razon_social || ""})` : "";
     const totalRevertir = filas.reduce((s,r)=>s+(r.total||0),0).toLocaleString("es-AR",{minimumFractionDigits:2});
     const nML = filas.filter(r=>r._platform==="mercadolibre").length;
-    const msg = `¿Emitir ${filas.length} Nota${filas.length===1?"":"s"} de Crédito?\n\n` +
+    const msg = `¿Emitir ${filas.length} Nota${filas.length===1?"":"s"} de Crédito ${ncFechaTxt}?\n\n` +
       `Son las ventas CANCELADAS / reembolsadas / con contracargo que todavía tienen su factura activa. ` +
       `Se emite una NC por cada una (mismo importe, mismo cliente). Total a revertir: $${totalRevertir}.\n\n` +
       (nML ? `${nML} son de Mercado Libre: sus facturas se DESADJUNTAN del pack automáticamente.\n\n` : "") +
@@ -31341,7 +31352,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
     try {
       for (let ci=0; ci<chunks.length; ci++) {
         setNotaOp({ titulo:"Emitiendo Notas de Crédito en ARCA…", sub:`Tanda ${ci+1}/${chunks.length} · ${Math.min((ci+1)*CHUNK,facturas.length)}/${facturas.length} NC. No cierres esta ventana` });
-        const d = await api("emit_nc_batch","POST",{ cuit: cuitSel, facturas: chunks[ci] });
+        const d = await api("emit_nc_batch","POST",{ cuit: cuitSel, facturas: chunks[ci], fecha_nc: ncFecha.replace(/-/g,"") });
         if (d.error) { errAll.push({ factura_comprobante:"—", error:d.error }); continue; }
         okTotal += d.ok_count || 0;
         if (d.errors?.length) errAll.push(...d.errors);
@@ -31399,7 +31410,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
       setNotaOp({ titulo:"Emitiendo Nota de Crédito parcial en ARCA…", sub:`$${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} · ${ndConcepto.trim()} · al terminar se descarga el PDF sola` });
       try {
         const factura = { tipo: r.tipo_cbte || (r.letra==="A"?1:r.letra==="C"?11:6), punto_venta: r.punto_venta || b?.punto_venta || 1, comprobante: r.comprobante, total: r.total, doc_tipo: r.doc_tipo || "", doc_nro: r.doc_nro || "", cliente: r.cliente || "", domicilio: r.domicilio || "", order_id: r.orden_id };
-        const d = await api("emit_nc", "POST", { cuit: cuitSel, factura, monto, motivo: ndConcepto.trim() });
+        const d = await api("emit_nc", "POST", { cuit: cuitSel, factura, monto, motivo: ndConcepto.trim(), fecha_nc: ncFecha.replace(/-/g,"") });
         if (d.error) { toast("Error ARCA: " + (d.detalle || d.error), "error"); return; }
         if (d.nc?.pdf_b64) { const a = document.createElement("a"); a.href = "data:application/pdf;base64," + d.nc.pdf_b64; a.download = d.nc.nombre_pdf || "nota-de-credito.pdf"; a.click(); }
         toast(d.parcial?`Nota de crédito ${d.nc?.letra||""} N° ${String(d.nc?.comprobante||"").padStart(8,"0")} por $${monto.toLocaleString("es-AR",{minimumFractionDigits:2})} emitida: la factura sigue vigente`:"Nota de crédito emitida: con esta se acreditó el total y la factura quedó anulada","success",7000);
@@ -31999,6 +32010,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     ]}
                   />
                   <span style={{fontSize:12,color:T.textSm,textTransform:"capitalize"}}>{mesActual}</span>
+                  <span style={{marginLeft:"auto"}}>{ncFechaInput}</span>
                 </div>
                 {/* KPIs del período (lo que antes vivía en el tab Resumen, compacto en una fila) */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
@@ -33333,7 +33345,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                           </div>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <span style={{fontSize:12,color:T.textMd}}>{cCount} venta{cCount===1?"":"s"} · total a revertir <span style={{fontWeight:700,color:T.text}}>{money(totalCanc)}</span></span>
-                            <button onClick={emitirNCCanceladas} disabled={emitting||cancLoading} style={{marginLeft:"auto",background:T.red,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:(emitting||cancLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(emitting||cancLoading)?0.6:1,whiteSpace:"nowrap"}}>
+                            <span style={{marginLeft:"auto"}}>{ncFechaInput}</span>
+                            <button onClick={emitirNCCanceladas} disabled={emitting||cancLoading} style={{background:T.red,border:"none",color:"#fff",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:(emitting||cancLoading)?"not-allowed":"pointer",fontFamily:"'Inter',system-ui,sans-serif",opacity:(emitting||cancLoading)?0.6:1,whiteSpace:"nowrap"}}>
                               {emitting ? "Emitiendo…" : (()=>{ const k=cRows.filter(r=>!r.requiere_manual).length; return `Emitir ${k} nota${k===1?"":"s"} de crédito`; })()}
                             </button>
                           </div>
@@ -33718,6 +33731,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
               <input type="number" step="0.01" min="0" value={ndMonto} onChange={e=>setNdMonto(e.target.value)} placeholder="0,00" disabled={ndEmitting} style={iS}/>
             </div>
             <div>
+              {ndModal.modo==="nc"&&<div style={{marginBottom:10}}>{ncFechaInput}</div>}
               <label style={labelS}>{ndModal.modo==="nc"?"Motivo":"Concepto"}</label>
               <input value={ndConcepto} onChange={e=>setNdConcepto(e.target.value)} placeholder={ndModal.modo==="nc"?'Ej: "Devolución de 1 ROJ-NN"':'Ej: "Diferencia de envío"'} disabled={ndEmitting} style={iS}/>
             </div>

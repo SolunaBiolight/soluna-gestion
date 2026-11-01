@@ -1226,7 +1226,8 @@ async function emitirNotaCredito(token, sign, cuitNum, puntoVenta, cbteNcNro, fa
   // Exento: la NC replica el esquema impositivo de la factura original (ImpOpEx)
   const exento = !monotributo && facturaOriginal.exento === true;
   const total = Math.round((parseFloat(facturaOriginal.total) || 0) * 100) / 100;
-  const fecha = hoyARISO().replace(/-/g, "");
+  // Fecha elegida (1/nov/2026: para que la NC cuente en el mes anterior); ya validada con fechaValida.
+  const fecha = /^\d{8}$/.test(String(facturaOriginal.fecha_nc || "")) ? String(facturaOriginal.fecha_nc) : hoyARISO().replace(/-/g, "");
   // Numéricos duros: nada no-numérico se interpola en el XML de AFIP
   const nroAsoc = parseInt(facturaOriginal.comprobante);
   const pvAsoc = parseInt(facturaOriginal.punto_venta) || parseInt(puntoVenta);
@@ -3501,10 +3502,22 @@ export function autopilotCandidatas(ordenes, ap, hoyYmd) {
   return { listas, esperando, excluidas, espera };
 }
 
+// Fecha de una nota de crédito: YYYYMMDD elegida (o hoy) → formatos que se guardan. Devuelve {error} si ARCA
+// no la aceptaría (futura o más de 10 días atrás).
+function fechaNcDe(raw) {
+  const f = raw ? String(raw).replace(/\D/g, "") : hoyARISO().replace(/-/g, "");
+  if (!/^\d{8}$/.test(f)) return { error: "Fecha de la nota de crédito inválida" };
+  const v = fechaValida(f); if (!v.ok) return { error: v.msg };
+  const ymd = `${f.slice(0, 4)}-${f.slice(4, 6)}-${f.slice(6, 8)}`;
+  return { f, ymd, iso: f === hoyARISO().replace(/-/g, "") ? new Date().toISOString() : `${ymd}T15:00:00.000Z`, display: `${f.slice(6, 8)}/${f.slice(4, 6)}/${f.slice(0, 4)}` };
+}
+
 // ─── Notas de crédito en lote (anulación total de cada factura) ─────────────
 // Núcleo de emit_nc_batch, también lo usa el piloto automático para las ventas
 // canceladas / devueltas enteras. Devuelve { total, ok_count, errors, results }.
-async function emitirNCLote(db, uid, cuitEmit, facturas) {
+async function emitirNCLote(db, uid, cuitEmit, facturas, fechaNcRaw = null) {
+  const fnc = fechaNcDe(fechaNcRaw);
+  if (fnc.error) return { error: fnc.error };
   const cfg = await loadCuitConfig(db, uid, cuitEmit);
   if (!cfg?.cert_pem || !cfg?.key_pem) return { error: "CUIT sin certificado configurado" };
   {
@@ -3608,7 +3621,7 @@ async function emitirNCLote(db, uid, cuitEmit, facturas) {
           ultimosNC[ncKey] = await getUltimoCbte(token, sign, cuitNum, pvNC, tipoNC, wsfe);
         }
         const ncNro = ++ultimosNC[ncKey];
-        const result = await emitirNotaCredito(token, sign, cuitNum, pvNC, ncNro, factura, wsfe);
+        const result = await emitirNotaCredito(token, sign, cuitNum, pvNC, ncNro, { ...factura, fecha_nc: fnc.f }, wsfe);
         if (result.resultado !== "A" || !result.cae) {
           try { await marcaRef.delete(); } catch (_) {}
           results.push({ ok: false, factura_comprobante: factura.comprobante, error: result.obs || "rechazada" });
@@ -3621,7 +3634,7 @@ async function emitirNCLote(db, uid, cuitEmit, facturas) {
         const letra = tipoNC === 3 ? "A" : tipoNC === 8 ? "B" : "C";
         const ncFactData = {
           comprobante: ncNro, cae: result.cae, cae_vto: result.cae_vto,
-          fecha: new Date().toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
+          fecha: fnc.display,
           cliente: factura.cliente || "Consumidor Final",
           doc_tipo: factura.doc_tipo, doc_nro: factura.doc_nro || "",
           letra, tipo_cbte: tipoNC, punto_venta: pvNC,
@@ -3646,7 +3659,7 @@ async function emitirNCLote(db, uid, cuitEmit, facturas) {
             cliente: factura.cliente || "",
             doc_tipo: factura.doc_tipo || "", doc_nro: factura.doc_nro || "",
             factura_origen: { tipo: tipoFactura, comprobante: factura.comprobante, punto_venta: factura.punto_venta || pv },
-            fecha: new Date().toISOString(),
+            fecha: fnc.iso, fecha_cbte: fnc.ymd,
             pdf_b64: pdfB64.length < 900000 ? pdfB64 : null,
           });
         } catch (e) {}
@@ -5218,12 +5231,12 @@ export default async function handler(req, res) {
     // ── EMITIR NOTAS DE CRÉDITO EN LOTE (anula múltiples facturas) ──
     if (action === "emit_nc_batch" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, facturas } = body;
+      const { cuit: cuitEmit, facturas, fecha_nc } = body;
       if (!cuitEmit || !Array.isArray(facturas) || facturas.length === 0) {
         return res.status(400).json({ error: "Faltan cuit o lista de facturas" });
       }
       try {
-        const r = await emitirNCLote(db, uid, cuitEmit, facturas);
+        const r = await emitirNCLote(db, uid, cuitEmit, facturas, fecha_nc || null);
         if (r.error) return res.status(400).json({ error: r.error });
         return res.json({ ok: true, ...r });
       } catch (e) {
@@ -5261,7 +5274,9 @@ export default async function handler(req, res) {
     // ── EMITIR NOTA DE CRÉDITO (anula factura emitida) ──
     if (action === "emit_nc" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)).toString());
-      const { cuit: cuitEmit, factura } = body;
+      const { cuit: cuitEmit, factura, fecha_nc } = body;
+      const fnc = fechaNcDe(fecha_nc || null);
+      if (fnc.error) return res.status(400).json({ error: fnc.error });
       // factura: { tipo, punto_venta, comprobante, total, doc_tipo, doc_nro, cliente, domicilio, items, fecha_iso, order_id }
       if (!cuitEmit || !factura) return res.status(400).json({ error: "Faltan cuit o factura" });
       const cfg = await loadCuitConfig(db, uid, cuitEmit);
@@ -5343,7 +5358,7 @@ export default async function handler(req, res) {
         const ultimoNC = await getUltimoCbte(token, sign, cuitNum, pv, tipoNC, wsfe);
         const ncNro = ultimoNC + 1;
 
-        const result = await emitirNotaCredito(token, sign, cuitNum, pv, ncNro, factura, wsfe);
+        const result = await emitirNotaCredito(token, sign, cuitNum, pv, ncNro, { ...factura, fecha_nc: fnc.f }, wsfe);
         if (result.resultado !== "A" || !result.cae) {
           return res.status(502).json({ error: "ARCA rechazó la NC", detalle: result.obs, resultado: result.resultado });
         }
@@ -5354,7 +5369,7 @@ export default async function handler(req, res) {
           comprobante: ncNro,
           cae: result.cae,
           cae_vto: result.cae_vto,
-          fecha: new Date().toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }),
+          fecha: fnc.display,
           cliente: factura.cliente || "Consumidor Final",
           doc_tipo: factura.doc_tipo,
           doc_nro: factura.doc_nro || "",
@@ -5390,7 +5405,7 @@ export default async function handler(req, res) {
             comprobante: factura.comprobante,
             punto_venta: factura.punto_venta || pv,
           },
-          fecha: new Date().toISOString(),
+          fecha: fnc.iso, fecha_cbte: fnc.ymd,
           pdf_b64: pdfB64.length < 900000 ? pdfB64 : null,
           ...(parcial ? { parcial: true } : {}), ...(motivoNC ? { motivo: motivoNC } : {}),
         };
@@ -5398,7 +5413,7 @@ export default async function handler(req, res) {
           await db.collection("users").doc(uid).collection("arca_notas_credito").add(ncRecord);
         } catch (e) { /* no crítico */ }
         if (parcial) {
-          try { if (compNCRef) await compNCRef.set({ nc_parciales_total: FieldValue.increment(parseFloat(factura.total) || 0), nc_parciales: FieldValue.arrayUnion({ nro: ncNro, letra, monto: parseFloat(factura.total) || 0, motivo: motivoNC, at: new Date().toISOString() }) }, { merge: true }); } catch (_) {}
+          try { if (compNCRef) await compNCRef.set({ nc_parciales_total: FieldValue.increment(parseFloat(factura.total) || 0), nc_parciales: FieldValue.arrayUnion({ nro: ncNro, letra, monto: parseFloat(factura.total) || 0, motivo: motivoNC, at: fnc.iso }) }, { merge: true }); } catch (_) {}
           return res.json({ ok: true, parcial: true, nc: { tipo: tipoNC, letra, punto_venta: pv, comprobante: ncNro, cae: result.cae, cae_vto: result.cae_vto, total: result.total, pdf_b64: pdfB64, nombre_pdf: `NC ${letra} - ${String(ncNro).padStart(8,"0")}.pdf` } });
         }
 
