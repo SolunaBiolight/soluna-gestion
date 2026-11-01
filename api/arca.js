@@ -4431,6 +4431,7 @@ async function accionArcaDemo(req, res, db, uid, action, cuit) {
     return responder({ rows: [], count: 0, connections: ["mercadolibre"], truncated: false });
   }
 
+  if (action === "mp_pagos" && M === "GET") return responder({ conectado: false, demo: true, pagos: [] });
   if (action === "devoluciones_con_factura" && M === "GET") return responder({ rows: [], count: 0, parciales: [], truncated: false });
   if (action === "autopilot_simular" && M === "POST") return responder({ demo: true, hoy: null, max: 0, listas: [], listasN: 0, esperando: [], esperandoN: 0, excluidas: { canal: 0, sinPago: 0, sinTotal: 0, tope: 0 }, nc: null });
 
@@ -4995,6 +4996,65 @@ export default async function handler(req, res) {
         } catch (e) { nc = { error: e.message }; }
       }
       return res.json({ hoy, ultimoDiaMes: esUltimoDiaMes(hoy), max, listas: r.listas.slice(0, 100).map(fila), listasN: r.listas.length, esperando: r.esperando.slice(0, 100).map(fila), esperandoN: r.esperando.length, excluidas: r.excluidas, nc });
+    }
+
+    // ── Ventas cobradas por Mercado Pago (link de pago, QR) — PROVISORIO (1/nov/2026) ──
+    // Lista los cobros aprobados de la cuenta de MP conectada que NO son ventas de Mercado Libre, marca
+    // los que ya tienen factura (orden_id "MP-<id del pago>") y los que parecen venir de la tienda (traen
+    // referencia de pedido: Tienda Nube / Shopify cobran por MP y esas ventas ya están en Facturar). Solo
+    // lee; la emisión va por "emit" como la factura manual, con el mismo control de duplicados por orden.
+    if (action === "mp_pagos" && req.method === "GET") {
+      const cuitNorm = String(req.query.cuit || "").replace(/\D/g, "");
+      if (!cuitNorm) return res.status(400).json({ error: "Falta cuit" });
+      const ymd = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(d);
+      const okYmd = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+      const hasta = okYmd(req.query.hasta) ? String(req.query.hasta) : ymd(new Date());
+      const desde = okYmd(req.query.desde) ? String(req.query.desde) : ymd(new Date(Date.now() - 29 * 86400000));
+      const uS = await db.collection("users").doc(uid).get();
+      const ud = uS.data() || {};
+      const stores = ud.stores || [];
+      const mpStore = stores.find(x => x.type === "mercadopago");
+      const acc = String(ud.margenesMlMp || "") || (mpStore ? String(mpStore.userId) : null) || (stores.find(x => x.type === "mercadolibre")?.userId ? String(stores.find(x => x.type === "mercadolibre").userId) : null);
+      if (!acc || acc === "__none__") return res.json({ conectado: false, pagos: [] });
+      const tok = await getValidMLToken(db, uid, acc).catch(() => null);
+      if (!tok?.accessToken) return res.json({ conectado: false, pagos: [] });
+      const begin = `${desde}T00:00:00.000-03:00`, end = `${hasta}T23:59:59.999-03:00`;
+      const pagos = []; let truncado = false;
+      for (let i = 0, offset = 0; i < 20; i++, offset += 100) {
+        const r = await fetch(`https://api.mercadopago.com/v1/payments/search?sort=date_created&criteria=desc&range=date_created&begin_date=${encodeURIComponent(begin)}&end_date=${encodeURIComponent(end)}&status=approved&limit=100&offset=${offset}`, { headers: { Authorization: `Bearer ${tok.accessToken}` } });
+        if (!r.ok) { if (!i) return res.status(502).json({ error: "Mercado Pago no respondió. Probá de nuevo en un rato." }); break; }
+        const j = await r.json();
+        const res0 = j.results || [];
+        for (const p of res0) {
+          if (String(p.order?.type || "").toLowerCase() === "mercadolibre") continue;   // ventas de ML: ya están en Facturar
+          if (!["regular_payment", "pos_payment"].includes(p.operation_type)) continue;  // sin transferencias, suscripciones ni cargas
+          const devuelto = parseFloat(p.transaction_amount_refunded) || 0;
+          const total = Math.round(((parseFloat(p.transaction_amount) || 0) - devuelto) * 100) / 100;
+          if (total <= 0) continue;
+          const idf = p.payer?.identification || {};
+          const items = (p.additional_info?.items || []).map(it => ({ nombre: String(it.title || "").slice(0, 120), cantidad: parseInt(it.quantity) || 1, precio: parseFloat(it.unit_price) || 0 })).filter(it => it.nombre && it.precio > 0);
+          pagos.push({
+            id: String(p.id), fecha: p.date_approved || p.date_created, total, devuelto,
+            descripcion: String(p.description || items[0]?.nombre || "").slice(0, 120), items,
+            nombre: `${p.payer?.first_name || ""} ${p.payer?.last_name || ""}`.trim() || String(p.additional_info?.payer?.first_name || "").trim(),
+            email: String(p.payer?.email || ""), docTipo: String(idf.type || ""), docNro: String(idf.number || "").replace(/\D/g, ""),
+            ref: String(p.external_reference || ""), medio: p.operation_type === "pos_payment" ? "QR / Point" : "Link o checkout",
+          });
+        }
+        const tot = parseInt(j.paging?.total) || 0;
+        if (res0.length < 100 || offset + 100 >= tot) break;
+        if (i === 19) truncado = true;
+      }
+      // Facturados: comprobantes activos de este CUIT con orden_id MP-<id> (consultas "in" de a 30).
+      const fact = {};
+      const ids = pagos.map(p => "MP-" + p.id);
+      for (let k = 0; k < ids.length; k += 30) {
+        const q = await db.collection("users").doc(uid).collection("arca_comprobantes").where("orden_id", "in", ids.slice(k, k + 30)).select("orden_id", "cuit_emisor", "letra", "nro", "anulada").get();
+        for (const d of q.docs) { const c = d.data(); if (c.anulada || String(c.cuit_emisor) !== cuitNorm) continue; fact[c.orden_id] = { letra: c.letra, nro: c.nro }; }
+      }
+      for (const p of pagos) { const f = fact["MP-" + p.id]; if (f) p.factura = f; }
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
+      return res.json({ conectado: true, desde, hasta, pagos, truncado });
     }
 
     // ── Devoluciones con factura activa (aviso del Facturador) ──

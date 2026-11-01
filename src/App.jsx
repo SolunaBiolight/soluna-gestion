@@ -29706,6 +29706,112 @@ function ghIvaCalc(meses, hastaMes){
 // Control del Monotributo (17/oct/2026): facturación de 12 meses contra el tope de la categoría,
 // ritmo, proyección a la próxima recategorización y aviso si se va a pasar. Datos: arca?action=mono_resumen.
 const GH_MONO_CATS=["A","B","C","D","E","F","G","H","I","J","K"];
+// Ventas cobradas por Mercado Pago (link de pago, QR) — PROVISORIO (1/nov/2026). Lista los cobros de la
+// cuenta de MP que no son de Mercado Libre (arca?action=mp_pagos) y los factura con "emit", como la factura
+// manual, con orden_id "MP-<id del pago>" (quedan en Registros y el control de duplicados no deja facturar
+// dos veces el mismo cobro). Los que traen referencia de pedido son de la tienda y van ocultos por defecto.
+function ArcaMercadoPagoVentas({T,api,cuit,desde,hasta}){
+  const [abierto,setAbierto]=useState(false);
+  const [d,setD]=useState(null); const [cargando,setCargando]=useState(false);
+  const [sel,setSel]=useState({}); const [verTienda,setVerTienda]=useState(false);
+  const [emitiendo,setEmitiendo]=useState(false);
+  const cargar=async()=>{
+    setCargando(true);
+    try{ const r=await api("mp_pagos","GET",null,{cuit,desde:desde||"",hasta:hasta||""}); if(r.error){ toast(r.error,"error"); return; } setD(r); setSel({}); }
+    catch(e){ toast("No se pudieron traer los cobros de Mercado Pago","error"); }
+    finally{ setCargando(false); }
+  };
+  useEffect(()=>{ if(abierto) cargar(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[abierto,cuit,desde,hasta]);
+  const $=v=>"$ "+(Number(v)||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const pagos=(d?.pagos||[]).filter(p=>verTienda||!p.ref);
+  const ocultos=(d?.pagos||[]).filter(p=>p.ref).length;
+  const libres=pagos.filter(p=>!p.factura);
+  const elegidos=libres.filter(p=>sel[p.id]);
+  const docDe=p=>{ const n=p.docNro||""; const t=String(p.docTipo||"").toUpperCase();
+    if(t==="CUIT"&&n.length===11) return {doc_tipo:"CUIT",doc_nro:n};
+    if(t==="CUIL"&&n.length===11) return {doc_tipo:"DNI",doc_nro:n.slice(2,10).replace(/^0/,"")};
+    if(n.length>=7&&n.length<=8) return {doc_tipo:"DNI",doc_nro:n};
+    return {doc_tipo:"CF",doc_nro:""}; };
+  const facturar=async()=>{
+    if(!elegidos.length||emitiendo) return;
+    const grandes=elegidos.filter(p=>docDe(p).doc_tipo==="CF"&&p.total>=10000000);
+    if(grandes.length) return appAlert(`${grandes.length} cobro${grandes.length===1?"":"s"} de $10.000.000 o más no traen documento del comprador y ARCA exige identificarlo. Destildalos y hacelos con Factura manual cargando el CUIT o DNI.`);
+    const total=elegidos.reduce((a,p)=>a+p.total,0);
+    if(!await appConfirm(`¿Facturar ${elegidos.length} cobro${elegidos.length===1?"":"s"} de Mercado Pago por ${$(total)}?\n\nSale una factura por cada cobro, con fecha de hoy, a nombre del comprador si Mercado Pago trae su documento y si no a Consumidor Final. Quedan en Registros.`,{okLabel:`Facturar ${elegidos.length}`})) return;
+    setEmitiendo(true);
+    let ok=0; const errs=[];
+    try{
+      for(let i=0;i<elegidos.length;i+=15){
+        const ordenes={};
+        for(const p of elegidos.slice(i,i+15)){
+          const doc=docDe(p);
+          const items=(p.items||[]).length&&Math.abs(p.items.reduce((a,it)=>a+it.cantidad*it.precio,0)-p.total)<1 ? p.items : [{nombre:p.descripcion||"Venta cobrada por Mercado Pago",cantidad:1,precio:p.total}];
+          ordenes["MP-"+p.id]={ nombre:p.nombre||"Consumidor Final", ...doc, dni:doc.doc_nro, email:p.email||"", total:p.total, subtotal:p.total, descuento:0, envio:0, estado_pago:"paid",
+            fecha:String(p.fecha||"").slice(0,10), ciudad:"", provincia:"", metodo_pago:"Mercado Pago",
+            items:items.map(it=>({nombre:it.nombre,nombre_original:it.nombre,cantidad:it.cantidad,precio:it.precio,descuento_item:0})) };
+        }
+        const r=await api("emit","POST",{cuit,ordenes,product_map:{}});
+        if(r.error){ errs.push(r.error); break; }
+        for(const x of (r.resultados||[])){ if(x.ok) ok++; else errs.push(`${x.orden_id}: ${x.obs||"error"}`); }
+      }
+    }catch(e){ errs.push("Se cortó la conexión: revisá en Registros cuáles salieron"); }
+    finally{ setEmitiendo(false); }
+    toast(`${ok} factura${ok===1?"":"s"} emitida${ok===1?"":"s"}${errs.length?` · ${errs.length} con error`:""}`,errs.length?"warning":"success");
+    if(errs.length) await appAlert("No se pudieron facturar:\n\n"+errs.slice(0,8).join("\n")+(errs.length>8?`\n…y ${errs.length-8} más`:""));
+    cargar();
+  };
+  return (
+    <Card T={T} padding="lg" style={{marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <BrandIcon name="mercadopago" size={18}/>
+        <div style={{flex:1,minWidth:220}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.text}}>Ventas cobradas por Mercado Pago <DSBadge T={T} color={T.yellow} size="sm">provisorio</DSBadge></div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:2}}>Cobros por link de pago o QR que no pasan por tu tienda ni por Mercado Libre. Del período elegido arriba.</div>
+        </div>
+        {abierto&&<Btn T={T} variant="ghost" size="sm" onClick={cargar} disabled={cargando}>{cargando?"Buscando…":"Actualizar"}</Btn>}
+        <Btn T={T} variant="secondary" size="sm" onClick={()=>setAbierto(v=>!v)}>{abierto?"Cerrar":"Ver cobros"}</Btn>
+      </div>
+      {abierto&&(
+        <div style={{marginTop:12}}>
+          {cargando&&!d ? <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textSm}}><Spinner size={12} color={T.accent}/> Trayendo cobros de Mercado Pago…</div>
+          : d&&!d.conectado ? <div style={{fontSize:12,color:T.textMd}}>{d.demo?"En la tienda demo no hay cobros de Mercado Pago.":"No hay una cuenta de Mercado Pago conectada. Conectala en Config → Integraciones → Mercado Pago."}</div>
+          : d&&(<>
+            {d.truncado&&<div style={{fontSize:11,color:T.orange,marginBottom:8}}>Hay muchos cobros en el período: se muestran los primeros 2.000. Achicá el período para ver el resto.</div>}
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10,fontSize:12,color:T.textMd}}>
+              <span>{pagos.length} cobro{pagos.length===1?"":"s"} · {libres.length} sin facturar</span>
+              {libres.length>0&&<button onClick={()=>setSel(elegidos.length===libres.length?{}:Object.fromEntries(libres.map(p=>[p.id,true])))} style={{background:"transparent",border:"none",color:T.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",padding:0}}>{elegidos.length===libres.length?"Destildar todo":"Seleccionar los sin facturar"}</button>}
+              {ocultos>0&&<label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",marginLeft:"auto"}}><DSToggle T={T} active={verTienda} onToggle={()=>setVerTienda(v=>!v)}/> Mostrar {ocultos} que vienen de la tienda</label>}
+            </div>
+            {verTienda&&ocultos>0&&<div style={{fontSize:11,color:T.orange,marginBottom:8,lineHeight:1.5}}>Los cobros con referencia de pedido suelen ser ventas de Tienda Nube o Shopify, que ya se facturan como pedidos en la lista de abajo. Facturarlos acá también los facturaría dos veces.</div>}
+            {!pagos.length ? <div style={{fontSize:12,color:T.textSm}}>No hay cobros por link de pago en este período.</div> : (
+              <div style={{border:`1px solid ${T.borderL||T.border}`,borderRadius:12,overflow:"hidden",maxHeight:420,overflowY:"auto"}}>
+                {pagos.map((p,i)=>{ const doc=docDe(p); return (
+                  <label key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderTop:i?`1px solid ${T.borderL||T.border}`:"none",fontSize:12,cursor:p.factura?"default":"pointer",flexWrap:"wrap"}}>
+                    <input type="checkbox" disabled={!!p.factura} checked={!p.factura&&!!sel[p.id]} onChange={e=>setSel(x=>({...x,[p.id]:e.target.checked}))}/>
+                    <span style={{color:T.textSm,minWidth:44}}>{String(p.fecha||"").slice(8,10)}/{String(p.fecha||"").slice(5,7)}</span>
+                    <div style={{flex:"1 1 220px",minWidth:0}}>
+                      <div style={{color:T.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre||"Sin nombre"}{p.descripcion?<span style={{color:T.textSm,fontWeight:400}}> · {p.descripcion}</span>:null}</div>
+                      <div style={{fontSize:11,color:T.textSm}}>{doc.doc_tipo==="CF"?"Consumidor final":`${doc.doc_tipo} ${doc.doc_nro}`} · {p.medio} · pago {p.id}{p.ref?` · ref ${p.ref}`:""}{p.devuelto>0?` · devolvieron ${$(p.devuelto)}`:""}</div>
+                    </div>
+                    <span style={{fontWeight:600,color:T.text,whiteSpace:"nowrap"}}>{$(p.total)}</span>
+                    {p.factura ? <DSBadge T={T} color={T.green} size="sm">Factura {p.factura.letra} {String(p.factura.nro||"").padStart(8,"0")}</DSBadge> : <DSBadge T={T} color={T.yellow} size="sm">Sin facturar</DSBadge>}
+                  </label>
+                ); })}
+              </div>
+            )}
+            {elegidos.length>0&&(
+              <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+                <Btn T={T} variant="primary" size="md" onClick={facturar} disabled={emitiendo}>{emitiendo?"Facturando…":`Facturar ${elegidos.length} · ${$(elegidos.reduce((a,p)=>a+p.total,0))}`}</Btn>
+              </div>
+            )}
+          </>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ArcaMonotributoCard({T,api,cuit}){
   const [d,setD]=useState(null); const [err,setErr]=useState(""); const [guardando,setGuardando]=useState(false);
   const cargar=()=>api("mono_resumen","GET",null,{cuit}).then(x=>{ if(x.error) setErr(x.error); else { setD(x); setErr(""); } }).catch(e=>setErr(e.message||"error de conexión"));
@@ -32007,6 +32113,8 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       </div>
                     );
                   })()}
+
+                  {!tnLoading && cuitSel && <ArcaMercadoPagoVentas T={T} api={api} cuit={cuitSel} desde={fechaDesde} hasta={fechaHasta}/>}
 
                   {/* Fila 2: Canal (radio-pills) + Sin doc + Pago + Monto */}
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:14}}>
