@@ -35206,16 +35206,11 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   // ROAS break-even configurable (persiste en localStorage)
   const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem(ghKey("growith_meta_roas_be")))||2; } catch(_) { return 2; } });
   // Columnas visibles (persiste)
-  // Columnas en el MISMO orden que la vista del Administrador de anuncios del usuario (29/oct/2026).
-  // El usuario elige cuáles ver; el orden es fijo, como en Meta.
-  // Orden = el del Administrador de anuncios de Lautaro (1/nov/2026): alcance, impresiones, frecuencia, ROAS,
-  // conversión, resultados, costo por resultado, gasto, % de reproducción, CPM, CPC, CTR, clics, visitas, carrito,
-  // pagos iniciados y compras; el resto, opcional al final.
-  const META_COL_ORDER = ["reach","impressions","frequency","roas","conv_rate","results","cpa","spend","hook","cpm","link_cpc","link_ctr","link_clicks","lpv","carts","checkouts","purchases","cost_checkout","cost_cart","wishlist","avg_watch","purchase_value","aov","ctr","cpc","clicks"];
+  // Orden de fábrica, como el Administrador de anuncios. Cada usuario lo cambia arrastrando el encabezado (queda guardado).
+  const META_COL_ORDER = ["spend","roas","cpa","purchases","checkouts","cost_checkout","wishlist","cost_cart","link_ctr","link_cpc","cpm","link_clicks","lpv","reach","frequency","hook","avg_watch","purchase_value","aov","ctr","cpc","impressions","clicks","results","conv_rate","carts"];
   const DEFAULT_COLS = META_COL_ORDER.slice(0,17);
-  const ordenarCols = (c) => META_COL_ORDER.filter(k=>c.includes(k));
   const [aCols,setACols]=useState(()=>{ try {
-    const s6=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v6"))||"null"); if(Array.isArray(s6)&&s6.length) return ordenarCols(s6);
+    const s7=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v7"))||"null"); if(Array.isArray(s7)&&s7.length) return s7.filter(k=>META_COL_ORDER.includes(k));
     return DEFAULT_COLS; } catch(_) { return DEFAULT_COLS; }});
   // Selección con casilla por fila, como en Meta: lo tildado en Campañas filtra la pestaña Conjuntos; lo tildado en
   // Conjuntos filtra Anuncios (sin nada tildado se ven todos). Es un filtro del navegador: no vuelve a pedir a Meta.
@@ -35236,11 +35231,13 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     document.body.style.cursor="col-resize"; document.body.style.userSelect="none";
   };
   // Divisor arrastrable del encabezado; doble clic vuelve al ancho original.
-  const grip = (key) => <span onMouseDown={e=>iniciarResize(key,e)} onDoubleClick={e=>{e.stopPropagation(); setAColW(p=>{ const x={...p}; delete x[key]; return x; });}} onClick={e=>e.stopPropagation()} title="Arrastrá para cambiar el ancho · doble clic para restablecer"
+  const grip = (key) => <span draggable onDragStart={e=>{e.preventDefault(); e.stopPropagation();}} onMouseDown={e=>iniciarResize(key,e)} onDoubleClick={e=>{e.stopPropagation(); setAColW(p=>{ const x={...p}; delete x[key]; return x; });}} onClick={e=>e.stopPropagation()} title="Arrastrá para cambiar el ancho · doble clic para restablecer"
     onMouseEnter={e=>{e.currentTarget.style.background=T.accent;}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}
     style={{position:"absolute",top:0,right:-4,width:8,height:"100%",cursor:"col-resize",zIndex:2,background:"transparent",borderRadius:2}}/>;
   const [aBudgetEdit,setABudgetEdit]=useState(null); // {id, val} mientras se edita un presupuesto en la tabla
   const [aColsOpen,setAColsOpen]=useState(false);
+  const colArrastradaRef=useRef(null);
+  const moverCol=(de,a)=>setACols(prev=>{ if(de===a||!prev.includes(de)||!prev.includes(a)) return prev; const x=prev.filter(k=>k!==de); const i=x.indexOf(a); x.splice(prev.indexOf(de)<prev.indexOf(a)?i+1:i,0,de); return x; });
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
   const [aFilterStatus,setAFilterStatus]=useState("active"); // all | active | paused — arranca en "Solo activos"
@@ -35896,7 +35893,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
   // Persistir ROAS BE y columnas
   useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_roas_be"), String(aRoasBe)); } catch(_) {} }, [aRoasBe]);
-  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v6"), JSON.stringify(ordenarCols(aCols))); } catch(_) {} }, [aCols]);
+  useEffect(()=>{ try { localStorage.setItem(ghKey("growith_meta_cols_v7"), JSON.stringify(aCols)); } catch(_) {} }, [aCols]);
 
   async function toggleStatus(row) {
     const targetStatus = row.effective_status === "ACTIVE" || row.effective_status === "SIN_ACTIVOS" ? "PAUSED" : "ACTIVE";
@@ -37196,7 +37193,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     <div style={{position:"relative"}}>
                       <button onClick={()=>setAColsOpen(o=>!o)} style={{background:T.input,border:`1px solid ${T.inputBorder}`,color:T.text,borderRadius:8,padding:"6px 10px",fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"flex",alignItems:"center",gap:5}}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg> Columnas</button>
                       {aColsOpen && (
-                        <div className="gh-dropdown" style={{position:"absolute",top:"100%",right:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:10,minWidth:200,boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+                        <div className="gh-dropdown" style={{position:"absolute",top:"100%",left:0,marginTop:6,background:T.card,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 12px",zIndex:30,minWidth:260,maxHeight:"60vh",overflowY:"auto",boxShadow:"0 8px 24px rgba(0,0,0,0.4)"}}>
+                          <button onClick={()=>{ setACols(DEFAULT_COLS); setAColW({}); }} style={{background:"transparent",border:"none",color:T.accent,fontSize:11,fontWeight:600,cursor:"pointer",padding:"2px 0 6px",fontFamily:"inherit"}}>Restablecer columnas</button>
                           {META_COL_ORDER.map(k=>({k, l:COL_META[k].label})).map(c=>(
                             <label key={c.k} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",fontSize:11,color:T.text,cursor:"pointer"}}>
                               <input type="checkbox" checked={aCols.includes(c.k)} onChange={e=>{
@@ -37293,7 +37291,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                       const TD = { padding:"9px 10px", fontSize:12, color:T.text, borderRight:`1px solid ${T.borderL}`, borderBottom:`1px solid ${T.borderL}`, verticalAlign:"middle", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" };
                       const stickyL = (left, bg) => ({ position:"sticky", left, zIndex:1, background:bg });
                       const hdr = (key, label, align="right") => (
-                        <th key={key} onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:align,cursor:"pointer",userSelect:"none"}}>
+                        <th key={key} draggable={visibleCols.includes(key)} onDragStart={e=>{ colArrastradaRef.current=key; e.dataTransfer.effectAllowed="move"; }} onDragOver={e=>{ if(colArrastradaRef.current) e.preventDefault(); }} onDrop={e=>{ e.preventDefault(); if(colArrastradaRef.current) moverCol(colArrastradaRef.current,key); colArrastradaRef.current=null; }} onDragEnd={()=>{ colArrastradaRef.current=null; }} onClick={()=>setASort(s=>({key, dir: s.key===key && s.dir==="desc" ? "asc" : "desc"}))} style={{...TH,textAlign:align,cursor:visibleCols.includes(key)?"grab":"pointer",userSelect:"none"}}>
                           <span title={label} style={{display:"flex",alignItems:"flex-end",gap:4,justifyContent:align==="right"?"flex-end":"flex-start",overflow:"hidden"}}>
                             <span style={{overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical"}}>{label}</span>
                             <span style={{color:aSort.key===key?T.accent:T.textSm,fontSize:10,flexShrink:0}}>{aSort.key===key?(aSort.dir==="desc"?"↓":"↑"):"⇅"}</span>
