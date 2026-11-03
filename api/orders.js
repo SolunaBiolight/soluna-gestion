@@ -697,6 +697,8 @@ export default async function handler(req, res) {
         "mpi:1",
         // 7/oct/2026: percepciones y retenciones de Mercado Libre por pago
         "mlret:1",
+        // 3/nov/2026: Shopify reparte la venta por lo cobrado en cada línea (2x1 de un producto)
+        ...(stores.some(s => s.type === "shopify") ? ["lpv:1"] : []),
         // 26/oct/2026: el fulfillment propio ya no se suma a las ventas de ML Full (solo invalida a quien lo usa)
         ...(parseFloat(userData.margenesEnvioCfg?.fulfillment) > 0 ? ["mlfull:1"] : []),
         // Demo: cada cambio de las ventas ficticias sube demo.version → caché inválida
@@ -770,6 +772,11 @@ export default async function handler(req, res) {
           const rc = await fetch(cacheUrl.toString(), { headers: stockHeaders, signal: AbortSignal.timeout(12000) });
           if (rc.ok) {
             const jc = await rc.json();
+            // Con Shopify, una caché sin lineasV no trae lo cobrado por línea: se recalcula (3/nov/2026), pero
+            // solo si el rango está dentro de los 60 días que Shopify devuelve sin read_all_orders (más viejo,
+            // la caché es lo único que hay y queda con el reparto viejo).
+            const desde58 = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(Date.now() - 58 * 86400000));
+            const shSinLineas = stores.some(s => s.type === "shopify") && !(jc.lineasV >= 1) && String(from).slice(0, 10) >= desde58;
             if (!jc.noCache && !jc.error && jc.daily_revenue) {
               jcFallback = jc; // último snapshot completo — plan B si TN/ML no responden
               const rangoCerrado = String(to) < argToday;
@@ -789,7 +796,7 @@ export default async function handler(req, res) {
               // inmutable. Al recalcular en vivo se reescribe el snapshot corregido,
               // así los loads siguientes (sin fresh) vuelven a ser rápidos y ya sin la
               // venta devuelta. La navegación normal (sin fresh) mantiene el caché.
-              if (!_fresh && (cerradoCompleto || (isFinite(edadMs) && edadMs < 10 * 60000))) j = jc;
+              if (!_fresh && !shSinLineas && (cerradoCompleto || (isFinite(edadMs) && edadMs < 10 * 60000))) j = jc;
             }
           }
         } catch (_) { /* la caché es un atajo — si falla, se calcula en vivo */ }
@@ -2366,7 +2373,10 @@ export default async function handler(req, res) {
         const repartir = (o, items, imp, comis, env, canal, mlKey) => {
           const rev = parseFloat(o.revenue)||0;
           const f = String(o.fecha||"").slice(0,10);
-          const its = (items||[]).map(it=>{ const k=rk(it); return { ...it, k, w:(priceByKey[k]||0)*(it.qty||0) }; });
+          // Peso de cada línea: lo cobrado por la línea (pv, Shopify: con sus descuentos) si TODAS lo traen;
+          // si no, precio de lista × cantidad como antes.
+          const conPv = (items||[]).length>0 && (items||[]).every(it=>Number.isFinite(Number(it.pv)));
+          const its = (items||[]).map(it=>{ const k=rk(it); return { ...it, k, w: conPv ? Number(it.pv) : (priceByKey[k]||0)*(it.qty||0) }; });
           let wSum = its.reduce((s,it)=>s+it.w,0);
           if (wSum<=0) { its.forEach(it=>it.w=it.qty||0); wSum = its.reduce((s,it)=>s+it.w,0)||1; }
           for (const it of its) {

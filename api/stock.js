@@ -380,7 +380,11 @@ function processSH(orders) {
       // n = nombre legible embebido en la orden (lo que vio el cliente): fallback
       // para cuando la variante ya no está en el catálogo (borrada/discontinuada).
       const nm=((item.title||"")+(item.variant_title && item.variant_title!=="Default Title"?" · "+item.variant_title:"")).trim()||item.name||item.sku||"";
-      detItems.push({ key: item.sku || vid, vid, qty, n: nm });
+      // pv = lo que realmente se cobró por la línea (precio × cantidad − sus descuentos, como los reparte
+      // Shopify en discount_allocations). Un 2x1 de un producto queda solo en ese producto (3/nov/2026:
+      // antes la venta se repartía por precio de lista y el descuento caía también sobre el complementario).
+      const descLinea=(item.discount_allocations||[]).reduce((t,x)=>t+(parseFloat(x.amount)||0),0);
+      detItems.push({ key: item.sku || vid, vid, qty, n: nm, pv: Math.max(0, Math.round((rev-descLinea)*100)/100) });
     }
     if(day)  { daily[day]=(daily[day]||0)+orderUnits; dailyRevenue[day]=(dailyRevenue[day]||0)+orderRevenue; }
     if(hour) byHour[hour]=(byHour[hour]||0)+orderUnits;
@@ -608,6 +612,7 @@ function buildResponse(platform, products, analytics, days) {
     daily_revenue:  analytics.dailyRevenue||{}, // revenue por día
     daily_orders:   analytics.dailyOrders||{}, // órdenes por día
     orders_detail:  analytics.ordersDetail||[], // detalle por orden (para tabla venta-por-venta)
+    lineasV: 1, // 3/nov/2026: los items de Shopify traen pv (cobrado por línea); daily_metrics descarta cachés sin esto
     by_province:    analytics.byProv,
     by_hour:        analytics.byHour,
     by_payment:     analytics.byPayment,
