@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from "react"; // v2
+﻿import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react"; // v2
 import ReactDOM from "react-dom";
 import { DARK, LIGHT, PUBLICADORES_ARCHIVADOS, META_OAUTH_OK, BrandIcon, RecurrentesLogo, IA_ICONS, GhI } from "./shared.jsx";
 import { LandingPage } from "./Landing.jsx";
@@ -35207,7 +35207,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aRoasBe,setARoasBe]=useState(()=>{ try { return parseFloat(localStorage.getItem(ghKey("growith_meta_roas_be")))||2; } catch(_) { return 2; } });
   // Columnas visibles (persiste)
   // Orden de fábrica, como el Administrador de anuncios. Cada usuario lo cambia arrastrando el encabezado (queda guardado).
-  const META_COL_ORDER = ["spend","roas","cpa","purchases","checkouts","cost_checkout","wishlist","cost_cart","link_ctr","link_cpc","cpm","link_clicks","lpv","reach","frequency","hook","avg_watch","purchase_value","aov","ctr","cpc","impressions","clicks","results","conv_rate","carts"];
+  const META_COL_ORDER = ["spend","roas","cpa","purchases","checkouts","cost_checkout","wishlist","cost_cart","link_ctr","link_cpc","cpm","link_clicks","lpv","reach","frequency","hook","avg_watch","purchase_value","aov","ctr","cpc","impressions","clicks","results","conv_rate","carts","rechazados"];
   const DEFAULT_COLS = META_COL_ORDER.slice(0,17);
   const [aCols,setACols]=useState(()=>{ try {
     const s7=JSON.parse(localStorage.getItem(ghKey("growith_meta_cols_v7"))||"null"); if(Array.isArray(s7)&&s7.length) return s7.filter(k=>META_COL_ORDER.includes(k));
@@ -35237,6 +35237,17 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [aBudgetEdit,setABudgetEdit]=useState(null); // {id, val} mientras se edita un presupuesto en la tabla
   const [aColsOpen,setAColsOpen]=useState(false);
   const colArrastradaRef=useRef(null);
+  // Al entrar a una campaña el bloque de esa cuenta no se achica (queda el espacio): así la cuenta de abajo no sube
+  // y no se pierde dónde estaba. Al volver a la vista de campañas se mide de nuevo.
+  const bloqueEls=useRef({}), bloqueMax=useRef({});
+  useLayoutEffect(()=>{
+    const enDrill=aDrill.length>0;
+    for (const [k,el] of Object.entries(bloqueEls.current)) {
+      if (!enDrill) { el.style.minHeight=""; bloqueMax.current[k]=el.offsetHeight; continue; }
+      const h=el.offsetHeight, max=Math.max(bloqueMax.current[k]||0,h);
+      bloqueMax.current[k]=max; el.style.minHeight=max+"px";
+    }
+  });
   const moverCol=(de,a)=>setACols(prev=>{ if(de===a||!prev.includes(de)||!prev.includes(a)) return prev; const x=prev.filter(k=>k!==de); const i=x.indexOf(a); x.splice(prev.indexOf(de)<prev.indexOf(a)?i+1:i,0,de); return x; });
   const [aSort,setASort]=useState({key:"spend",dir:"desc"});
   const [aQuery,setAQuery]=useState("");
@@ -35849,7 +35860,9 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const cod=String(r._moneda||"USD").toUpperCase(); const k=cod==="USD"?1:Number(fxM?.[cod]);
     if(!k) return o;
     const rev=m.rev*k;
-    return {...o, purchases:m.n, purchase_value:rev, roas:r.spend?rev/r.spend:0, cpa:m.n&&r.spend?r.spend/m.n:0, aov:m.n?rev/m.n:0};
+    // Con los eventos de intento de Impultienda, los pagos iniciados también son los reales (Meta solo pone el gasto).
+    const pi=utmAtr.intentos?{checkouts:m.pi||0, cost_checkout:m.pi&&r.spend?r.spend/m.pi:0, rechazados:m.rech||0}:{};
+    return {...o, ...pi, purchases:m.n, purchase_value:rev, roas:r.spend?rev/r.spend:0, cpa:m.n&&r.spend?r.spend/m.n:0, aov:m.n?rev/m.n:0};
   };
   // Con que una conexión tenga ads_management alcanza: el server edita con ese token aunque la activa sea de solo lectura.
   const metaEditable=!!activeAcc?.puede_editar||accounts.some(a=>a.puede_editar);
@@ -37133,8 +37146,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
 
                   // Totales (de lo filtrado y de cada bloque de tienda)
                   const sumas = (rows) => {
-                    const t = { spend:0, rev:0, n:0, impr:0, clicks:0, v3:0, chk:0, lc:0, lpv:0, wish:0, carts:0, reach:0, watchW:0, watchN:0 };
-                    for (const r of rows) { t.spend+=r.spend||0; t.rev+=r.purchase_value||0; t.n+=r.purchases||0; t.impr+=r.impressions||0; t.clicks+=r.clicks||0; t.v3+=r.video_3s||0; t.chk+=r.checkouts||0; t.lc+=r.link_clicks||0; t.lpv+=r.lpv||0; t.wish+=r.wishlist||0; t.carts+=r.carts||0; t.reach+=r.reach||0; if(r.avg_watch>0&&r.impressions>0){ t.watchW+=r.avg_watch*r.impressions; t.watchN+=r.impressions; } }
+                    const t = { spend:0, rev:0, n:0, impr:0, clicks:0, v3:0, chk:0, rech:0, lc:0, lpv:0, wish:0, carts:0, reach:0, watchW:0, watchN:0 };
+                    for (const r of rows) { t.spend+=r.spend||0; t.rev+=r.purchase_value||0; t.n+=r.purchases||0; t.impr+=r.impressions||0; t.clicks+=r.clicks||0; t.v3+=r.video_3s||0; t.chk+=r.checkouts||0; t.rech+=r.rechazados||0; t.lc+=r.link_clicks||0; t.lpv+=r.lpv||0; t.wish+=r.wishlist||0; t.carts+=r.carts||0; t.reach+=r.reach||0; if(r.avg_watch>0&&r.impressions>0){ t.watchW+=r.avg_watch*r.impressions; t.watchN+=r.impressions; } }
                     t.roas = t.spend>0 ? t.rev/t.spend : 0; t.cpa = t.n>0 ? t.spend/t.n : 0; t.aov = t.n>0 ? t.rev/t.n : 0;
                     t.ctr = t.impr>0 ? t.clicks/t.impr*100 : 0; t.cpm = t.impr>0 ? t.spend/t.impr*1000 : 0; t.cpc = t.clicks>0 ? t.spend/t.clicks : 0;
                     t.hook = t.impr>0 ? t.v3/t.impr*100 : 0; t.cpChk = t.chk>0 ? t.spend/t.chk : 0;
@@ -37160,7 +37173,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     results:        { label:"Resultados", sub:"Compras en el sitio web", rowSub:"Compras en el sitio web", render: r => cnt(r.purchases), total: t => cnt(t.n), dotted:true },
                     conv_rate:      { label:"Conversión", sub:"Compras / visitas a la página", render: r => r.lpv&&r.purchases ? fmt(r.purchases/r.lpv*100)+"%" : "—", total: t => t.conv ? fmt(t.conv)+"%" : "—", dotted:true },
                     carts:          { label:"Artículos agregados al carrito", sub:"Total", render: r => cnt(r.carts), total: t => cnt(t.carts), dotted:true },
-                    checkouts:      { label:"Pagos iniciados", sub:"Total", render: r => cnt(r.checkouts), total: t => cnt(t.chk), dotted:true },
+                    rechazados:     { label:"Pagos rechazados", sub:"Impultienda", render: r => cnt(r.rechazados), total: t => cnt(t.rech) },
+                    checkouts:      { label:"Pagos iniciados", sub:utmAtr?.intentos?"Impultienda":"Total", render: r => cnt(r.checkouts), total: t => cnt(t.chk), dotted:true },
                     cost_checkout:  { label:"Costo por pago iniciado", sub:"Por acción", render: r => r.checkouts&&r.spend ? cur+fmt(r.spend/r.checkouts) : "—", total: t => money(t.cpChk), dotted:true },
                     wishlist:       { label:"Artículos agregados a la lista de deseos", sub:"Total", render: r => cnt(r.wishlist), total: t => cnt(t.wish), dotted:true },
                     cost_cart:      { label:"Costo por carrito", sub:"Por acción", render: r => r.carts&&r.spend ? cur+fmt(r.spend/r.carts) : "—", total: t => money(t.cpCart), dotted:true },
@@ -37321,7 +37335,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                         const lista = desgloseAbierto ? [...visibles, ...conGasto] : visibles;
                         const gastoOculto = sumas(conGasto).spend;
                         return (
-                          <div key={k} onDragOver={e=>{ if(!ctaDrag) return; e.preventDefault(); if(ctaDrag!==k) moverCta(ctaDrag,k); }} onDrop={e=>{e.preventDefault(); setCtaDrag(null);}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0,opacity:ctaDrag===k?0.45:1}}>
+                          <div key={k} ref={el=>{ if(el) bloqueEls.current[k]=el; else delete bloqueEls.current[k]; }} onDragOver={e=>{ if(!ctaDrag) return; e.preventDefault(); if(ctaDrag!==k) moverCta(ctaDrag,k); }} onDrop={e=>{e.preventDefault(); setCtaDrag(null);}} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:separar?14:0,opacity:ctaDrag===k?0.45:1}}>
                             <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
                               {separar && <span draggable onDragStart={e=>{ setCtaDrag(k); try{ e.dataTransfer.effectAllowed="move"; const c=e.currentTarget.parentElement?.parentElement; if(c) e.dataTransfer.setDragImage(c,40,20); }catch(_){} }} onDragEnd={()=>setCtaDrag(null)} title="Arrastrá para mover esta cuenta" style={{cursor:"grab",color:T.textSm,fontSize:14,lineHeight:1,userSelect:"none"}}>⠿</span>}
                               {/* Campañas / Conjuntos / Anuncios de ESTA cuenta (cada cuenta puede mirar un nivel distinto) */}

@@ -625,6 +625,22 @@ export async function utmAtribucion(db, uid, desde, hasta, tz, idx, opts = {}) {
   const out = { c: {}, s: {}, a: {}, ct: {}, tiendas: tiendasMap, total: { n: 0, rev: 0 }, sinAtribuir: { n: 0, rev: 0 }, sinUtm: 0, importadas: 0, ultimaVenta: null };
   const atr = {};
   for (const o of ordenes) if (!o.post_compra) atr[o.order_id] = atribuirUtm(o.utm, idx);
+  // Pagos iniciados y rechazados de Impultienda (webhooks "Orden creada" / "Pago rechazado" / "Carrito abandonado"):
+  // una orden cuenta una vez, en el momento de su primer evento. Solo si la cuenta manda esos eventos.
+  out.intentos = ordenes.some(o => o.ev_created || o.ev_rejected || o.ev_abandoned);
+  out.pi = { n: 0, rech: 0 };
+  if (out.intentos) for (const o of ordenes) {
+    if (o.post_compra || o.importado) continue;
+    const ts = [o.ev_created, o.ev_rejected, o.ev_abandoned, o.ev_approved].map(x => Date.parse(x || "")).filter(isFinite);
+    if (!ts.length) continue;
+    const t0 = Math.min(...ts);
+    if (t0 < desdeMs || t0 >= hastaMs) continue;
+    if (opts.dentro && !opts.dentro(o, tiendasMap[o.store_id])) continue;
+    const rech = o.ev_rejected && !o.ev_approved ? 1 : 0;
+    out.pi.n++; out.pi.rech += rech;
+    const x = atr[o.order_id];
+    if (x) for (const nivel of ["c", "s", "a"]) if (x[nivel]) { const m = out[nivel][x[nivel]] || (out[nivel][x[nivel]] = { n: 0, rev: 0 }); m.pi = (m.pi || 0) + 1; m.rech = (m.rech || 0) + rech; }
+  }
   for (const o of ordenes) {
     const t = Date.parse(o.ev_approved || "");
     if (isFinite(t) && (!out.ultimaVenta || t > Date.parse(out.ultimaVenta))) out.ultimaVenta = o.ev_approved;
