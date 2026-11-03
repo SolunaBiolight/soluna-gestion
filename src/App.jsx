@@ -22417,8 +22417,8 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
   // Tiempo real: cada 6 s se consulta el contador de cambios del depósito (una lectura);
   // si cambió, se recargan la cola y los contadores, estés en la pestaña que estés.
   const [ver,setVer]=useState(null); const [enVivo,setEnVivo]=useState(null); const verRef=React.useRef(null); const conocidasRef=React.useRef(null);
-  // Alerta de tanda nueva: alarma fuerte que se repite cada 20 s (hasta 15 veces) hasta que alguien toca
-  // "Entendido", cartel grande arriba, título de la pestaña titilando y aviso del sistema operativo
+  // Alerta de tanda nueva: el sonido suena DOS veces seguidas y nada más (3/nov/2026, pedido de Lautaro;
+  // antes se repetía cada 20 s hasta 15 veces), cartel grande arriba hasta que alguien toca "Entendido", título de la pestaña titilando y aviso del sistema operativo
   // (Notification) si se dio permiso, que aparece aunque el navegador esté minimizado.
   const [alerta,setAlerta]=useState(null); // {texto, n}
   const [sonidoOk,setSonidoOk]=useState(false);
@@ -22427,6 +22427,7 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     const texto=nuevas.length===1?`Tanda nueva de ${nuevas[0].clienteNombre||"un cliente"}${nuevas[0].tipo==="especial"?`: ${nuevas[0].especial?.canje?"CANJE · ":""}${nuevas[0].especial?.titulo||"envío especial"}`:` · ${nuevas[0].n} pedido${nuevas[0].n!==1?"s":""}`}${nuevas[0].urgente?" · URGENTE":""}`:`${nuevas.length} tandas nuevas: ${[...new Set(nuevas.map(t=>t.clienteNombre))].join(", ")}`;
     setAlerta(a=>({texto,n:(a?.n||0)+nuevas.length}));
     setSonidoOk(ghDepAlarma());
+    setTimeout(()=>setSonidoOk(ghDepAlarma()),2500);
     try{ if(typeof Notification!=="undefined"&&Notification.permission==="granted"){ const nt=new Notification("Growith · Depósito",{body:texto,tag:"growith-deposito",renotify:true,requireInteraction:true,icon:"/logo-color.png"}); nt.onclick=()=>{ try{ window.focus(); }catch(_){} nt.close(); }; } }catch(_){}
   };
   useEffect(()=>{ if(!esDep) return; const u=()=>{ ghDepAudio(); setTimeout(()=>setSonidoOk(ghDepSonidoListo()),50); };
@@ -22440,10 +22441,9 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
     const pedir=async()=>{ try{ if(!("wakeLock" in navigator)){ setPantallaOn(false); return; } if(document.visibilityState!=="visible") return; lock=await navigator.wakeLock.request("screen"); if(!vivo){ lock.release().catch(()=>{}); return; } setPantallaOn(true); lock.addEventListener("release",()=>{ if(vivo) setPantallaOn(document.visibilityState==="visible"?false:null); }); }catch(_){ setPantallaOn(false); } };
     pedir(); const vis=()=>{ if(document.visibilityState==="visible") pedir(); }; document.addEventListener("visibilitychange",vis);
     return ()=>{ vivo=false; document.removeEventListener("visibilitychange",vis); try{ lock&&lock.release(); }catch(_){} }; },[esDep]);
-  useEffect(()=>{ if(!alerta) return; let veces=0; const titulo=document.title; let par=false;
-    const rep=setInterval(()=>{ veces++; if(veces<=15) setSonidoOk(ghDepAlarma()); },20000);
+  useEffect(()=>{ if(!alerta) return; const titulo=document.title; let par=false;
     const tit=setInterval(()=>{ par=!par; document.title=par?`● ${alerta.n===1?"Tanda nueva":`${alerta.n} tandas nuevas`}`:titulo; },1000);
-    return ()=>{ clearInterval(rep); clearInterval(tit); document.title=titulo; }; },[alerta]);
+    return ()=>{ clearInterval(tit); document.title=titulo; }; },[alerta]);
   useEffect(()=>{ if(!esDep) return; let vivo=true, ocupado=false;
     let ultimo=0;
     // Con la pestaña oculta o el navegador minimizado también se consulta (antes se cortaba y la tanda
