@@ -928,7 +928,7 @@ const SIDEBAR_GROUPS_BASE = [
     {id:"stripereg", label:"Registros Stripe", soloImp:true, icon:"M4 4h16v16H4zM8 9h8M8 13h8M8 17h5"},
     { group:"OPERACIONES" },
     {id:"envios",   label:"Envíos",    icon:"M16 16h6m-3-3v6M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", alertKey:"envios",
-      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout"}]},
+      subs:[{id:"panel",label:"Panel de Envíos"},{id:"sku",label:"SKU en Rótulos"},{id:"seguimientos",label:"Seguimientos"},{id:"checkout",label:"Checkout Shopify"}]},
     // Depósito: solo lo ven el dueño del depósito, sus operarios y los clientes dados de alta (lo decide api/deposito.js → me).
     {id:"deposito", label:"Depósito", soloDeposito:true, icon:"M3 9l9-6 9 6v11a1 1 0 01-1 1H4a1 1 0 01-1-1zM9 21v-8h6v8M3 9h18"},
     {id:"reclamos", label:"Reclamos",  icon:"M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z", alertKey:"reclamos", badge:"red",
@@ -16987,7 +16987,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
         {st && <span style={{fontSize:10,fontWeight:800,letterSpacing:0.4,borderRadius:99,padding:"2px 9px",background:activo?T.green+"22":T.yellow+"22",color:activo?T.green:T.yellow}}>{activo?"ACTIVO":"NO ACTIVO"}</span>}
         <span style={{marginLeft:"auto"}}><GhTip T={T} text="Growith se registra en tu Shopify como transportista. En cada checkout, Shopify le pregunta a Growith el precio y Growith responde 'Andreani a domicilio' y 'Andreani Sucursal · X' (una por sucursal cercana al CP del comprador) con la tarifa real de Andreani. El pedido queda con la sucursal exacta y la etiqueta se imprime desde Envíos."/></span>
       </div>
-      <div style={{fontSize:12,color:T.textMd,lineHeight:1.55,marginBottom:12}}>El comprador elige <strong style={{color:T.text}}>Andreani a domicilio</strong> o <strong style={{color:T.text}}>retiro en una sucursal Andreani</strong> (lista de sucursales cercanas a su CP) y paga el envío al precio de tu etiqueta Growith. Después imprimís la etiqueta desde <strong style={{color:T.text}}>Envíos</strong> con la sucursal ya elegida.</div>
+      <div style={{fontSize:12,color:T.textMd,lineHeight:1.55,marginBottom:12}}>El comprador elige <strong style={{color:T.text}}>Andreani a domicilio</strong> o <strong style={{color:T.text}}>retiro en una sucursal Andreani</strong> (lista de sucursales cercanas a su CP) y paga el envío a la tarifa de lista de Andreani (la misma que muestra Tienda Nube). Después imprimís la etiqueta desde <strong style={{color:T.text}}>Envíos</strong> con la sucursal ya elegida.</div>
       {err && <div style={{background:T.red+"12",border:`1px solid ${T.red}44`,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.red,marginBottom:10,lineHeight:1.5}}>{err}</div>}
       {!st && !err && <div style={{fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Consultando Shopify…</div>}
       {scopeFalta && (
@@ -17066,7 +17066,7 @@ function AndreaniCheckoutCard({T, user, shStore, onReconectar}) {
             <div><Lbl>Ancho (cm)</Lbl><input value={cfg.anchoCm} onChange={set("anchoCm")} type="number" style={iS}/></div>
             <div><Lbl>Tope valor declarado ($)</Lbl><input value={cfg.valorDeclaradoMax} onChange={set("valorDeclaradoMax")} placeholder="sin tope" style={iS}/></div>
           </div>
-          <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,marginBottom:10}}>El precio que ve el comprador = tarifa de tu etiqueta Growith (Andreani + IVA) + recargo. El valor declarado (seguro) es el subtotal del carrito, con tope opcional.</div>
+          <div style={{fontSize:11,color:T.textSm,lineHeight:1.5,marginBottom:10}}>El precio que ve el comprador = tarifa de lista de Andreani con IVA (la misma que muestra Tienda Nube) + recargo. El valor declarado (seguro) es el subtotal del carrito, con tope opcional.</div>
           <button onClick={guardar} disabled={saving} style={{...BtnPrimary(T),fontSize:12,padding:"8px 16px"}}>{saving?"Guardando…":"Guardar"}</button>
         </div>
       )}
@@ -17087,7 +17087,7 @@ function EnviosCheckoutTab({T, user}) {
     <div key="checkout" className="gh-tab-content" style={{maxWidth:"100%",margin:"0 auto",paddingBottom:48}}>
       <div style={{marginBottom:14}}>
         <div style={{fontSize:DS.font["2xl"],fontWeight:DS.w.black,color:T.text,letterSpacing:-0.4}}>Andreani en el checkout <span style={{fontSize:DS.font.md,fontWeight:DS.w.medium,color:T.textSm}}>(solo Shopify)</span></div>
-        <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Que el comprador elija Andreani a domicilio o retiro en sucursal directo en el checkout de tu tienda, con el precio de tu etiqueta Growith.</div>
+        <div style={{fontSize:DS.font.base,color:T.textSm,marginTop:2}}>Que el comprador elija Andreani a domicilio o retiro en sucursal directo en el checkout de tu tienda, con la tarifa de lista de Andreani (la misma que muestra Tienda Nube).</div>
       </div>
       {cargando ? <div style={{fontSize:12,color:T.textSm}}><Spinner size={12} color={T.textSm}/> Cargando…</div>
       : shStore ? <AndreaniCheckoutCard T={T} user={user} shStore={shStore} onReconectar={()=>{ window.location.hash="#/config"; }}/>

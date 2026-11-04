@@ -6,9 +6,10 @@
 //   • "Andreani Sucursal · <sucursal>"   (código ANDREANI_SUC_<id oficial>), una
 //     por sucursal que atiende ese CP (hasta `sucursalesMax`), y después
 //   • "Punto HOP Andreani · <calle número>" (mismo código; índice api/_hop.js).
-// El precio es el MISMO que Growith le cobra al vendedor por la etiqueta
-// (tarifa Andreani + markup de plataforma) más el recargo/gratis que configure
-// la tienda. El id oficial viaja en el código del método → al leer el pedido
+// El precio es la TARIFA DE LISTA de Andreani con IVA (la misma que muestra la
+// integración de Andreani en Tienda Nube; sin el descuento del contrato de
+// Growith ni el markup de la etiqueta por API, 4/nov/2026) más el
+// recargo/gratis que configure la tienda. El id oficial viaja en el código del método → al leer el pedido
 // (orders.js) Envíos sabe exactamente a qué sucursal emitir.
 //
 // Reglas duras: SIEMPRE responder 200 con {rates:[...]} (un error acá rompe el
@@ -17,7 +18,7 @@
 // a lo cacheado o a lista vacía (Shopify muestra los otros métodos).
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { cfgParaCuenta, andreaniEnv, andreaniFetch, slimSucursal, distanciaM, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, precioConMarkup, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
+import { andreaniEnv, andreaniFetch, slimSucursal, distanciaM, getGlobalConfig, sucursalesPorCp, sucursalesTodas, sucursalesCercanasCore, cotizarAndreani, sucOrigenDe, isPlatformAdmin } from "./andreani.js";
 import { hopIndexTodas } from "./_hop.js";
 
 function initAdmin() {
@@ -303,7 +304,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
   const recargo = p => pesos(p * (1 + (Number(ac.recargoPct) || 0) / 100) + (Number(ac.recargoFijo) || 0));
 
   const kgB = Math.ceil(kilos * 2) / 2, valB = Math.round(valorDeclarado / 20000) * 20000;
-  const cacheRef = db.collection("andreani_config").doc(`rates_${uid}_${cp}_${kgB}_${valB}`);
+  const cacheRef = db.collection("andreani_config").doc(`ratesL_${uid}_${cp}_${kgB}_${valB}`);
   let cached = null;
   try { const c = (await cacheRef.get()).data(); if (c && Date.now() - (c.ts || 0) < RATES_TTL_MS) cached = c; } catch (_) {}
 
@@ -312,7 +313,7 @@ export async function computeRates(db, uid, rate, { shopHdr = "", t0 = Date.now(
   const cotiza = async tipo => {
     if (cached && typeof cached[tipo] === "number") return cached[tipo];
     const cot = await cotizarAndreani(db, env, { tipo, cpDestino: cp, bultos, sucursalOrigen: sucOrigen });
-    return precioConMarkup(cot, cfgParaCuenta(cfg, u)); // markup propio del cliente si lo tiene
+    return Math.ceil(cot.tarifaTotal); // tarifa de lista con IVA, como Tienda Nube
   };
   const work = (async () => {
     const [dom, suc, sucursales] = await Promise.all([
