@@ -19140,24 +19140,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           {vista==="dashboard" && data && filas.length>0 && (<>
             <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0",display:"flex",alignItems:"center"}}>Métricas principales · todas las tiendas<button onClick={()=>setEditCards(v=>!v)} title="Elegir y ordenar las métricas" style={{marginLeft:"auto",background:editCards?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editCards?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button></div>
             {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT,data?.totales?.fijos||0,data?.totales?.fijosMes||0,data?.totales?.aceptaronPost)} editar={editCards} setEditar={setEditCards}/>; })()}
-            <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"14px 0 0"}}>Tiendas · por país</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:DS.sp.md}}>
-              {tiendas.filter(x=>x.id!=="SIN_ASIGNAR").map(x=>{ const s=ghImpSumar(filas.filter(f=>f.tienda===x.id)); return (
-                <Card T={T} key={x.id} hoverable onClick={()=>{ setTiendaSel(x.id); ir("hora"); }}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:DS.sp.md}}>
-                    <span style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span>
-                    {x.pais && <DSBadge T={T} color={T.accent}>{x.pais}</DSBadge>}
-                  </div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 14px",fontSize:DS.font.md}}>
-                    <span style={{color:T.textSm}}>Facturación</span><span style={{textAlign:"right",color:T.text}}>{GH_FMT_USD(s.ventas)} · {s.n}</span>
-                    <span style={{color:T.textSm}}>Anuncios</span><span style={{textAlign:"right",color:T.text}}>{GH_FMT_USD(s.gasto)}{s.roas?` · ROAS ${s.roas.toFixed(2)}`:""}</span>
-                    <span style={{color:T.textSm}}>Comisiones</span><span style={{textAlign:"right",color:T.text}}>{GH_FMT_USD(s.comisiones)}</span>
-                    <span style={{color:T.textSm}}>Reembolsos</span><span style={{textAlign:"right",color:T.text}}>{GH_FMT_USD(s.reembolsos)}</span>
-                    <span style={{color:T.text,fontWeight:DS.w.bold}}>Ganancia</span><span style={{textAlign:"right",fontWeight:DS.w.bold,color:s.ganancia>=0?T.green:T.red}}>{GH_FMT_USD(s.ganancia)}</span>
-                  </div>
-                </Card>);})}
-            </div>
-            {tiendas.some(x=>x.id==="SIN_ASIGNAR") && (()=>{ const s=ghImpSumar(filas.filter(f=>f.tienda==="SIN_ASIGNAR")); return s.gasto>0.01 ? <div style={{fontSize:DS.font.sm,color:T.textMd}}>{GH_FMT_USD(s.gasto)} de anuncios no se pudo asignar a una tienda: la campaña no tiene el código de país de ninguna tienda en el nombre. Está en el total principal.</div> : null; })()}
+            {/* "Tiendas · por país" se quitó el 4/nov/2026 (Thiago: el reparto del gasto por tienda no era confiable). La vista Por hora sigue filtrando por tienda. */}
             <GhImpVentasLista T={T} ventas={data.ventas||[]} prom={data.comisionPromedio} uid={uid} onCambio={()=>cargar(true)}/>
           </>)}
           {vista==="hora" && data && filas.length>0 && (<>
