@@ -77,11 +77,21 @@ const MONTO_MAX = 50000000;
 // u otro, regla de Soluna 7/oct: 6 unidades = 6 × 500). `pedidosConExtra` =
 // pedidos cobrados por unidad; `extraUnidades` = unidades cobradas.
 // "2x ROJ-NN" / "ROJ-NN (x2)" / "ROJ-NN" = 2 / 2 / 1 unidades.
+// SKU de kit (4/nov/2026): "SHINE X45 SHAMPO X15 PAÑOS X15" = 45 + 15 + 15 unidades
+// (cada nombre seguido de Xn). Devuelve las partes o null si el SKU no es así.
+export function kitPartes(sku) {
+  const toks = String(sku || "").trim().split(/\s+/); const out = []; let nom = [];
+  for (const tk of toks) { const m = tk.match(/^x(\d{1,4})$/i);
+    if (m && nom.length) { out.push({ sku: nom.join(" "), cant: Number(m[1]) }); nom = []; } else nom.push(tk); }
+  return out.length && !nom.length && out.every(x => x.cant > 0) ? out : null;
+}
 export function unidadesDe(items) {
   let u = 0;
   for (const it of items || []) { const t = String(it || "").trim(); if (!t) continue;
-    const a = t.match(/^(\d+)\s*x\s+/i); const b = t.match(/\(x\s*(\d+)\)\s*$/i);
-    u += Math.max(1, Math.round(num(a ? a[1] : b ? b[1] : 1)) || 1); }
+    const a = t.match(/^(\d+)\s*x\s+(.+)$/i); const b = a ? null : t.match(/^(.*?)\s*\(x\s*(\d+)\)\s*$/i);
+    const q = Math.max(1, Math.round(num(a ? a[1] : b ? b[2] : 1)) || 1);
+    const kit = kitPartes(a ? a[2] : b ? b[1] : t);
+    u += kit ? q * kit.reduce((s, x) => s + x.cant, 0) : q; }
   return u;
 }
 export function extraItemsDe(pedidos, cfg) {

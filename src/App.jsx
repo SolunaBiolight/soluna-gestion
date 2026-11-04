@@ -13752,7 +13752,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               const skuTotals={};
               found.forEach(r=>(r.skuLines||[]).forEach(s=>{
                 const m=s.match(/^(.+?)\s*\(x(\d+)\)$/);
-                if(m){const k=m[1].trim();skuTotals[k]=(skuTotals[k]||0)+parseInt(m[2]);}
+                if(m){const k=m[1].trim(),q=parseInt(m[2]);for(const pz of ghKitPartes(k)||[{sku:k,cant:1}]) skuTotals[pz.sku]=(skuTotals[pz.sku]||0)+q*pz.cant;}
               }));
 
               return (<div>
@@ -21634,7 +21634,10 @@ const GH_DEP_ESTADO={pendiente:"Pendiente",impresa:"Impresa",armada:"Armada",ent
 // Cobro por unidad (mismo cálculo que extraItemsDe en api/deposito.js): un pedido con hasta
 // `extraItemsIncluidos` unidades paga el precio por paquete; con más, paga `extraItemPrecio` por
 // CADA unidad (todas) EN VEZ del precio por paquete (uno u otro, nunca los dos).
-function ghDepUnidades(items){ let u=0; for(const it of items||[]){ const t=String(it||"").trim(); if(!t) continue; const a=t.match(/^(\d+)\s*x\s+/i), b=t.match(/\(x\s*(\d+)\)\s*$/i); u+=Math.max(1,Math.round(Number(a?a[1]:b?b[1]:1))||1); } return u; }
+// SKU de kit (4/nov/2026): "SHINE X45 SHAMPO X15 PAÑOS X15" = 45 + 15 + 15 unidades (cada nombre seguido de Xn).
+// Misma regla que kitPartes de api/deposito.js. Devuelve las partes o null si el SKU no es un kit.
+function ghKitPartes(sku){ const toks=String(sku||"").trim().split(/\s+/); const out=[]; let nom=[]; for(const tk of toks){ const m=tk.match(/^x(\d{1,4})$/i); if(m&&nom.length){ out.push({sku:nom.join(" "),cant:Number(m[1])}); nom=[]; } else nom.push(tk); } return out.length&&!nom.length&&out.every(x=>x.cant>0)?out:null; }
+function ghDepUnidades(items){ let u=0; for(const it of items||[]){ const t=String(it||"").trim(); if(!t) continue; const a=t.match(/^(\d+)\s*x\s+(.+)$/i), b=a?null:t.match(/^(.*?)\s*\(x\s*(\d+)\)\s*$/i); const q=Math.max(1,Math.round(Number(a?a[1]:b?b[2]:1))||1); const kit=ghKitPartes(a?a[2]:b?b[1]:t); u+=kit?q*kit.reduce((s2,x)=>s2+x.cant,0):q; } return u; }
 function ghDepExtra(pedidos,cfg){ const incl=Math.max(0,Math.round(Number(cfg?.extraItemsIncluidos??5))), precio=Math.max(0,Number(cfg?.extraItemPrecio??500)||0); let unidades=0,extraUnidades=0,pedidosConExtra=0; for(const p of pedidos||[]){ if(p?.cancelado) continue; const u=ghDepUnidades(p?.items); unidades+=u; if(u>incl){ extraUnidades+=u; pedidosConExtra++; } } return {unidades,extraUnidades,pedidosConExtra,incluidos:incl,precioExtra:precio,monto:+(extraUnidades*precio).toFixed(2)}; }
 // api(action, body): con sesión (Growith) o por token (portal público).
 function ghDepApiSesion(extra){ return async(action,body={})=>{ const r=await authFetch(`/api/deposito?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...extra(),...body})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ const e=new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); e.data=d; throw e; } return d; }; }
@@ -21673,7 +21676,7 @@ function ghDepAbrirBytes(bytes,mime,nombre,ventana){
 // Picking consolidado: "2x ROJ-NN" → {ROJ-NN: 2}
 function ghDepPicking(pedidos){
   const m=new Map();
-  for(const p of pedidos||[]){ if(p.apartado) continue; for(const it of p.items||[]){ const s=String(it).trim(); const x=s.match(/^(\d+)\s*x\s+(.+)$/i); const y=x?null:s.match(/^(.+?)\s*\(x\s*(\d+)\)$/i); const sku=(x?x[2]:y?y[1]:s).trim(); const c=x?Number(x[1]):y?Number(y[2]):1; if(sku) m.set(sku,(m.get(sku)||0)+c); } }
+  for(const p of pedidos||[]){ if(p.apartado) continue; for(const it of p.items||[]){ const s=String(it).trim(); const x=s.match(/^(\d+)\s*x\s+(.+)$/i); const y=x?null:s.match(/^(.+?)\s*\(x\s*(\d+)\)$/i); const sku=(x?x[2]:y?y[1]:s).trim(); const c=x?Number(x[1]):y?Number(y[2]):1; if(!sku) continue; const kit=ghKitPartes(sku); for(const pz of kit||[{sku,cant:1}]) m.set(pz.sku,(m.get(pz.sku)||0)+c*pz.cant); } }
   return [...m.entries()].map(([sku,cant])=>({sku,cant})).sort((a,b)=>b.cant-a.cant||a.sku.localeCompare(b.sku));
 }
 // Los pedidos iguales salen juntos: primero los de un solo producto, por SKU.
@@ -21772,7 +21775,7 @@ function ghDepParsearLista(texto){
   }).filter(Boolean);
 }
 // "AN X1" / "LIQ x 2" → "1x AN" / "2x LIQ" (el formato que entiende el picking).
-function ghDepItemNorm(it){ const m=String(it).match(/^(.+?)\s+x\s*(\d+)$/i); return m?`${Number(m[2])}x ${m[1].trim()}`:String(it); }
+function ghDepItemNorm(it){ const m=String(it).match(/^(.+?)\s+x\s*(\d+)$/i); if(m&&(ghKitPartes(it)||[]).length>1) return String(it); return m?`${Number(m[2])}x ${m[1].trim()}`:String(it); }
 // La CANTIDAD de pedidos la manda el PDF (una etiqueta por página), nunca los
 // renglones del texto: un pedido puede escribirse en varios renglones (canje).
 // Renglones = etiquetas → uno por pedido. Una sola etiqueta → todo es de ese

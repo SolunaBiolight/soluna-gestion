@@ -5,7 +5,7 @@ const src=fs.readFileSync("api/deposito.js","utf8");
 function fn(name){ const i=src.indexOf(`\nexport function ${name}(`); if(i<0) throw new Error("no "+name); const j=src.indexOf("\n}\n",i); return src.slice(i,j+3).replace("export function","function"); }
 const num=`const num = v => { const n = Number(v); return isFinite(n) ? n : 0; }; const ms = v => v?.toMillis?.() ?? (v?._seconds ? v._seconds * 1000 : (typeof v === "number" ? v : null));`;
 const tot=src.slice(src.indexOf("const totalDe = "),src.indexOf("\n",src.indexOf("const totalDe = "))+1);
-const M=new Function(num+fn("unidadesDe")+fn("extraItemsDe")+fn("ledgerDe")+tot+"\nreturn {unidadesDe,extraItemsDe,ledgerDe,totalDe};")();
+const M=new Function(num+fn("kitPartes")+fn("unidadesDe")+fn("extraItemsDe")+fn("ledgerDe")+tot+"\nreturn {kitPartes,unidadesDe,extraItemsDe,ledgerDe,totalDe};")();
 let fails=0,n=0;
 const eq=(d,g,e)=>{ n++; if(JSON.stringify(g)!==JSON.stringify(e)){ fails++; console.log("FAIL",d,"\n   got:",JSON.stringify(g),"\n   exp:",JSON.stringify(e)); } };
 // unidades
@@ -13,6 +13,14 @@ eq("2x",M.unidadesDe(["2x ROJ-NN","1x LIQ"]),3);
 eq("(x2)",M.unidadesDe(["ROJ-NN (x2)","LIQ"]),3);
 eq("sin cantidad",M.unidadesDe(["ROJ-NN","NARAN-TT"]),2);
 eq("vacío",M.unidadesDe([]),0);
+// kits: "NOMBRE Xn" por cada producto
+eq("kit (x1)",M.unidadesDe(["SHINE X45 SHAMPO X15 RENOV X15 AROM X15 PAÑOS X15 (x1)"]),105);
+eq("kit 2x",M.unidadesDe(["2x SHINE X45 SHAMPO X15"]),120);
+eq("un producto X20",M.unidadesDe(["PACK X20"]),20);
+eq("SKU normal con guion",M.unidadesDe(["ROJ-NN (x3)"]),3);
+eq("kitPartes",M.kitPartes("SHINE X45 PAÑOS X15"),[{sku:"SHINE",cant:45},{sku:"PAÑOS",cant:15}]);
+eq("no es kit (texto suelto al final)",M.kitPartes("SHINE X45 AZUL"),null);
+eq("no es kit (sin número)",M.kitPartes("REMERA XL"),null);
 // cobro por unidad: hasta 5 unidades = paquete; más de 5 = $500 por CADA unidad, sin paquete
 const cfg={extraItemsIncluidos:5,extraItemPrecio:500};
 eq("5 unidades = paquete, sin extra",M.extraItemsDe([{items:["5x A"]}],cfg).monto,0);
@@ -57,7 +65,9 @@ eq("vacío",M.ledgerDe([],[]),{saldo:0,cargos:0,creditos:0,porVerificar:0,movs:[
 }
 // nota del pedido con la marca DEPO: → renglones extra de la etiqueta
 { const app=fs.readFileSync("src/App.jsx","utf8"); const cut=(a,b)=>app.slice(app.indexOf(a),app.indexOf(b,app.indexOf(a)));
-  const N=new Function(cut("function ghDepItemNorm(","// La CANTIDAD de pedidos")+cut("function ghNotaDepo(","function ghSkuLinesDe(")+cut("function ghSkuLinesDe(","// pdf.js (CDN")+"return {ghNotaDepo,ghSkuLinesDe};")();
+  const N=new Function(cut("function ghKitPartes(","\nfunction ghDepUnidades(")+cut("function ghDepItemNorm(","// La CANTIDAD de pedidos")+cut("function ghNotaDepo(","function ghSkuLinesDe(")+cut("function ghSkuLinesDe(","// pdf.js (CDN")+"return {ghNotaDepo,ghSkuLinesDe,ghDepItemNorm};")();
+  eq("kit no se toma como cantidad",N.ghDepItemNorm("SHINE X45 PAÑOS X15"),"SHINE X45 PAÑOS X15");
+  eq("AN X1 sigue siendo 1x AN",N.ghDepItemNorm("AN X1"),"1x AN");
   eq("nota con marca",N.ghNotaDepo("Cliente VIP\nDEPO: 1x LIQ, CLIP-ON x2 + nota de regalo\notra cosa"),["1x LIQ","2x CLIP-ON","nota de regalo"]);
   eq("depósito con acento y minúsculas",N.ghNotaDepo("depósito: paño"),["paño"]);
   eq("nota sin marca no se imprime",N.ghNotaDepo("mandar rápido, es regalo"),[]);
