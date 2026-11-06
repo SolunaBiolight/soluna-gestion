@@ -965,12 +965,13 @@ export default async function handler(req, res) {
     if (action === "meta_cuentas") {
       const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
       const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
-      const cuentas = new Map();
+      const cuentas = new Map(), errores = [];
       for (const tk of tokens) {
-        try { const r = await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id,name,currency,amount_spent&limit=200&access_token=${encodeURIComponent(tk)}`)).json(); for (const a of r.data || []) cuentas.set("act_" + a.account_id, { id: "act_" + a.account_id, nombre: a.name, moneda: a.currency }); } catch (_) {}
+        // Misma lectura (con caché de 10 min) que usa el Dashboard: si Meta limita, no se pierde la lista.
+        try { for (const a of await cuentasDelToken(tk)) cuentas.set("act_" + a.account_id, { id: "act_" + a.account_id, nombre: a.name || "act_" + a.account_id, moneda: a.currency }); } catch (e) { errores.push(e.message); }
       }
       const cfg = (await cfgRef.get()).data() || {};
-      return res.json({ cuentas: [...cuentas.values()].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))), elegidas: cfg.metaCuentas || [] });
+      return res.json({ cuentas: [...cuentas.values()].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))), elegidas: cfg.metaCuentas || [], errores, tokens: tokens.length });
     }
     // Importación de ventas pasadas (antes de conectar el webhook): la lista que da
     // el conector de Impultienda (impultienda_listar_ventas) — orden, fecha UTC, total,

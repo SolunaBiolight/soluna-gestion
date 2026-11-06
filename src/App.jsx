@@ -35119,7 +35119,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
   const [fxM,setFxM]=useState(null);
   useEffect(()=>{ if(fxM) return; const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; authFetch(`/api/impultienda?action=fx&uid=${u}`).then(r=>r.json()).then(j=>{ if(j.fx) setFxM(j.fx); }).catch(()=>{}); /* eslint-disable-next-line */ },[mmon]);
   const convFila=(row,de)=>{ if(!mmon||!fxM) return row; const a=fxM[String(de||"USD").toUpperCase()], b=fxM[mmon]; if(!a||!b) return row; const k=b/a; const o={...row}; for(const f of ["spend","purchase_value","cpa","cpm","cpc","daily_budget"]) if(typeof o[f]==="number") o[f]=o[f]*k; return o; };
-  const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[]}); }catch(_){} };
+  const cargarCtasMeta=async()=>{ try{ const u=(typeof window!=="undefined"&&window.__ghTiendaUid)||user?.uid; const j=await authFetch(`/api/impultienda?action=meta_cuentas&uid=${u}`).then(r=>r.json()); if(!j.error) setCtasMeta({cuentas:j.cuentas||[],elegidas:j.elegidas||[],errores:j.errores||[],tokens:j.tokens}); }catch(_){} };
   useEffect(()=>{ if(activeAccId) cargarCtasMeta(); /* eslint-disable-next-line */ },[activeAccId]); // espera a que esté la tienda activa (window.__ghTiendaUid)
   const ctasElegidas=(ctasMeta?.cuentas||[]).filter(c=>(ctasMeta?.elegidas||[]).includes(c.id));
   // Se ven todas las cuentas elegidas; cuáles son se configura en Cuenta (para ver una sola, el filtro del Análisis).
@@ -37743,7 +37743,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
             <div style={Card}>
               <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,marginBottom:4}}>Cuentas publicitarias</div>
               <div style={{fontSize:DS.font.sm,color:T.textSm,lineHeight:1.55,marginBottom:DS.sp.md}}>Elegí con qué cuentas trabajás. Las elegidas se suman en el Dashboard y, en Análisis, podés ver todas sus campañas juntas en una sola tabla (algo que el Administrador de anuncios de Meta no permite).</div>
-              {!ctasMeta ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>Cargando cuentas…</div> : ctasMeta.cuentas.length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>No encontramos cuentas: conectá Meta en la pestaña Cuenta.</div> : (<>
+              {!ctasMeta ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>Cargando cuentas…</div> : ctasMeta.cuentas.length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm}}>{ctasMeta.errores?.length?`Meta no devolvió las cuentas: ${ctasMeta.errores[0]}`:ctasMeta.tokens===0?"No encontramos cuentas: conectá Meta en la pestaña Cuenta.":"Meta no devolvió cuentas en esta tienda."} <button onClick={cargarCtasMeta} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:DS.font.sm,padding:0}}>Reintentar</button></div> : (<>
                 <div style={{display:"flex",flexDirection:"column",gap:2,maxHeight:420,overflowY:"auto"}}>
                   {ctasMeta.cuentas.map(c=>{ const on=elegidas.includes(c.id); return (
                     <div key={c.id} className="gh-hover-surface" style={{display:"flex",alignItems:"center",gap:10,padding:"8px 8px",borderRadius:DS.r.md}}>
