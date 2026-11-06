@@ -1902,7 +1902,35 @@ export default async function handler(req, res) {
       let extra = [];
       try { const d = (await db.collection("andreani_config").doc("tpl_baja").get()).data(); extra = Array.isArray(d?.nombres) ? d.nombres : []; } catch (_) {}
       const baja = new Set([...TPL_BAJA_SEED, ...extra].map(K));
-      return res.json({ faltantes: nombres.filter(t => baja.has(K(t))), fuente: "bajas_confirmadas" });
+      const faltantes = nombres.filter(t => baja.has(K(t)));
+      // Puntos HOP: además se pregunta EN VIVO a Andreani (6/nov/2026, #8362 → HOP
+      // Gualeguaychú 580 de Paraná, cerrado y todavía en el desplegable: Andreani
+      // rechazaba el Excel entero). El nombre se cruza con el índice HOP (puede venir
+      // recortado a 50 caracteres → varios candidatos) y solo es baja si TODOS los
+      // candidatos responden 404. Sin candidatos o ante cualquier error, no se marca.
+      // Lo confirmado queda en tpl_baja para no volver a consultarlo.
+      const nuevas = [];
+      try {
+        const aMirar = nombres.filter(t => !baja.has(K(t)) && /^punto andreani hop /.test(K(t))).slice(0, 60);
+        if (aMirar.length && env) {
+          const hops = await hopIndexTodas(db);
+          const porNom = new Map(); for (const h of hops) { const k = K(h.descripcion); if (!porNom.has(k)) porNom.set(k, []); porNom.get(k).push(h.id); }
+          const t0 = Date.now(), vivo = new Map();
+          const estado = async id => { if (vivo.has(id)) return vivo.get(id); let st = "?";
+            if (Date.now() - t0 < 9000) { try { const r = await andreaniFetch(db, env, `/v2/sucursales/${id}`); st = r.status === 200 ? "ok" : r.status === 404 ? "baja" : "?"; } catch (_) {} }
+            vivo.set(id, st); return st; };
+          const cola = [...aMirar];
+          await Promise.all(Array.from({ length: 6 }, async () => { while (cola.length) { const t = cola.shift(); const k = K(t);
+            let ids = porNom.get(k) || [];
+            if (!ids.length && k.length >= 45) for (const [nk, v] of porNom) if (nk.startsWith(k)) ids = ids.concat(v);
+            if (!ids.length || ids.length > 12) continue;
+            const sts = []; for (const id of ids) { const st = await estado(id); sts.push(st); if (st !== "baja") break; }
+            if (sts.length === ids.length && sts.every(x => x === "baja")) { faltantes.push(t); nuevas.push(t); } } }));
+        }
+      } catch (e) { console.warn("[validar_sucursales_tpl] consulta en vivo:", e.message); }
+      if (nuevas.length) { try { const ref = db.collection("andreani_config").doc("tpl_baja");
+        await ref.set({ nombres: [...new Map([...extra, ...nuevas].map(n => [K(n), n])).values()].slice(0, 500), updatedAt: new Date().toISOString(), by: "auto_vivo" }, { merge: true }); } catch (_) {} }
+      return res.json({ faltantes, fuente: nuevas.length ? "bajas_confirmadas+vivo" : "bajas_confirmadas" });
     }
 
     // ── admin_tpl_baja: agregar/quitar nombres del desplegable dados de baja
