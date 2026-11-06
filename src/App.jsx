@@ -10504,7 +10504,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const verifRowsRef=useRef([]);
   const verifRehacerRef=useRef(false); // el modal de verificación excluyó pedidos → rearmar el Excel sin ellos // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
   const exclOperRef=useRef(new Set()); // pedidos sacados del último Excel porque su sucursal no está operativa en Andreani
-  const [esquinaModal,setEsquinaModal]=useState(null); // {orders:[...]} pedidos con esquina excluidos del export
   const [orderDetail,setOrderDetail]=useState(null);
   const [skuBlob,setSkuBlob]=useState(null);
   // "Todo de una" en rótulos con SKU: el botón principal (Enviar al depósito / Descargar) también manda los seguimientos a la tienda.
@@ -11114,7 +11113,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           sC('P'+rn,cleanAndreani(o.piso||"")),
           sC('Q'+rn,""),
           sC('R'+rn,ubicacion),
-          sC('S'+rn,""),
+          sC('S'+rn,hasEsquinaAddress(o)?cleanAndreani(`Direccion en esquina: ${o.direccion||""}. Llamar al destinatario`).slice(0,120):""),
         ].join('');
         xml+='<row r="'+rn+'" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>';
       });
@@ -11840,24 +11839,20 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       const domicilioOrders=selOrders.filter(o=>!isSucursalOrder(o));
       const sucursalOrders=selOrders.filter(o=>isSucursalOrder(o));
 
-      // Órdenes con dirección en esquina → excluir del export, mostrar modal
-      // informativo después. Aplica a domicilio Y sucursal (antes solo sucursal:
-      // un domicilio "Esq." pasaba igual y rebotaba en Andreani).
-      const esquinaOrders=[...domicilioOrders,...sucursalOrders].filter(o=>hasEsquinaAddress(o));
-      const esquinaSet=new Set(esquinaOrders.map(o=>o.numero));
-      const sucursalOrdersSinEsquina=sucursalOrders.filter(o=>!esquinaSet.has(o.numero));
-      const domicilioOrdersSinEsquina=domicilioOrders.filter(o=>!esquinaSet.has(o.numero));
+      // Dirección en esquina (6/nov/2026, pedido de Lautaro: "no pasa nada que sea una esquina, el
+      // repartidor llama al cliente"): ya NO se excluye del Excel. A domicilio sale con altura 0 (Andreani
+      // la acepta: #8365 del 4/11) y una observación para el repartidor; a sucursal manda el punto elegido.
 
       // Datos obligatorios que faltan: se completan acá o el pedido no se exporta.
       { const yaFuera=o=>locationOverridesRef.current[ovrKey(o)]==="EXCLUIR"||sucursalOverridesRef.current[ovrKey(o)]==="EXCLUIR";
         setExporting(false);
-        const fuera=await completarFaltantes(domicilioOrdersSinEsquina.filter(o=>!yaFuera(o)),sucursalOrdersSinEsquina.filter(o=>!yaFuera(o)));
+        const fuera=await completarFaltantes(domicilioOrders.filter(o=>!yaFuera(o)),sucursalOrders.filter(o=>!yaFuera(o)));
         if(fuera===null){ setExportProgress({step:"",pct:0,current:0,total:0}); return; }
         for(const o of selOrders) if(fuera.has(o.numero)){ if(isSucursalOrder(o)) sucursalOverridesRef.current[ovrKey(o)]="EXCLUIR"; else locationOverridesRef.current[ovrKey(o)]="EXCLUIR"; }
         if(fuera.size) persistOverrides();
         setExporting(true);
       }
-      const unresolvedDom=domicilioOrdersSinEsquina.filter(o=>{
+      const unresolvedDom=domicilioOrders.filter(o=>{
         if(locationOverridesRef.current[ovrKey(o)]) return false;
         return !ubicacionAuto(locs,o);
       });
@@ -11879,13 +11874,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // Punto elegido en el checkout de Shopify (nuestra tarifa ANDREANI_SUC_<id>): se busca por su id
       // y se traduce a la entrada EXACTA del desplegable (ghTplDeOficial). Antes el Excel ignoraba el id
       // y comparaba contra la casa del comprador.
-      const ckPend=sucursalOrdersSinEsquina.filter(o=>o.andreaniSucursalId&&!sucursalOverridesRef.current[ovrKey(o)]);
+      const ckPend=sucursalOrders.filter(o=>o.andreaniSucursalId&&!sucursalOverridesRef.current[ovrKey(o)]);
       if(ckPend.length){
         setExportProgress({step:"Buscando los puntos elegidos en el checkout...",pct:35,current:0,total:selOrders.length});
         await ghPool(ckPend,4,async o=>{ try{ const ofc=await fetchSucursalOficialPorId(o.andreaniSucursalId,cpDestinoDe(o)); if(!ofc) return; o._ckOficial=ofc; const tpl=ghTplDeOficial(locs,ofc); if(tpl&&(locs.sucursales||[]).includes(tpl)) sucursalOverridesRef.current[ovrKey(o)]=tpl; }catch(_){} });
         persistOverrides();
       }
-      const unresolvedSuc=sucursalOrdersSinEsquina.filter(o=>{
+      const unresolvedSuc=sucursalOrders.filter(o=>{
         const _ovr=sucursalOverridesRef.current[ovrKey(o)];
         if(_ovr==="EXCLUIR") return false;
         if(sucNoOperRef.current[ovrKey(o)]) return true; // sucursal no operativa: elegir otra a mano
@@ -11913,7 +11908,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       // un CP que no la tiene): se confirman a mano ANTES de descargar, y lo elegido queda en la
       // memoria para que la próxima vez salga solo (15/oct/2026, zensleep).
       // Solo pedidos de SHOPIFY (16/oct/2026, Lautaro: con Tienda Nube viene funcionando bien).
-      const dudosos=domicilioOrdersSinEsquina.filter(o=>o.canal==="shopify"&&!locationOverridesRef.current[ovrKey(o)]).map(o=>({o,r:ubicacionAuto(locs,o)})).filter(x=>x.r&&GH_LOC_A_CONFIRMAR.has(x.r.motivo));
+      const dudosos=domicilioOrders.filter(o=>o.canal==="shopify"&&!locationOverridesRef.current[ovrKey(o)]).map(o=>({o,r:ubicacionAuto(locs,o)})).filter(x=>x.r&&GH_LOC_A_CONFIRMAR.has(x.r.motivo));
       if(dudosos.length){
         setExporting(false);
         const elec=await new Promise(resolve=>setLocConfirm({items:dudosos.map(x=>({o:x.o,sug:x.r.loc,opts:ghLocOpciones(locs,x.o,x.r.loc)})),resolve}));
@@ -11928,18 +11923,13 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
 
       let finalOrders=selOrders.filter(o=>
         locationOverridesRef.current[ovrKey(o)]!=="EXCLUIR" &&
-        sucursalOverridesRef.current[ovrKey(o)]!=="EXCLUIR" &&
-        !esquinaSet.has(o.numero)
+        sucursalOverridesRef.current[ovrKey(o)]!=="EXCLUIR"
       );
       if(!finalOrders.length){
         setExporting(false);
         setExportProgress({step:"",pct:0,current:0,total:0});
         setExportSingleOrder(null);
-        if(esquinaOrders.length>0){
-          setEsquinaModal({orders:esquinaOrders});
-        } else {
-          toast("Todos los pedidos fueron excluidos","warning");
-        }
+        toast("Todos los pedidos fueron excluidos","warning");
         return;
       }
 
@@ -11980,11 +11970,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       finalOrders.forEach(o=>{ delete locationOverridesRef.current[ovrKey(o)]; delete sucursalOverridesRef.current[ovrKey(o)]; sucReemplazoRef.current.delete(ovrKey(o)); });
       persistOverrides(); persistSucReemplazo();
       // Éxito → toast (sin modal que pida click); si quedaron pedidos en
-      // esquina afuera del Excel, se abre directo su modal informativo.
       toast(verifRowsRef.current.length
         ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel. Descargado (${verifRowsRef.current.length} destino${verifRowsRef.current.length!==1?"s":""} sin verificar)`
         :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel. Descargado destinos verificados con tu tienda`,"success");
-      if(esquinaOrders.length>0) setEsquinaModal({orders:esquinaOrders});
       setExportDone({count:finalOrders.length, ts:Date.now()}); // ya no abre modal: refresca el mapa "ya exportado"
       logUsage("etiquetas", finalOrders.length);
       registrarEnviosFs(finalOrders); // historial compartido en Firestore (fire-and-forget)
@@ -12264,7 +12252,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         if(ofcCk) return {row:mkRow(o,{oficial:ofcCk,verif:"ok",deCheckout:true,conflictoOk:true})};
         return {row:mkRow(o,{incluido:false,cotError:`No se pudo confirmar el punto que eligió el comprador (Andreani ${o.andreaniSucursalId}). Reintentá en unos minutos; si sigue, puede que el punto ya no exista.`})};
       }
-      if(hasEsquinaAddress(o)) return {modal:"esquina",oficiales:await fetchSucursalesOficiales(cpDestinoDe(o))};
+      if(!isSucursalOrder(o)&&hasEsquinaAddress(o)) return {modal:"esquina",oficiales:await fetchSucursalesOficiales(cpDestinoDe(o))};
       if(!isSucursalOrder(o)) return {row:mkRow(o)};
       // Shopify a sucursal SIN id de checkout (otra app o tarifa propia): la dirección del pedido puede ser
       // la casa del comprador → nunca se resuelve sola; va al selector.
@@ -13215,7 +13203,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       )}
 
       {/* Generar etiquetas — overlay de progreso. El resultado exitoso sale
-          como toast (sin modal); si hubo esquinas se abre directo su modal. */}
+          como toast (sin modal). */}
       {exporting&&ReactDOM.createPortal(
         <div className="gh-overlay" style={{position:"fixed",inset:0,zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)",backdropFilter:"blur(4px)",fontFamily:"'Inter',system-ui,sans-serif",padding:24}}>
           <div style={{background:T.card,borderRadius:16,padding:"32px 36px",minWidth:"min(380px,calc(100vw - 32px))",maxWidth:"min(460px,calc(100vw - 32px))",boxShadow:"0 24px 80px rgba(0,0,0,0.4)",border:`1px solid ${T.blue}44`,animation:"growith-modalIn 0.26s cubic-bezier(0.22,1,0.36,1) both"}}
@@ -14635,61 +14623,6 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         // Flujo Excel (rótulos con SKU): al quedar la tanda en el depósito se suben solos los seguimientos del mismo PDF.
         if(depEnvio?.segPdf){ marcarSkuDepEnviado(skuFile); if(!skuSegAuto){ toast("Tanda enviada al depósito","success"); return; } const pend=pdfResults.filter(r=>r.tracking&&r.pedidoNum&&!trackingSent[r.pedidoNum]).length; if(pend){ toast(`Tanda enviada al depósito. Enviando ${pend} seguimiento${pend!==1?"s":""} a tu tienda…`,"success"); sendAllTracking(); } return; }
         if(seg.length){ toast(`Tanda enviada al depósito. Avisando a ${seg.length} comprador${seg.length!==1?"es":""}…`,"success"); enviarSeguimientosApi(seg); } }}/>}
-
-      {/* Modal: pedidos con esquina excluidos del export */}
-      <Modal T={T} open={!!esquinaModal} onClose={()=>setEsquinaModal(null)} title="Pedidos no incluidos en el Excel" width={500}>
-        {esquinaModal&&(
-          <div>
-            <div style={{background:T.yellowBg||T.surface,border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.yellow,marginBottom:6,display:"flex",alignItems:"center",gap:6}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Dirección en esquina detectada</div>
-              <div style={{fontSize:13,color:T.text,lineHeight:1.5}}>
-                {(()=>{ const nSuc=esquinaModal.orders.filter(o=>isSucursalOrder(o)).length, nDom=esquinaModal.orders.length-nSuc;
-                  return nSuc===0?"Estos pedidos a domicilio tienen la dirección en esquina, sin número de puerta. La carga masiva de Andreani exige calle y altura y los rechaza."
-                    :nDom===0?"El punto de retiro de estos pedidos figura con la dirección en esquina (Esq.), lo que puede causar errores en la carga masiva de Andreani."
-                    :"Estos pedidos tienen la dirección en esquina, sin número de puerta (a domicilio o en el punto de retiro). La carga masiva de Andreani exige calle y altura y los rechaza."; })()} <strong>No fueron incluidos en el Excel.</strong>
-              </div>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-              {esquinaModal.orders.map(o=>{
-                const pd=o.pickupDetails;
-                const dirDisplay=pd
-                  ?`${pd.address?.address||""} ${pd.address?.number||""}`.trim()
-                  :(o.direccion||"");
-                const locDisplay=pd
-                  ?(pd.address?.locality||pd.address?.city||"")
-                  :(o.localidad||o.ciudad||"");
-                return (
-                  <div key={o.numero} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 12px"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-                      <div>
-                        <span style={{fontWeight:700,color:T.text,fontSize:13}}>#{o.numero}</span>
-                        <span style={{color:T.textSm,fontSize:12,marginLeft:8}}>{o.comprador}</span>
-                      </div>
-                      <span style={{fontSize:11,color:pd?.name?T.accent:T.textSm,fontWeight:600,textAlign:"right",maxWidth:180}}>{pd?.name||(isSucursalOrder(o)?"Retiro en sucursal":"A domicilio")}</span>
-                    </div>
-                    {dirDisplay&&<div style={{fontSize:12,color:T.textMd,marginTop:4}}>{dirDisplay}{locDisplay?` · ${locDisplay}`:""}</div>}
-                    {!isSucursalOrder(o)&&(<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
-                      <span style={{fontSize:12,color:T.textMd}}>Altura (número de puerta):</span>
-                      <input type="number" min="1" placeholder="Ej.: 450" value={esquinaModal.alturas?.[o.numero]||""} onChange={e=>setEsquinaModal(m=>m&&({...m,alturas:{...(m.alturas||{}),[o.numero]:e.target.value}}))} style={{...iS,marginBottom:0,width:110,padding:"6px 10px",fontSize:13}}/>
-                    </div>)}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:12,color:T.textMd,lineHeight:1.6}}>
-              <strong style={{color:T.text}}>¿Qué hacer?</strong><br/>
-              {esquinaModal.orders.some(o=>!isSucursalOrder(o))&&<>A domicilio: si sabés la altura, escribila arriba y exportá ese pedido ahí mismo; si no, pedísela al cliente y corregí la dirección en tu tienda, o cargalo a mano en <strong>Andreani Empresas → Carga individual</strong>. Con "Generar etiquetas (Saldo)" también podés mandarlo a una sucursal cercana.<br/></>}
-              {esquinaModal.orders.some(o=>isSucursalOrder(o))&&<>Retiro en sucursal: cargalo a mano en <strong>Andreani Empresas → Carga individual</strong> buscando la sucursal por la otra calle de la esquina.</>}
-            </div>
-            <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
-              {(()=>{ const listos=esquinaModal.orders.filter(o=>!isSucursalOrder(o)&&Number(esquinaModal.alturas?.[o.numero])>0);
-                // Con la altura cargada acá, el pedido deja de ser "en esquina": se exporta en un Excel aparte con esos pedidos.
-                return listos.length>0?<button onClick={()=>{ listos.forEach(o=>{ o.dirNumero=String(Math.round(Number(esquinaModal.alturas[o.numero]))); }); setEsquinaModal(null); setExportSingleOrder(null); exportAndreani(listos); }} style={{...BtnPrimary(T),fontSize:13}}>Exportar {listos.length===1?"este pedido":`estos ${listos.length}`} con la altura</button>:null; })()}
-              <button onClick={()=>setEsquinaModal(null)} style={{...BtnSecondary(T),fontSize:13}}>Cerrar</button>
-            </div>
-          </div>
-        )}
-      </Modal>
 
       {/* ── Config del paquete: única fuente de verdad (growith_exportCfg) para
              cotizar por fila, el bulk por API y el export XLSX ── */}
