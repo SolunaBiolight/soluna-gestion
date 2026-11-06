@@ -193,6 +193,8 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
   const vistas = new Set();
   const metaDice = {}; // campaign_id → {compras, valor} según el píxel de Meta (su atribución, su zona horaria)
   const campCuenta = {}, nombresCuenta = {}, sinHoraCuenta = {}; // para el desglose por cuenta publicitaria
+  const adGasto = {}; // ad_id → {c: campaign_id, d: {fecha: usd}} — para repartir el gasto de cada campaña por tienda según el link de sus anuncios
+  const adToken = {}; // ad_id → token que lo ve
   const fx = await fxPorUsd();
   // Qué cuentas hay que consultar (cada una con su token; una cuenta visible desde dos tokens se consulta una vez).
   const trabajos = [];
@@ -231,11 +233,20 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
         }
       })();
       // Lo que Meta dice que vendió cada campaña (píxel), para comparar con la venta real.
+      // Gasto por anuncio y día: una CBO puede mezclar anuncios de varias tiendas.
+      const pAds = (async () => {
+        let url = `https://graph.facebook.com/v23.0/${id}/insights?level=ad&fields=spend,ad_id,campaign_id&time_increment=1&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
+        for (let i = 0; url && i < 30; i++) {
+          const r = await fetchJson(url); if (r.error) break;
+          for (const row of r.data || []) { const usd = aUsd(Number(row.spend) || 0, c.currency, fx); if (!row.ad_id || !usd) continue; const x = adGasto[row.ad_id] || (adGasto[row.ad_id] = { c: row.campaign_id, d: {} }); x.d[row.date_start] = (x.d[row.date_start] || 0) + usd; adToken[row.ad_id] = tk; }
+          url = r.paging?.next || null;
+        }
+      })().catch(() => {});
       const pPixel = fetchJson(`https://graph.facebook.com/v23.0/${id}/insights?level=campaign&fields=campaign_id,actions,action_values&time_range=${encodeURIComponent(JSON.stringify({ since: desde, until: hasta }))}&limit=500&access_token=${encodeURIComponent(tk)}`).catch(() => ({}));
       // Trampa conocida: el desglose horario puede no traer todavía las horas de HOY (zona de la cuenta).
       // Se compara con el gasto del día y la diferencia va a la hora ART actual, marcada como "sin hora exacta".
       const pHoy = fetchJson(`https://graph.facebook.com/v23.0/${id}/insights?level=account&fields=spend&time_range=${encodeURIComponent(JSON.stringify({ since: hoyLocal, until: hoyLocal }))}&access_token=${encodeURIComponent(tk)}`).catch(() => ({}));
-      const [, rr, r2] = await Promise.all([pHoras, pPixel, pHoy]);
+      const [, rr, r2] = await Promise.all([pHoras, pPixel, pHoy, pAds]);
       for (const [k, v] of Object.entries(filas)) out[k] = (out[k] || 0) + v;
       for (const row of rr.data || []) {
         const pick = (arr) => { const a = (arr || []).find(x => x.action_type === "purchase") || (arr || []).find(x => x.action_type === "offsite_conversion.fb_pixel_purchase"); return a ? Number(a.value) || 0 : 0; };
@@ -249,7 +260,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
       }
     } catch (e) { errores.push(`${id}: ${e.message}`); }
   });
-  return { porHora: out, sinHora, cuentas: vistas.size, errores, metaDice, campCuenta, nombresCuenta, sinHoraCuenta };
+  return { porHora: out, sinHora, cuentas: vistas.size, errores, metaDice, campCuenta, nombresCuenta, sinHoraCuenta, adGasto, adToken };
 }
 
 // ── Stripe: comisión real por venta ──
@@ -692,6 +703,35 @@ export async function utmAtribucion(db, uid, desde, hasta, tz, idx, opts = {}) {
 }
 
 // ── Reporte por hora ──
+// ── Tienda de cada anuncio por el link al que lleva ──
+// URL del creativo (link_data, video CTA, asset feed, link_url/object_url). Se guarda el host+primer tramo del path
+// en users/{uid}/impultienda_cfg/ad_links {a: {ad_id: "host/path"}} porque el link de un anuncio no cambia.
+function linkDeCreativo(cr) {
+  if (!cr) return null;
+  const o = cr.object_story_spec || {};
+  const cands = [o.link_data?.link, o.link_data?.call_to_action?.value?.link, o.video_data?.call_to_action?.value?.link, o.template_data?.link,
+    ...(cr.asset_feed_spec?.link_urls || []).map(l => l.website_url), cr.link_url, cr.object_url, cr.template_url];
+  for (const u of cands) { try { if (u && /^https?:/i.test(u)) { const x = new URL(u); if (/facebook\.com|fb\.me|instagram\.com/i.test(x.host)) continue; return (x.host.replace(/^www\./, "") + "/" + (x.pathname.split("/").filter(Boolean)[0] || "")).toLowerCase(); } } catch (_) {} }
+  return null;
+}
+async function linksDeAnuncios(db, uid, ads, adToken) {
+  const ref = db.collection("users").doc(uid).collection("impultienda_cfg").doc("ad_links");
+  const cache = (await ref.get().catch(() => null))?.data()?.a || {};
+  const faltan = ads.filter(a => cache[a] === undefined && adToken[a]);
+  const nuevos = {};
+  const lotes = []; for (let i = 0; i < faltan.length && i < 600; i += 50) lotes.push(faltan.slice(i, i + 50));
+  await enParalelo(lotes, 4, async (l) => {
+    try {
+      const r = await fetchJson(`https://graph.facebook.com/v23.0/?ids=${l.join(",")}&fields=creative{object_story_spec,asset_feed_spec,link_url,object_url,template_url}&access_token=${encodeURIComponent(adToken[l[0]])}`);
+      if (r.error) return;
+      for (const a of l) if (r[a]) nuevos[a] = linkDeCreativo(r[a].creative) || "";
+    } catch (_) {}
+  });
+  if (Object.keys(nuevos).length) await ref.set({ a: nuevos }, { merge: true }).catch(() => {});
+  return { ...cache, ...nuevos };
+}
+const tokensNombre = (x) => norm(x).split(" ").filter(w => w.length >= 3);
+
 export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Buenos_Aires") {
   if (!tzValida(tz)) tz = "America/Argentina/Buenos_Aires";
   const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
@@ -774,12 +814,43 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const tiendasLista = Object.values(tiendasMap);
   // Tienda de una campaña cuando el nombre no dice el país: adonde fueron SUS ventas por UTM en el período (la que más tuvo).
   const tiendaPorVentas = (key) => { const t = ventasCamp[key]?.tiendas; if (!t) return null; const top = Object.entries(t).sort((a, b) => b[1] - a[1])[0]; return top ? top[0] : null; };
+  // Gasto por tienda a nivel ANUNCIO: cada anuncio va a la tienda a la que lleva su link. El link→tienda se aprende
+  // de las ventas (venta con utm_content = id del anuncio → su tienda) y, si no hay, por el nombre de la tienda en el link.
+  const adsIds = Object.keys(meta.adGasto || {});
+  const links = adsIds.length ? await linksDeAnuncios(db, uid, adsIds, meta.adToken || {}) : {};
+  const votos = {};
+  for (const o of ordenes) {
+    if (!o.store_id || o.post_compra) continue;
+    const a = atribuirUtm(o.utm, idxUtm)?.a || o.utm?.utm_content; const l = a && links[a];
+    if (l) { const v = votos[l] || (votos[l] = {}); v[o.store_id] = (v[o.store_id] || 0) + 1; }
+  }
+  const tiendaDeLink = (l) => {
+    if (!l) return null;
+    const v = votos[l]; if (v) return Object.entries(v).sort((a, b) => b[1] - a[1])[0][0];
+    const host = l.split("/")[0]; const hv = {}; for (const [k, x] of Object.entries(votos)) if (k.split("/")[0] === host) for (const [t, n] of Object.entries(x)) hv[t] = (hv[t] || 0) + n;
+    const top = Object.entries(hv).sort((a, b) => b[1] - a[1])[0]; if (top) return top[0];
+    const lt = norm(l.replace(/\.impultienda\.ar|\.[a-z]{2,3}(?=\/|$)/g, " ")).split(" ");
+    const hits = tiendasLista.filter(t => { const tt = tokensNombre(String(t.nombre).replace(/\(.*?\)/g, "")); return tt.length && tt.every(w => lt.some(x => x.startsWith(w) || w.startsWith(x))); });
+    return hits.length === 1 ? hits[0].id : null;
+  };
+  const adTienda = {}; for (const a of adsIds) adTienda[a] = tiendaDeLink(links[a]);
+  // Reparto de cada campaña por día: {cid: {fecha: {tid: usd}}} (también el total del rango para los días sin dato).
+  const reparto = {};
+  for (const [a, x] of Object.entries(meta.adGasto || {})) {
+    const tid = adTienda[a] || "_camp"; if (!x.c) continue; // anuncio sin tienda detectada: sigue la regla de la campaña
+    const rc = reparto[x.c] || (reparto[x.c] = { _tot: {} });
+    for (const [d, usd] of Object.entries(x.d)) { const rd = rc[d] || (rc[d] = {}); rd[tid] = (rd[tid] || 0) + usd; rc._tot[tid] = (rc._tot[tid] || 0) + usd; }
+  }
+  const partes = (cid, fecha) => { const rc = reparto[cid]; if (!rc) return null; const m = rc[fecha] && Object.keys(rc[fecha]).length ? rc[fecha] : rc._tot; const t = Object.values(m).reduce((a, b) => a + b, 0); return t > 0 ? Object.entries(m).map(([tid, v]) => [tid, v / t]) : null; };
   const campanas = {};
   for (const [k, usd] of Object.entries(meta.porHora)) {
     const [fecha, hora, camp, cid] = k.split("|");
     if (fecha < desde || fecha > hasta) continue;
-    const tid = tiendaDeCampana(camp, tiendasLista) || tiendaPorVentas(cid || camp) || "SIN_ASIGNAR";
-    fila(fecha, parseInt(hora, 10), tid).gasto += usd;
+    const tCamp = tiendaDeCampana(camp, tiendasLista) || tiendaPorVentas(cid || camp) || "SIN_ASIGNAR";
+    const pp = cid && partes(cid, fecha)?.map(([t, f]) => [t === "_camp" ? tCamp : t, f]);
+    const tid = pp ? [...pp].sort((a, b) => b[1] - a[1])[0][0] : tCamp;
+    if (pp) for (const [t, f] of pp) fila(fecha, parseInt(hora, 10), t).gasto += usd * f;
+    else fila(fecha, parseInt(hora, 10), tid).gasto += usd;
     if (camp) { const key = cid || camp; const c = campanas[key] || (campanas[key] = { key, id: cid || null, nombre: camp, tienda: tid, gasto: 0 }); c.gasto += usd; }
   }
   // Venta sin UTM que cruce: si su tienda tuvo UNA sola campaña con gasto en el período, es de esa campaña
