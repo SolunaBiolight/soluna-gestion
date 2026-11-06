@@ -363,6 +363,32 @@ async function stripeMovimientos(db, uid, cfg) {
       (m[ch[chId]] || (m[ch[chId]] = {}))[t.id] = { t: disputa ? "disputa" : "reembolso", usd: t.amount < 0 ? usd : -usd, fee: t.fee < 0 ? -fee : fee, at: new Date(t.created * 1000).toISOString() };
       if (disputa && t.source?.id) d[ch[chId]] = { id: t.source.id, st: t.source.status || "" };
     }
+    // Disputas leídas directo de Stripe (180 días): cada una trae sus movimientos (plata retirada + costo, y la
+    // devolución si se gana). No depender solo del listado por tipo, que no siempre las trae.
+    let durl = `disputes?limit=100&created[gte]=${Math.floor((ahora - 180 * 86400000) / 1000)}&expand[]=data.balance_transactions`;
+    for (let i = 0; i < 10; i++) {
+      const j = await st(durl);
+      if (j.error) throw new Error(j.error.message);
+      for (const dp of j.data || []) {
+        const chId = typeof dp.charge === "string" ? dp.charge : dp.charge?.id;
+        if (!chId) continue;
+        if (!ch[chId]) {
+          const c = await st(`charges/${chId}`);
+          if (c.error) continue;
+          ch[chId] = typeof c.balance_transaction === "string" ? c.balance_transaction : c.balance_transaction?.id || "";
+        }
+        if (!ch[chId]) continue;
+        const mm = m[ch[chId]] || (m[ch[chId]] = {});
+        for (const t of dp.balance_transactions || []) {
+          const usd = aUsd(Math.abs(t.amount) / 100, t.currency, fx), fee = aUsd(Math.abs(t.fee) / 100, t.currency, fx);
+          if (usd == null || fee == null) continue;
+          mm[t.id] = { t: "disputa", usd: t.amount < 0 ? usd : -usd, fee: t.fee < 0 ? -fee : fee, at: new Date(t.created * 1000).toISOString() };
+        }
+        d[ch[chId]] = { id: dp.id, st: dp.status || "", motivo: dp.reason || "" };
+      }
+      if (!j.has_more || !j.data?.length) break;
+      durl = durl.replace(/&starting_after=[^&]*/, "") + `&starting_after=${j.data[j.data.length - 1].id}`;
+    }
     // Perder una disputa no genera movimiento nuevo: hay que preguntarle a Stripe por las que siguen abiertas.
     await Promise.all(Object.values(d).filter(x => !["won", "lost", "warning_closed"].includes(x.st)).slice(0, 30).map(async (x) => {
       const j = await st(`disputes/${x.id}`).catch(() => null);
@@ -679,7 +705,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
   const [stripe, mp, movs] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs), stripeMovimientos(db, uid, cfg)]);
   if (movs.error) stripe.errorMovimientos = movs.error;
-  if (movs.d && stripe) stripe.disputas = Object.entries(movs.d).map(([bt, x]) => ({ estado: x.st, venta: (ordenes.find(o => o.stripe?.bt === bt) || {}).orden ?? null, movimientos: Object.values(movs.m[bt] || {}) }));
+  if (movs.d && stripe) stripe.disputas = Object.entries(movs.d).map(([bt, x]) => ({ estado: x.st, motivo: x.motivo || null, venta: (ordenes.find(o => o.stripe?.bt === bt) || {}).orden ?? null, movimientos: Object.values(movs.m[bt] || {}) }));
   // Con Stripe conectado, la comisión de las ventas que no se pudieron cruzar es el PROMEDIO REAL de las cruzadas
   // (no un % cargado a mano). Sin Stripe o con pocas cruzadas, el estimado del cliente.
   const conFee = ordenes.filter(o => o.stripe?.fee != null);
