@@ -19140,7 +19140,25 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           {vista==="dashboard" && data && filas.length>0 && (<>
             <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0",display:"flex",alignItems:"center"}}>Métricas principales · todas las tiendas<button onClick={()=>setEditCards(v=>!v)} title="Elegir y ordenar las métricas" style={{marginLeft:"auto",background:editCards?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editCards?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button></div>
             {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT,data?.totales?.fijos||0,data?.totales?.fijosMes||0,data?.totales?.aceptaronPost)} editar={editCards} setEditar={setEditCards}/>; })()}
-            {/* "Tiendas · por país" se quitó el 4/nov/2026 (Thiago: el reparto del gasto por tienda no era confiable). La vista Por hora sigue filtrando por tienda. */}
+            {/* Desgloses en tabla (no tarjetas): por cuenta publicitaria y por tienda (solo las que vendieron). */}
+            {(()=>{
+              const fila=(k,nombre,sub,x,onClick)=>(<tr key={k} onClick={onClick} style={{borderTop:`1px solid ${T.borderL||T.border}`,cursor:onClick?"pointer":"default"}}>
+                <td style={{...td,textAlign:"left",color:T.text,fontWeight:DS.w.semibold,maxWidth:280,overflow:"hidden",textOverflow:"ellipsis"}}>{nombre}{sub&&<span style={{fontWeight:400,color:T.textSm,fontSize:DS.font.sm}}> · {sub}</span>}</td>
+                <td style={td}>{GH_FMT_USD(x.ventas)}</td><td style={td}>{x.n||""}</td><td style={td}>{GH_FMT_USD(x.gasto)}</td><td style={td}>{GH_FMT_USD(x.comisiones)}</td><td style={td}>{x.reembolsos>0.005?GH_FMT_USD(x.reembolsos):""}</td>
+                <td style={{...td,fontWeight:DS.w.bold,color:x.ganancia>=0?T.green:T.red}}>{GH_FMT_USD(x.ganancia)}</td><td style={td}>{x.roas?x.roas.toFixed(2):"—"}</td><td style={td}>{x.cpa?GH_FMT_USD(x.cpa):"—"}</td>
+              </tr>);
+              const tabla=(titulo,primera,filasT)=>filasT.length===0?null:(<>
+                <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0"}}>{titulo}</div>
+                <Card T={T} padding="sm" style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr><th style={{...th,textAlign:"left"}}>{primera}</th><th style={th}>Facturación</th><th style={th}>Ventas</th><th style={th}>Anuncios</th><th style={th}>Comisiones</th><th style={th}>Reemb.</th><th style={th}>Ganancia</th><th style={th}>ROAS</th><th style={th}>CPA</th></tr></thead>
+                  <tbody>{filasT}</tbody></table></Card></>);
+              const ctas=data.porCuenta||[];
+              const porT=Object.entries(agrupar(filas,f=>f.tienda)).map(([id,l])=>{ const x=ghImpSumar(l); return {id,nombre:l[0].tiendaNombre,...x,cpa:x.n&&x.gasto?x.gasto/x.n:null}; }).filter(x=>x.n>0).sort((a,b)=>b.ganancia-a.ganancia);
+              return (<>
+                {tabla("Por cuenta publicitaria","Cuenta",ctas.map(x=>fila(x.id,x.nombre,x.campanas?`${x.campanas} campaña${x.campanas===1?"":"s"}`:"",x)))}
+                {tabla("Por tienda","Tienda",porT.map(x=>fila(x.id,x.nombre,null,x,()=>{ setTiendaSel(x.id); ir("hora"); })))}
+              </>);
+            })()}
             <GhImpVentasLista T={T} ventas={data.ventas||[]} prom={data.comisionPromedio} uid={uid} onCambio={()=>cargar(true)}/>
           </>)}
           {vista==="hora" && data && filas.length>0 && (<>

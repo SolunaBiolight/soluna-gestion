@@ -167,7 +167,7 @@ async function cuentasDelToken(tk) {
   const k = crypto.createHash("sha1").update(tk).digest("hex");
   const hit = _ctasPorToken.get(k);
   if (hit && Date.now() - hit.ts < 10 * 60000) return hit.cuentas;
-  const r = await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id,currency,timezone_name&limit=200&access_token=${encodeURIComponent(tk)}`, { signal: AbortSignal.timeout(20000) })).json();
+  const r = await (await fetch(`https://graph.facebook.com/v23.0/me/adaccounts?fields=account_id,name,currency,timezone_name&limit=200&access_token=${encodeURIComponent(tk)}`, { signal: AbortSignal.timeout(20000) })).json();
   if (r.error) throw new Error(r.error.message);
   const cuentas = r.data || [];
   _ctasPorToken.set(k, { ts: Date.now(), cuentas });
@@ -192,6 +192,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
   let sinHora = 0;
   const vistas = new Set();
   const metaDice = {}; // campaign_id → {compras, valor} según el píxel de Meta (su atribución, su zona horaria)
+  const campCuenta = {}, nombresCuenta = {}, sinHoraCuenta = {}; // para el desglose por cuenta publicitaria
   const fx = await fxPorUsd();
   // Qué cuentas hay que consultar (cada una con su token; una cuenta visible desde dos tokens se consulta una vez).
   const trabajos = [];
@@ -205,6 +206,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
   const since = addDias(desde, -1), until = addDias(hasta, 1);
   await enParalelo(trabajos, 6, async ({ tk, c, id }) => {
     const tz = c.timezone_name || "America/Los_Angeles";
+    nombresCuenta[id] = c.name || id;
     const hoyLocal = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
     const porDiaLocal = {};
     const filas = {};
@@ -222,6 +224,7 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
             const a = zonaDe(new Date(utcDeLocal(row.date_start, hh, tz)).toISOString(), tzU);
             const k = `${a.fecha}|${a.hora}|${String(row.campaign_name || "").replace(/\|/g, "/")}|${row.campaign_id || ""}`;
             filas[k] = (filas[k] || 0) + usd;
+            if (row.campaign_id) campCuenta[row.campaign_id] = id;
             porDiaLocal[row.date_start] = (porDiaLocal[row.date_start] || 0) + usd;
           }
           url = r.paging?.next || null;
@@ -242,11 +245,11 @@ async function metaPorHora(db, uid, desde, hasta, elegidas = [], tzU = "America/
       const falta = totalHoy - (porDiaLocal[hoyLocal] || 0);
       if (falta > 0.01) {
         const a = zonaDe(new Date().toISOString(), tzU);
-        if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}||`; out[k] = (out[k] || 0) + falta; sinHora += falta; }
+        if (a.fecha >= desde && a.fecha <= hasta) { const k = `${a.fecha}|${a.hora}||`; out[k] = (out[k] || 0) + falta; sinHora += falta; sinHoraCuenta[id] = (sinHoraCuenta[id] || 0) + falta; }
       }
     } catch (e) { errores.push(`${id}: ${e.message}`); }
   });
-  return { porHora: out, sinHora, cuentas: vistas.size, errores, metaDice };
+  return { porHora: out, sinHora, cuentas: vistas.size, errores, metaDice, campCuenta, nombresCuenta, sinHoraCuenta };
 }
 
 // ── Stripe: comisión real por venta ──
@@ -631,6 +634,10 @@ export function armarTiendas(cfg, ordenes) {
   for (const [id, t] of Object.entries(cfg.tiendasManual || {})) if (id.startsWith("n_")) porNombre[norm(t.nombre)] = id;
   for (const o of ordenes) { if (o.store_id && !tiendasMap[o.store_id] && porNombre[norm(o.store_nombre)]) o.store_id = porNombre[norm(o.store_nombre)]; }
   for (const o of ordenes) if (o.store_id && !tiendasMap[o.store_id]) tiendasMap[o.store_id] = { id: o.store_id, nombre: o.store_nombre || o.store_id, pais: paises[o.store_id] || null, votos: {} };
+  // La tienda se puede renombrar en Impultienda: vale el nombre de su venta más reciente (no el primero que se vio).
+  const ultimo = {};
+  for (const o of ordenes) { if (!o.store_id || !o.store_nombre || o.importado) continue; const ts = o.ev_approved || o.actualizado || ""; if (!ultimo[o.store_id] || ts > ultimo[o.store_id].ts) ultimo[o.store_id] = { ts, nombre: o.store_nombre }; }
+  for (const [id, u] of Object.entries(ultimo)) if (tiendasMap[id]) tiendasMap[id].nombre = u.nombre;
   // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
   for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
   for (const t of Object.values(tiendasMap)) { if (!t.pais) { const top = Object.entries(t.votos).sort((a, b) => b[1] - a[1])[0]; if (top) { t.pais = top[0]; t.paisAuto = true; } } delete t.votos; }
@@ -755,7 +762,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       const reemb = mov ? mov.total : o.reembolso?.usd != null ? o.reembolso.usd : (o.ev_refunded || o.ev_chargeback ? usd : 0);
       f.reembolsos += reemb;
       cv.comisiones += com;
-      ventasLista.push({ tid, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
+      ventasLista.push({ tid, campKey: ck, ad, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
         total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
         comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
         pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: (o.utm?.utm_content && idxUtm?.a?.[o.utm.utm_content]?.[0]) || o.utm?.utm_content || null, importado: !!o.importado,
@@ -775,6 +782,21 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
     fila(fecha, parseInt(hora, 10), tid).gasto += usd;
     if (camp) { const key = cid || camp; const c = campanas[key] || (campanas[key] = { key, id: cid || null, nombre: camp, tienda: tid, gasto: 0 }); c.gasto += usd; }
   }
+  // Venta sin UTM que cruce: si su tienda tuvo UNA sola campaña con gasto en el período, es de esa campaña
+  // (el checkout a veces pierde las UTM; con una sola campaña no hay a quién más atribuirla).
+  const campsTienda = {};
+  for (const c of Object.values(campanas)) if (c.gasto > 0 && c.tienda && c.tienda !== "SIN_ASIGNAR") (campsTienda[c.tienda] || (campsTienda[c.tienda] = new Set())).add(c.key);
+  for (const v of ventasLista) {
+    const s = campsTienda[v.tid]; if (v.campKey !== "SIN_CAMPANA" || !s || s.size !== 1) continue;
+    const ck = [...s][0], de = ventasCamp.SIN_CAMPANA, a = ventasCamp[ck] || (ventasCamp[ck] = { ventas: 0, n: 0, comisiones: 0, anuncios: {}, tiendas: {} });
+    const n = v.post_compra ? 0 : 1;
+    de.ventas -= v.total; de.n -= n; de.comisiones -= v.comision;
+    const ad0 = de.anuncios[v.ad]; if (ad0) { ad0.ventas -= v.total; ad0.n -= n; if (ad0.ventas < 0.005 && ad0.n <= 0) delete de.anuncios[v.ad]; }
+    a.ventas += v.total; a.n += n; a.comisiones += v.comision;
+    const ad = "sin anuncio (UTM perdida)"; const av = a.anuncios[ad] || (a.anuncios[ad] = { anuncio: ad, ventas: 0, n: 0 }); av.ventas += v.total; av.n += n;
+    v.campKey = ck; v.campInferida = true;
+    if (de.ventas < 0.005 && de.n <= 0) delete ventasCamp.SIN_CAMPANA;
+  }
   for (const [ck, v] of Object.entries(ventasCamp)) {
     const c = campanas[ck] || (campanas[ck] = { key: ck, id: esIdMeta(ck) ? ck : null, nombre: ck === "SIN_CAMPANA" ? "Sin campaña (venta sin UTM que cruce)" : esIdMeta(ck) ? `${idxUtm?.c?.[ck] || `Campaña ${ck}`} (sin gasto leído: cuenta no elegida en Meta → Configuración)` : ck, tienda: null, gasto: 0 });
     c.ventas = v.ventas; c.n = v.n; c.comisiones = v.comisiones;
@@ -782,6 +804,17 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   }
   for (const c of Object.values(campanas)) { if (c.id && meta.metaDice?.[c.id]) c.metaDice = meta.metaDice[c.id];
     c.ventas = c.ventas || 0; c.n = c.n || 0; c.comisiones = c.comisiones || 0; c.ganancia = c.ventas - c.comisiones - c.gasto; c.roas = c.gasto ? c.ventas / c.gasto : null; c.cpa = c.n && c.gasto ? c.gasto / c.n : null; }
+  // Desglose por cuenta publicitaria: gasto de sus campañas (+ el de hoy aún sin hora) y las ventas reales de esas campañas por UTM.
+  const reembCamp = {}; for (const v of ventasLista) reembCamp[v.campKey] = (reembCamp[v.campKey] || 0) + (v.reembolsoUsd || 0);
+  const porCuenta = {};
+  const cta = (id) => porCuenta[id] || (porCuenta[id] = { id, nombre: id === "SIN_CAMPANA" ? "Ventas sin campaña" : id === "OTRA" ? "Cuentas no elegidas" : meta.nombresCuenta?.[id] || id, gasto: 0, ventas: 0, n: 0, comisiones: 0, reembolsos: 0, campanas: 0 });
+  for (const c of Object.values(campanas)) {
+    const x = cta(c.key === "SIN_CAMPANA" ? "SIN_CAMPANA" : meta.campCuenta?.[c.id] || "OTRA");
+    x.gasto += c.gasto; x.ventas += c.ventas; x.n += c.n; x.comisiones += c.comisiones; x.reembolsos += reembCamp[c.key] || 0; if (c.gasto > 0) x.campanas += 1;
+  }
+  for (const [id, usd] of Object.entries(meta.sinHoraCuenta || {})) cta(id).gasto += usd;
+  const cuentasLista = Object.values(porCuenta).map(x => ({ ...x, ganancia: x.ventas - x.comisiones - x.reembolsos - x.gasto, roas: x.gasto ? x.ventas / x.gasto : null, cpa: x.n && x.gasto ? x.gasto / x.n : null }))
+    .filter(x => x.gasto > 0.01 || x.ventas > 0.01).sort((a, b) => b.ganancia - a.ganancia);
   // Meta atribuido a cada venta: el gasto de su tienda ese día, repartido según lo que pesó la venta en la facturación del día.
   // Meta atribuido a cada venta: el gasto TOTAL del día (todas las cuentas y campañas, aunque no tengan tienda)
   // repartido según lo que pesó la venta en la facturación del día. Así la suma de Meta de las ventas = gasto del día.
@@ -799,7 +832,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   tot.fijos = fijos; tot.fijosMes = fijosMes; tot.aceptaronPost = aceptaron.size;
   tot.roas = tot.gasto ? tot.ventas / tot.gasto : null;
   tot.cpa = tot.n ? tot.gasto / tot.n : null;
-  return { desde, hasta, zona: tz, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, comisionPromedio: { pct: feePct, fijo: feeFijo, real: pctReal != null, cruzadas: conFee.length }, ventas: ventasLista.sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 2000), fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
+  return { desde, hasta, zona: tz, porCuenta: cuentasLista, filas: lista, totales: tot, tiendas: tiendasLista, campanas: Object.values(campanas).sort((a, b) => (b.ventas + b.gasto) - (a.ventas + a.gasto)), meta: { cuentas: meta.cuentas, sinHora: meta.sinHora, errores: meta.errores }, stripe, mp, comisionPromedio: { pct: feePct, fijo: feeFijo, real: pctReal != null, cruzadas: conFee.length }, ventas: ventasLista.sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 2000), fx: Object.fromEntries(MONEDAS_VISTA.filter(c => fx[c]).map(c => [c, c === "ARS" && fx._arsVista ? fx._arsVista : fx[c]])), arsCripto: !!fx._arsCripto, generado: new Date().toISOString() };
 }
 
 // Las 16 métricas del Dashboard digital, calculadas en Growith (las usa también el conector de Claude).
