@@ -679,6 +679,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
   const [stripe, mp, movs] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs), stripeMovimientos(db, uid, cfg)]);
   if (movs.error) stripe.errorMovimientos = movs.error;
+  if (movs.d && stripe) stripe.disputas = Object.entries(movs.d).map(([bt, x]) => ({ estado: x.st, venta: (ordenes.find(o => o.stripe?.bt === bt) || {}).orden ?? null, movimientos: Object.values(movs.m[bt] || {}) }));
   // Con Stripe conectado, la comisión de las ventas que no se pudieron cruzar es el PROMEDIO REAL de las cruzadas
   // (no un % cargado a mano). Sin Stripe o con pocas cruzadas, el estimado del cliente.
   const conFee = ordenes.filter(o => o.stripe?.fee != null);
