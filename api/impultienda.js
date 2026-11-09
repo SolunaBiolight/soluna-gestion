@@ -802,7 +802,8 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       const reemb = mov ? mov.total : o.reembolso?.usd != null ? o.reembolso.usd : (o.ev_refunded || o.ev_chargeback ? usd : 0);
       f.reembolsos += reemb;
       cv.comisiones += com;
-      ventasLista.push({ tid, campKey: ck, ad, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
+      const atr = atribuirUtm(o.utm, idxUtm);
+      ventasLista.push({ tid, campKey: ck, ad, adId: atr?.a || null, adsetId: atr?.s || null, campId: atr?.c || null, utmRaw: !!o.utm, comisionDetalle: o.stripe?.det || null, orden: o.orden ?? o.order_id, fecha: a.fecha, hora: a.hora, at: o.ev_approved, tienda: tiendasMap[tid]?.nombre || o.store_nombre || tid,
         total: usd, totalOriginal: Number(o.buyer_total ?? o.total) || 0, monedaOriginal: o.buyer_moneda || o.moneda || "USD", post_compra: !!o.post_compra,
         comision: com, fuente: o.stripe?.fee != null ? "stripe" : o.mp?.fee != null ? "mercadopago" : "estimada", stripe_id: o.stripe?.bt || null,
         pasarela: o.pasarela || null, campana: o.utm?.utm_campaign || null, anuncio: (o.utm?.utm_content && idxUtm?.a?.[o.utm.utm_content]?.[0]) || o.utm?.utm_content || null, importado: !!o.importado,
@@ -924,6 +925,114 @@ export function metricasDigitales(t0, nTiendas) {
   };
 }
 
+// ── API de solo lectura para un bot externo ──
+// GET /api/bot/metricas (rewrite → ?action=bot_metricas). Header X-Bot-Key = env BOT_API_KEY
+// (opcional BOT_CLIENTES="uid1,uid2" para limitar a qué clientes puede leer). 10 pedidos/min.
+// Misma lógica que el Dashboard digital (porHora) + gasto de Meta por conjunto y anuncio
+// (insights level=ad por hora, caché 5 min). Nunca escribe en Meta ni en los datos del cliente.
+const _botAds = new Map(); // `${uid}|${since}|${until}` → {ts, filas}
+async function metaAdsPorHora(db, uid, since, until, elegidas) {
+  const k = `${uid}|${since}|${until}`; const hit = _botAds.get(k);
+  if (hit && Date.now() - hit.ts < 5 * 60000) return hit.filas;
+  const snap = await db.collection("users").doc(uid).collection("meta_accounts").get();
+  const tokens = [...new Set(snap.docs.map(d => d.data()?.access_token).filter(Boolean))];
+  const fx = await fxPorUsd(); const trabajos = []; const vistas = new Set(); const filas = []; const errores = [];
+  for (const tk of tokens) { let cs = []; try { cs = await cuentasDelToken(tk); } catch (e) { errores.push(e.message); }
+    for (const c of cs) { const id = "act_" + c.account_id; if (vistas.has(id) || (elegidas.length && !elegidas.includes(id))) continue; vistas.add(id); trabajos.push({ tk, c, id }); } }
+  await enParalelo(trabajos, 6, async ({ tk, c, id }) => {
+    const tz = c.timezone_name || "America/Los_Angeles";
+    let url = `https://graph.facebook.com/v23.0/${id}/insights?level=ad&fields=spend,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name&time_increment=1&breakdowns=hourly_stats_aggregated_by_advertiser_time_zone&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}&limit=500&access_token=${encodeURIComponent(tk)}`;
+    for (let i = 0; url && i < 40; i++) {
+      const r = await fetchJson(url).catch(e => ({ error: { message: e.message } }));
+      if (r.error) { errores.push(`${id}: ${r.error.message}`); break; }
+      for (const row of r.data || []) {
+        const hh = parseInt(String(row.hourly_stats_aggregated_by_advertiser_time_zone || "").slice(0, 2), 10);
+        const usd = aUsd(Number(row.spend) || 0, c.currency, fx); if (!isFinite(hh) || !usd) continue;
+        filas.push({ t: utcDeLocal(row.date_start, hh, tz), cuenta: id, c: row.campaign_id, cn: row.campaign_name, s: row.adset_id, sn: row.adset_name, a: row.ad_id, an: row.ad_name, usd });
+      }
+      url = r.paging?.next || null;
+    }
+  });
+  const out = { filas, errores };
+  _botAds.set(k, { ts: Date.now(), filas: out }); if (_botAds.size > 50) _botAds.delete(_botAds.keys().next().value);
+  return out;
+}
+async function botMetricas(req, res, db) {
+  const clave = String(process.env.BOT_API_KEY || ""), dada = String(req.headers["x-bot-key"] || "");
+  const ha = crypto.createHash("sha256").update(dada).digest(), hb = crypto.createHash("sha256").update(clave).digest();
+  if (!clave || clave.length < 32 || !dada || !crypto.timingSafeEqual(ha, hb)) return res.status(401).json({ error: "no autorizado" });
+  if (req.method !== "GET") return res.status(405).json({ error: "solo GET" });
+  // 10 pedidos por minuto (contador en Firestore, sirve entre instancias).
+  const min = Math.floor(Date.now() / 60000), rref = db.collection("bot_rate").doc(String(min));
+  const n = await db.runTransaction(async tx => { const s = await tx.get(rref); const v = (s.data()?.n || 0) + 1; tx.set(rref, { n: v, exp: new Date((min + 2) * 60000) }); return v; });
+  if (n > 10) { res.setHeader("Retry-After", String(60 - Math.floor(Date.now() / 1000) % 60)); return res.status(429).json({ error: "máximo 10 pedidos por minuto" }); }
+  const uid = String(req.query.cliente_id || "");
+  const permitidos = String(process.env.BOT_CLIENTES || "").split(",").map(x => x.trim()).filter(Boolean);
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(uid) || (permitidos.length && !permitidos.includes(uid))) return res.status(403).json({ error: "cliente_id no permitido" });
+  if (!(await db.collection("users").doc(uid).get()).exists) return res.status(404).json({ error: "cliente no encontrado" });
+  const TZ = "America/Argentina/Buenos_Aires", hoy = zonaDe(new Date().toISOString(), TZ).fecha;
+  const vh = req.query.ventana_horas != null ? Number(req.query.ventana_horas) : null;
+  let desde, hasta, desdeMs, hastaMs;
+  if (vh != null) {
+    if (!(vh >= 1 && vh <= 24 * 31)) return res.status(400).json({ error: "ventana_horas entre 1 y 744" });
+    hastaMs = Date.now(); desdeMs = hastaMs - vh * 3600000; desde = zonaDe(new Date(desdeMs).toISOString(), TZ).fecha; hasta = hoy;
+  } else {
+    desde = String(req.query.desde || hoy); hasta = String(req.query.hasta || desde);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || desde > hasta) return res.status(400).json({ error: "desde/hasta AAAA-MM-DD" });
+    if ((Date.parse(hasta) - Date.parse(desde)) / 86400000 > 31) return res.status(400).json({ error: "máximo 31 días" });
+    desdeMs = utcDeLocal(desde, 0, TZ); hastaMs = utcDeLocal(addDias(hasta, 1), 0, TZ);
+  }
+  const cfg = (await db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()).data() || {};
+  const [ph, ads] = await Promise.all([porHora(db, uid, desde, hasta, TZ), metaAdsPorHora(db, uid, addDias(desde, -1), addDias(hasta, 1), cfg.metaCuentas || [])]);
+  const enV = (ms) => ms >= desdeMs && ms < hastaMs;
+  const ventas = (ph.ventas || []).filter(v => enV(Date.parse(v.at)));
+  const gastoAds = ads.filas.filter(f => enV(f.t));
+  const r2 = (x) => x == null || !isFinite(x) ? null : Math.round(x * 100) / 100;
+  const met = (o) => ({ gasto: r2(o.gasto), ventas: o.n, facturacion: r2(o.fac), roas: r2(o.gasto ? o.fac / o.gasto : null), cpa: r2(o.n && o.gasto ? o.gasto / o.n : null) });
+  const nuevo = () => ({ gasto: 0, n: 0, fac: 0, com: 0, reemb: 0 });
+  const camps = {}; const tiendas = {}; const hora = {}; const sinUtm = { n: 0, fac: 0 }; const tot = nuevo();
+  const camp = (id, nombre) => camps[id] || (camps[id] = { id, nombre: nombre || ph.campanas?.find(c => c.id === id)?.nombre || null, ...nuevo(), tiendas: {}, sets: {} });
+  const set = (c, id, nombre) => c.sets[id] || (c.sets[id] = { id, nombre: nombre || null, ...nuevo(), ads: {} });
+  const adOf = (s, id, nombre) => s.ads[id] || (s.ads[id] = { id, nombre: nombre || null, ...nuevo() });
+  const hk = (ms, cid) => { const h = new Date(Math.floor(ms / 3600000) * 3600000).toISOString(); const k = `${h}|${cid}`; return hora[k] || (hora[k] = { hora_utc: h, campaign_id: cid, ...nuevo() }); };
+  for (const f of gastoAds) {
+    const c = camp(f.c, f.cn); const s = set(c, f.s, f.sn); const a = adOf(s, f.a, f.an);
+    for (const x of [c, s, a, tot, hk(f.t, f.c)]) x.gasto += f.usd;
+  }
+  for (const v of ventas) {
+    const n = v.post_compra ? 0 : 1, rb = v.reembolsoUsd || 0;
+    tot.n += n; tot.fac += v.total; tot.com += v.comision; tot.reemb += rb;
+    const t = tiendas[v.tid] || (tiendas[v.tid] = { tienda: v.tienda, ...nuevo() }); t.n += n; t.fac += v.total; t.com += v.comision; t.reemb += rb;
+    const cid = v.campId || (/^\d{10,}$/.test(v.campKey || "") ? v.campKey : null);
+    if (!cid) { sinUtm.n += n; sinUtm.fac += v.total; continue; }
+    const c = camp(cid); c.n += n; c.fac += v.total; c.tiendas[v.tienda] = (c.tiendas[v.tienda] || 0) + 1;
+    const hx = hk(Date.parse(v.at), cid); hx.n += n; hx.fac += v.total;
+    const sid = v.adsetId || (v.adId && ads.filas.find(f => f.a === v.adId)?.s) || null;
+    if (sid) { const s = set(c, sid); s.n += n; s.fac += v.total; if (v.adId) { const a = adOf(s, v.adId); a.n += n; a.fac += v.total; } }
+  }
+  // Tienda de cada campaña: la del Dashboard (por anuncio/país) o la que más ventas tuvo.
+  const tiendaDe = Object.fromEntries((ph.campanas || []).filter(c => c.id).map(c => [c.id, c.tienda]));
+  const tMap = Object.fromEntries((ph.tiendas || []).map(t => [t.id, t]));
+  for (const t of Object.values(tiendas)) t.gasto = 0;
+  for (const f of gastoAds) { const tid = tiendaDe[f.c]; const tt = tid && tMap[tid] && Object.values(tiendas).find(x => x.tienda === tMap[tid].nombre); if (tt) tt.gasto += f.usd; }
+  const be = (o) => { const neto = o.fac - o.com - o.reemb; return { cpa_break_even: r2(o.n ? neto / o.n : null), break_even_roas: r2(neto > 0 ? o.fac / neto : null) }; };
+  const campanas = Object.values(camps).map(c => { const tid = tiendaDe[c.id]; const t = tid && tMap[tid]; const top = Object.entries(c.tiendas).sort((a, b) => b[1] - a[1])[0];
+    return { campaign_id: c.id, nombre: c.nombre, tienda: t?.nombre || top?.[0] || null, pais: t?.pais || null, ...met(c),
+      conjuntos: Object.values(c.sets).map(s => ({ adset_id: s.id, nombre: s.nombre, ...met(s), anuncios: Object.values(s.ads).map(a => ({ ad_id: a.id, nombre: a.nombre, ...met(a) })).sort((x, y) => y.gasto - x.gasto) })).sort((x, y) => y.gasto - x.gasto) }; })
+    .sort((a, b) => (b.gasto + b.facturacion) - (a.gasto + a.facturacion));
+  res.setHeader("Cache-Control", "no-store");
+  return res.json({
+    generado_utc: new Date().toISOString(), cliente_id: uid,
+    ventana: { desde_utc: new Date(desdeMs).toISOString(), hasta_utc: new Date(hastaMs).toISOString() },
+    totales: { ...met(tot), comisiones: r2(tot.com), reembolsos: r2(tot.reemb), ...be(tot) },
+    tiendas: Object.values(tiendas).map(t => ({ tienda: t.tienda, ...met(t), ...be(t) })),
+    campanas,
+    por_hora: Object.values(hora).sort((a, b) => a.hora_utc.localeCompare(b.hora_utc)).map(h => ({ hora_utc: h.hora_utc, campaign_id: h.campaign_id, gasto: r2(h.gasto), ventas: h.n, facturacion: r2(h.fac) })),
+    ventas_sin_utm: { ventas: sinUtm.n, facturacion: r2(sinUtm.fac) },
+    avisos: { errores_meta: [...(ads.errores || []), ...(ph.meta?.errores || [])].slice(0, 5) },
+  });
+}
+
 export default async function handler(req, res) {
   const db = initAdmin();
   const action = String(req.query.action || "");
@@ -936,6 +1045,7 @@ export default async function handler(req, res) {
     }
     try { return await webhook(req, res, db); } catch (e) { console.error("[impultienda webhook]", e.message); return res.status(500).json({ ok: false }); }
   }
+  if (action === "bot_metricas") return botMetricas(req, res, db);
   const uid = String(req.query.uid || "");
   const g = await guardUid(req, res, uid, "margenes"); if (!g) return;
   // Productos digitales: por ahora NO se ven desde "Ver como cliente" del admin.

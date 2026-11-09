@@ -47,9 +47,16 @@
     },
     "api/deposito.js": {
       "maxDuration": 60
+    },
+    "api/impultienda.js": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
+    {
+      "source": "/api/bot/metricas",
+      "destination": "/api/impultienda?action=bot_metricas"
+    },
     {
       "source": "/mcp",
       "destination": "/api/mcp?route=mcp"
