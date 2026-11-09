@@ -2920,6 +2920,28 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       return res.status(500).json({ error: tokens.length > 1 ? `Ningún token con permiso de edición pudo cambiarlo: ${ultimo.message}` : ultimo.message });
     }
 
+    // Ver un anuncio: vista previa de Meta (iframe) + link a la publicación en Facebook / Instagram.
+    if (action === "ad_ver" && req.method === "GET") {
+      const adId = String(req.query.ad_id || "");
+      if (!/^\d{5,30}$/.test(adId)) return res.status(400).json({ error: "Falta el anuncio" });
+      const todas = await listMetaAccounts(db, uid);
+      const tokens = [...new Set(todas.map(a => a.access_token).filter(Boolean))];
+      let ultimo;
+      for (const t of tokens) {
+        try {
+          const ad = await metaGet(adId, { fields: "name,creative{effective_object_story_id,object_story_id,instagram_permalink_url,video_id}" }, t);
+          const cr = ad.creative || {};
+          const story = cr.effective_object_story_id || cr.object_story_id || null;
+          let iframe = null;
+          for (const fmt of ["MOBILE_FEED_STANDARD", "INSTAGRAM_REELS", "INSTAGRAM_STANDARD"]) {
+            try { const p = await metaGet(`${adId}/previews`, { ad_format: fmt }, t); const src = /src="([^"]+)"/.exec(p.data?.[0]?.body || "")?.[1]; if (src) { iframe = src.replace(/&amp;/g, "&"); break; } } catch (_) {}
+          }
+          return res.json({ ok: true, nombre: ad.name, iframe, fb_url: story ? `https://www.facebook.com/${story}` : null, ig_url: cr.instagram_permalink_url || null });
+        } catch (e) { ultimo = e; }
+      }
+      return res.status(500).json({ error: ultimo?.message || "No se pudo leer el anuncio" });
+    }
+
     // Cambia un tope u objetivo que el conjunto YA tiene (bid cap, cost cap, ROAS objetivo, gasto mínimo o máximo).
     if (action === "set_objetivo" && req.method === "POST") {
       const { node_id, campo, valor } = req.body || {};

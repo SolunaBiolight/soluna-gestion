@@ -18794,6 +18794,33 @@ function AppStripeRegistros({T,user}){
   </div>);
 }
 
+// "Ver anuncio": mini ventana con la vista previa de Meta y botones a la publicación en Facebook / Instagram.
+function MetaVerAnuncio({T,adId,metaApi,accId}){
+  const [d,setD]=useState(null); const [abierto,setAbierto]=useState(false);
+  const abrir=async(e)=>{ e.stopPropagation(); setAbierto(true); if(d&&!d.error) return; setD(null);
+    try{ const j=await metaApi("ad_ver","GET",null,{acc_id:accId,ad_id:adId}); setD(j); }catch(err){ setD({error:err.message}); } };
+  const link=(href,txt)=>href&&<a href={href} target="_blank" rel="noopener noreferrer" style={{...BtnPrimary(T),fontSize:12,height:32,padding:"0 14px",borderRadius:DS.r.full,display:"inline-flex",alignItems:"center",textDecoration:"none"}}>{txt}</a>;
+  return (<>
+    <button onClick={abrir} title="Ver el creativo" style={{marginTop:3,background:"transparent",border:`1px solid ${T.border}`,color:T.textMd,borderRadius:DS.r.full,padding:"1px 8px",fontSize:10,lineHeight:1.4,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:4}}>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Ver anuncio
+    </button>
+    {abierto&&ReactDOM.createPortal(
+      <div onClick={()=>setAbierto(false)} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,boxShadow:DS.shadow.lg,padding:DS.sp.lg,width:380,maxWidth:"100%",maxHeight:"92vh",display:"flex",flexDirection:"column",gap:DS.sp.md}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{flex:1,minWidth:0,fontSize:DS.font.base,fontWeight:DS.w.bold,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d?.nombre||"Anuncio"}</div>
+            <button onClick={()=>setAbierto(false)} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:18,lineHeight:1}}>×</button>
+          </div>
+          {!d ? <div style={{padding:40,textAlign:"center"}}><Spinner size={18}/></div>
+            : d.error ? <div style={{fontSize:DS.font.sm,color:T.red}}>{d.error}</div>
+            : d.iframe ? <iframe title="Vista previa" src={d.iframe} style={{width:"100%",height:"min(640px,70vh)",border:"none",borderRadius:DS.r.lg,background:"#fff"}} allow="autoplay; encrypted-media" scrolling="yes"/>
+            : <div style={{fontSize:DS.font.sm,color:T.textSm}}>Meta no dio vista previa de este anuncio.</div>}
+          {d&&!d.error&&<div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap"}}>{link(d.fb_url,"Ver completo en Facebook")}{link(d.ig_url,"Ver en Instagram")}</div>}
+        </div>
+      </div>,document.body)}
+  </>);
+}
+
 // Globito bajo el presupuesto: topes y objetivos que el conjunto ya tiene cargados.
 function MetaObjetivos({T,r,cur,editable,metaApi,accId,onGuardado}){
   const [pos,setPos]=useState(null); const [vals,setVals]=useState({}); const [busy,setBusy]=useState(null); const [err,setErr]=useState("");
@@ -37363,6 +37390,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                                           ) : (
                                             <div title={r.name} style={{color:LINK,fontSize:13,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name||"(sin nombre)"}</div>
                                           )}
+                                          {lv==="ad" && <MetaVerAnuncio T={T} adId={r.id} metaApi={metaApi} accId={activeAccId}/>}
                                         </td>
                                         <td style={{...TD}} title={r.effective_status||""}>{entrega(r)}</td>
                                         <td style={{...TD,textAlign:"right"}}>
