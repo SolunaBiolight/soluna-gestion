@@ -142,6 +142,9 @@ function objetivosDe(n) {
   if (num(n.bid_amount) > 0) out.push({ campo: "bid_amount", label: n.bid_strategy === "COST_CAP" ? "Cost cap" : n.bid_strategy === "LOWEST_COST_WITH_BID_CAP" ? "Bid cap" : "Puja", valor: num(n.bid_amount) / 100 });
   if (num(n.bid_constraints?.roas_average_floor) > 0) out.push({ campo: "roas_average_floor", label: "ROAS objetivo", valor: num(n.bid_constraints.roas_average_floor) / 10000, roas: true });
   for (const [campo, label] of [["daily_min_spend_target", "Gasto mínimo diario"], ["daily_spend_cap", "Gasto máximo diario"], ["lifetime_min_spend_target", "Gasto mínimo total"], ["lifetime_spend_cap", "Gasto máximo total"]]) if (num(n[campo]) > 0) out.push({ campo, label, valor: num(n[campo]) / 100 });
+  // Conjunto de una campaña CBO (sin presupuesto propio) sin gasto mínimo: se ofrece en 0 para poder cargarlo.
+  if (n.campaign_id && !n.adset_id && !num(n.daily_budget) && !num(n.lifetime_budget) && !out.some(o => /min_spend/.test(o.campo)))
+    out.push({ campo: "daily_min_spend_target", label: "Gasto mínimo diario", valor: 0, vacio: true });
   return out;
 }
 
@@ -2921,7 +2924,8 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
       const { node_id, campo, valor } = req.body || {};
       const monto = parseFloat(valor);
       const CAMPOS = ["bid_amount", "roas_average_floor", "daily_min_spend_target", "daily_spend_cap", "lifetime_min_spend_target", "lifetime_spend_cap"];
-      if (!/^\d{5,30}$/.test(String(node_id || "")) || !CAMPOS.includes(campo) || !isFinite(monto) || monto <= 0) return res.status(400).json({ error: "Faltan el conjunto o un valor válido" });
+      const esGasto = /spend/.test(campo); // gasto mínimo/máximo: 0 = sacarlo
+      if (!/^\d{5,30}$/.test(String(node_id || "")) || !CAMPOS.includes(campo) || !isFinite(monto) || monto < 0 || (monto === 0 && !esGasto)) return res.status(400).json({ error: "Faltan el conjunto o un valor válido" });
       const accIdQ = acc_id || req.query.acc_id;
       const todas = await listMetaAccounts(db, uid);
       const orden = [...todas.filter(a => String(a.id) === String(accIdQ)), ...todas.filter(a => String(a.id) !== String(accIdQ))];
@@ -2934,9 +2938,9 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
           const n = await metaGet(node_id, { fields: "bid_amount,bid_constraints,daily_min_spend_target,daily_spend_cap,lifetime_min_spend_target,lifetime_spend_cap" }, t);
           const esRoas = campo === "roas_average_floor";
           const actual = parseFloat(esRoas ? n.bid_constraints?.roas_average_floor : n[campo]) || 0;
-          if (!actual) return res.status(400).json({ error: "Este conjunto ya no tiene ese valor cargado." });
+          if (!actual && !esGasto) return res.status(400).json({ error: "Este conjunto ya no tiene ese valor cargado." });
           const nuevo = Math.round(monto * (esRoas ? 10000 : 100));
-          if (nuevo > actual * 5 || nuevo < actual / 5) return res.status(400).json({ error: "Cambio demasiado grande: se permite entre 1/5 y 5 veces el valor actual." });
+          if (actual && nuevo && !esGasto && (nuevo > actual * 5 || nuevo < actual / 5)) return res.status(400).json({ error: "Cambio demasiado grande: se permite entre 1/5 y 5 veces el valor actual." });
           await metaPost(node_id, esRoas ? { bid_constraints: JSON.stringify({ ...n.bid_constraints, roas_average_floor: nuevo }) } : { [campo]: String(nuevo) }, t);
           return res.json({ ok: true, node_id, campo, valor: monto });
         } catch (e) { ultimo = e; }

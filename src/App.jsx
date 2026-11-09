@@ -18797,19 +18797,21 @@ function AppStripeRegistros({T,user}){
 // Globito bajo el presupuesto: topes y objetivos que el conjunto ya tiene cargados.
 function MetaObjetivos({T,r,cur,editable,metaApi,accId,onGuardado}){
   const [pos,setPos]=useState(null); const [vals,setVals]=useState({}); const [busy,setBusy]=useState(null); const [err,setErr]=useState("");
-  const lista=r.objetivos||[];
+  const [ov,setOv]=useState({}); // valores recién guardados: se ven al toque aunque la tabla todavía no recargó
+  const lista=(r.objetivos||[]).map(o=>o.campo in ov?{...o,valor:ov[o.campo]}:o);
   if(!lista.length) return null;
+  const esGasto=(o)=>/spend/.test(o.campo);
   const guardar=async(o)=>{
     const n=parseFloat(String(vals[o.campo]).replace(",","."));
-    if(!isFinite(n)||n<=0){ setErr("Poné un número mayor a cero."); return; }
+    if(!isFinite(n)||n<0||(n===0&&!esGasto(o))){ setErr(esGasto(o)?"Poné un número (0 lo saca).":"Poné un número mayor a cero."); return; }
     setBusy(o.campo); setErr("");
-    try{ const d=await metaApi("set_objetivo","POST",{node_id:r.id,campo:o.campo,valor:n},{acc_id:accId}); if(d.error) setErr(d.error); else { onGuardado(r.id,o.campo,n); setVals(v=>{ const x={...v}; delete x[o.campo]; return x; }); } }
+    try{ const d=await metaApi("set_objetivo","POST",{node_id:r.id,campo:o.campo,valor:n},{acc_id:accId}); if(d.error) setErr(d.error); else { setOv(x=>({...x,[o.campo]:n})); onGuardado(r.id,o.campo,n); setVals(v=>{ const x={...v}; delete x[o.campo]; return x; }); } }
     catch(e){ setErr(e.message); } finally{ setBusy(null); }
   };
   return (<>
     <button onClick={e=>{ e.stopPropagation(); const b=e.currentTarget.getBoundingClientRect(); setPos({top:Math.max(8,Math.min(b.bottom+6,window.innerHeight-90-lista.length*70)),left:Math.max(8,Math.min(b.right-300,window.innerWidth-308))}); }}
       style={{display:"inline-block",marginTop:4,background:"transparent",border:`1px solid ${T.accent}66`,color:T.accent,borderRadius:DS.r.full,padding:"1px 8px",fontSize:10,lineHeight:1.3,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"normal"}}>
-      {lista[0].label} {lista[0].roas?"":cur}{lista[0].valor}{lista.length>1?` +${lista.length-1}`:""}
+      {(()=>{ const act=lista.filter(o=>o.valor>0); return act.length?<>{act[0].label} {act[0].roas?"":cur}{act[0].valor}{act.length>1?` +${act.length-1}`:""}</>:"+ Gasto mínimo"; })()}
     </button>
     {pos&&ReactDOM.createPortal(<>
       <div onClick={()=>setPos(null)} style={{position:"fixed",inset:0,zIndex:9998}}/>
@@ -18817,7 +18819,7 @@ function MetaObjetivos({T,r,cur,editable,metaApi,accId,onGuardado}){
         <div style={{fontSize:DS.font.base,fontWeight:DS.w.bold,color:T.text,marginBottom:DS.sp.md,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.name}>{r.name}</div>
         {lista.map(o=>{ const v=vals[o.campo]??String(o.valor); const cambio=parseFloat(v)!==o.valor; return (
           <div key={o.campo} style={{marginBottom:DS.sp.md}}>
-            <div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:4}}>{o.label}{o.roas?"":` (${cur})`}</div>
+            <div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:4}}>{o.label}{o.roas?"":` (${cur})`}{esGasto(o)&&<span style={{color:T.textSm}}> · 0 = sin {/max|cap/.test(o.campo)?"tope":"mínimo"}</span>}</div>
             <div style={{display:"flex",gap:DS.sp.sm}}>
               <input type="number" min="0" step="0.01" disabled={!editable} value={v} onChange={e=>setVals(x=>({...x,[o.campo]:e.target.value}))} onKeyDown={e=>{ if(e.key==="Enter"&&cambio) guardar(o); }} style={{...InputStyle(T),flex:1,minWidth:0}}/>
               {editable&&<Btn T={T} size="sm" variant="primary" disabled={!cambio||busy===o.campo} onClick={()=>guardar(o)}>{busy===o.campo?"…":"Guardar"}</Btn>}
