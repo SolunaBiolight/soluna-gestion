@@ -35799,9 +35799,8 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
     const cod=String(r._moneda||"USD").toUpperCase(); const k=cod==="USD"?1:Number(fxM?.[cod]);
     if(!k) return o;
     const rev=m.rev*k;
-    // Con los eventos de intento de Impultienda, los pagos iniciados también son los reales (Meta solo pone el gasto).
-    const pi=utmAtr.intentos?{checkouts:m.pi||0, cost_checkout:m.pi&&r.spend?r.spend/m.pi:0, rechazados:m.rech||0}:{};
-    return {...o, ...pi, purchases:m.n, purchase_value:rev, roas:r.spend?rev/r.spend:0, cpa:m.n&&r.spend?r.spend/m.n:0, aov:m.n?rev/m.n:0};
+    // De Growith solo vienen las ventas (y lo que sale de ellas: facturación, ROAS, CPA, AOV). Todo lo demás es lo de Meta.
+    return {...o, purchases:m.n, purchase_value:rev, roas:r.spend?rev/r.spend:0, cpa:m.n&&r.spend?r.spend/m.n:0, aov:m.n?rev/m.n:0};
   };
   // Con que una conexión tenga ads_management alcanza: el server edita con ese token aunque la activa sea de solo lectura.
   const metaEditable=!!activeAcc?.puede_editar||accounts.some(a=>a.puede_editar);
@@ -37113,7 +37112,7 @@ function AppMetaAds({T, user, onHome, tab: tabProp, setTab: setTabProp}) {
                     conv_rate:      { label:"Conversión", sub:"Compras / visitas a la página", render: r => r.lpv&&r.purchases ? fmt(r.purchases/r.lpv*100)+"%" : "—", total: t => t.conv ? fmt(t.conv)+"%" : "—", dotted:true },
                     carts:          { label:"Artículos agregados al carrito", sub:"Total", render: r => cnt(r.carts), total: t => cnt(t.carts), dotted:true },
                     rechazados:     { label:"Pagos rechazados", sub:"Impultienda", render: r => cnt(r.rechazados), total: t => cnt(t.rech) },
-                    checkouts:      { label:"Pagos iniciados", sub:utmAtr?.intentos?"Impultienda":"Total", render: r => cnt(r.checkouts), total: t => cnt(t.chk), dotted:true },
+                    checkouts:      { label:"Pagos iniciados", sub:"Total", render: r => cnt(r.checkouts), total: t => cnt(t.chk), dotted:true },
                     cost_checkout:  { label:"Costo por pago iniciado", sub:"Por acción", render: r => r.checkouts&&r.spend ? cur+fmt(r.spend/r.checkouts) : "—", total: t => money(t.cpChk), dotted:true },
                     wishlist:       { label:"Artículos agregados a la lista de deseos", sub:"Total", render: r => cnt(r.wishlist), total: t => cnt(t.wish), dotted:true },
                     cost_cart:      { label:"Costo por carrito", sub:"Por acción", render: r => r.carts&&r.spend ? cur+fmt(r.spend/r.carts) : "—", total: t => money(t.cpCart), dotted:true },

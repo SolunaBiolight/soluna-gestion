@@ -1967,9 +1967,10 @@ Mínimo para ready:true = objetivo, presupuesto diario, país, URL de destino y 
             avg_watch: parseFloat((r.video_avg_time_watched_actions || [])[0]?.value) || 0,
             // Pagos iniciados (InitiateCheckout del píxel).
             checkouts: parseInt((r.actions || []).find(esCheckout)?.value) || 0,
-            link_clicks: parseInt(r.inline_link_clicks) || 0,
-            link_ctr: parseFloat(r.inline_link_click_ctr) || 0,
-            link_cpc: parseFloat(r.cost_per_inline_link_click) || 0,
+            // Igual que el Administrador de anuncios: "Clics en el enlace" = acción link_click (inline_link_clicks solo si no viene).
+            link_clicks: nAct(r, x => x.action_type === "link_click") || parseInt(r.inline_link_clicks) || 0,
+            link_ctr: (() => { const lc = nAct(r, x => x.action_type === "link_click"); const im = parseInt(r.impressions) || 0; return lc && im ? lc / im * 100 : parseFloat(r.inline_link_click_ctr) || 0; })(),
+            link_cpc: parseFloat((r.cost_per_action_type || []).find(x => x.action_type === "link_click")?.value) || parseFloat(r.cost_per_inline_link_click) || 0,
             lpv: nAct(r, esLpv), wishlist: nAct(r, esWish), carts: nAct(r, esCart),
           };
         });
