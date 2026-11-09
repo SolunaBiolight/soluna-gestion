@@ -958,9 +958,12 @@ async function metaAdsPorHora(db, uid, since, until, elegidas) {
   return out;
 }
 async function botMetricas(req, res, db) {
+  // La clave no está en el código: solo su SHA-256 (no se puede recuperar la clave desde la huella).
+  // Si se carga BOT_API_KEY en Vercel, manda esa.
   const clave = String(process.env.BOT_API_KEY || ""), dada = String(req.headers["x-bot-key"] || "");
-  const ha = crypto.createHash("sha256").update(dada).digest(), hb = crypto.createHash("sha256").update(clave).digest();
-  if (!clave || clave.length < 32 || !dada || !crypto.timingSafeEqual(ha, hb)) return res.status(401).json({ error: "no autorizado" });
+  const ha = crypto.createHash("sha256").update(dada).digest();
+  const hb = clave ? crypto.createHash("sha256").update(clave).digest() : Buffer.from("9d1b797392e646dd77ea6dbaf0d911abc814086dd5b462738a5d2fbe853bb071", "hex");
+  if (!dada || dada.length < 32 || !crypto.timingSafeEqual(ha, hb)) return res.status(401).json({ error: "no autorizado" });
   if (req.method !== "GET") return res.status(405).json({ error: "solo GET" });
   // 10 pedidos por minuto (contador en Firestore, sirve entre instancias).
   const min = Math.floor(Date.now() / 60000), rref = db.collection("bot_rate").doc(String(min));
