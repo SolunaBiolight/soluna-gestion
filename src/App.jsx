@@ -9054,7 +9054,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
                             {proxV&&estado!=="Cerrado"&&(
                               <div style={{fontSize:10,color:proxVencida?T.red:T.textSm,fontWeight:proxVencida?700:500,marginBottom:6}}>
-                                {proxVencida?"Pieza vencida el ":"Próxima pieza vence el "}{proxV.split("-").reverse().slice(0,2).join("/")}
+                                {proxVencida?"Contenido vencido el ":"Contenido para el "}{proxV.split("-").reverse().slice(0,2).join("/")}
                               </div>
                             )}
                             {/* Footer: barra de progreso contenido */}
@@ -9846,82 +9846,65 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 </select>
               </div>
 
-              {/* ── CONTENIDO: piezas (entregables) con fecha límite, estado y link ── */}
+              {/* ── CONTENIDO (10/nov/2026, simplificado): UNA fecha para todo el contenido
+                     (contenidoVence; se copia a las piezas pendientes para las alertas) y cada
+                     pieza en una línea: qué es, en qué está y su link. ── */}
               {(()=>{
                 const piezas=ghPiezasDe(c);
+                const fecha=c.contenidoVence||piezas.filter(x=>(x.estado||"pendiente")==="pendiente"&&x.fechaLimite).map(x=>x.fechaLimite).sort()[0]||"";
                 const savePiezas=(pz,extra)=>save({...(extra||{}),piezas:pz,contenido:ghContenidoDePiezas(pz)});
-                const addPieza=(tipo)=>savePiezas([...piezas,{id:ghPiezaId(),tipo,estado:"pendiente",fechaLimite:c.contenidoVence||"",link:"",nota:""}]);
+                const addPieza=(tipo)=>savePiezas([...piezas,{id:ghPiezaId(),tipo,estado:"pendiente",fechaLimite:fecha,link:"",nota:""}]);
                 const updPieza=(id,patch)=>savePiezas(piezas.map(x=>x.id!==id?x:({...x,...patch,...(patch.estado&&patch.estado!=="pendiente"&&!x.entregadaAt?{entregadaAt:new Date().toISOString()}:{})})));
                 const delPieza=(id)=>savePiezas(piezas.filter(x=>x.id!==id));
+                const setFecha=v=>savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"?{...x,fechaLimite:v||""}:x),{contenidoVence:v||""});
                 const hoyP=hoyAR();
-                const hechas=piezas.filter(x=>(x.estado||"pendiente")!=="pendiente").length;
-                const pctP=piezas.length?Math.round(hechas/piezas.length*100):0;
+                const faltan=piezas.filter(x=>(x.estado||"pendiente")==="pendiente").length;
+                const hechas=piezas.length-faltan;
+                const vencido=faltan>0&&fecha&&fecha<hoyP;
                 const infDe=influencers.find(i=>(c.usuario&&i.usuario&&i.usuario.replace("@","").toLowerCase()===c.usuario.replace("@","").toLowerCase())||(i.nombre&&i.nombre===c.influencer));
                 const carpeta=(c.driveFolder||infDe?.driveFolder||"").trim();
                 const EST={pendiente:[T.textSm,"Pendiente"],entregada:[T.blue,"Entregada"],publicada:[T.green,"Publicada"]};
                 const tiposExtra=[...new Set(piezas.map(x=>x.tipo).filter(t=>t&&!ACTIVIDADES.includes(t)))];
-                const chipBtn=(on)=>({fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+(on?T.accentSolid:T.border),background:on?T.accentSolid+"18":"transparent",color:on?T.accent:T.textMd,cursor:"pointer",fontWeight:on?600:400,fontFamily:"'Inter',system-ui,sans-serif"});
+                const chipBtn={fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+T.border,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"};
+                const resumen=!piezas.length?null:faltan===0?<span style={{fontSize:11,fontWeight:700,color:T.green}}>Todo entregado</span>:<span style={{fontSize:11,fontWeight:700,color:vencido?T.red:T.textMd}}>{hechas} de {piezas.length} entregadas</span>;
                 return (
                   <div style={secStyle}>
-                    {secHead(IC.clap,"Contenido",piezas.length>0?<span style={{fontSize:11,fontWeight:800,color:pctP===100?T.green:T.accent,background:(pctP===100?T.green:T.accentSolid)+"18",border:`1px solid ${(pctP===100?T.green:T.accentSolid)}44`,borderRadius:99,padding:"2px 9px"}}>{hechas}/{piezas.length} · {pctP}%</span>:null,10)}
-                    {piezas.length>0&&<div style={{height:6,background:T.borderL,borderRadius:20,overflow:"hidden",marginBottom:10}}>
-                      <div style={{height:"100%",width:pctP+"%",background:pctP===100?T.green:T.accentSolid,borderRadius:20,transition:"width 0.4s"}}/>
-                    </div>}
-                    {/* Carpeta de Drive del influencer + fecha límite general */}
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-                      {!carpeta&&<div style={{marginBottom:8,display:"flex",gap:6}}><BtnCarpetaExistente onElegida={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/><BtnCarpeta nombre={c.influencer} usuario={c.usuario} email={c.email} onCreada={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/></div>}
-                      <Field label={c.driveFolder||!infDe?.driveFolder?"Carpeta de Drive":"Carpeta de Drive (del perfil)"} value={c.driveFolder||infDe?.driveFolder||""} onSave={v=>save({driveFolder:(v||"").trim()})} href={carpeta?(/^https?:/i.test(carpeta)?carpeta:"https://"+carpeta):null} placeholder="Link de la carpeta donde sube el contenido"/>
+                    {secHead(IC.clap,"Contenido",resumen,10)}
+                    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:10,alignItems:"end",marginBottom:12}}>
+                      <div style={{minWidth:0}}>
+                        <Field label="Carpeta de Drive" value={c.driveFolder||infDe?.driveFolder||""} onSave={v=>save({driveFolder:(v||"").trim()})} href={carpeta?(/^https?:/i.test(carpeta)?carpeta:"https://"+carpeta):null} placeholder="Link donde sube el contenido"/>
+                        {!carpeta&&<div style={{marginTop:6,display:"flex",gap:6}}><BtnCarpetaExistente onElegida={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/><BtnCarpeta nombre={c.influencer} usuario={c.usuario} email={c.email} onCreada={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/></div>}
+                      </div>
                       <div>
-                        <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:4}}>Fecha límite general</div>
-                        <GhDatePicker T={T} value={c.contenidoVence||""} style={{...iS,fontSize:12,padding:"6px 10px"}}
-                          onChange={_v=>{const v=_v; savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"&&(!x.fechaLimite||x.fechaLimite===(c.contenidoVence||""))?{...x,fechaLimite:v}:x),{contenidoVence:v});}}/>
-                        <div style={{fontSize:10,color:T.textSm,marginTop:3}}>Se aplica a las piezas pendientes sin fecha propia</div>
+                        <div style={{fontSize:12,fontWeight:700,color:vencido?T.red:T.textSm,marginBottom:4}}>{vencido?"Venció el":"Para cuándo"}</div>
+                        <GhDatePicker T={T} value={fecha} onChange={setFecha} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto",borderColor:vencido?T.red+"88":undefined}}/>
                       </div>
                     </div>
-                    {/* Piezas */}
-                    {piezas.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin piezas acordadas. Agregá una con los botones de abajo.</div>}
-                    <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
-                      {piezas.map(pz=>{
+                    {piezas.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Todavía no anotaste qué tiene que subir. Agregalo abajo.</div>}
+                    {piezas.length>0&&<div style={{display:"flex",flexDirection:"column",border:`1px solid ${T.borderL}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+                      {piezas.map((pz,i)=>{
                         const estK=(pz.estado||"pendiente");
-                        const vencida=estK==="pendiente"&&pz.fechaLimite&&pz.fechaLimite<hoyP;
                         const mismos=piezas.filter(x=>x.tipo===pz.tipo);
                         const nro=mismos.indexOf(pz)+1;
                         return (
-                          <div key={pz.id} style={{border:`1px solid ${vencida?T.red+"66":T.borderL}`,background:T.bg,borderRadius:10,padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                              <span style={{fontSize:13,fontWeight:700,color:T.text}}>{pz.tipo||"Pieza"}{mismos.length>1&&<span style={{color:T.textSm,fontWeight:500}}> {nro}/{mismos.length}</span>}</span>
-                              {vencida&&<span style={{fontSize:9,fontWeight:800,color:T.red,background:T.red+"18",border:`1px solid ${T.red}44`,borderRadius:99,padding:"1px 7px"}}>VENCIDA</span>}
-                              <div style={{display:"inline-flex",gap:2,background:T.card,border:`1px solid ${T.borderL}`,borderRadius:99,padding:2,marginLeft:"auto"}}>
-                                {PIEZA_ESTADOS.map(([k,lbl])=>{const on=estK===k;const col=EST[k][0];return (
-                                  <button key={k} onClick={()=>{if(!on)updPieza(pz.id,{estado:k});}} style={{fontSize:10,fontWeight:on?700:500,padding:"3px 9px",borderRadius:99,border:"none",background:on?col+"22":"transparent",color:on?col:T.textSm,cursor:on?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lbl}</button>
-                                );})}
-                              </div>
-                              <button onClick={()=>delPieza(pz.id)} title="Quitar pieza" style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
+                          <div key={pz.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
+                            <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:90}}>{pz.tipo||"Pieza"}{mismos.length>1&&<span style={{color:T.textSm,fontWeight:500}}> {nro}</span>}</span>
+                            <div style={{display:"inline-flex",gap:2,background:T.card,border:`1px solid ${T.borderL}`,borderRadius:99,padding:2}}>
+                              {PIEZA_ESTADOS.map(([k,lbl])=>{const on=estK===k;const col=EST[k][0];return (
+                                <button key={k} onClick={()=>{if(!on)updPieza(pz.id,{estado:k});}} style={{fontSize:10,fontWeight:on?700:500,padding:"3px 9px",borderRadius:99,border:"none",background:on?col+"22":"transparent",color:on?col:T.textSm,cursor:on?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lbl}</button>
+                              );})}
                             </div>
-                            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                                <span style={{fontSize:10,color:vencida?T.red:T.textSm,fontWeight:600}}>Vence</span>
-                                <GhDatePicker T={T} value={pz.fechaLimite||""} onChange={_v=>updPieza(pz.id,{fechaLimite:_v})} style={{...iS,fontSize:11,padding:"4px 6px",width:"auto",borderColor:vencida?T.red+"88":undefined}}/>
-                              </div>
-                              <CanjePiezaLink T={T} iS={iS} value={pz.link} onSave={v=>updPieza(pz.id,{link:v})}/>
-                            </div>
+                            <div style={{flex:"1 1 180px",minWidth:0,display:"flex"}}><CanjePiezaLink T={T} iS={iS} value={pz.link} onSave={v=>updPieza(pz.id,{link:v})}/></div>
+                            <button onClick={()=>delPieza(pz.id)} title="Quitar" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",padding:4,display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                           </div>
                         );
                       })}
-                    </div>
-                    {/* Agregar piezas */}
+                    </div>}
                     <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
-                      <span style={{fontSize:10,color:T.textSm,fontWeight:600,marginRight:2}}>Agregar:</span>
-                      {[...ACTIVIDADES,...tiposExtra].map(a=>{
-                        const cant=piezas.filter(x=>x.tipo===a).length;
-                        return <button key={a} onClick={()=>addPieza(a)} style={chipBtn(cant>0)}>+ {a}{cant>0?` (${cant})`:""}</button>;
-                      })}
-                      <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                        <input value={customContenido} onChange={e=>setCustomContenido(e.target.value)}
-                          onKeyDown={e=>{ if(e.key==="Enter"&&customContenido.trim()){ addPieza(customContenido.trim()); setCustomContenido(""); } }}
-                          placeholder="Otro tipo..." style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:`1px solid ${T.border}`,background:"transparent",color:T.text,outline:"none",width:110,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                        <button onClick={()=>{ if(!customContenido.trim()) return; addPieza(customContenido.trim()); setCustomContenido(""); }} style={{width:24,height:24,borderRadius:99,border:"none",background:T.accentSolid,color:"#fff",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>+</button>
-                      </div>
+                      {[...ACTIVIDADES,...tiposExtra].map(a=><button key={a} onClick={()=>addPieza(a)} style={chipBtn}>+ {a}</button>)}
+                      <input value={customContenido} onChange={e=>setCustomContenido(e.target.value)}
+                        onKeyDown={e=>{ if(e.key==="Enter"&&customContenido.trim()){ addPieza(customContenido.trim()); setCustomContenido(""); } }}
+                        placeholder="+ Otro (Enter)" style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:`1px solid ${T.border}`,background:"transparent",color:T.text,outline:"none",width:110,fontFamily:"'Inter',system-ui,sans-serif"}}/>
                     </div>
                   </div>
                 );
