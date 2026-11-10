@@ -22484,11 +22484,6 @@ function AppDeposito({T,user,info,onHome,api:apiExt,panel}){
           <div style={{flex:"1 1 240px",minWidth:0}}><div style={{fontSize:DS.font.xl,fontWeight:800}}>{alerta.n===1?"Llegó una tanda nueva":`Llegaron ${alerta.n} tandas nuevas`}</div><div style={{fontSize:DS.font.base,opacity:0.9,marginTop:2}}>{alerta.texto}</div></div>
           <button onClick={()=>{ setAlerta(null); setTab("cola"); }} style={{background:"#fff",color:T.accentSolid,border:"none",borderRadius:DS.r.full,height:44,padding:"0 22px",fontSize:DS.font.lg,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Entendido</button>
         </div>)}
-        {esDep&&(!sonidoOk||notifPerm==="default"||pantallaOn===false)&&(<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:DS.r.xl,padding:"10px 14px",marginBottom:14,fontSize:DS.font.base,color:T.text}}>
-          <span style={{flex:"1 1 220px"}}>{pantallaOn===false&&sonidoOk&&notifPerm!=="default"?"Este navegador no deja mantener la pantalla encendida: en la configuración de energía de la PC poné Suspender en Nunca, si no, mientras está suspendida no suena nada.":!sonidoOk?"Para que suene cuando llega una tanda, tocá \"Probar sonido\" una vez (el navegador no deja sonar una página que nadie tocó).":"Activá los avisos de la PC para enterarte aunque el navegador esté minimizado."}</span>
-          <DepBtn T={T} size="sm" onClick={()=>setSonidoOk(ghDepAlarma())}>Probar sonido</DepBtn>
-          {notifPerm==="default"&&<DepBtn T={T} size="sm" onClick={async()=>{ try{ setNotifPerm(await Notification.requestPermission()); }catch(_){ } }}>Activar avisos de la PC</DepBtn>}
-        </div>)}
         {!esDep? <DepositoClienteView T={T} api={apiCli} tiendaUid={tiendaUid}/>
           : tab==="cola"? <DepositoCola T={T} api={apiDep} owner={owner} ver={ver} enVivo={enVivo}/>
           : tab==="historial"? (owner? <><div style={{marginBottom:14}}><DepSeg T={T} size="md" value={mov} onChange={setMov} items={[["tandas","Tandas del mes"],["ingresos","Mercadería recibida"]]}/></div>{mov==="tandas"?<DepositoHistorial T={T} api={apiDep}/>:<DepositoIngresos T={T} api={apiDep} owner={owner}/>}</> : <DepositoIngresos T={T} api={apiDep} owner={owner}/>)
