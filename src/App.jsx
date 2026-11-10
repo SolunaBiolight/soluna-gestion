@@ -23395,6 +23395,8 @@ function DepositoCuentas({T,api,onClientes}){
   const abrir=(c,tab="cuenta")=>{ setForm({id:c.id,nombre:c.nombre,precio:c.precio,growithEmail:c.growithEmail||"",contacto:c.contacto,nota:c.nota,activo:c.activo,_c:c}); setCuenta({...c,_tab:tab}); };
   useEffect(()=>{ const q=bq.trim(); if(q.length<2){ setBres(null); return; } setBres(null); let vivo=true; const t=setTimeout(()=>api("usuarios_buscar",{q}).then(r=>{ if(vivo) setBres(r.usuarios||[]); }).catch(()=>{ if(vivo) setBres([]); }),350); return ()=>{ vivo=false; clearTimeout(t); }; },[bq]);
   const cargar=()=>{ api("clientes").then(r=>{ setD(r); onClientes&&onClientes((r.clientes||[]).length); }).catch(e=>{ toast(e.message,"error"); setD({clientes:[]}); }); api("pagos_cc").then(setCc).catch(()=>setCc({cuentas:[],pagos:[]})); };
+  const [meses,setMeses]=useState(null);
+  useEffect(()=>{ if(sub!=="mes"||meses) return; api("meses").then(setMeses).catch(()=>setMeses({meses:[]})); },[sub]);
   const cargarMes=()=>{ setRes(null); setHist(null); Promise.all([api("resumen",{mes}),api("historial",{mes})]).then(([a,b])=>{ setRes(a); setHist(b.tandas.filter(t=>t.estado!=="cancelada")); }).catch(e=>{ toast(e.message,"error"); setRes({clientes:[]}); setHist([]); }); };
   const todo=()=>{ cargar(); cargarMes(); };
   useEffect(()=>{ cargar(); },[]);
@@ -23531,6 +23533,18 @@ function DepositoCuentas({T,api,onClientes}){
       {h:"Monto",w:"120px",align:"right",render:p=>ghDepMonto(T,p)},
       {h:"",w:"130px",align:"right",render:p=>p.comp?<DepBtn T={T} size="sm" ico="file" onClick={()=>compCc(p)}>Comprobante</DepBtn>:null},
     ]}/>)}
+    {sub==="mes"&&(<div style={{marginBottom:20}}>
+      <div style={{fontSize:DS.font.lg,fontWeight:700,color:T.text,marginBottom:4}}>Mes a mes</div>
+      <div style={{fontSize:DS.font.base,color:T.textSm,marginBottom:10}}>Todo el depósito junto. Tocá un mes para ver el detalle por cliente.</div>
+      {!meses? <div style={{display:"flex",justifyContent:"center",padding:24}}><Spinner size={22} color={T.accent}/></div> : (<DepTable T={T} minWidth={720} empty="Todavía no hay movimientos" rows={meses.meses.map(m=>({...m,id:m.mes,_sel:m.mes===mes}))} cols={[
+        {h:"Mes",w:"1.1fr",render:m=><button onClick={()=>setMes(m.mes)} style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:DS.font.base,fontWeight:m.mes===mes?800:600,color:m.mes===mes?T.accent:T.text,textTransform:"capitalize"}}>{new Date(m.mes+"-15T12:00:00").toLocaleDateString("es-AR",{month:"long",year:"numeric"})}{m.mes===hoyAR().slice(0,7)?<span style={{fontWeight:500,color:T.textSm,textTransform:"none"}}> · en curso</span>:null}</button>},
+        {h:"Etiquetas",w:"90px",align:"right",render:m=>m.etiquetas},
+        {h:"Clientes",w:"80px",align:"right",render:m=><span style={{color:T.textMd}}>{m.clientes}</span>},
+        {h:"Facturado",w:"130px",align:"right",render:m=><strong>{fmtMoney(m.cargos)}</strong>},
+        {h:"Cobrado",w:"130px",align:"right",render:m=><span style={{color:m.pagos>0?T.green:T.textSm}}>{fmtMoney(m.pagos)}</span>},
+        {h:"Te debían al cierre",w:"150px",align:"right",render:m=>{ const s=ghDepSaldo(T,m.saldoCierre); return <span style={{color:s.n>0?T.text:s.col}}>{s.txt}</span>; }},
+      ]}/>)}
+    </div>)}
     {sub==="mes"&&(!res||!hist? <div style={{display:"flex",justifyContent:"center",padding:40}}><Spinner size={24} color={T.accent}/></div> : (<>
       <div style={{fontSize:DS.font.lg,color:T.textMd,marginBottom:12,lineHeight:1.45}}><strong style={{color:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(tot("total"))}</strong> facturados en {tot("pedidos")} pedidos ({tot("tandas")} tandas) y <strong style={{color:tot("cobrado")>0?T.green:T.text,fontVariantNumeric:"tabular-nums"}}>{fmtMoney(tot("cobrado"))}</strong> cobrados{esteMes?". El mes sigue en curso.":"."}</div>
       <DepTable T={T} minWidth={640} empty="Sin tandas ese mes" rows={res.clientes.map(c=>({...c,id:c.clienteId}))} cols={[

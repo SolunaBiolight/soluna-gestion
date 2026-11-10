@@ -1067,6 +1067,18 @@ export default async function handler(req, res) {
       return res.json(statsDeposito({ hoy, tandas: det.docs.map(d => ({ id: d.id, t: d.data() })), todas: ts.docs.map(d => ({ id: d.id, t: d.data() })), pagos: ps.docs.map(d => ({ id: d.id, p: d.data() })), clientes: cs.docs.map(d => ({ id: d.id, nombre: d.data().nombre, activo: d.data().activo !== false })) }));
     }
 
+    // Mes a mes (solo la dueña): todo el depósito junto, del ledger completo. Facturado = cargos
+    // del mes (tandas por fecha de despacho + cargos extra), cobrado = pagos verificados del mes,
+    // saldo al cierre = lo que se debía el último día de ese mes.
+    if (action === "meses") {
+      if (!soloOwner()) return;
+      const [ts, ps] = await Promise.all([db.collection("deposito_tandas").select(...LEDGER_SEL).get(), db.collection("deposito_pagos").get()]);
+      const tandas = ts.docs.map(d => ({ id: d.id, t: d.data() })), pagos = ps.docs.map(d => ({ id: d.id, p: d.data() }));
+      const L = ledgerDe(tandas, pagos); const cli = {};
+      for (const { t } of tandas) { if (["borrador", "cancelada"].includes(t.estado)) continue; const k = String(t.fechaDespacho || "").slice(0, 7); if (!k) continue; (cli[k] = cli[k] || new Set()).add(t.clienteId); }
+      return res.json({ meses: L.meses.slice(0, 24).map(m => ({ ...m, clientes: cli[m.mes]?.size || 0 })), saldo: L.saldo, porVerificar: L.porVerificar });
+    }
+
     if (action === "resumen") {
       if (!soloOwner()) return;
       const mes = /^\d{4}-\d{2}$/.test(String(body.mes || "")) ? body.mes : hoyAR().slice(0, 7);
