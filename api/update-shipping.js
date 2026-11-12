@@ -1025,7 +1025,10 @@ export default async function handler(req, res) {
               if (c.contentReminderAt === undefined) upd.contentReminderAt = null;
               // Auto-avance del pipeline: al confirmarse la entrega, el canje pasa
               // solo a "Contenido pendiente" y arranca el reloj del contenido.
-              if (["Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
+              if (["Esperando pedido", "Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
+              // Plazo del contenido (12/nov/2026): día de entrega + 12, si no se puso a mano. Se copia a las piezas pendientes.
+              if (!c.contenidoVence) { const v = new Date(Date.now() - 3 * 3600000 + 12 * 86400000).toISOString().slice(0, 10); upd.contenidoVence = v;
+                if (Array.isArray(c.piezas) && c.piezas.length) upd.piezas = c.piezas.map(p => ((p.estado || "pendiente") === "pendiente" ? { ...p, fechaLimite: v } : p)); }
             }
             if (cat === "devolucion") upd.trackDone = true;
             // Aviso solo si el estado se SOSTIENE dos corridas seguidas (30 min):
@@ -1360,7 +1363,10 @@ export default async function handler(req, res) {
             if (cat === "entregado") {
               upd.trackDone = true; upd.trackEntregadoAt = ahora;
               if (c.contentReminderAt === undefined) upd.contentReminderAt = null;
-              if (["Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
+              if (["Esperando pedido", "Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
+              // Plazo del contenido (12/nov/2026): día de entrega + 12, si no se puso a mano. Se copia a las piezas pendientes.
+              if (!c.contenidoVence) { const v = new Date(Date.now() - 3 * 3600000 + 12 * 86400000).toISOString().slice(0, 10); upd.contenidoVence = v;
+                if (Array.isArray(c.piezas) && c.piezas.length) upd.piezas = c.piezas.map(p => ((p.estado || "pendiente") === "pendiente" ? { ...p, fechaLimite: v } : p)); }
             }
             if (cat === "devolucion") upd.trackDone = true;
             // Aviso in-app (el mail queda a cargo del cron; acá la dueña está EN la app viéndolo)
