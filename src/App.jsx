@@ -8097,6 +8097,68 @@ function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,d
     </Modal>
   );
 }
+// Ficha del influencer (12/nov/2026): historial de canjes, si cumple y si entrega a tiempo, ventas del cupón
+// (si ya se cargaron en Cupones) y la marca "Volver a trabajar / No volver a trabajar" con el motivo.
+function InfluencerFichaModal({T,inf,canjes,cupon,onClose,onMarca,onNotas,onAbrirCanje,onNuevoCanje,onEditar}){
+  const h=ghInfluencerHistorial(inf,canjes);
+  const extra=(canjes||[]).filter(c=>!h.canjes.includes(c)&&((inf.codigoDescuento&&c.codigoDescuento&&c.codigoDescuento.toUpperCase()===String(inf.codigoDescuento).toUpperCase())||(inf.nombre&&c.influencer===inf.nombre)));
+  const lista=[...h.canjes,...extra].sort((a,b)=>(ghCanjeMs(b.createdAt)||0)-(ghCanjeMs(a.createdAt)||0));
+  const [motivo,setMotivo]=React.useState(inf.motivoNo||""); const [notas,setNotas]=React.useState(inf.notas||"");
+  const u=String(inf.usuario||"").replace(/^@/,""); const tel=ghRecTel(inf.telefono);
+  const marca=inf.volverATrabajar===true?"si":inf.volverATrabajar===false?"no":"";
+  const fecha=v=>{ const t=ghCanjeMs(v); return t?new Date(t).toLocaleDateString("es-AR",{day:"2-digit",month:"short",year:"2-digit"}):"—"; };
+  const dato=(l,v,sub,col)=>(<div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:14,padding:"10px 12px"}}><div style={{fontSize:11,color:T.textSm,fontWeight:600}}>{l}</div><div style={{fontSize:20,fontWeight:800,color:col||T.text,marginTop:2}}>{v}</div>{sub&&<div style={{fontSize:11,color:T.textSm,marginTop:1}}>{sub}</div>}</div>);
+  const seg=(k,l,col)=>(<button key={k} onClick={()=>onMarca(k==="si"?true:k==="no"?false:null,motivo)} style={{flex:1,height:34,borderRadius:99,border:`1px solid ${marca===k?col:T.border}`,background:marca===k?col+"1f":"transparent",color:marca===k?col:T.textMd,fontWeight:marca===k?700:500,fontSize:12,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>);
+  const cumpl=h.cerrados?`${h.cumplidos} de ${h.cerrados}`:"—"; const tiempo=h.conPlazo?`${h.aTiempo} de ${h.conPlazo}`:"—";
+  return (
+    <Modal T={T} open onClose={onClose} title={inf.nombre||"Influencer"} width={640}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:13,color:T.textMd}}>
+          {u&&<a href={`https://instagram.com/${u}`} target="_blank" rel="noopener noreferrer" style={{color:T.accent,textDecoration:"none",fontWeight:700}}>@{u}</a>}
+          {inf.red&&<span>· {inf.red}</span>}{inf.seguidores&&<span>· {inf.seguidores} seguidores</span>}{inf.nicho&&<span>· {inf.nicho}</span>}
+          <span style={{flex:1}}/>
+          {tel&&<a href={`https://wa.me/${tel}`} target="_blank" rel="noopener noreferrer" style={{color:T.green,fontWeight:700,textDecoration:"none",fontSize:12}}>WhatsApp</a>}
+          {inf.email&&<a href={`mailto:${inf.email}`} style={{color:T.textMd,fontSize:12}}>{inf.email}</a>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
+          {dato("Canjes",lista.length,h.abiertos?`${h.abiertos} abierto${h.abiertos!==1?"s":""}`:null)}
+          {dato("Cumplió",cumpl,"canjes cerrados con todo entregado",h.cerrados&&h.cumplidos<h.cerrados?T.orange:null)}
+          {dato("A tiempo",tiempo,"dentro del plazo",h.conPlazo&&h.aTiempo<h.conPlazo?T.orange:null)}
+          {dato("Contenido",h.piezasAc?`${h.piezasEnt} de ${h.piezasAc}`:"—","piezas entregadas")}
+          {cupon&&dato(`Cupón ${cupon.code}`,fmtMoney(cupon.ventasPeriodo||0),`${cupon.usosPeriodo||0} venta${(cupon.usosPeriodo||0)!==1?"s":""} en el período de Cupones`,T.green)}
+        </div>
+        {!cupon&&inf.codigoDescuento&&<div style={{fontSize:12,color:T.textSm}}>Para ver las ventas del cupón {String(inf.codigoDescuento).toUpperCase()}, abrí una vez la pestaña Cupones.</div>}
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:6}}>¿Volver a trabajar con {String(inf.nombre||"").split(" ")[0]||"esta persona"}?</div>
+          <div style={{display:"flex",gap:6}}>{seg("si","Sí, volver a trabajar",T.green)}{seg("","Sin definir",T.textMd)}{seg("no","No volver a trabajar",T.red)}</div>
+          {marca==="no"&&<input value={motivo} onChange={e=>setMotivo(e.target.value)} onBlur={()=>{ if(motivo!==(inf.motivoNo||"")) onMarca(false,motivo); }} placeholder="Por qué (ej.: no entregó el contenido)" style={{...InputStyle(T),marginTop:8,fontSize:13}}/>}
+          {marca==="no"&&<div style={{fontSize:11,color:T.textSm,marginTop:4}}>Si alguien quiere crearle un canje nuevo, Growith avisa antes.</div>}
+        </div>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:6}}>Historial</div>
+          {!lista.length&&<div style={{fontSize:13,color:T.textSm}}>Todavía no tiene canjes.</div>}
+          <div style={{border:lista.length?`1px solid ${T.borderL}`:"none",borderRadius:14,overflow:"hidden"}}>
+            {lista.map((c,i)=>{ const pz=ghPiezasDe(c); const ent=pz.filter(p=>(p.estado||"pendiente")!=="pendiente").length; const sc=getEstadoCC(T,c.estado);
+              return (<div key={c._docId} onClick={()=>onAbrirCanje(c._docId)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderTop:i?`1px solid ${T.borderL}`:"none",cursor:"pointer"}}>
+                <span style={{fontSize:12,color:T.textSm,width:72,flexShrink:0}}>{fecha(c.createdAt)}</span>
+                <span style={{flex:1,minWidth:0,fontSize:13,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(c.productosCanje||[]).map(x=>`${x.cantidad||1}x ${x.nombre}`).join(", ")||c.producto||"—"}</span>
+                {pz.length>0&&<span style={{fontSize:12,color:ent===pz.length?T.green:T.textMd}}>{ent}/{pz.length}</span>}
+                <span style={{fontSize:11,fontWeight:700,color:sc.text,background:sc.bg,borderRadius:99,padding:"2px 9px",whiteSpace:"nowrap"}}>{c.estado}</span>
+              </div>); })}
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:6}}>Notas</div>
+          <textarea value={notas} onChange={e=>setNotas(e.target.value)} onBlur={()=>{ if(notas!==(inf.notas||"")) onNotas(notas); }} placeholder="Cómo es trabajar con esta persona, qué funcionó, tarifas…" style={{...InputStyle(T),minHeight:70,resize:"vertical",fontSize:13}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
+          {onEditar&&<Btn T={T} variant="secondary" onClick={onEditar}>Editar perfil</Btn>}
+          <Btn T={T} variant="primary" onClick={onNuevoCanje}>Nuevo canje</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 // Asignar/editar el código de descuento y % comisión de un canje desde su card.
 // Componente a nivel módulo (no inline en el render) para que el input no
 // pierda el foco cuando AppCanjes re-renderiza por el snapshot de Firestore.
@@ -8428,6 +8490,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [influencers,setInfluencers]=useState([]);
   const [showInfluencerForm,setShowInfluencerForm]=useState(false);
   const [editInfluencer,setEditInfluencer]=useState(null);
+  const [fichaInf,setFichaInf]=useState(null); // ficha del influencer (perfil o derivado de canjes)
   const [infForm,setInfForm]=useState({nombre:"",usuario:"",red:"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:"",driveFolder:""});
   const [savingInf,setSavingInf]=useState(false);
   const [infSearch,setInfSearch]=useState("");
@@ -8975,6 +9038,15 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       ...(["Esperando pedido","Por enviar","Pendiente envío"].includes(c.estado)?{estado:"Enviado"}:{}),updatedAt:serverTimestamp()}).catch(e=>toast(`${c.influencer}: no se guardó el seguimiento (${String(e?.message||e).slice(0,60)})`,"error"))));
   }
   const candidatosDespacho=canjes.filter(c=>["Por enviar","Pendiente envío"].includes(c.estado)&&!(c.tracking||"").trim());
+  // Ficha: guardar marca/notas. Un influencer sin perfil (derivado de sus canjes) se crea al tocar algo.
+  async function guardarInfluencer(inf,patch){
+    try{
+      if(inf._docId){ await updateDoc(doc(db,"influencers",inf._docId),{...patch,updatedAt:serverTimestamp()}); setFichaInf(f=>f&&({...f,...patch})); }
+      else{ const data={nombre:inf.nombre||"",usuario:String(inf.usuario||"").replace("@",""),red:inf.red||"Instagram",codigoDescuento:"",descuentoPct:null,comisionPct:null,email:inf.email||"",telefono:inf.telefono||"",notas:"",driveFolder:"",ownerId:user.uid,...patch};
+        const r=await addDoc(collection(db,"influencers"),{...data,createdAt:serverTimestamp()}); setFichaInf({...data,_docId:r.id}); }
+    }catch(e){ toast("No se pudo guardar: "+String(e?.message||e).slice(0,80),"error"); }
+  }
+  function nuevoCanjeDe(inf){ setFichaInf(null); setForm({...emptyForm(),influencer:inf.nombre||"",usuario:String(inf.usuario||"").replace("@",""),red:inf.red||"Instagram",email:inf.email||"",telefono:inf.telefono||"",codigoDescuento:(inf.codigoDescuento||"").toUpperCase(),comisionPct:inf.comisionPct||"",driveFolder:inf.driveFolder||""}); }
   async function marcarEscrito(c,clave){ try{ await updateDoc(doc(db,"canjes",c._docId),{[`escritos.${clave}`]:new Date().toISOString()}); }catch(_){ toast("No se pudo marcar","warning"); } }
 
   const stats={
@@ -8999,6 +9071,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         <button onClick={()=>setDespachoOpen({})} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Despachar{candidatosDespacho.length?` (${candidatosDespacho.length})`:""}</button>
         <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo canje</button>
       </AppTopbar>
+      {fichaInf&&<InfluencerFichaModal T={T} inf={fichaInf} canjes={canjes} cupon={(comData?.coupons||[]).find(x=>fichaInf.codigoDescuento&&x.code===String(fichaInf.codigoDescuento).toUpperCase())||null}
+        onClose={()=>setFichaInf(null)} onMarca={(v,m)=>guardarInfluencer(fichaInf,{volverATrabajar:v,motivoNo:v===false?String(m||"").trim():""})} onNotas={n=>guardarInfluencer(fichaInf,{notas:n})}
+        onAbrirCanje={id=>{ setFichaInf(null); setDetail(id); }} onNuevoCanje={()=>nuevoCanjeDe(fichaInf)}
+        onEditar={fichaInf._docId?()=>{ const inf=fichaInf; setFichaInf(null); setEditInfluencer(inf); setInfForm({nombre:inf.nombre||"",usuario:inf.usuario||"",red:inf.red||"Instagram",codigoDescuento:inf.codigoDescuento||"",descuentoPct:inf.descuentoPct||"",comisionPct:inf.comisionPct||"",email:inf.email||"",telefono:inf.telefono||"",notas:inf.notas||"",driveFolder:inf.driveFolder||""}); setShowInfluencerForm(true); }:null}/>}
       {despachoOpen&&<CanjesDespachoModal T={T} candidatos={[...candidatosDespacho,...canjes.filter(c=>(despachoOpen.ids||[]).includes(c._docId)&&!candidatosDespacho.includes(c))]} preIds={despachoOpen.ids}
         armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
 
@@ -9712,7 +9788,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             {/* Search */}
             <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
               <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,display:"inline-flex"}}><GhI n="search" size={12}/></span>
-              <input placeholder="Buscar perfil..." value={infSearch} onChange={e=>setInfSearch(e.target.value)} style={{...iS,paddingLeft:36}}/>
+              <input placeholder="Buscar por nombre o @ (antes de arrancar con alguien nuevo)" value={infSearch} onChange={e=>setInfSearch(e.target.value)} style={{...iS,paddingLeft:36}}/>
             </div>
             {/* Grid de perfiles */}
             {influencers.length===0&&derivados.length===0&&(
@@ -9732,8 +9808,14 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 // Cross-ref canjes
                 const canjesDeEste=canjes.filter(c=>(c.codigoDescuento&&inf.codigoDescuento&&c.codigoDescuento.toUpperCase()===inf.codigoDescuento.toUpperCase())||(c.influencer&&inf.nombre&&c.influencer===inf.nombre));
                 const canjesActivos=canjesDeEste.filter(c=>c.estado!=="Cerrado"&&c.estado!=="Finalizado"&&c.estado!=="Cancelado");
+                const hist=ghInfluencerHistorial(inf,canjes);
                 return (
-                  <div key={inf._docId} style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:"18px 18px 14px",display:"flex",flexDirection:"column",gap:0,transition:"box-shadow 0.15s",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                  <div key={inf._docId} onClick={e=>{ if(e.target.closest("button,a")) return; setFichaInf(inf); }} style={{background:T.card,border:`1px solid ${inf.volverATrabajar===false?T.red+"66":T.border}`,borderRadius:12,padding:"18px 18px 14px",display:"flex",flexDirection:"column",gap:0,cursor:"pointer"}}>
+                    {(inf.volverATrabajar!=null||hist.cerrados>0)&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                      {inf.volverATrabajar===true&&<DSBadge T={T} color={T.green} size="sm">Volver a trabajar</DSBadge>}
+                      {inf.volverATrabajar===false&&<DSBadge T={T} color={T.red} size="sm">No volver a trabajar</DSBadge>}
+                      {hist.cerrados>0&&<span style={{fontSize:11,color:hist.cumplidos<hist.cerrados?T.orange:T.textSm}}>Cumplió {hist.cumplidos} de {hist.cerrados}{hist.conPlazo?` · a tiempo ${hist.aTiempo} de ${hist.conPlazo}`:""}</span>}
+                    </div>}
                     {/* Header del perfil */}
                     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
                       <div style={{width:42,height:42,borderRadius:"50%",background:T.accentSolid+"20",border:`2px solid ${T.accentSolid}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,color:T.accentSolid,flexShrink:0}}>
@@ -9809,7 +9891,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <div style={{fontSize:12,color:T.textMd,marginBottom:12}}>{d.canjes.length} canje{d.canjes.length!==1?"s":""} · sin perfil todavía (código y comisión sin cargar)</div>
                   <div style={{display:"flex",gap:8,marginTop:"auto"}}>
                     <button onClick={()=>{setEditInfluencer(null);setInfForm({nombre:d.nombre,usuario:d.usuario||"",red:d.red||"Instagram",codigoDescuento:"",descuentoPct:"",comisionPct:"",email:"",telefono:"",notas:""});setShowInfluencerForm(true);}} style={{...BtnPrimary(T),fontSize:12,padding:"6px 14px"}}>Completar perfil</button>
-                    <button onClick={()=>{setInfSearch("");setViewTab("lista");setSearch(d.nombre);}} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver canjes</button>
+                    <button onClick={()=>setFichaInf({nombre:d.nombre,usuario:d.usuario,red:d.red,email:d.canjes[0]?.email||"",telefono:d.canjes[0]?.telefono||""})} style={{...BtnSecondary(T),fontSize:12,padding:"6px 12px"}}>Ver ficha</button>
                   </div>
                 </div>
               ))}
