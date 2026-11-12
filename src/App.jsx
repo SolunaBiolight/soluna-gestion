@@ -10487,6 +10487,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
   const verifRowsRef=useRef([]);
   const verifRehacerRef=useRef(false); // el modal de verificación excluyó pedidos → rearmar el Excel sin ellos // resultado de la verificación del último armado de Excel (lo lee exportAndreani para el toast)
   const exclOperRef=useRef(new Set()); // pedidos sacados del último Excel porque su sucursal no está operativa en Andreani
+  const usarIgualRef=useRef(new Set()); // sucursales marcadas "no operativas" que se eligió usar igual en el selector (11/nov/2026)
   const [orderDetail,setOrderDetail]=useState(null);
   const [skuBlob,setSkuBlob]=useState(null);
   // "Todo de una" en rótulos con SKU: el botón principal (Enviar al depósito / Descargar) también manda los seguimientos a la tienda.
@@ -11155,7 +11156,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         setExportProgress({step:"Verificando que las sucursales estén operativas en Andreani…",pct:63,current:0,total:0});
         const rS=await authFetch("/api/andreani",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validar_sucursales_tpl",nombres:nombresSuc})});
         const dS=await rS.json().catch(()=>null);
-        if(rS.ok&&Array.isArray(dS?.faltantes)) faltantes=dS.faltantes;
+        if(rS.ok&&Array.isArray(dS?.faltantes)) faltantes=dS.faltantes.filter(n=>!usarIgualRef.current.has(n));
         else toast("No se pudo verificar con Andreani que las sucursales estén operativas: revisá el Excel antes de cargarlo","warning",7000);
       }catch(_){ toast("No se pudo verificar con Andreani que las sucursales estén operativas: revisá el Excel antes de cargarlo","warning",7000); }
       if(faltantes.length){
@@ -12121,7 +12122,9 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         });
         if(chosen===null) return; // cancelar todo
         if(chosen==="EXCLUIR"){ sucursalOverridesRef.current[ovrKey(o)]="EXCLUIR"; persistOverrides(); resuelto=true; break; }
-        if(forzar&&chosen===(autoMatch0||"")){ toast("Esa es justamente la sucursal que Andreani no tiene operativa. Elegí otra (Ver cercanas) o mandalo a domicilio","warning",6500); continue; }
+        // 11/nov/2026: antes se bloqueaba sin salida. Ahora se avisa y se deja usarla igual (el control
+        // en vivo puede equivocarse y la dueña sabe si el punto sigue abierto).
+        if(forzar&&chosen===(autoMatch0||"")&&!(await appConfirm(`Andreani nos respondió que "${chosen}" no está operativo. Si el Excel lo lleva y el punto está cerrado, Andreani rechaza el archivo entero.\n\n¿Lo usás igual? (por ejemplo, si sabés que sigue abierto)`,{okLabel:"Usar igual"}))) continue;
         // Lo elegido puede venir de la lista oficial: traducirlo al desplegable.
         const tpl=(locs.sucursales||[]).includes(chosen)?chosen:ghTplDeOficial(locs,{descripcion:chosen});
         if(!tpl){
@@ -12129,6 +12132,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
           continue; // reabrir el modal para el mismo pedido
         }
         sucursalOverridesRef.current[ovrKey(o)]=tpl; persistOverrides();
+        if(forzar&&tpl===(autoMatch0||"")) usarIgualRef.current.add(tpl);
         if(forzar){ delete sucNoOperRef.current[ovrKey(o)]; persistSucNoOper(); sucReemplazoRef.current.add(ovrKey(o)); persistSucReemplazo(); }
         // Memoria por punto: la próxima vez que un pedido venga a ESTE punto,
         // se resuelve solo con esta elección.
@@ -14352,7 +14356,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
               )}
               {noOperativa!=null&&!apiUI&&(
                 <div style={{background:T.redBg,border:`1px solid ${T.red}44`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.red}}>
-                  <strong>Andreani no tiene operativa la sucursal de este pedido</strong>{noOperativa?<> (<span style={{fontWeight:700}}>{noOperativa}</span>)</>:null}: no figura en su listado oficial actual y con ella adentro rechaza el Excel completo. Elegí otra con <strong>Ver cercanas</strong> y avisale al cliente, o excluí el pedido y mandalo a domicilio.
+                  <strong>Andreani no tiene operativa la sucursal de este pedido</strong>{noOperativa?<> (<span style={{fontWeight:700}}>{noOperativa}</span>)</>:null}: no figura en su listado oficial actual y con ella adentro rechaza el Excel completo. Elegí otra de la lista (las cercanas están abajo) y avisale al cliente. Si sabés que sigue abierta, buscala y elegila igual: te va a pedir confirmación.
                 </div>
               )}
               {noExacto&&!esquina&&noOperativa==null&&!apiUI&&(

@@ -1902,35 +1902,52 @@ export default async function handler(req, res) {
       let extra = [];
       try { const d = (await db.collection("andreani_config").doc("tpl_baja").get()).data(); extra = Array.isArray(d?.nombres) ? d.nombres : []; } catch (_) {}
       const baja = new Set([...TPL_BAJA_SEED, ...extra].map(K));
-      const faltantes = nombres.filter(t => baja.has(K(t)));
-      // Puntos HOP: además se pregunta EN VIVO a Andreani (6/nov/2026, #8362 → HOP
-      // Gualeguaychú 580 de Paraná, cerrado y todavía en el desplegable: Andreani
-      // rechazaba el Excel entero). El nombre se cruza con el índice HOP (puede venir
-      // recortado a 50 caracteres → varios candidatos) y solo es baja si TODOS los
-      // candidatos responden 404. Sin candidatos o ante cualquier error, no se marca.
-      // Lo confirmado queda en tpl_baja para no volver a consultarlo.
-      const nuevas = [];
+      // Puntos HOP: se pregunta EN VIVO a Andreani (6/nov/2026, #8362 → HOP Gualeguaychú 580
+      // de Paraná, cerrado y todavía en el desplegable: Andreani rechazaba el Excel entero).
+      // El nombre se cruza con el índice HOP (puede venir recortado a 50 caracteres → varios
+      // candidatos) y es baja solo si TODOS responden 404. 11/nov/2026 (7 de 40 pedidos
+      // frenados y sin poder elegirlos a mano): lo que da en vivo MANDA sobre la lista
+      // guardada — un HOP que hoy responde abierto se saca de las bajas aunque esté
+      // anotado — y las bajas automáticas ya no se guardan para siempre (`vivo` con fecha,
+      // se vuelven a consultar a los 3 días). Se consulta SIN credenciales (el endpoint es
+      // público), igual que el índice. Sin candidatos o ante un error, manda la lista.
+      let vivoGuard = {};
+      try { const d = (await db.collection("andreani_config").doc("tpl_baja").get()).data(); vivoGuard = d?.vivo && typeof d.vivo === "object" ? d.vivo : {}; } catch (_) {}
+      const resultado = new Map(); // K(nombre) → "baja" | "ok"
       try {
-        const aMirar = nombres.filter(t => !baja.has(K(t)) && /^punto andreani hop /.test(K(t))).slice(0, 60);
-        if (aMirar.length && env) {
+        const esHop = t => /^punto andreani hop /.test(K(t));
+        const frescas = t => { const v = vivoGuard[K(t)]; return v && Date.now() - Number(v) < 3 * 86400000; };
+        const aMirar = nombres.filter(t => esHop(t) && !frescas(t)).slice(0, 60);
+        if (aMirar.length) {
           const hops = await hopIndexTodas(db);
           const porNom = new Map(); for (const h of hops) { const k = K(h.descripcion); if (!porNom.has(k)) porNom.set(k, []); porNom.get(k).push(h.id); }
           const t0 = Date.now(), vivo = new Map();
           const estado = async id => { if (vivo.has(id)) return vivo.get(id); let st = "?";
-            if (Date.now() - t0 < 9000) { try { const r = await andreaniFetch(db, env, `/v2/sucursales/${id}`); st = r.status === 200 ? "ok" : r.status === 404 ? "baja" : "?"; } catch (_) {} }
+            if (Date.now() - t0 < 9000) { try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 5000);
+              const r = await fetch(`${ANDREANI_BASE}/v2/sucursales/${id}`, { signal: ac.signal }); clearTimeout(tm);
+              st = r.status === 200 ? "ok" : r.status === 404 ? "baja" : "?"; } catch (_) {} }
             vivo.set(id, st); return st; };
           const cola = [...aMirar];
           await Promise.all(Array.from({ length: 6 }, async () => { while (cola.length) { const t = cola.shift(); const k = K(t);
             let ids = porNom.get(k) || [];
             if (!ids.length && k.length >= 45) for (const [nk, v] of porNom) if (nk.startsWith(k)) ids = ids.concat(v);
             if (!ids.length || ids.length > 12) continue;
-            const sts = []; for (const id of ids) { const st = await estado(id); sts.push(st); if (st !== "baja") break; }
-            if (sts.length === ids.length && sts.every(x => x === "baja")) { faltantes.push(t); nuevas.push(t); } } }));
+            const sts = []; for (const id of ids) { const st = await estado(id); sts.push(st); if (st === "ok") break; }
+            if (sts.includes("ok")) resultado.set(k, "ok");
+            else if (sts.length === ids.length && sts.every(x => x === "baja")) resultado.set(k, "baja"); } }));
         }
       } catch (e) { console.warn("[validar_sucursales_tpl] consulta en vivo:", e.message); }
-      if (nuevas.length) { try { const ref = db.collection("andreani_config").doc("tpl_baja");
-        await ref.set({ nombres: [...new Map([...extra, ...nuevas].map(n => [K(n), n])).values()].slice(0, 500), updatedAt: new Date().toISOString(), by: "auto_vivo" }, { merge: true }); } catch (_) {} }
-      return res.json({ faltantes, fuente: nuevas.length ? "bajas_confirmadas+vivo" : "bajas_confirmadas" });
+      const faltantes = nombres.filter(t => { const r = resultado.get(K(t)); return r ? r === "baja" : baja.has(K(t)) || !!vivoGuard[K(t)]; });
+      // Guardar: las abiertas salen de la lista (también de las bajas viejas), las cerradas quedan en `vivo` con fecha.
+      const abiertas = [...resultado].filter(([, v]) => v === "ok").map(([k]) => k);
+      const cerradas = [...resultado].filter(([, v]) => v === "baja").map(([k]) => k);
+      const sacar = abiertas.filter(k => baja.has(k) || vivoGuard[k]);
+      if (sacar.length || cerradas.length) { try {
+        const ab = new Set(abiertas); const v2 = { ...vivoGuard }; for (const k of abiertas) delete v2[k]; for (const k of cerradas) v2[k] = Date.now();
+        await db.collection("andreani_config").doc("tpl_baja").set({ nombres: extra.filter(n => !ab.has(K(n))), vivo: v2, updatedAt: new Date().toISOString() }, { merge: true });
+        if (sacar.length) console.log("[validar_sucursales_tpl] abiertas que figuraban de baja:", sacar.join(" | "));
+      } catch (_) {} }
+      return res.json({ faltantes, fuente: resultado.size ? "vivo+lista" : "lista" });
     }
 
     // ── admin_tpl_baja: agregar/quitar nombres del desplegable dados de baja
