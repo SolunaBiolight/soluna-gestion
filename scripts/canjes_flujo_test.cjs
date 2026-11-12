@@ -74,4 +74,17 @@ const h=M.ghInfluencerHistorial({usuario:"@sofi.style"},[
 ]);
 eq("historial",[h.n,h.abiertos,h.cerrados,h.cumplidos,h.aTiempo,h.conPlazo],[3,1,2,1,1,1]);
 
-console.log(f?`${f} de ${n} fallaron`:`${n}/${n} ok`); process.exit(f?1:0);
+// Servidor (api/canjes.js): el influencer pega un link por pieza
+import("../api/canjes.js").then(A=>{
+  const c={estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"pendiente"},{id:"b",tipo:"Historia",estado:"pendiente"}]};
+  let u=A.aplicarLinkPieza(c,"a","https://instagram.com/p/1","2026-11-20T10:00:00Z");
+  eq("link marca la pieza entregada",[u.piezas[0].estado,u.piezas[0].link,u.estado],["entregada","https://instagram.com/p/1",undefined]);
+  eq("contadores",u.contenido,[{tipo:"Reel",acordados:1,entregados:1},{tipo:"Historia",acordados:1,entregados:0}]);
+  u=A.aplicarLinkPieza({...c,piezas:u.piezas},"b","https://x.com/2","2026-11-20T11:00:00Z");
+  eq("la última cierra el canje",[u.estado,u.contenidoCompletoAt],["Cerrado","2026-11-20T11:00:00Z"]);
+  const v=A.aplicarLinkPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"entregada",link:"x",porInfluencer:true}]},"a","","t");
+  eq("borrar su link la vuelve a pendiente",v.piezas[0].estado,"pendiente");
+  eq("pieza inexistente",A.aplicarLinkPieza(c,"zz","https://a.com","t"),null);
+  eq("vence en el servidor igual que en el front",A.venceDe({trackEntregadoAt:"2026-11-01T18:00:00.000Z"}),"2026-11-13");
+  console.log(f?`${f} de ${n} fallaron`:`${n}/${n} ok`); process.exit(f?1:0);
+});

@@ -7829,7 +7829,7 @@ const GH_CANJE_PLAZO=12;
 const GH_CANJE_DIAS=[0,7,10,12];
 const GH_CANJE_PLANTILLAS={
   pedido:"Hola {nombre}! ¿Pudiste hacer el pedido en la web? Elegí los anteojos, pagá con transferencia (no se cobra) y en la nota del pedido poné tu Instagram ({usuario}). Cualquier duda me escribís.",
-  dia0:"Hola {nombre}! Vi que ya te llegó el paquete. Tenés {plazo} días, hasta el {vence}, para subir el contenido que acordamos. Cualquier consulta me escribís.",
+  dia0:"Hola {nombre}! Vi que ya te llegó el paquete. Tenés {plazo} días, hasta el {vence}, para subir el contenido que acordamos. Acá tenés la info de la marca, tu guion y dónde dejar los links: {link}",
   dia7:"Hola {nombre}! ¿Cómo vas con el contenido? Te quedan {restan} días, hasta el {vence}.",
   dia10:"Hola {nombre}! Te quedan {restan} días para subir el contenido (vence el {vence}). ¿Necesitás algo?",
   dia12:"Hola {nombre}! Se cumplió el plazo para el contenido ({vence}). ¿Me avisás cuando lo subas?",
@@ -7870,13 +7870,16 @@ function ghCanjeParaEscribir(c,ahora){
   }
   return null;
 }
+// Link del canje para el influencer (#/canje/<portalToken>, página CanjePortalView).
+function ghCanjeLink(c){ return c?.portalToken?`${typeof window!=="undefined"&&window.location?window.location.origin:"https://www.growithapp.com"}/#/canje/${c.portalToken}`:""; }
+function ghCanjeToken(){ const a=new Uint8Array(16); globalThis.crypto.getRandomValues(a); return [...a].map(x=>x.toString(16).padStart(2,"0")).join(""); }
 function ghCanjeMensaje(tpl,c,ahora){
   const nom=String(c?.influencer||"").trim().split(/\s+/)[0]||"";
   const vence=ghCanjeVence(c||{}); const venceTxt=vence?vence.split("-").reverse().slice(0,2).join("/"):"";
   const restan=vence?Math.max(0,Math.round((Date.parse(vence+"T12:00:00-03:00")-(ahora||Date.now()))/86400000)):"";
   const u=String(c?.usuario||"").replace(/^@/,"");
   return String(tpl||"").replace(/\{nombre\}/g,nom).replace(/\{usuario\}/g,u?"@"+u:"tu usuario").replace(/\{vence\}/g,venceTxt||"la fecha acordada")
-    .replace(/\{restan\}/g,String(restan)).replace(/\{plazo\}/g,String(GH_CANJE_PLAZO)).replace(/\{tracking\}/g,String(c?.tracking||"").trim()).replace(/[ \t]+\n/g,"\n").trim();
+    .replace(/\{restan\}/g,String(restan)).replace(/\{plazo\}/g,String(GH_CANJE_PLAZO)).replace(/\{tracking\}/g,String(c?.tracking||"").trim()).replace(/\{link\}/g,ghCanjeLink(c)).replace(/[ \t]+\n/g,"\n").trim();
 }
 // ¿Este pedido es del canje? 3 = su @ en la nota del pedido, 2 = mismo teléfono o mail, 1 = mismo nombre.
 function ghCanjeScorePedido(c,o){
@@ -7930,12 +7933,11 @@ function ghInfluencerHistorial(inf,canjes){
 // GH_CANJES_FLUJO_END
 // "Para escribir hoy" (12/nov/2026): a quién hay que escribirle hoy por WhatsApp y con qué mensaje, más los
 // pedidos con pago pendiente que podrían ser de un canje y hay que confirmar a mano.
-function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp,onEscrito,onAbrir,onUnir,onPlantillas,pend,onBuscar,hayEsperando}){
+function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp,onEscrito,onAbrir,onUnir,onPlantillas,onMaterial,pend,onBuscar,hayEsperando}){
   const [descartadas,setDescartadas]=React.useState(()=>new Set());
   const ahora=Date.now();
   const items=canjes.map(c=>({c,it:ghCanjeParaEscribir(c,ahora)})).filter(x=>x.it&&(!resp||String(x.c.responsable||"").trim()===resp)).sort((a,b)=>b.it.sev-a.it.sev);
   const dudasV=(dudas||[]).filter(d=>!descartadas.has(d.canje._docId)&&(!resp||String(d.canje.responsable||"").trim()===resp));
-  if(!items.length&&!dudasV.length&&!hayEsperando) return null;
   const colDe=sev=>sev>=3?T.red:sev>=2?T.orange:T.accent;
   const btn={height:30,padding:"0 12px",borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"};
   const hace=pend?.ts?Math.max(0,Math.round((ahora-pend.ts)/60000)):null;
@@ -7947,6 +7949,7 @@ function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp
         {hayEsperando&&<span style={{fontSize:12,color:T.textSm}}>{pend?.cargando?"Buscando pedidos de canje…":hace!=null?`Pedidos revisados hace ${hace} min`:""}</span>}
         {hayEsperando&&<button onClick={()=>onBuscar(true)} disabled={!!pend?.cargando} style={btn}>Buscar pedidos</button>}
         {responsables.length>0&&<select value={resp} onChange={e=>setResp(e.target.value)} style={{...btn,paddingRight:8}}><option value="">Todos</option>{responsables.map(r=><option key={r} value={r}>{r}</option>)}</select>}
+        <button onClick={onMaterial} style={btn}>Ficha y guiones</button>
         <button onClick={onPlantillas} style={btn}>Mensajes</button>
       </div>
       {dudasV.map(d=>(
@@ -7989,7 +7992,7 @@ function CanjesPlantillasModal({T,plantillas,onSave,onClose}){
   const iS=InputStyle(T);
   return (
     <Modal T={T} open onClose={onClose} title="Mensajes de WhatsApp" width={620}>
-      <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>Se completan solos con <strong>{"{nombre}"}</strong>, <strong>{"{usuario}"}</strong>, <strong>{"{vence}"}</strong> (fecha límite), <strong>{"{restan}"}</strong> (días que quedan), <strong>{"{plazo}"}</strong> y <strong>{"{tracking}"}</strong>. Nunca se mandan solos: se abren en WhatsApp para que los revises.</div>
+      <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:12}}>Se completan solos con <strong>{"{nombre}"}</strong>, <strong>{"{usuario}"}</strong>, <strong>{"{vence}"}</strong> (fecha límite), <strong>{"{restan}"}</strong> (días que quedan), <strong>{"{plazo}"}</strong> <strong>{"{tracking}"}</strong> y <strong>{"{link}"}</strong> (su página con la ficha, el guion y dónde dejar los links). Nunca se mandan solos: se abren en WhatsApp para que los revises.</div>
       <div style={{display:"flex",flexDirection:"column",gap:12,maxHeight:"60vh",overflowY:"auto",paddingRight:4}}>
         {GH_CANJE_PLANTILLA_NOMBRES.map(([k,l])=>(
           <div key={k}>
@@ -7999,6 +8002,51 @@ function CanjesPlantillasModal({T,plantillas,onSave,onClose}){
         ))}
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14}}><Btn T={T} variant="secondary" onClick={onClose}>Cancelar</Btn><Btn T={T} variant="primary" onClick={()=>{ const out={}; for(const [k] of GH_CANJE_PLANTILLA_NOMBRES) if(p[k]!==GH_CANJE_PLANTILLAS[k]) out[k]=p[k]; onSave(out); onClose(); }}>Guardar</Btn></div>
+    </Modal>
+  );
+}
+// Ficha de la marca (una para todos) y guiones fijos (12/nov/2026): lo que ve el influencer en su link.
+async function ghCanjesApi(action,body){ const r=await authFetch(`/api/canjes?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:`HTTP ${r.status}`); return d; }
+async function ghCanjesLeerArchivo(file){
+  if(!file) return null;
+  if(file.size>650000) throw new Error("El archivo pesa más de 650 KB. Exportalo como PDF más liviano.");
+  const b64=await new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(",")[1]||""); fr.onerror=ko; fr.readAsDataURL(file); });
+  return {nombre:file.name,mime:file.type||"application/pdf",data:b64};
+}
+function CanjesMaterialModal({T,uid,ficha,guiones,onCambio,onClose}){
+  const [lista,setLista]=React.useState(()=>(guiones||[]).map(g=>({...g})));
+  const [busy,setBusy]=React.useState(""); const iS=InputStyle(T);
+  async function subirFicha(file){ setBusy("ficha"); try{ const a=await ghCanjesLeerArchivo(file); const r=await ghCanjesApi("archivo_subir",{uid,tipo:"ficha",...a}); onCambio({ficha:{id:r.id,nombre:r.nombre}}); toast("Ficha subida","success"); }catch(e){ toast(e.message,"error",7000); } setBusy(""); }
+  async function verArchivo(id){ const w=window.open("","_blank"); try{ const a=await ghCanjesApi("archivo_ver",{uid,id}); const bin=atob(a.data); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); const url=URL.createObjectURL(new Blob([u8],{type:a.mime})); if(w&&!w.closed) w.location.href=url; }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
+  async function archivoGuion(k,file){ setBusy("g"+k); try{ const a=await ghCanjesLeerArchivo(file); const r=await ghCanjesApi("archivo_subir",{uid,tipo:"guion",...a}); setLista(l=>l.map((g,i)=>i===k?{...g,archivoId:r.id,archivoNombre:r.nombre}:g)); }catch(e){ toast(e.message,"error",7000); } setBusy(""); }
+  async function guardar(){ setBusy("guardar"); try{ const r=await ghCanjesApi("guion_guardar",{uid,guiones:lista.filter(g=>String(g.nombre||"").trim())}); onCambio({guiones:r.guiones}); toast("Guiones guardados","success"); onClose(); }catch(e){ toast(e.message,"error"); } setBusy(""); }
+  const lbl=t=><div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:6}}>{t}</div>;
+  return (
+    <Modal T={T} open onClose={onClose} title="Ficha y guiones" width={640}>
+      <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>Esto es lo que ve cada influencer en su link del canje. La ficha es la misma para todos; el guion lo elegís en cada canje (uno fijo de esta lista, o uno personalizado con "Pedir guion").</div>
+      {lbl("Ficha de la marca (PDF o imagen, hasta 650 KB)")}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:18}}>
+        {ficha?.id?<><span style={{fontSize:13,color:T.text,fontWeight:600}}>{ficha.nombre}</span><Btn T={T} size="sm" variant="secondary" onClick={()=>verArchivo(ficha.id)}>Ver</Btn></>:<span style={{fontSize:13,color:T.textSm}}>Todavía no subiste la ficha.</span>}
+        <label style={{cursor:"pointer"}}><input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>subirFicha(e.target.files?.[0])}/><span style={{display:"inline-flex",alignItems:"center",height:32,padding:"0 14px",borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:12,fontWeight:600}}>{busy==="ficha"?"Subiendo…":ficha?.id?"Reemplazar":"Subir ficha"}</span></label>
+      </div>
+      {lbl("Guiones fijos")}
+      <div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:"44vh",overflowY:"auto",paddingRight:4}}>
+        {lista.map((g,k)=>(
+          <div key={g.id||k} style={{border:`1px solid ${T.borderL}`,borderRadius:14,padding:"10px 12px"}}>
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <input value={g.nombre||""} onChange={e=>setLista(l=>l.map((x,i)=>i===k?{...x,nombre:e.target.value}:x))} placeholder="Nombre (ej.: Yapping)" style={{...iS,flex:1,fontSize:13}}/>
+              <button onClick={()=>setLista(l=>l.filter((_,i)=>i!==k))} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Quitar</button>
+            </div>
+            <textarea value={g.texto||""} onChange={e=>setLista(l=>l.map((x,i)=>i===k?{...x,texto:e.target.value}:x))} placeholder="Texto del guion (opcional si subís un archivo)" style={{...iS,minHeight:70,resize:"vertical",fontSize:13}}/>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
+              {g.archivoId?<><span style={{fontSize:12,color:T.text}}>{g.archivoNombre||"Archivo"}</span><Btn T={T} size="sm" variant="secondary" onClick={()=>verArchivo(g.archivoId)}>Ver</Btn><button onClick={()=>setLista(l=>l.map((x,i)=>i===k?{...x,archivoId:"",archivoNombre:""}:x))} style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}>Sacar archivo</button></>:null}
+              <label style={{cursor:"pointer"}}><input type="file" accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>archivoGuion(k,e.target.files?.[0])}/><span style={{fontSize:12,color:T.accent,fontWeight:600}}>{busy==="g"+k?"Subiendo…":g.archivoId?"Cambiar archivo":"Adjuntar PDF"}</span></label>
+            </div>
+          </div>
+        ))}
+        <button onClick={()=>setLista(l=>[...l,{id:ghCanjeToken().slice(0,12),nombre:"",texto:"",archivoId:"",archivoNombre:""}])} style={{height:36,borderRadius:99,border:`1.5px dashed ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar guion</button>
+      </div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14}}><Btn T={T} variant="secondary" onClick={onClose}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={!!busy}>{busy==="guardar"?"Guardando…":"Guardar guiones"}</Btn></div>
     </Modal>
   );
 }
@@ -8220,7 +8268,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   // ── Flujo 12/nov/2026: pedidos con pago pendiente que se unen solos a los canjes "Esperando pedido",
   // plantillas de WhatsApp editables (users/{uid}.canjesPlantillas) y responsable por canje.
   const [plantillas,setPlantillas]=useState(GH_CANJE_PLANTILLAS);
-  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>{ const p=s.data()?.canjesPlantillas; if(p&&typeof p==="object") setPlantillas({...GH_CANJE_PLANTILLAS,...p}); }).catch(()=>{}); },[user?.uid]);
+  const [material,setMaterial]=useState({ficha:null,guiones:[]}); const [materialOpen,setMaterialOpen]=useState(false);
+  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>{ const u=s.data()||{}; const p=u.canjesPlantillas; if(p&&typeof p==="object") setPlantillas({...GH_CANJE_PLANTILLAS,...p}); setMaterial({ficha:u.canjesFicha||null,guiones:Array.isArray(u.canjesGuiones)?u.canjesGuiones:[]}); }).catch(()=>{}); },[user?.uid]);
   async function guardarPlantillas(p){ setPlantillas({...GH_CANJE_PLANTILLAS,...p}); try{ await updateDoc(doc(db,"users",user.uid),{canjesPlantillas:p}); toast("Mensajes guardados","success"); }catch(e){ toast("No se pudieron guardar los mensajes","error"); } }
   const [pedidosPend,setPedidosPend]=useState(null); // null = sin buscar | {ts, lista, cargando, error}
   const [respFiltro,setRespFiltro]=useState(()=>{ try{ return localStorage.getItem(ghKey("growith_canjes_resp"))||""; }catch(_){ return ""; } });
@@ -8822,7 +8871,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       // rechazando la escritura, avisamos por toast.
       const writeP=form._docId
         ? updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})})
-        : addDoc(collection(db,"canjes"),{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+        : addDoc(collection(db,"canjes"),{...p,portalToken:ghCanjeToken(),ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
       writeP.catch(e=>toast("El canje no se pudo guardar en el servidor: "+String(e?.message||e).slice(0,120)+". Revisá que siga en la lista","error",8000));
       // Programar email de recordatorio si hay fechaEnvioProgr nueva o cambiada
       const prevFecha = prev?.fechaEnvioProgr;
@@ -9018,6 +9067,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const union=useMemo(()=>pedidosPend?.lista?ghCanjeUnirPedidos(canjes,pedidosPend.lista):{auto:[],dudas:[]},[canjes,pedidosPend?.lista]);
   const unidosRef=useRef(new Set());
   useEffect(()=>{ for(const {canje,orden} of union.auto){ const k=canje._docId+"|"+orden.numero; if(unidosRef.current.has(k)) continue; unidosRef.current.add(k); unirPedido(canje,orden,"auto"); } },[union.auto]);
+  // Cada canje abierto tiene su link para el influencer (portalToken); los que no lo tienen lo reciben acá.
+  const tokensRef=useRef(new Set());
+  useEffect(()=>{ const sin=canjes.filter(c=>c._docId&&!c.portalToken&&!GH_CANJE_CERRADO.has(c.estado||"")&&!tokensRef.current.has(c._docId)).slice(0,25);
+    sin.forEach(c=>{ tokensRef.current.add(c._docId); updateDoc(doc(db,"canjes",c._docId),{portalToken:ghCanjeToken()}).catch(()=>{}); }); },[canjes]);
   const responsables=useMemo(()=>[...new Set(canjes.map(c=>String(c.responsable||"").trim()).filter(Boolean))].sort(),[canjes]);
   // Despacho (12/nov/2026): completa los datos de envío desde el pedido y arma la fila del Excel.
   async function armarFilaCanje(c){
@@ -9143,8 +9196,9 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
         {viewTab==="kanban"&&<CanjesParaEscribir T={T} canjes={canjes} plantillas={plantillas} dudas={union.dudas} responsables={responsables} resp={respFiltro}
           setResp={v=>{ setRespFiltro(v); try{ localStorage.setItem(ghKey("growith_canjes_resp"),v); }catch(_){ } }}
-          onEscrito={marcarEscrito} onAbrir={id=>setDetail(id)} onUnir={(c,o)=>unirPedido(c,o,"manual")} onPlantillas={()=>setPlantillasOpen(true)}
+          onEscrito={marcarEscrito} onAbrir={id=>setDetail(id)} onUnir={(c,o)=>unirPedido(c,o,"manual")} onPlantillas={()=>setPlantillasOpen(true)} onMaterial={()=>setMaterialOpen(true)}
           pend={pedidosPend} onBuscar={buscarPedidosPend} hayEsperando={hayEsperando}/>}
+        {materialOpen&&<CanjesMaterialModal T={T} uid={user?.uid} ficha={material.ficha} guiones={material.guiones} onCambio={x=>setMaterial(m=>({...m,...x}))} onClose={()=>setMaterialOpen(false)}/>}
         {plantillasOpen&&<CanjesPlantillasModal T={T} plantillas={plantillas} onSave={guardarPlantillas} onClose={()=>setPlantillasOpen(false)}/>}
         {/* ── HOY EN CANJES — tira única de acciones vencidas y novedades ── */}
         {(()=>{
@@ -10167,6 +10221,37 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <Field label="Recordatorio" type="date" value={c.recordatorio} onSave={v=>save({recordatorio:v})} placeholder="Sin recordatorio"/>
                 </div>
               </div>
+
+              {/* ── LINK PARA EL INFLUENCER (12/nov/2026): ficha, guion, carpeta y dónde deja sus links ── */}
+              {(()=>{
+                const link=ghCanjeLink(c); const tel=ghRecTel(c.telefono);
+                const msg=ghCanjeMensaje("Hola {nombre}! Acá tenés todo lo de tu canje: lo que acordamos, la info de la marca, tu guion y dónde dejar los links de lo que subas: {link}",c);
+                return (
+                  <div style={secStyle}>
+                    {secHead(IC.link||IC.file,"Link para el influencer")}
+                    {link?(<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+                      <span style={{flex:"1 1 200px",minWidth:0,fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{link}</span>
+                      <button onClick={async()=>{ try{ await navigator.clipboard.writeText(link); toast("Link copiado","success"); }catch(_){ } }} style={{...BtnSecondary(T),fontSize:12}}>Copiar</button>
+                      {tel&&<a href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",color:T.green}}>Mandar por WhatsApp</a>}
+                      <a href={link} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600}}>Ver como el influencer</a>
+                    </div>):<div style={{fontSize:12,color:T.textSm,marginBottom:12}}>Generando el link…</div>}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:4}}>Guion</div>
+                        <select value={c.guionId||(c.guionTareaId?"__tarea":"")} onChange={e=>{ const v=e.target.value; if(v==="__pedir"){ abrirPedirGuion(c); return; } save({guionId:v==="__tarea"?"":v}); }} style={{...iS,fontSize:12,padding:"6px 10px"}}>
+                          <option value="">Sin guion</option>
+                          {material.guiones.map(g=><option key={g.id} value={g.id}>{g.nombre}</option>)}
+                          {c.guionTareaId&&<option value="__tarea">Personalizado (tarea #{c.guionTareaNum||""})</option>}
+                          {!c.guionTareaId&&<option value="__pedir">Personalizado: pedir guion…</option>}
+                        </select>
+                        {!material.guiones.length&&<div style={{fontSize:10,color:T.textSm,marginTop:3}}>Cargá los guiones fijos en "Ficha y guiones".</div>}
+                      </div>
+                      <Field label="Lo que acordamos (lo ve el influencer)" value={c.acuerdoNota} onSave={v=>save({acuerdoNota:String(v||"").slice(0,1500)})} placeholder="Ej.: 1 reel + 3 historias con link"/>
+                    </div>
+                    {c.influencerUltimoLinkAt&&<div style={{fontSize:11,color:T.green,marginTop:8}}>El influencer cargó links el {new Date(c.influencerUltimoLinkAt).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}.</div>}
+                  </div>
+                );
+              })()}
 
               {/* ── ENVÍO ANDREANI: dirección SOLO LECTURA (viene del pedido) +
                      export XLSX de 1 fila. No se edita desde acá a propósito. ── */}
@@ -24164,6 +24249,88 @@ async function ghDepPdfDeEtiquetas(b64List){
 
 // ─── Portal de la ejecutiva de Andreani (#/andreani/TOKEN) ───
 // Sin login: ve todas las gestiones de los clientes de Growith y responde desde acá.
+// ─── Link del canje para el influencer (#/canje/TOKEN, 12/nov/2026) ───
+// Sin sesión: lo acordado, el plazo, la ficha de la marca, su guion y dónde pegar el link de cada pieza
+// (api/canjes.js, acciones portal*). No muestra datos de otros canjes ni plata.
+function CanjePortalView({token}){
+  const T=LIGHT;
+  const [st,setSt]=useState({loading:true,d:null,error:""});
+  const [links,setLinks]=useState({}); const [guardando,setGuardando]=useState(""); const [okMsg,setOkMsg]=useState("");
+  const api=async(action,extra={},post=false)=>{
+    const r=post?await fetch(`/api/canjes?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({t:token,...extra})})
+      :await fetch(`/api/canjes?action=${action}&t=${encodeURIComponent(token)}${Object.entries(extra).map(([k,v])=>`&${k}=${encodeURIComponent(v)}`).join("")}`);
+    const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:"No pudimos cargar la página. Probá de nuevo.");
+    return d;
+  };
+  const cargar=async()=>{ try{ const d=await api("portal"); setSt({loading:false,d,error:""}); setLinks(Object.fromEntries((d.piezas||[]).map(p=>[p.id,p.link||""]))); }catch(e){ setSt({loading:false,d:null,error:e.message}); } };
+  useEffect(()=>{ cargar(); },[token]);
+  async function abrirArchivo(id){
+    const w=window.open("","_blank");
+    try{ const a=await api("portal_archivo",{id}); const bin=atob(a.data); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+      const url=URL.createObjectURL(new Blob([u8],{type:a.mime||"application/pdf"})); if(w&&!w.closed) w.location.href=url; else window.location.href=url; }
+    catch(e){ if(w&&!w.closed) w.close(); setOkMsg(e.message); }
+  }
+  async function guardarLink(p){
+    setGuardando(p.id); setOkMsg("");
+    try{ const r=await api("portal_link",{piezaId:p.id,link:links[p.id]||""},true); setSt(s=>({...s,d:{...s.d,piezas:r.piezas,estado:r.cerrado?"Cerrado":s.d.estado}})); setOkMsg(r.cerrado?"¡Listo! Subiste todo el contenido. Muchas gracias.":"Guardado. Gracias."); }
+    catch(e){ setOkMsg(e.message); }
+    setGuardando("");
+  }
+  const d=st.d; const card={background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"18px 18px",marginBottom:14};
+  const h=t=><div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,marginBottom:10}}>{t}</div>;
+  const btn={height:40,padding:"0 18px",borderRadius:99,border:"none",background:T.accentSolid,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"};
+  const fecha=v=>v?v.split("-").reverse().slice(0,2).join("/"):"";
+  const faltan=(d?.piezas||[]).filter(p=>p.estado==="pendiente").length;
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",padding:"28px 16px 48px"}}>
+      <div style={{maxWidth:560,margin:"0 auto"}}>
+        {st.loading?<div style={{display:"flex",alignItems:"center",gap:10,color:T.textSm,fontSize:DS.font.base}}><Spinner size={14} color={T.textSm}/> Cargando…</div>
+        :st.error?<div style={card}><div style={{fontSize:DS.font.base,color:T.textMd}}>{st.error}</div></div>
+        :(<>
+          <div style={{fontSize:DS.font.sm,fontWeight:700,color:T.textSm,marginBottom:6}}>{d.tienda}</div>
+          <div style={{fontSize:DS.font["2xl"],fontWeight:800,letterSpacing:-0.3,marginBottom:4}}>Hola{d.nombre?` ${d.nombre}`:""}!</div>
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:20,lineHeight:1.5}}>Acá tenés todo lo de tu canje: lo que acordamos, la info de la marca, tu guion y dónde dejar el link de lo que vayas subiendo.</div>
+          <div style={card}>
+            {h("Lo que acordamos")}
+            {(d.productos||[]).length>0&&<div style={{fontSize:DS.font.base,color:T.text,marginBottom:8}}>{d.productos.map(x=>`${x.cantidad}x ${x.nombre}`).join(" · ")}</div>}
+            {(d.piezas||[]).length>0&&<div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:8}}>Contenido: {Object.entries((d.piezas||[]).reduce((m,p)=>({...m,[p.tipo]:(m[p.tipo]||0)+1}),{})).map(([t,n])=>`${n} ${t}`).join(" · ")}</div>}
+            {d.notaAcuerdo&&<div style={{fontSize:DS.font.base,color:T.textMd,whiteSpace:"pre-wrap",marginBottom:8}}>{d.notaAcuerdo}</div>}
+            <div style={{fontSize:DS.font.base,color:d.vence&&faltan?T.text:T.textMd,fontWeight:d.vence&&faltan?700:500}}>{d.vence?(faltan?`Tenés hasta el ${fecha(d.vence)} para subir el contenido.`:"Ya entregaste todo. ¡Gracias!"):`Tenés ${d.plazo} días para subir el contenido desde que te llega el paquete.`}</div>
+            {d.tracking&&!d.entregado&&<a href={`https://www.andreani.com/envio/${d.tracking}`} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:10,fontSize:DS.font.base,color:T.accent,fontWeight:700}}>Seguir mi paquete</a>}
+          </div>
+          {d.ficha&&<div style={card}>{h("La marca")}<div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:12}}>Lo que tenés que saber de la marca y los productos antes de grabar.</div><button onClick={()=>abrirArchivo(d.ficha.id)} style={btn}>Ver la ficha</button></div>}
+          {d.guion&&<div style={card}>
+            {h(d.guion.nombre||"Tu guion")}
+            {d.guion.pendiente?<div style={{fontSize:DS.font.base,color:T.textMd}}>Estamos preparando tu guion. Te avisamos cuando esté.</div>:null}
+            {d.guion.texto?<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.6,marginBottom:d.guion.archivo?12:0}}>{d.guion.texto}</div>:null}
+            {d.guion.archivo&&<button onClick={()=>abrirArchivo(d.guion.archivo.id)} style={btn}>Ver el guion</button>}
+            {d.guion.link&&<a href={d.guion.link} target="_blank" rel="noopener noreferrer" style={{...btn,display:"inline-flex",alignItems:"center",textDecoration:"none"}}>Ver el guion</a>}
+          </div>}
+          {(d.piezas||[]).length>0&&<div style={card}>
+            {h("Tu contenido")}
+            {d.carpeta&&<div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:16,padding:"12px 14px",marginBottom:12}}>
+              <div style={{fontSize:DS.font.base,color:T.text,fontWeight:700,marginBottom:4}}>Tu carpeta de Drive</div>
+              <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10}}>Subí ahí los videos y fotos en buena calidad (sin marca de agua).</div>
+              <a href={d.carpeta} target="_blank" rel="noopener noreferrer" style={{...btn,display:"inline-flex",alignItems:"center",textDecoration:"none"}}>Abrir mi carpeta</a>
+            </div>}
+            <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:12}}>Cuando publiques o subas cada pieza, pegá acá el link (de la publicación o del archivo en Drive) y tocá Guardar.</div>
+            {(d.piezas||[]).map((p,i)=>(
+              <div key={p.id} style={{padding:"10px 0",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,flex:1}}>{p.tipo}</span><span style={{fontSize:DS.font.sm,fontWeight:700,color:p.estado==="pendiente"?T.textSm:T.green}}>{p.estado==="pendiente"?"Falta":p.estado==="publicada"?"Publicada":"Entregada"}</span></div>
+                <div style={{display:"flex",gap:8}}>
+                  <input value={links[p.id]||""} onChange={e=>setLinks(l=>({...l,[p.id]:e.target.value}))} placeholder="https://www.instagram.com/…" style={{...InputStyle(T),flex:1,fontSize:DS.font.base}}/>
+                  <button onClick={()=>guardarLink(p)} disabled={guardando===p.id||(links[p.id]||"")===(p.link||"")} style={{...btn,opacity:(links[p.id]||"")===(p.link||"")?0.5:1}}>{guardando===p.id?"…":"Guardar"}</button>
+                </div>
+              </div>
+            ))}
+            {okMsg&&<div style={{fontSize:DS.font.base,color:T.textMd,marginTop:8}}>{okMsg}</div>}
+          </div>}
+          <div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center",marginTop:8}}>¿Alguna duda? Escribinos por WhatsApp.</div>
+        </>)}
+      </div>
+    </div>
+  );
+}
 // ─── Página pública de seguimiento (#/seguir/NUMERO) ───
 // Alternativa a andreani.com/envio/N con la marca de la tienda. Solo lectura,
 // sin sesión y sin datos del destinatario; no manda ninguna notificación.
@@ -46925,6 +47092,9 @@ export default function App() {
   const _depPanelMatch = _initialHash.match(/^deposito\/panel\/([a-f0-9]{40,64})/i);
   const [depositoPanelToken] = useState(_depPanelMatch ? _depPanelMatch[1] : null);
   // Página pública de seguimiento de un envío: #/seguir/<número> (sin sesión, sin datos del destinatario)
+  // Link del canje para el influencer: #/canje/<token> (api/canjes.js)
+  const _canjeMatch = _initialHash.match(/^canje\/([a-f0-9]{16,64})/i);
+  const [canjePortalToken] = useState(_canjeMatch ? _canjeMatch[1] : null);
   const _segMatch = _initialHash.match(/^seguir\/(\d{10,20})/);
   const [seguirNumero] = useState(_segMatch ? _segMatch[1] : null);
   // Conector de IA (Claude / ChatGPT / Gemini, api/mcp.js): /oauth/authorize manda a
@@ -46966,7 +47136,7 @@ export default function App() {
     if (typeof window !== "undefined") {
       // En una ruta por link (panel del depósito, portales, seguimiento) la URL es
       // el acceso: no se pisa nunca, si no al recargar vuelve a la app normal.
-      if (/^#\/(deposito\/(panel\/)?[a-f0-9]{32,}|andreani\/|seguir\/|cupon\/|colaborador\/|tablero\/|editor-produccion\/)/i.test(window.location.hash)) return;
+      if (/^#\/(deposito\/(panel\/)?[a-f0-9]{32,}|andreani\/|seguir\/|canje\/|cupon\/|colaborador\/|tablero\/|editor-produccion\/)/i.test(window.location.hash)) return;
       const newHash = p === "home" ? "" : `#/${p}`;
       if (window.location.hash !== newHash) {
         window.history.pushState(null, "", newHash || window.location.pathname);
@@ -47591,6 +47761,7 @@ export default function App() {
   if(depositoPanelToken) return <DepositoPanelView token={depositoPanelToken}/>;
   if(depositoToken) return <DepositoPortalView token={depositoToken}/>;
   if(seguirNumero) return <SeguirEnvioView numero={seguirNumero}/>;
+  if(canjePortalToken) return <CanjePortalView token={canjePortalToken}/>;
 
   // Loading
   if(user===undefined) return (
