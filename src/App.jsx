@@ -18600,6 +18600,12 @@ function GhImpCards({T,cards,editar,setEditar}){
 // Ventas una por una (debajo de las tiendas): para controlar la comisión de cada cobro.
 function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
   const [busy,setBusy]=useState(null);
+  const noContar=async(v)=>{
+    if(!await appConfirm(`¿Dejar de contar la venta #${v.orden}${v.email?` (${v.email})`:""}? Sale del Dashboard, de las campañas y de las comisiones como si no hubiera existido${v.post_compra?"":"; sus post-compra (mismo comprador, hasta 3 h después) también"}. No se borra ni se reembolsa nada en Stripe.`,{danger:true,okLabel:"No contar"})) return;
+    setBusy(v.order_id);
+    try{ const j=await authFetch(`/api/impultienda?action=venta_ignorar&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:v.order_id,ignorar:true})}).then(r=>r.json()); if(j.error) throw new Error(j.error); toast(j.ignoradas>1?`Listo: ${j.ignoradas} ventas dejan de contar`:"Listo: la venta deja de contar","success"); onCambio&&onCambio(); }
+    catch(e){ appAlert("No se pudo: "+e.message); } finally{ setBusy(null); }
+  };
   const reembolsar=async(v)=>{
     const m=await appPrompt(`Monto a devolver en ${v.monedaOriginal} (máximo ${v.totalOriginal}). Stripe no devuelve su comisión: se resta todo el monto del profit del día de la venta.`, String(v.totalOriginal), {title:`Reembolsar orden #${v.orden}`});
     if(m==null) return; const monto=Number(String(m).replace(",","."));
@@ -18669,6 +18675,8 @@ function GhImpVentasLista({T,ventas,prom,uid,onCambio}){
                     <Btn T={T} size="sm" variant="secondary" disabled={busy===v.order_id} onClick={()=>reembolsar(v)} style={{color:T.red}}>{busy===v.order_id?"Reembolsando…":"Reembolsar"}</Btn>
                   ) : v.reembolsada||v.disputa ? <span style={{fontSize:DS.font.sm,color:T.textSm}}>{v.disputa?`Disputa ${v.disputa.estado} en Stripe.`:"Reembolsada desde Impultienda o Stripe."}</span>
                     : <span style={{fontSize:DS.font.sm,color:T.textSm}}>Para reembolsar desde Growith, la venta tiene que estar cruzada con su cobro de Stripe.</span>}
+                  <span style={{flex:1}}/>
+                  <Btn T={T} size="sm" variant="ghost" disabled={busy===v.order_id} onClick={()=>noContar(v)} title="Venta que en realidad no salió (prueba, duplicado): deja de contar en todo el Dashboard sin borrarla">No contar</Btn>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 14px",fontSize:DS.font.sm,alignContent:"start"}}>
                   {[["Cobrado",`${v.totalOriginal.toLocaleString("es-AR",{maximumFractionDigits:2})} ${v.monedaOriginal}`],["Pasarela",v.pasarela||"—"],["Comisión",v.fuente==="stripe"?"Real, de Stripe":v.fuente==="mercadopago"?"Real, de Mercado Pago":`Estimada${v.importado?" · importada sin email":""}`],["ID de Stripe",v.stripe_id||"—"],["Campaña (UTM)",v.campana||"—"],["Anuncio (UTM)",v.anuncio||"—"]].map(([l,x])=>(

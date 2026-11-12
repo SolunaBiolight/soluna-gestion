@@ -662,7 +662,7 @@ export async function utmAtribucion(db, uid, desde, hasta, tz, idx, opts = {}) {
   const snap = await db.collection("users").doc(uid).collection("impultienda_orders").where("actualizado", ">=", new Date(desdeMs - 2 * 86400000).toISOString()).get();
   const todas = snap.docs.map(d => d.data());
   const delWebhook = new Set(todas.filter(o => !o.importado && o.orden != null).map(o => String(o.orden)));
-  const ordenes = todas.filter(o => !o.importado || !delWebhook.has(String(o.orden)));
+  const ordenes = todas.filter(o => !o.ignorada && (!o.importado || !delWebhook.has(String(o.orden))));
   const [fx, cfgSnap] = await Promise.all([fxPorUsd(), db.collection("users").doc(uid).collection("impultienda_cfg").doc("main").get()]);
   const tiendasMap = armarTiendas(cfgSnap.data() || {}, ordenes);
   // ct: por campaña, cuántas ventas fueron a cada tienda (para agrupar campañas por tienda).
@@ -747,7 +747,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const todas = snap.docs.map(d => d.data());
   // El número de orden de Impultienda es único en toda la plataforma: una importada se descarta si el webhook trajo esa orden.
   const delWebhook = new Set(todas.filter(o => !o.importado && o.orden != null).map(o => String(o.orden)));
-  const ordenes = todas.filter(o => !o.importado || !delWebhook.has(String(o.orden)));
+  const ordenes = todas.filter(o => !o.ignorada && (!o.importado || !delWebhook.has(String(o.orden))));
   const fx = await fxPorUsd();
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
   const [stripe, mp, movs] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs), stripeMovimientos(db, uid, cfg)]);
@@ -1094,6 +1094,30 @@ export default async function handler(req, res) {
     // importada si el webhook ya trajo esa misma orden.
     // Cotizaciones por 1 USD para mostrar montos en otra moneda (ARS = dólar cripto más bajo).
     // Reembolso por Stripe desde Growith: total o parcial, en la moneda en que pagó el comprador.
+    // "No contar esta venta": una venta que en realidad no salió (prueba, duplicado) deja de contar en todo
+    // el Dashboard sin borrarla. Con la principal se ignoran también sus post-compra (mismo comprador, 3 h después).
+    if (action === "venta_ignorar" && req.method === "POST") {
+      const b = JSON.parse((await readBody(req)).toString() || "{}");
+      const col = db.collection("users").doc(uid).collection("impultienda_orders");
+      const ref = col.doc(String(b.order_id || ""));
+      const o = (await ref.get()).data(); if (!o) return res.status(404).json({ error: "Venta no encontrada" });
+      const ignorar = b.ignorar !== false;
+      const ahora = new Date().toISOString();
+      const bd = db.batch(); let n = 1;
+      bd.set(ref, { ignorada: ignorar, ignoradaAt: ignorar ? ahora : null }, { merge: true });
+      if (ignorar && !o.post_compra && o.email && o.ev_approved) {
+        const t0 = Date.parse(o.ev_approved);
+        const q = await col.where("email", "==", o.email).get();
+        for (const d of q.docs) {
+          const x = d.data(); if (d.id === ref.id || !x.post_compra) continue;
+          const t = Date.parse(x.ev_approved || ""); if (!isFinite(t) || t < t0 - 10 * 60000 || t > t0 + 3 * 3600000) continue;
+          bd.set(d.ref, { ignorada: true, ignoradaAt: ahora, ignoradaPor: ref.id }, { merge: true }); n++;
+        }
+      }
+      await bd.commit();
+      const cs = await cfgRef.parent.get(); const b2 = db.batch(); let k = 0; for (const x of cs.docs) if (x.id.startsWith("cache_")) { b2.delete(x.ref); k++; } if (k) await b2.commit();
+      return res.json({ ok: true, ignoradas: n });
+    }
     if (action === "reembolsar" && req.method === "POST") {
       const b = JSON.parse((await readBody(req)).toString() || "{}");
       const cfg = (await cfgRef.get()).data() || {};
