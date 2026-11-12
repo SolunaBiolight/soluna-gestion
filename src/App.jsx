@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 import { DARK, LIGHT, PUBLICADORES_ARCHIVADOS, META_OAUTH_OK, BrandIcon, RecurrentesLogo, IA_ICONS, GhI } from "./shared.jsx";
 import { LandingPage } from "./Landing.jsx";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, onSnapshot, addDoc as _fsAddDoc, updateDoc as _fsUpdateDoc, deleteDoc as _fsDeleteDoc, doc, serverTimestamp, setDoc as _fsSetDoc, getDoc, query, where, getDocs, orderBy, limit } from "firebase/firestore";
+import { getFirestore, collection, onSnapshot, addDoc as _fsAddDoc, updateDoc as _fsUpdateDoc, deleteDoc as _fsDeleteDoc, doc, serverTimestamp, setDoc as _fsSetDoc, getDoc, query, where, getDocs, orderBy, limit, deleteField } from "firebase/firestore";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, sendPasswordResetEmail, verifyBeforeUpdateEmail, reauthenticateWithCredential, EmailAuthProvider, reauthenticateWithPopup, signInWithCustomToken } from "firebase/auth";
 // ── Modo "Ver como cliente" (Admin) ─────────────────────────────────────────
 // El admin entra a la cuenta del cliente y PUEDE operar (soporte real). Lo que
@@ -5315,7 +5315,8 @@ const ghFmtDist=m=>m==null?"":m<1000?`a ${m} m`:`a ${(m/1000).toFixed(1).replace
 async function ghEtiquetaAndreaniXlsxUno(o) { return ghEtiquetaAndreaniXlsx(o?[o]:[]); }
 // Varios envíos en un solo Excel (12/nov/2026: despacho de varios canjes juntos). Domicilios en la hoja 1 y
 // sucursales en la hoja 2, cada uno en su fila desde la 3. Tira Error con el número del envío que falla.
-async function ghEtiquetaAndreaniXlsx(lista, nombreArchivo) {
+async function ghEtiquetaAndreaniXlsx(lista, nombreArchivo, opts={}) {
+  const omitidos=[]; // opts.saltear: una fila que falla se saltea (y se informa) en vez de frenar todo el Excel
   if(!lista||!lista.length) throw new Error("Sin datos del envío");
   const locs=await ghLoadAndreaniLocations();
   if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
@@ -5390,7 +5391,8 @@ async function ghEtiquetaAndreaniXlsx(lista, nombreArchivo) {
     const cells=[...baseCells,sC('N'+rn,direccion),(dirNum&&!isNaN(dirNum)&&dirNum!=='')?nC('O'+rn,parseFloat(dirNum)):nC('O'+rn,0),sC('P'+rn,cl(o.piso||"")),sC('Q'+rn,""),sC('R'+rn,ubicacion),sC('S'+rn,"")].join('');
     filasDom.push('<row r="'+rn+'" spans="1:19" x14ac:dyDescent="0.25">'+cells+'</row>'); rnDom++;
   }
-  }catch(e){ throw new Error(lista.length>1?`#${o.numero}: ${e.message}`:e.message); } }
+  }catch(e){ if(opts.saltear){ omitidos.push({_id:o._id,numero:o.numero,error:e.message}); continue; } throw new Error(lista.length>1?`#${o.numero}: ${e.message}`:e.message); } }
+  if(!filasDom.length&&!filasSuc.length) throw new Error(omitidos.length?`ningún envío se pudo armar: ${omitidos.map(x=>`#${x.numero} ${x.error}`).join(" · ")}`:"Sin datos del envío");
   if(filasDom.length){
     const sheet1=await zip.file('xl/worksheets/sheet1.xml').async('string');
     zip.file('xl/worksheets/sheet1.xml',sheet1.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:S'+(rnDom-1)+'"/>').replace('</sheetData>',filasDom.join('')+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,''));
@@ -5405,6 +5407,7 @@ async function ghEtiquetaAndreaniXlsx(lista, nombreArchivo) {
   zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
   const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nombreArchivo||`EnvioMasivoExcelPaquetes-${lista.length===1?lista[0].numero:hoyAR()}.xlsx`;a.click();
+  return {omitidos};
 }
 
 // --- UI Components ---
@@ -7725,13 +7728,22 @@ function NotasInline({value, onSave, T, iS}) {
 const PIEZA_ESTADOS=[["pendiente","Pendiente"],["entregada","Entregada"],["publicada","Publicada"]];
 function ghPiezaId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function ghPiezasDe(c){
-  if(Array.isArray(c?.piezas)) return c.piezas;
+  // Misma regla que el servidor (api/canjes.js piezasDe): piezas si hay, si no los contadores viejos.
+  if(Array.isArray(c?.piezas)&&c.piezas.length) return c.piezas;
   // Canje anterior a las piezas: se expanden los contadores en filas.
   const out=[]; let k=0;
   (c?.contenido||[]).forEach(x=>{
     const ac=+x.acordados||0, en=+x.entregados||0;
     for(let i=0;i<ac;i++) out.push({id:"m"+(k++),tipo:x.tipo||"",estado:i<en?"entregada":"pendiente",fechaLimite:"",link:"",nota:""});
   });
+  return out;
+}
+// Ajusta las piezas a los contadores editados (formulario de edición): conserva las que ya existen por
+// tipo (con su estado y link), agrega pendientes y saca primero las pendientes que sobran.
+function ghPiezasAjustar(piezas,contenido){
+  const out=[]; const por=new Map(); (piezas||[]).forEach(p=>{ const k=p.tipo||""; if(!por.has(k)) por.set(k,[]); por.get(k).push(p); });
+  for(const x of contenido||[]){ const n=Math.max(0,+x.acordados||0); const tengo=[...(por.get(x.tipo)||[])].sort((a,b)=>((a.estado||"pendiente")==="pendiente")-((b.estado||"pendiente")==="pendiente"));
+    for(let i=0;i<n;i++) out.push(tengo[i]||{id:ghPiezaId(),tipo:x.tipo,estado:"pendiente",fechaLimite:"",link:"",nota:""}); por.delete(x.tipo); }
   return out;
 }
 function ghContenidoDePiezas(piezas){
@@ -7790,7 +7802,7 @@ function ghCanjeAccion(c, cfg){
     const hoy=hoyAR();
     if(c.fechaEnvioProgr&&c.fechaEnvioProgr<=hoy&&c.envioAlertDismissed!==c.fechaEnvioProgr)
       return {tipo:"despachar",sev:2,label:"Programado: despachar hoy"};
-    const d=dias(c.createdAt);
+    const d=dias(c.pedidoUnidoAt||c.createdAt); // desde que tenemos el pedido, no desde el acuerdo
     if(d!==null&&d>=cfg.despachar) return {tipo:"despachar",sev:d>=cfg.despachar*2?2:1,dias:d,label:`Sin despachar hace ${d}d`};
     return {tipo:"ok",sev:0,label:"Próximo paso: despachar"};
   }
@@ -7808,6 +7820,10 @@ function ghCanjeAccion(c, cfg){
     const d=dias(c.trackEntregadoAt||c.fechaEnvio);
     if(total===0) return {tipo:"ok",sev:0,label:"Acordar contenido"};
     if(debe<=0) return {tipo:"ok",sev:0,label:"Contenido completo. Cerrar canje"};
+    // Plazo nuevo (12/nov/2026): con fecha límite, la línea de la tarjeta habla en días que quedan.
+    const vence=ghCanjeVence(c);
+    if(vence){ const r=Math.round((Date.parse(vence+"T12:00:00-03:00")-Date.now())/86400000);
+      return r<0?{tipo:"contenido",sev:3,label:`Debe ${debe} · venció hace ${-r}d`}:r<=2?{tipo:"contenido",sev:2,label:`Debe ${debe} · ${r===0?"vence hoy":`quedan ${r}d`}`}:{tipo:"ok",sev:0,label:`Debe ${debe} · quedan ${r}d`}; }
     // Piezas con fecha límite vencida: manda sobre los umbrales por días.
     const hoyP=hoyAR();
     const vencidas=ghPiezasDe(c).filter(p=>(p.estado||"pendiente")==="pendiente"&&p.fechaLimite&&p.fechaLimite<hoyP).length;
@@ -7827,7 +7843,8 @@ function ghCanjeAccion(c, cfg){
 // a cada influencer (pedido sin hacer, en sucursal, visita fallida, días 0 / 7 / 10 / 12 del contenido).
 const GH_CANJE_PLAZO=12;
 const GH_CANJE_DIAS=[0,7,10,12];
-const GH_CANJE_PLANTILLAS={
+export const GH_CANJE_PLANTILLAS={
+  inicio:"Hola {nombre}! Te paso cómo seguimos con el canje. Hacé el pedido en la web con los productos que elijas, pagá con transferencia (no se cobra nada) y en la nota del pedido escribí tu Instagram ({usuario}). En este link tenés los pasos, tu cupón y lo que acordamos: {link}",
   pedido:"Hola {nombre}! ¿Pudiste hacer el pedido en la web? Elegí los anteojos, pagá con transferencia (no se cobra) y en la nota del pedido poné tu Instagram ({usuario}). Cualquier duda me escribís.",
   dia0:"Hola {nombre}! Vi que ya te llegó el paquete. Tenés {plazo} días, hasta el {vence}, para subir el contenido que acordamos. Acá tenés la info de la marca, tu guion y dónde dejar los links: {link}",
   dia7:"Hola {nombre}! ¿Cómo vas con el contenido? Te quedan {restan} días, hasta el {vence}.",
@@ -7836,7 +7853,7 @@ const GH_CANJE_PLANTILLAS={
   sucursal:"Hola {nombre}! Tu paquete ya está en la sucursal de Andreani para retirar. Seguimiento: https://www.andreani.com/envio/{tracking}",
   visita:"Hola {nombre}! Andreani pasó a entregarte el paquete y no te encontró. Seguimiento: https://www.andreani.com/envio/{tracking}. ¿Lo coordinamos?",
 };
-const GH_CANJE_PLANTILLA_NOMBRES=[["pedido","No hizo el pedido"],["dia0","Le llegó (día 0)"],["dia7","Día 7"],["dia10","Día 10"],["dia12","Se venció (día 12)"],["sucursal","Paquete en la sucursal"],["visita","Visita fallida"]];
+const GH_CANJE_PLANTILLA_NOMBRES=[["inicio","Al crear el canje (cómo hacer el pedido + link)"],["pedido","No hizo el pedido"],["dia0","Le llegó (día 0)"],["dia7","Día 7"],["dia10","Día 10"],["dia12","Se venció (día 12)"],["sucursal","Paquete en la sucursal"],["visita","Visita fallida"]];
 function ghCanjeMs(v){ const t=v?.seconds?v.seconds*1000:(typeof v==="number"?v:Date.parse(v||"")); return isFinite(t)?t:null; }
 function ghCanjeSumarDias(v,d){ const t=ghCanjeMs(v); if(t==null) return ""; return new Date(t-3*3600000+d*86400000).toISOString().slice(0,10); }
 // Fecha límite del contenido: la que se puso a mano, o la de las piezas, o entrega + 12.
@@ -7861,11 +7878,17 @@ function ghCanjeParaEscribir(c,ahora){
   }
   if(!c.trackDone&&c.trackingCat==="en_sucursal"){ const k=`sucursal_${c.tracking||""}`; if(!esc[k]) return {clave:k,tipo:"sucursal",sev:2,txt:"El paquete está en la sucursal para retirar"}; }
   if(!c.trackDone&&c.trackingCat==="visita_fallida"){ const k=`visita_${c.tracking||""}`; if(!esc[k]) return {clave:k,tipo:"visita",sev:2,txt:"Andreani pasó y no lo encontró"}; }
+  // Días de CALENDARIO en hora argentina (no bloques de 24 h desde la entrega) y contra la fecha límite
+  // vigente: si se corrió a mano, los avisos de "quedan 2 días" y "se venció" se corren con ella.
   if(c.trackEntregadoAt&&ghCanjeDebeContenido(c)){
-    const d=dias(c.trackEntregadoAt); if(d==null||d<0) return null;
-    const paso=[...GH_CANJE_DIAS].reverse().find(x=>d>=x); if(paso==null) return null;
+    const diaAR=t=>new Date(t-3*3600000).toISOString().slice(0,10);
+    const entMs=ghCanjeMs(c.trackEntregadoAt); if(entMs==null) return null;
+    const hoyD=diaAR(t0), entD=diaAR(entMs), vence=ghCanjeVence(c)||ghCanjeSumarDias(entMs,GH_CANJE_PLAZO);
+    const entre=(a,b)=>Math.round((Date.parse(b+"T12:00:00Z")-Date.parse(a+"T12:00:00Z"))/86400000);
+    const d=entre(entD,hoyD); if(d<0) return null; const restan=entre(hoyD,vence);
+    const paso=restan<=0?12:restan<=2?10:d>=7?7:0;
     const k=`dia${paso}`; if(esc[k]) return null;
-    const txt=paso===0?"Le llegó el paquete":paso===12?(d>12?`Se venció el plazo hace ${d-12} día${d-12!==1?"s":""}`:"Hoy se cumple el plazo del contenido"):`Día ${d} desde que le llegó`;
+    const txt=paso===0?"Le llegó el paquete":paso===12?(restan<0?`Se venció el plazo hace ${-restan} día${-restan!==1?"s":""}`:"Hoy vence el plazo del contenido"):paso===10?`Le quedan ${restan} día${restan!==1?"s":""} para el contenido`:`Día ${d} desde que le llegó`;
     return {clave:k,tipo:`dia${paso}`,sev:paso>=12?3:paso>=10?2:1,txt};
   }
   return null;
@@ -7883,11 +7906,16 @@ function ghCanjeMensaje(tpl,c,ahora){
   return String(tpl||"").replace(/\{nombre\}/g,nom).replace(/\{usuario\}/g,u?"@"+u:"tu usuario").replace(/\{vence\}/g,venceTxt||"la fecha acordada")
     .replace(/\{restan\}/g,String(restan)).replace(/\{plazo\}/g,String(GH_CANJE_PLAZO)).replace(/\{tracking\}/g,String(c?.tracking||"").trim()).replace(/\{link\}/g,ghCanjeLink(c)).replace(/[ \t]+\n/g,"\n").trim();
 }
-// ¿Este pedido es del canje? 3 = su @ en la nota del pedido, 2 = mismo teléfono o mail, 1 = mismo nombre.
+// ¿Este pedido es del canje? 3 = "@usuario" literal en la nota (con la arroba y sin seguir de otra letra:
+// "@sofi" no matchea "@sofi.style"); 2 = el usuario sin arroba en la nota, o mismo teléfono o mail; 1 = mismo
+// nombre. SOLO el 3 se une solo (auditoría 12/nov/2026: un cliente real con transferencia pendiente y la
+// nota "regalo para Juli" se unía al canje de @juli y después se le cancelaba el pedido); el resto se confirma.
 function ghCanjeScorePedido(c,o){
   const u=String(c?.usuario||"").replace(/^@/,"").toLowerCase().trim();
-  const notas=`${o?.notaCliente||""} ${o?.notaInterna||""}`.toLowerCase();
-  if(u.length>=3){ const e=u.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); if(new RegExp(`(^|[^a-z0-9_.])@?${e}($|[^a-z0-9_])`).test(notas)) return 3; }
+  const notas=` ${o?.notaCliente||""} ${o?.notaInterna||""} `.toLowerCase();
+  if(u.length>=3){ const e=u.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); const fin="(?![a-z0-9_]|\\.[a-z0-9])";
+    if(new RegExp(`(^|[^a-z0-9_.])@${e}${fin}`).test(notas)) return 3;
+    if(u.length>=5&&new RegExp(`(^|[^a-z0-9_.@])${e}${fin}`).test(notas)) return 2; }
   const tel=x=>String(x||"").replace(/\D/g,"").slice(-8);
   if(tel(c?.telefono).length===8&&tel(c.telefono)===tel(o?.telefono)) return 2;
   const em=x=>String(x||"").trim().toLowerCase();
@@ -7896,9 +7924,10 @@ function ghCanjeScorePedido(c,o){
   if(a.length>=2&&b.length>=2&&a.every(t=>b.includes(t))) return 1;
   return 0;
 }
-// Canjes "Esperando pedido" ↔ pedidos con pago pendiente: auto = seguro y único; dudas = para confirmar a mano.
+// Canjes "Esperando pedido" ↔ pedidos con pago pendiente: auto = "@usuario" literal y único; dudas = para
+// confirmar a mano (nunca se une solo por teléfono, mail o nombre).
 function ghCanjeUnirPedidos(canjes,pedidos){
-  const usados=new Set((canjes||[]).map(c=>String(c.pedidoRef||"").trim()).filter(Boolean));
+  const usados=new Set((canjes||[]).map(c=>String(c.pedidoRef||"").replace(/^#/,"").trim()).filter(Boolean));
   const esperando=(canjes||[]).filter(c=>c.estado==="Esperando pedido"&&!String(c.pedidoRef||"").trim());
   const libres=(pedidos||[]).filter(o=>o&&o.numero&&!usados.has(String(o.numero)));
   const auto=[],dudas=[],tomados=new Set();
@@ -7906,7 +7935,9 @@ function ghCanjeUnirPedidos(canjes,pedidos){
     const cand=libres.map(o=>({o,s:ghCanjeScorePedido(c,o)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s);
     if(!cand.length) continue;
     const top=cand[0]; const empate=cand.filter(x=>x.s===top.s).length>1;
-    if(top.s>=2&&!empate&&!tomados.has(String(top.o.numero))){ auto.push({canje:c,orden:top.o}); tomados.add(String(top.o.numero)); }
+    // El mismo pedido no puede ser de dos canjes: si otro canje también lo reclama con un @, va a dudas.
+    const otro=esperando.some(c2=>c2!==c&&ghCanjeScorePedido(c2,top.o)>=3);
+    if(top.s>=3&&!empate&&!otro&&!tomados.has(String(top.o.numero))){ auto.push({canje:c,orden:top.o}); tomados.add(String(top.o.numero)); }
     else dudas.push({canje:c,opciones:cand.filter(x=>!tomados.has(String(x.o.numero))).slice(0,3).map(x=>x.o)});
   }
   return {auto,dudas:dudas.filter(d=>d.opciones.length)};
@@ -7935,24 +7966,24 @@ function ghInfluencerHistorial(inf,canjes){
 // GH_CANJES_FLUJO_END
 // "Para escribir hoy" (12/nov/2026): a quién hay que escribirle hoy por WhatsApp y con qué mensaje, más los
 // pedidos con pago pendiente que podrían ser de un canje y hay que confirmar a mano.
-function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp,onEscrito,onAbrir,onUnir,onPlantillas,onMaterial,pend,onBuscar,hayEsperando}){
+export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp,onEscrito,onAbrir,onUnir,pend,onBuscar,hayEsperando,despachables=0,onDespachar,extras=[]}){
   const [descartadas,setDescartadas]=React.useState(()=>new Set());
   const ahora=Date.now();
   const items=canjes.map(c=>({c,it:ghCanjeParaEscribir(c,ahora)})).filter(x=>x.it&&(!resp||String(x.c.responsable||"").trim()===resp)).sort((a,b)=>b.it.sev-a.it.sev);
   const dudasV=(dudas||[]).filter(d=>!descartadas.has(d.canje._docId)&&(!resp||String(d.canje.responsable||"").trim()===resp));
+  const extrasV=(extras||[]).filter(x=>!resp||String(x.c.responsable||"").trim()===resp);
   const colDe=sev=>sev>=3?T.red:sev>=2?T.orange:T.accent;
   const btn={height:30,padding:"0 12px",borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"};
   const hace=pend?.ts?Math.max(0,Math.round((ahora-pend.ts)/60000)):null;
   return (
     <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",marginBottom:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:items.length||dudasV.length?12:0}}>
-        <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>Para escribir hoy{items.length?<span style={{color:T.accent}}> · {items.length}</span>:null}</div>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+        <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>Para hacer hoy{(items.length+dudasV.length+extrasV.length+(despachables?1:0))?<span style={{color:T.accent}}> · {(items.length+dudasV.length+extrasV.length+(despachables?1:0))}</span>:null}</div>
         <span style={{flex:1}}/>
         {hayEsperando&&<span style={{fontSize:12,color:T.textSm}}>{pend?.cargando?"Buscando pedidos de canje…":hace!=null?`Pedidos revisados hace ${hace} min`:""}</span>}
         {hayEsperando&&<button onClick={()=>onBuscar(true)} disabled={!!pend?.cargando} style={btn}>Buscar pedidos</button>}
         {responsables.length>0&&<select value={resp} onChange={e=>setResp(e.target.value)} style={{...btn,paddingRight:8}}><option value="">Todos</option>{responsables.map(r=><option key={r} value={r}>{r}</option>)}</select>}
-        <button onClick={onMaterial} style={btn}>Ficha y guiones</button>
-        <button onClick={onPlantillas} style={btn}>Mensajes</button>
+
       </div>
       {dudasV.map(d=>(
         <div key={"d"+d.canje._docId} style={{border:`1px solid ${T.yellow}55`,background:T.yellow+"10",borderRadius:14,padding:"10px 12px",marginBottom:8}}>
@@ -7966,7 +7997,26 @@ function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp
           <button onClick={()=>setDescartadas(x=>new Set([...x,d.canje._docId]))} style={{...btn,height:26,marginTop:4,background:"transparent"}}>No es ninguno</button>
         </div>
       ))}
-      {items.length===0&&!dudasV.length&&<div style={{fontSize:13,color:T.textSm}}>No hay a quién escribirle por ahora.</div>}
+      {despachables>0&&(
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"9px 0",borderTop:`1px solid ${T.borderL}`}}>
+          <span style={{width:8,height:8,borderRadius:99,background:T.yellow,flexShrink:0}}/>
+          <div style={{flex:"1 1 240px",fontSize:13,color:T.text}}><strong>{despachables} canje{despachables!==1?"s":""} para despachar</strong><div style={{fontSize:12,color:T.textMd,marginTop:1}}>Ya tienen el pedido unido: falta la etiqueta de Andreani.</div></div>
+          <button onClick={onDespachar} style={{...btn,background:T.accentSolid,color:"#fff",border:"none"}}>Despachar</button>
+        </div>
+      )}
+      {extrasV.map(x=>(
+        <div key={x.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"9px 0",borderTop:`1px solid ${T.borderL}`}}>
+          <span style={{width:8,height:8,borderRadius:99,background:colDe(x.sev),flexShrink:0}}/>
+          <div style={{flex:"1 1 240px",minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.c.influencer||"Sin nombre"}{x.c.usuario?<span style={{fontWeight:500,color:T.textSm}}> · @{String(x.c.usuario).replace(/^@/,"")}</span>:null}</div>
+            <div style={{fontSize:12,color:x.sev>=3?T.red:T.textMd,marginTop:1}}>{x.txt}</div>
+          </div>
+          {x.link&&<a href={x.link} target="_blank" rel="noopener noreferrer" style={{...btn,textDecoration:"none"}}>Seguimiento</a>}
+          {x.onOk&&<button onClick={x.onOk} style={btn}>{x.okLabel||"Ya está"}</button>}
+          <button onClick={()=>onAbrir(x.c._docId)} style={btn}>Abrir</button>
+        </div>
+      ))}
+      {items.length===0&&!dudasV.length&&!extrasV.length&&!despachables&&<div style={{fontSize:13,color:T.textSm}}>Nada pendiente por ahora. Cuando haya que escribirle a alguien o despachar, aparece acá.</div>}
       {items.map(({c,it})=>{
         const tpl=plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo]||"";
         const msg=ghCanjeMensaje(tpl,c);
@@ -8015,17 +8065,20 @@ async function ghCanjesLeerArchivo(file){
   const b64=await new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(",")[1]||""); fr.onerror=ko; fr.readAsDataURL(file); });
   return {nombre:file.name,mime:file.type||"application/pdf",data:b64};
 }
-function CanjesMaterialModal({T,uid,ficha,guiones,onCambio,onClose}){
+function CanjesMaterialModal({T,uid,ficha,guiones,web:webIni,onCambio,onClose}){
+  const [web,setWeb]=React.useState(webIni||"");
   const [lista,setLista]=React.useState(()=>(guiones||[]).map(g=>({...g})));
   const [busy,setBusy]=React.useState(""); const iS=InputStyle(T);
   async function subirFicha(file){ setBusy("ficha"); try{ const a=await ghCanjesLeerArchivo(file); const r=await ghCanjesApi("archivo_subir",{uid,tipo:"ficha",...a}); onCambio({ficha:{id:r.id,nombre:r.nombre}}); toast("Ficha subida","success"); }catch(e){ toast(e.message,"error",7000); } setBusy(""); }
   async function verArchivo(id){ const w=window.open("","_blank"); try{ const a=await ghCanjesApi("archivo_ver",{uid,id}); const bin=atob(a.data); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); const url=URL.createObjectURL(new Blob([u8],{type:a.mime})); if(w&&!w.closed) w.location.href=url; }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
   async function archivoGuion(k,file){ setBusy("g"+k); try{ const a=await ghCanjesLeerArchivo(file); const r=await ghCanjesApi("archivo_subir",{uid,tipo:"guion",...a}); setLista(l=>l.map((g,i)=>i===k?{...g,archivoId:r.id,archivoNombre:r.nombre}:g)); }catch(e){ toast(e.message,"error",7000); } setBusy(""); }
-  async function guardar(){ setBusy("guardar"); try{ const r=await ghCanjesApi("guion_guardar",{uid,guiones:lista.filter(g=>String(g.nombre||"").trim())}); onCambio({guiones:r.guiones}); toast("Guiones guardados","success"); onClose(); }catch(e){ toast(e.message,"error"); } setBusy(""); }
+  async function guardar(){ setBusy("guardar"); try{ const r=await ghCanjesApi("guion_guardar",{uid,web,guiones:lista.filter(g=>String(g.nombre||"").trim())}); onCambio({guiones:r.guiones,web:r.web||""}); toast("Guardado","success"); onClose(); }catch(e){ toast(e.message,"error"); } setBusy(""); }
   const lbl=t=><div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:6}}>{t}</div>;
   return (
-    <Modal T={T} open onClose={onClose} title="Ficha y guiones" width={640}>
+    <Modal T={T} open onClose={onClose} title="Lo que ven los influencers" width={640}>
       <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>Esto es lo que ve cada influencer en su link del canje. La ficha es la misma para todos; el guion lo elegís en cada canje (uno fijo de esta lista, o uno personalizado con "Pedir guion").</div>
+      {lbl("Web de la tienda (el botón \"Ir a la web\" de su página)")}
+      <input value={web} onChange={e=>setWeb(e.target.value)} placeholder="https://www.tutienda.com.ar" style={{...iS,fontSize:13,marginBottom:18}}/>
       {lbl("Ficha de la marca (PDF o imagen, hasta 650 KB)")}
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:18}}>
         {ficha?.id?<><span style={{fontSize:13,color:T.text,fontWeight:600}}>{ficha.nombre}</span><Btn T={T} size="sm" variant="secondary" onClick={()=>verArchivo(ficha.id)}>Ver</Btn></>:<span style={{fontSize:13,color:T.textSm}}>Todavía no subiste la ficha.</span>}
@@ -8048,14 +8101,117 @@ function CanjesMaterialModal({T,uid,ficha,guiones,onCambio,onClose}){
         ))}
         <button onClick={()=>setLista(l=>[...l,{id:ghCanjeToken().slice(0,12),nombre:"",texto:"",archivoId:"",archivoNombre:""}])} style={{height:36,borderRadius:99,border:`1.5px dashed ${T.border}`,background:"transparent",color:T.textMd,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif"}}>+ Agregar guion</button>
       </div>
-      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14}}><Btn T={T} variant="secondary" onClick={onClose}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={!!busy}>{busy==="guardar"?"Guardando…":"Guardar guiones"}</Btn></div>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14}}><Btn T={T} variant="secondary" onClick={onClose}>Cancelar</Btn><Btn T={T} variant="primary" onClick={guardar} disabled={!!busy}>{busy==="guardar"?"Guardando…":"Guardar"}</Btn></div>
+    </Modal>
+  );
+}
+// Alta de un canje en 3 pasos (12/nov/2026): Quién → Qué acordamos → Listo (con el link y el WhatsApp armado).
+// Lo que llega con el pedido (productos, dirección, seguimiento) no se pide acá.
+export function CanjeNuevoModal({T,inicial,influencers,canjes,guiones,responsables,plantillas,catalogoContenido,onCrear,onAbrir,onPedirGuion,onClose}){
+  const iS=InputStyle(T);
+  const [paso,setPaso]=React.useState(1); const [busy,setBusy]=React.useState(false); const [hecho,setHecho]=React.useState(null);
+  const [f,setF]=React.useState({influencer:"",usuario:"",telefono:"",email:"",red:"Instagram",anteojosAcordados:1,contenido:[],guionId:"",guionPedir:false,acuerdoNota:"",codigoDescuento:"",descuentoPct:"10",comisionPct:"7",crearCupon:true,responsable:"",pedidoRef:"",_codigoTocado:false,
+    // Datos que llegan armados (desde la ficha del influencer o "Crear canje" de un pedido): se respetan.
+    ...Object.fromEntries(Object.entries(inicial||{}).filter(([k,v])=>v!==""&&v!=null&&!["_docId","estado","contenido","historial"].includes(k))),
+    ...(inicial?.codigoDescuento?{_codigoTocado:true}:{}),
+    ...(Array.isArray(inicial?.contenido)&&inicial.contenido.some(x=>x.acordados>0)?{contenido:inicial.contenido.filter(x=>x.acordados>0)}:{})});
+  const set=x=>setF(o=>({...o,...x}));
+  const u=String(f.usuario||"").replace(/^@/,"").trim().toLowerCase();
+  const tel8=String(f.telefono||"").replace(/\D/g,"").slice(-8);
+  const perfil=React.useMemo(()=>(influencers||[]).find(i=>(u&&String(i.usuario||"").replace(/^@/,"").toLowerCase()===u)||(tel8.length===8&&String(i.telefono||"").replace(/\D/g,"").slice(-8)===tel8))||null,[influencers,u,tel8]);
+  const hist=React.useMemo(()=>u?ghInfluencerHistorial({usuario:u},canjes):null,[canjes,u]);
+  const abierto=hist?.canjes.find(c=>!GH_CANJE_CERRADO.has(c.estado||""));
+  const usado=React.useRef("");
+  React.useEffect(()=>{ if(!perfil||usado.current===perfil._docId) return; usado.current=perfil._docId;
+    setF(o=>({...o,influencer:o.influencer||perfil.nombre||"",telefono:o.telefono||perfil.telefono||"",email:o.email||perfil.email||"",red:perfil.red||o.red,
+      ...(perfil.codigoDescuento?{codigoDescuento:String(perfil.codigoDescuento).toUpperCase(),_codigoTocado:true,crearCupon:false}:{}),
+      ...(perfil.descuentoPct?{descuentoPct:String(perfil.descuentoPct)}:{}),...(perfil.comisionPct?{comisionPct:String(perfil.comisionPct)}:{})})); },[perfil]);
+  const cont=(f.contenido||[]); const nCont=t=>(cont.find(x=>x.tipo===t)?.acordados)||0;
+  const setCont=(t,d)=>setF(o=>{ const l=[...(o.contenido||[])]; const i=l.findIndex(x=>x.tipo===t); const v=Math.max(0,(i>=0?l[i].acordados:0)+d); if(i>=0) l[i]={...l[i],acordados:v}; else if(v>0) l.push({tipo:t,acordados:v,entregados:0}); return {...o,contenido:l.filter(x=>x.acordados>0)}; });
+  const puede1=String(f.usuario||"").trim()&&String(f.influencer||"").trim();
+  async function crear(){
+    if(busy) return;
+    if(perfil?.volverATrabajar===false&&!(await appConfirm(`Marcaste a ${perfil.nombre||"esta persona"} como "No volver a trabajar"${perfil.motivoNo?`: ${perfil.motivoNo}`:""}. ¿Crear el canje igual?`,{okLabel:"Crear igual",danger:true}))) return;
+    setBusy(true);
+    try{
+      const token=ghCanjeToken();
+      const datos={...f,_docId:null,usuario:u,estado:String(f.pedidoRef||"").trim()?"Por enviar":"Esperando pedido",portalToken:token,productosCanje:f.productosCanje||[],producto:f.producto||"",tracking:"",notas:f.notas||"",historial:[],fechaEnvio:"",fechaEnvioProgr:"",recordatorio:"",contenidoVence:"",foto:f.foto||"",nicho:perfil?.nicho||"",seguidores:perfil?.seguidores||"",driveFolder:"",linkInstagram:u?`https://instagram.com/${u}`:""};
+      const r=await onCrear(datos);
+      if(!r?.id) throw new Error("No se pudo crear");
+      setHecho({...r,datos:{...datos,portalToken:r.token||token}}); setPaso(3);
+    }catch(e){ toast("No se pudo crear el canje: "+String(e?.message||e).slice(0,100),"error"); }
+    setBusy(false);
+  }
+  const lbl=t=><div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>{t}</div>;
+  const chip=(on)=>({display:"inline-flex",alignItems:"center",gap:6,height:32,padding:"0 6px 0 12px",borderRadius:99,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"14":"transparent",color:on?T.text:T.textMd,fontSize:12,fontWeight:on?700:500,fontFamily:"'Inter',system-ui,sans-serif"});
+  const mini={width:22,height:22,borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,lineHeight:1,display:"inline-flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"};
+  const PASOS=["Quién","Qué acordamos","Listo"];
+  return (
+    <Modal T={T} open onClose={busy?()=>{}:onClose} title="Nuevo canje" width={560}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:16}}>
+        {PASOS.map((t,i)=>(<div key={t}><div style={{height:5,borderRadius:99,background:i+1<=paso?T.accentSolid:T.border,opacity:i+1<paso?0.55:1,marginBottom:5}}/><div style={{fontSize:12,fontWeight:i+1===paso?800:500,color:i+1===paso?T.text:T.textSm}}>{i+1}. {t}</div></div>))}
+      </div>
+      {paso===1&&(<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div>{lbl("Instagram")}<input autoFocus style={iS} value={f.usuario} onChange={e=>{ const v=e.target.value.replace(/^@/,"").replace(/.*instagram\.com\//i,"").replace(/[/?].*$/,"").trim(); setF(o=>({...o,usuario:v,...(o._codigoTocado?{}:{codigoDescuento:ghCanjeCodigoDe(v)})})); }} placeholder="@usuario o el link de su perfil"/></div>
+        {(perfil||hist?.n>0)&&(<div style={{background:perfil?.volverATrabajar===false?T.red+"12":T.surface,border:`1px solid ${perfil?.volverATrabajar===false?T.red+"55":T.borderL}`,borderRadius:12,padding:"10px 12px",fontSize:13,color:T.text,lineHeight:1.5}}>
+          <strong>Ya trabajaron{hist?.n?`: ${hist.n} canje${hist.n!==1?"s":""}`:""}.</strong>{hist?.cerrados?` Cumplió ${hist.cumplidos} de ${hist.cerrados}${hist.conPlazo?`, a tiempo ${hist.aTiempo} de ${hist.conPlazo}`:""}.`:""}
+          {perfil?.volverATrabajar===false&&<div style={{color:T.red,fontWeight:700}}>Marcado "No volver a trabajar"{perfil.motivoNo?`: ${perfil.motivoNo}`:""}.</div>}
+          {abierto&&<div style={{color:T.orange}}>Tiene un canje abierto ({abierto.estado}). <button onClick={()=>onAbrir(abierto._docId)} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",padding:0,fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>Abrirlo</button></div>}
+          {perfil&&<div style={{color:T.textSm,fontSize:12}}>Completamos sus datos del perfil.</div>}
+        </div>)}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>{lbl("Nombre")}<input style={iS} value={f.influencer} onChange={e=>set({influencer:e.target.value})} placeholder="Sofía Gómez"/></div>
+          <div>{lbl("WhatsApp")}<input style={iS} value={f.telefono} onChange={e=>set({telefono:e.target.value})} placeholder="11 5555 1234" inputMode="tel"/></div>
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:4}}><Btn T={T} variant="secondary" onClick={onClose}>Cancelar</Btn><Btn T={T} variant="primary" onClick={()=>setPaso(2)} disabled={!puede1}>Siguiente</Btn></div>
+      </div>)}
+      {paso===2&&(<div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:14,alignItems:"end"}}>
+          <div>{lbl("Productos")}<div style={{display:"flex",alignItems:"center",gap:10,height:40}}><button style={mini} onClick={()=>set({anteojosAcordados:Math.max(1,(parseInt(f.anteojosAcordados)||1)-1)})}>−</button><strong style={{fontSize:16,minWidth:18,textAlign:"center"}}>{f.anteojosAcordados}</strong><button style={mini} onClick={()=>set({anteojosAcordados:(parseInt(f.anteojosAcordados)||0)+1})}>+</button></div></div>
+          <div>{lbl("Responsable")}<input style={iS} list="gh-canje-resp2" value={f.responsable} onChange={e=>set({responsable:e.target.value})} placeholder="Quién lo sigue"/><datalist id="gh-canje-resp2">{(responsables||[]).map(r=><option key={r} value={r}/>)}</datalist></div>
+        </div>
+        <div>{lbl("Contenido")}<div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {catalogoContenido.map(t=>{ const n=nCont(t); return n>0
+            ?<span key={t} style={chip(true)}>{t} <button style={mini} onClick={()=>setCont(t,-1)}>−</button><strong>{n}</strong><button style={mini} onClick={()=>setCont(t,1)}>+</button></span>
+            :<button key={t} onClick={()=>setCont(t,1)} style={{...chip(false),padding:"0 12px",cursor:"pointer"}}>+ {t}</button>; })}
+        </div></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div>{lbl("Guion")}<select style={iS} value={f.guionPedir?"__pedir":f.guionId} onChange={e=>{ const v=e.target.value; set(v==="__pedir"?{guionPedir:true,guionId:""}:{guionPedir:false,guionId:v}); }}>
+            <option value="">Sin guion</option>{(guiones||[]).map(g=><option key={g.id} value={g.id}>{g.nombre}</option>)}<option value="__pedir">Personalizado (lo pido después)</option></select></div>
+          <div>{lbl("Nota del acuerdo (la ve el influencer)")}<input style={iS} value={f.acuerdoNota} onChange={e=>set({acuerdoNota:e.target.value})} placeholder="Ej.: reel con el cupón en la descripción"/></div>
+        </div>
+        <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:12,padding:"10px 12px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:12,fontWeight:700,color:T.textSm,flex:1}}>Cupón para sus seguidores</span><label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}><input type="checkbox" checked={f.crearCupon} onChange={e=>set({crearCupon:e.target.checked})}/>Crearlo en la tienda</label></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 84px 84px",gap:8}}>
+            <input style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1}} value={f.codigoDescuento} onChange={e=>set({codigoDescuento:e.target.value.toUpperCase().replace(/\s+/g,""),_codigoTocado:true})} placeholder="CÓDIGO"/>
+            <input style={iS} type="number" min="1" max="100" value={f.descuentoPct} onChange={e=>set({descuentoPct:e.target.value})} title="% de descuento" placeholder="% desc."/>
+            <input style={iS} type="number" min="0" max="100" step="0.5" value={f.comisionPct} onChange={e=>set({comisionPct:e.target.value})} title="% de comisión" placeholder="% com."/>
+          </div>
+          <div style={{fontSize:11,color:T.textSm,marginTop:6}}>{f.codigoDescuento?`${f.descuentoPct||10}% de descuento para sus seguidores y ${f.comisionPct||0}% de comisión para el influencer.${f.crearCupon?" Se crea en la tienda al guardar.":" Tiene que existir en la tienda."}`:"Sin cupón."}</div>
+        </div>
+        <details><summary style={{fontSize:12,color:T.textMd,cursor:"pointer"}}>¿Ya hizo el pedido? Cargá el número</summary><input style={{...iS,marginTop:8}} value={f.pedidoRef} onChange={e=>set({pedidoRef:e.target.value.replace(/[^\d]/g,"")})} placeholder="N° de pedido (si no, se une solo cuando entre)"/></details>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}><Btn T={T} variant="ghost" onClick={()=>setPaso(1)} disabled={busy}>Volver</Btn><Btn T={T} variant="primary" onClick={crear} disabled={busy}>{busy?"Creando…":"Crear canje"}</Btn></div>
+      </div>)}
+      {paso===3&&hecho&&(()=>{ const c=hecho.datos; const link=ghCanjeLink(c); const tel=ghRecTel(c.telefono); const msg=ghCanjeMensaje(plantillas.inicio||GH_CANJE_PLANTILLAS.inicio,c);
+        return (<div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:15,fontWeight:800,color:T.text}}>Canje creado{c.estado==="Esperando pedido"?": queda esperando su pedido":""}.</div>
+          <div style={{fontSize:13,color:T.textMd,lineHeight:1.5}}>Mandale este mensaje con su link. Ahí tiene los pasos para hacer el pedido, su cupón, la ficha y el guion.</div>
+          <textarea readOnly value={msg} style={{...iS,minHeight:110,fontSize:13,resize:"vertical"}}/>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {tel?<a href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer" style={{display:"inline-flex",alignItems:"center",height:38,padding:"0 18px",borderRadius:99,background:T.green,color:"#fff",fontWeight:700,fontSize:13,textDecoration:"none"}}>Mandar por WhatsApp</a>:null}
+            <Btn T={T} variant="secondary" onClick={async()=>{ try{ await navigator.clipboard.writeText(msg); toast("Mensaje copiado","success"); }catch(_){ } }}>Copiar mensaje</Btn>
+            <Btn T={T} variant="secondary" onClick={async()=>{ try{ await navigator.clipboard.writeText(link); toast("Link copiado","success"); }catch(_){ } }}>Copiar solo el link</Btn>
+          </div>
+          {f.guionPedir&&<Btn T={T} variant="secondary" onClick={()=>onPedirGuion(hecho.id)}>Pedir el guion personalizado</Btn>}
+          <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:6}}><Btn T={T} variant="ghost" onClick={()=>onAbrir(hecho.id)}>Abrir el canje</Btn><Btn T={T} variant="primary" onClick={onClose}>Listo</Btn></div>
+        </div>); })()}
     </Modal>
   );
 }
 // Despacho de canjes (12/nov/2026): varios canjes en UN Excel de Andreani, después UN PDF con todas las
 // etiquetas → cada seguimiento va a su canje (por N° de pedido del rótulo o por el nombre) y, si la cuenta es
 // cliente del depósito, la tanda sale como envío especial de canje con los productos de cada uno.
-function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,depositoCliente,depositoCfg,uid,onClose}){
+function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,trackingsUsados=new Set(),depositoCliente,depositoCfg,uid,onClose}){
   const [sel,setSel]=React.useState(()=>new Set(preIds&&preIds.length?preIds:candidatos.map(c=>c._docId)));
   const [paso,setPaso]=React.useState(1); const [busy,setBusy]=React.useState(false);
   const [res,setRes]=React.useState(null); // {pdf, pags, asign:[{c,tracking,pagina}], sinAsignar:[pagina]}
@@ -8066,35 +8222,49 @@ function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,d
   async function bajarExcel(){
     if(!lista.length||busy) return; setBusy(true);
     try{
-      const filas=[],fuera=[];
-      for(const c of lista){ try{ const f=await armarFila(c); if(f) filas.push(f); else fuera.push(c.influencer||"—"); }catch(e){ fuera.push(`${c.influencer||"—"} (${e.message})`); } }
+      const filas=[],fuera=[],fueraIds=new Set();
+      for(const c of lista){ try{ const f=await armarFila(c); if(f) filas.push({...f,_id:c._docId}); else { fuera.push(c.influencer||"—"); fueraIds.add(c._docId); } }catch(e){ fuera.push(`${c.influencer||"—"} (${e.message})`); fueraIds.add(c._docId); } }
       if(!filas.length){ toast("No quedó ningún canje para el Excel"+(fuera.length?": "+fuera.join(", "):""),"warning",8000); setBusy(false); return; }
-      await ghEtiquetaAndreaniXlsx(filas,`EnvioMasivoExcelPaquetes-canjes-${hoyAR()}.xlsx`);
-      onExcel(lista.filter(c=>!fuera.some(x=>x.startsWith(c.influencer||"—"))));
+      const r=await ghEtiquetaAndreaniXlsx(filas,`EnvioMasivoExcelPaquetes-canjes-${hoyAR()}.xlsx`,{saltear:true});
+      for(const o of r?.omitidos||[]){ fueraIds.add(o._id); fuera.push(`${lista.find(c=>c._docId===o._id)?.influencer||"—"} (${o.error})`); }
+      onExcel(lista.filter(c=>!fueraIds.has(c._docId)));
       if(fuera.length) toast("Quedaron afuera: "+fuera.join(", "),"warning",9000);
       setPaso(2);
     }catch(e){ toast("No se pudo armar el Excel: "+e.message,"error",8000); }
     setBusy(false);
   }
+  // Lee el PDF y PROPONE a qué canje va cada etiqueta (no escribe nada hasta que se confirma: cargar el
+  // seguimiento cancela el pedido pendiente en la tienda). Por N° de pedido del rótulo (sin "#") o, si no,
+  // por nombre con un único mejor candidato. Un seguimiento que ya tiene otro canje no se reusa.
   async function leerPdf(file){
     if(!file||busy) return; setBusy(true);
     try{
       const bytes=new Uint8Array(await file.arrayBuffer());
       const pags=await ghDepLineasPaginas(bytes);
       const datos=pags.map(ghRotuloDatos);
-      const libres=[...lista]; const asign=[],sinAsignar=[];
+      const libres=[...lista]; const filas=[];
+      const nrm=x=>String(x||"").replace(/^#/,"").trim();
       datos.forEach((d,i)=>{
-        if(!d.tracking){ sinAsignar.push(i+1); return; }
-        let k=d.pedidoNum?libres.findIndex(c=>String(c.pedidoRef||"").trim()===d.pedidoNum):-1;
-        if(k<0&&d.destinatario){ const tn=ghNomTokens(d.destinatario); k=libres.findIndex(c=>{ const tc=ghNomTokens(c.influencer||""); return tc.length&&tn.length&&tc.filter(t=>tn.includes(t)).length>=Math.min(2,tc.length); }); }
-        if(k<0&&libres.length===1&&datos.filter(x=>x.tracking).length===1) k=0;
-        if(k<0){ sinAsignar.push(i+1); return; }
-        asign.push({c:libres[k],tracking:d.tracking,pagina:i+1}); libres.splice(k,1);
+        const fila={pagina:i+1,tracking:d.tracking||"",destinatario:d.destinatario||"",pedido:d.pedidoNum||"",canjeId:"",por:""};
+        if(!d.tracking){ filas.push(fila); return; }
+        if(trackingsUsados.has(d.tracking)){ fila.yaUsado=true; filas.push(fila); return; }
+        let k=d.pedidoNum?libres.findIndex(c=>nrm(c.pedidoRef)===d.pedidoNum):-1; if(k>=0) fila.por="pedido";
+        if(k<0&&d.destinatario){ const tn=ghNomTokens(d.destinatario);
+          const sc=libres.map((c,j)=>{ const tc=ghNomTokens(c.influencer||""); const com=tc.filter(t=>tn.includes(t)).length; const ok=tc.length===1?(com===1&&tn.length===1):com>=2; return {j,com:ok?com:0}; }).filter(x=>x.com>0).sort((a,b)=>b.com-a.com);
+          if(sc.length&&(sc.length===1||sc[0].com>sc[1].com)){ k=sc[0].j; fila.por="nombre"; } }
+        if(k<0&&libres.length===1&&datos.filter(x=>x.tracking).length===1){ k=0; fila.por="descarte"; }
+        if(k>=0){ fila.canjeId=libres[k]._docId; libres.splice(k,1); }
+        filas.push(fila);
       });
-      await onTracking(asign);
-      setRes({bytes,pags:pags.length,asign,sinAsignar,faltan:libres}); setPaso(3);
+      setRes({bytes,pags:pags.length,filas,confirmado:false}); setPaso(3);
     }catch(e){ toast("No pude leer el PDF: "+e.message,"error",8000); }
     setBusy(false);
+  }
+  async function confirmar(){
+    if(busy) return; const asign=res.filas.filter(f=>f.tracking&&f.canjeId).map(f=>({c:lista.find(c=>c._docId===f.canjeId),tracking:f.tracking,pagina:f.pagina})).filter(x=>x.c);
+    const ids=asign.map(x=>x.c._docId); if(new Set(ids).size!==ids.length){ toast("Hay un canje elegido en dos etiquetas. Corregilo antes de seguir.","warning"); return; }
+    if(!asign.length){ toast("No hay ninguna etiqueta asignada a un canje.","warning"); return; }
+    setBusy(true); try{ await onTracking(asign); setRes(r=>({...r,asign,confirmado:true,faltan:lista.filter(c=>!ids.includes(c._docId))})); }catch(e){ toast(e.message,"error"); } setBusy(false);
   }
   function abrirDeposito(){
     const a=[...res.asign].sort((x,y)=>x.pagina-y.pagina);
@@ -8131,13 +8301,26 @@ function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,d
         </label>
         <div style={{display:"flex",justifyContent:"flex-start",marginTop:12}}><Btn T={T} variant="ghost" onClick={()=>setPaso(1)} disabled={busy}>Volver</Btn></div>
       </>)}
-      {paso===3&&res&&(<>
+      {paso===3&&res&&!res.confirmado&&(<>
+        <div style={{fontSize:13,color:T.textMd,lineHeight:1.6,marginBottom:10}}>Revisá a qué canje va cada etiqueta. Al confirmar se carga el seguimiento (arranca el seguimiento automático) y se cancela su pedido pendiente en la tienda.</div>
+        <div style={{maxHeight:"44vh",overflowY:"auto"}}>{res.filas.map(f=>(
+          <div key={f.pagina} style={fila}>
+            <div style={{width:150,flexShrink:0}}><div style={{fontSize:13,fontWeight:700,color:T.text}}>Etiqueta {f.pagina}</div><div style={{fontSize:11,color:f.tracking?T.textSm:T.red}}>{f.tracking||"sin número de seguimiento"}</div>{f.destinatario&&<div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.destinatario}</div>}</div>
+            {f.yaUsado?<span style={{fontSize:12,color:T.yellow,flex:1}}>Ese seguimiento ya lo tiene otro canje: no se usa.</span>
+            :f.tracking?<select value={f.canjeId} onChange={e=>setRes(r=>({...r,filas:r.filas.map(x=>x.pagina===f.pagina?{...x,canjeId:e.target.value,por:e.target.value?"mano":""}:x)}))} style={{...InputStyle(T),flex:1,fontSize:13,borderColor:f.canjeId?undefined:T.yellow+"99"}}>
+              <option value="">Sin asignar</option>{lista.map(c=><option key={c._docId} value={c._docId}>{c.influencer||"—"}{c.pedidoRef?` · #${c.pedidoRef}`:""}</option>)}
+            </select>:<span style={{fontSize:12,color:T.textSm,flex:1}}>No es una etiqueta de Andreani.</span>}
+            {f.canjeId&&f.por&&<span style={{fontSize:11,color:f.por==="pedido"?T.green:T.yellow,flexShrink:0}}>{f.por==="pedido"?"por N° de pedido":f.por==="nombre"?"por nombre":f.por==="descarte"?"única":"a mano"}</span>}
+          </div>))}</div>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8,marginTop:14,flexWrap:"wrap"}}>
+          <Btn T={T} variant="ghost" onClick={()=>{ setRes(null); setPaso(2); }} disabled={busy}>Elegir otro PDF</Btn>
+          <Btn T={T} variant="primary" onClick={confirmar} disabled={busy}>{busy?"Cargando…":`Confirmar y cargar ${res.filas.filter(f=>f.tracking&&f.canjeId).length} seguimiento${res.filas.filter(f=>f.tracking&&f.canjeId).length!==1?"s":""}`}</Btn>
+        </div>
+      </>)}
+      {paso===3&&res?.confirmado&&(<>
         <div style={{fontSize:14,fontWeight:700,color:T.text,marginBottom:8}}>{res.asign.length} seguimiento{res.asign.length!==1?"s":""} cargado{res.asign.length!==1?"s":""}. Ya empieza el seguimiento automático.</div>
         {res.asign.map(x=><div key={x.c._docId} style={fila}><span style={{fontSize:13,color:T.text,flex:1}}>{x.c.influencer} <span style={{color:T.textSm}}>· etiqueta {x.pagina}</span></span><span style={{fontSize:12,color:T.green,fontWeight:700}}>{x.tracking}</span></div>)}
-        {(res.sinAsignar.length>0||res.faltan.length>0)&&<div style={{fontSize:12,color:T.yellow,background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"8px 12px",marginTop:10,lineHeight:1.5}}>
-          {res.sinAsignar.length>0&&<div>Etiquetas que no pude unir a un canje: {res.sinAsignar.join(", ")}.</div>}
-          {res.faltan.length>0&&<div>Canjes sin etiqueta en el PDF: {res.faltan.map(c=>c.influencer).join(", ")}. Pegá su seguimiento a mano en el canje.</div>}
-        </div>}
+        {res.faltan.length>0&&<div style={{fontSize:12,color:T.yellow,background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:12,padding:"8px 12px",marginTop:10,lineHeight:1.5}}>Canjes sin etiqueta en el PDF: {res.faltan.map(c=>c.influencer).join(", ")}. Siguen en Por enviar.</div>}
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14,flexWrap:"wrap"}}>
           <Btn T={T} variant="secondary" onClick={onClose}>Cerrar</Btn>
           {depositoCliente&&res.asign.length>0&&<Btn T={T} variant="success" onClick={abrirDeposito}>Mandar al depósito</Btn>}
@@ -8271,7 +8454,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   // plantillas de WhatsApp editables (users/{uid}.canjesPlantillas) y responsable por canje.
   const [plantillas,setPlantillas]=useState(GH_CANJE_PLANTILLAS);
   const [material,setMaterial]=useState({ficha:null,guiones:[]}); const [materialOpen,setMaterialOpen]=useState(false);
-  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>{ const u=s.data()||{}; const p=u.canjesPlantillas; if(p&&typeof p==="object") setPlantillas({...GH_CANJE_PLANTILLAS,...p}); setMaterial({ficha:u.canjesFicha||null,guiones:Array.isArray(u.canjesGuiones)?u.canjesGuiones:[]}); }).catch(()=>{}); },[user?.uid]);
+  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>{ const u=s.data()||{}; const p=u.canjesPlantillas; if(p&&typeof p==="object") setPlantillas({...GH_CANJE_PLANTILLAS,...p}); setMaterial({ficha:u.canjesFicha||null,guiones:Array.isArray(u.canjesGuiones)?u.canjesGuiones:[],web:u.canjesWeb||""}); }).catch(()=>{}); },[user?.uid]);
   async function guardarPlantillas(p){ setPlantillas({...GH_CANJE_PLANTILLAS,...p}); try{ await updateDoc(doc(db,"users",user.uid),{canjesPlantillas:p}); toast("Mensajes guardados","success"); }catch(e){ toast("No se pudieron guardar los mensajes","error"); } }
   const [pedidosPend,setPedidosPend]=useState(null); // null = sin buscar | {ts, lista, cargando, error}
   const [respFiltro,setRespFiltro]=useState(()=>{ try{ return localStorage.getItem(ghKey("growith_canjes_resp"))||""; }catch(_){ return ""; } });
@@ -8809,66 +8992,69 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     codigoDescuento:"", comisionPct:"7", descuentoPct:"10", crearCupon:true,
   });
 
-  async function saveCanje() {
-    if(!form?.influencer) return;
-    if(!form._docId){
-      const u=(form.usuario||"").replace("@","").toLowerCase();
-      const inf=influencers.find(i=>(u&&i.usuario&&i.usuario.replace("@","").toLowerCase()===u)||(i.nombre&&i.nombre===form.influencer));
+  // `f` = datos del formulario (por defecto el modal de edición); `opts.quedarse` = el asistente de alta,
+  // que necesita el id y el link al terminar (no cierra nada).
+  async function saveCanje(f=form, opts={}) {
+    if(!f?.influencer) return;
+    if(!f._docId){
+      const u=(f.usuario||"").replace("@","").toLowerCase();
+      const inf=influencers.find(i=>(u&&i.usuario&&i.usuario.replace("@","").toLowerCase()===u)||(i.nombre&&i.nombre===f.influencer));
       if(inf?.volverATrabajar===false&&!(await appConfirm(`Marcaste a ${inf.nombre||"este influencer"} como "No volver a trabajar"${inf.motivoNo?`: ${inf.motivoNo}`:""}. ¿Crear el canje igual?`,{okLabel:"Crear igual",danger:true}))) return;
     }
     setSaving(true);
     // Canje NUEVO sin carpeta: hereda la del perfil o, con carpeta madre elegida,
     // la crea sola (y se la guarda al perfil si lo tenía vacío).
-    if(!form._docId&&!(form.driveFolder||"").trim()){
-      const u=(form.usuario||"").replace("@","").toLowerCase();
-      const infDe=influencers.find(i=>(u&&i.usuario&&i.usuario.replace("@","").toLowerCase()===u)||(i.nombre&&i.nombre===form.influencer));
-      if((infDe?.driveFolder||"").trim()) form.driveFolder=infDe.driveFolder.trim();
+    if(!f._docId&&!(f.driveFolder||"").trim()){
+      const u=(f.usuario||"").replace("@","").toLowerCase();
+      const infDe=influencers.find(i=>(u&&i.usuario&&i.usuario.replace("@","").toLowerCase()===u)||(i.nombre&&i.nombre===f.influencer));
+      if((infDe?.driveFolder||"").trim()) f.driveFolder=infDe.driveFolder.trim();
       else if(driveParent?.id){
-        const l=await crearCarpetaDrive(form.influencer,form.usuario,form.email);
-        if(l){ form.driveFolder=l; if(infDe?._docId) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }
+        const l=await crearCarpetaDrive(f.influencer,f.usuario,f.email);
+        if(l){ f.driveFolder=l; if(infDe?._docId) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }
       }
     }
     try {
       const p={
-        influencer:form.influencer, usuario:form.usuario||"", red:form.red, linkInstagram:form.linkInstagram||"", pedidoRef:form.pedidoRef||"",
-        seguidores:form.seguidores||"", email:form.email||"", telefono:form.telefono||"",
-        producto:form.producto||((form.productosCanje||[])[0]?.nombre||""),
-        productosCanje:form.productosCanje||[],
-        estado:form.estado, tracking:form.tracking||"",
-        notas:form.notas||"",
-        fechaEnvio:form.fechaEnvio||"", driveFolder:form.driveFolder||"",
-        foto:form.foto||"", nicho:form.nicho||"",
-        contenido:form.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),
-        historial:form.historial||[],
-        recordatorio:form.recordatorio||"",
-        fechaEnvioProgr:form.fechaEnvioProgr||"",
-        codigoDescuento:(form.codigoDescuento||"").toUpperCase().trim(),
-        comisionPct:form.comisionPct||"",
-        descuentoPct:form.descuentoPct===""||form.descuentoPct==null?"":Number(form.descuentoPct),
-        anteojosAcordados:parseInt(form.anteojosAcordados)||0,
-        responsable:String(form.responsable||"").trim(),
+        influencer:f.influencer, usuario:f.usuario||"", red:f.red, linkInstagram:f.linkInstagram||"", pedidoRef:f.pedidoRef||"",
+        seguidores:f.seguidores||"", email:f.email||"", telefono:f.telefono||"",
+        producto:f.producto||((f.productosCanje||[])[0]?.nombre||""),
+        productosCanje:f.productosCanje||[],
+        estado:f.estado, tracking:f.tracking||"",
+        notas:f.notas||"",
+        fechaEnvio:f.fechaEnvio||"", driveFolder:f.driveFolder||"",
+        foto:f.foto||"", nicho:f.nicho||"",
+        contenido:f.contenido||ACTIVIDADES.map(tipo=>({tipo,acordados:0,entregados:0})),
+        historial:f.historial||[],
+        recordatorio:f.recordatorio||"",
+        fechaEnvioProgr:f.fechaEnvioProgr||"",
+        codigoDescuento:(f.codigoDescuento||"").toUpperCase().trim(),
+        comisionPct:f.comisionPct||"",
+        descuentoPct:f.descuentoPct===""||f.descuentoPct==null?"":Number(f.descuentoPct),
+        anteojosAcordados:parseInt(f.anteojosAcordados)||0,
+        guionId:f.guionId||"", acuerdoNota:String(f.acuerdoNota||"").slice(0,1500),
+        responsable:String(f.responsable||"").trim(),
       };
       // Cupón nuevo: se crea en la tienda al guardar (si ya existía, se usa el que hay). Si falla, el canje se guarda igual.
-      if(!form._docId&&form.crearCupon!==false&&p.codigoDescuento){
-        const v=parseFloat(form.descuentoPct)||10;
+      if(!f._docId&&f.crearCupon!==false&&p.codigoDescuento){
+        const v=parseFloat(f.descuentoPct)||10;
         try{ const r=await crearCuponTn(p.codigoDescuento,v); toast(r.yaExistia?`El cupón ${p.codigoDescuento} ya existía en tu tienda: quedó vinculado`:`Cupón ${p.codigoDescuento} creado (${v}% OFF)`,"success",5000); }
         catch(e){ toast(`El canje se guarda, pero el cupón no se pudo crear: ${e.message}`,"warning",8000); }
       }
       // Alta sin pedido = "Esperando pedido" (se une solo cuando entra); con pedido arranca en "Por enviar".
-      if(!form._docId){ if(!(p.pedidoRef||"").trim()) p.estado="Esperando pedido"; else if(p.estado==="Esperando pedido") p.estado="Por enviar"; }
+      if(!f._docId&&!(p.tracking||"").trim()){ if(!(p.pedidoRef||"").trim()) p.estado="Esperando pedido"; else if(p.estado==="Esperando pedido") p.estado="Por enviar"; }
       // Datos de envío (vienen del pedido cargado): la card "Envío Andreani"
       // del detalle y el export XLSX los leen del doc. Solo al CREAR — un
-      // guardado de edición sin estos campos en el form no debe pisarlos.
-      if(!form._docId){
+      // guardado de edición sin estos campos en el f no debe pisarlos.
+      if(!f._docId){
         // Contenido acordado → una pieza por unidad, con la fecha límite general del alta
-        p.piezas=ghPiezasDe({contenido:p.contenido}).map(x=>({...x,id:ghPiezaId(),fechaLimite:form.contenidoVence||""}));
-        p.contenidoVence=form.contenidoVence||"";
-        Object.assign(p,{dni:form.dni||"", cp:form.cp||"", provincia:form.provincia||"",
-          localidad:form.localidad||"", direccion:form.direccion||"",
-          dirNumero:form.dirNumero||"", piso:form.piso||"",
-          esSucursal:!!form.esSucursal, pickupDetails:form.pickupDetails||null});
+        p.piezas=ghPiezasDe({contenido:p.contenido}).map(x=>({...x,id:ghPiezaId(),fechaLimite:f.contenidoVence||""}));
+        p.contenidoVence=f.contenidoVence||"";
+        Object.assign(p,{dni:f.dni||"", cp:f.cp||"", provincia:f.provincia||"",
+          localidad:f.localidad||"", direccion:f.direccion||"",
+          dirNumero:f.dirNumero||"", piso:f.piso||"",
+          esSucursal:!!f.esSucursal, pickupDetails:f.pickupDetails||null});
       }
-      const prev=canjes.find(c=>c._docId===form._docId);
+      const prev=canjes.find(c=>c._docId===f._docId);
       // Si el tracking es nuevo o cambió, (re)activar el seguimiento del cron
       if((p.tracking||"").trim() && (p.tracking||"").trim()!==(prev?.tracking||"").trim()){
         p.trackDone=false; p.trackingCat=""; p.trackingEstado=""; p.trackingAviso=null;
@@ -8877,9 +9063,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       // ya muestra el canje) — esperar el ack del server dejaba el botón en
       // "Creando..." para siempre con conexión inestable. Si el server termina
       // rechazando la escritura, avisamos por toast.
-      const writeP=form._docId
-        ? updateDoc(doc(db,"canjes",form._docId),{...p,updatedAt:serverTimestamp(),...(form.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})})
-        : addDoc(collection(db,"canjes"),{...p,portalToken:ghCanjeToken(),ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+      const nuevoRef=f._docId?null:doc(collection(db,"canjes")); const nuevoId=f._docId||nuevoRef.id;
+      if(!f._docId) p.portalToken=f.portalToken||ghCanjeToken();
+      // Edición: SOLO lo que cambió respecto del canje cuando se abrió el formulario (auditoría 12/nov/2026:
+      // guardar mandaba todo y pisaba el estado o el contenido que el seguimiento o el influencer cambiaron
+      // mientras tanto). Si cambian los contadores, se ajustan las piezas para que sigan coincidiendo.
+      let cambios=p;
+      if(f._docId){ const base=f._base||{}; cambios={}; for(const [k,v] of Object.entries(p)) if(JSON.stringify(v??"")!==JSON.stringify(base[k]??"")) cambios[k]=v;
+        if(cambios.contenido){ const actual=prev||base; cambios.piezas=ghPiezasAjustar(ghPiezasDe(actual),cambios.contenido); cambios.contenido=ghContenidoDePiezas(cambios.piezas); } }
+      const writeP=f._docId
+        ? updateDoc(doc(db,"canjes",f._docId),{...cambios,updatedAt:serverTimestamp(),...(cambios.estado==="Cerrado"&&prev?.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})})
+        : setDoc(nuevoRef,{...p,ownerId:user.uid,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
       writeP.catch(e=>toast("El canje no se pudo guardar en el servidor: "+String(e?.message||e).slice(0,120)+". Revisá que siga en la lista","error",8000));
       // Programar email de recordatorio si hay fechaEnvioProgr nueva o cambiada
       const prevFecha = prev?.fechaEnvioProgr;
@@ -8896,7 +9090,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           toast(`Recordatorio de envío programado para el ${new Date(p.fechaEnvioProgr+"T12:00:00").toLocaleDateString("es-AR",{day:"2-digit",month:"long"})}`, "info", 4000);
         }
       }
-      const editedId=form._docId;
+      const editedId=f._docId;
+      if(opts.quedarse){ setSaving(false); return {id:nuevoId,token:p.portalToken||f.portalToken||""}; }
       setForm(null);
       if(editedId) setTimeout(()=>setDetail(editedId),50);
     } catch(e){appAlert("Error al guardar.");}
@@ -9021,6 +9216,20 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     return {map,grupos,total:Object.values(grupos).reduce((s,l)=>s+l.length,0)};
   },[canjes,alertCfg]);
 
+  // Otros avisos para "Para hacer hoy" (reemplazan la tira vieja "Hoy en Canjes"): envío demorado,
+  // recordatorio cumplido y paquete que vuelve (devolución).
+  const extrasHoy=useMemo(()=>{
+    const out=[]; const hoy=hoyAR();
+    for(const c of canjes){
+      if(GH_CANJE_CERRADO.has(c.estado||"")) continue;
+      const a=acciones.map.get(c._docId);
+      if(a?.tipo==="demorado"||a?.tipo==="sinrespuesta") out.push({key:"dem"+c._docId,c,sev:a.sev,txt:a.label,link:(c.tracking||"").trim()?`https://www.andreani.com/envio/${String(c.tracking).trim()}`:null});
+      if(c.trackingCat==="devolucion"&&!(c.trackingAviso?.visto)) out.push({key:"dev"+c._docId,c,sev:3,txt:"El paquete vuelve a la marca (devolución)",okLabel:"Ya lo vi",onOk:()=>updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true}).catch(()=>{}),link:(c.tracking||"").trim()?`https://www.andreani.com/envio/${String(c.tracking).trim()}`:null});
+      if(c.recordatorio&&c.recordatorio<=hoy) out.push({key:"rec"+c._docId,c,sev:1,txt:`Recordatorio del ${c.recordatorio.split("-").reverse().slice(0,2).join("/")}`,onOk:()=>updateDoc(doc(db,"canjes",c._docId),{recordatorio:""}).catch(()=>{})});
+    }
+    return out.sort((a,b)=>b.sev-a.sev);
+  },[canjes,acciones]);
+
   async function addNota(docId, texto) {
     if(!texto.trim()) return;
     const c=canjes.find(c=>c._docId===docId);
@@ -9106,7 +9315,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   }
   async function canjesTrackings(asign){
     const hoy=hoyAR();
-    await Promise.all(asign.map(({c,tracking})=>updateDoc(doc(db,"canjes",c._docId),{tracking,trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null,
+    // Seguimiento NUEVO (también un reenvío): se borra lo del envío anterior (entrega, plazo automático y los
+    // avisos de días ya escritos) para que el plazo vuelva a contar desde la nueva entrega.
+    const limpiarEnvio=c=>{ const x={trackEntregadoAt:null}; if(c.contenidoVenceAuto) x.contenidoVence=""; for(const k of Object.keys(c.escritos||{})) if(/^(dia\d+|sucursal_|visita_)/.test(k)) x[`escritos.${k}`]=deleteField(); return x; };
+    await Promise.all(asign.map(({c,tracking})=>updateDoc(doc(db,"canjes",c._docId),{...(String(c.tracking||"").trim()&&String(c.tracking).trim()!==tracking?limpiarEnvio(c):{}),tracking,trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null,
       fechaEnvio:c.fechaEnvio||hoy,fechaEnvioProgr:"",etiquetaVia:c.etiquetaVia||"excel",etiquetaAt:c.etiquetaAt||new Date().toISOString(),
       ...(["Esperando pedido","Por enviar","Pendiente envío"].includes(c.estado)?{estado:"Enviado"}:{}),updatedAt:serverTimestamp()}).catch(e=>toast(`${c.influencer}: no se guardó el seguimiento (${String(e?.message||e).slice(0,60)})`,"error"))));
     const res=await Promise.all(asign.map(({c})=>cancelarPedidoCanje(c)));
@@ -9138,21 +9350,24 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
       <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}
         onHelp={()=>setShowGuia(s=>!s)}>
-        <button onClick={()=>refrescarTracking(true)} disabled={refrescando} title="Consultar el estado de los envíos en Andreani ahora"
-          style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd,display:"flex",alignItems:"center",gap:6}}>
-          {refrescando?<Spinner size={11} color={T.textMd}/>:<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>}
-          {refrescando?"Actualizando…":"Actualizar envíos"}
-        </button>
-        <button onClick={exportCSV} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Exportar CSV</button>
-        <button onClick={()=>setDespachoOpen({})} style={{...BtnSecondary(T),fontSize:12,padding:"7px 12px",color:T.textMd}}>Despachar{candidatosDespacho.length?` (${candidatosDespacho.length})`:""}</button>
-        <button onClick={()=>setForm(emptyForm())} style={{...BtnPurple(T),fontSize:12,padding:"7px 14px"}}>+ Nuevo canje</button>
+        <DepMenu T={T} label="Más" items={[
+          {ico:"file",label:"Ficha de la marca, guiones y web",onClick:()=>setMaterialOpen(true)},
+          {ico:"note",label:"Mensajes de WhatsApp",onClick:()=>setPlantillasOpen(true)},
+          {ico:"truck",label:refrescando?"Actualizando envíos…":"Actualizar envíos ahora",onClick:()=>{ if(!refrescando) refrescarTracking(true); }},
+          {ico:"file",label:"Exportar CSV",onClick:exportCSV},
+          {ico:"eye",label:showGuia?"Ocultar cómo funciona":"Cómo funciona",onClick:()=>setShowGuia(x=>!x),sep:true},
+        ]}/>
+        <Btn T={T} variant="secondary" onClick={()=>setDespachoOpen({})}>Despachar{candidatosDespacho.length?` (${candidatosDespacho.length})`:""}</Btn>
+        <Btn T={T} variant="primary" onClick={()=>setForm(emptyForm())}>+ Nuevo canje</Btn>
       </AppTopbar>
       {fichaInf&&<InfluencerFichaModal T={T} inf={fichaInf} canjes={canjes} cupon={(comData?.coupons||[]).find(x=>fichaInf.codigoDescuento&&x.code===String(fichaInf.codigoDescuento).toUpperCase())||null}
         onClose={()=>setFichaInf(null)} onMarca={(v,m)=>guardarInfluencer(fichaInf,{volverATrabajar:v,motivoNo:v===false?String(m||"").trim():""})} onNotas={n=>guardarInfluencer(fichaInf,{notas:n})}
         onAbrirCanje={id=>{ setFichaInf(null); setDetail(id); }} onNuevoCanje={()=>nuevoCanjeDe(fichaInf)}
         onEditar={fichaInf._docId?()=>{ const inf=fichaInf; setFichaInf(null); setEditInfluencer(inf); setInfForm({nombre:inf.nombre||"",usuario:inf.usuario||"",red:inf.red||"Instagram",codigoDescuento:inf.codigoDescuento||"",descuentoPct:inf.descuentoPct||"",comisionPct:inf.comisionPct||"",email:inf.email||"",telefono:inf.telefono||"",notas:inf.notas||"",driveFolder:inf.driveFolder||""}); setShowInfluencerForm(true); }:null}/>}
+{materialOpen&&<CanjesMaterialModal T={T} uid={user?.uid} ficha={material.ficha} guiones={material.guiones} web={material.web} onCambio={x=>setMaterial(m=>({...m,...x}))} onClose={()=>setMaterialOpen(false)}/>}
+      {plantillasOpen&&<CanjesPlantillasModal T={T} plantillas={plantillas} onSave={guardarPlantillas} onClose={()=>setPlantillasOpen(false)}/>}
       {despachoOpen&&<CanjesDespachoModal T={T} candidatos={[...candidatosDespacho,...canjes.filter(c=>(despachoOpen.ids||[]).includes(c._docId)&&!candidatosDespacho.includes(c))]} preIds={despachoOpen.ids}
-        armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
+        armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} trackingsUsados={new Set(canjes.map(c=>String(c.tracking||"").trim()).filter(Boolean))} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
 
       <div style={{padding:"24px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
         {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
@@ -9160,13 +9375,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           {showGuia&&(
             <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
               {[
-                {n:1,title:"Perfiles de influencers",desc:"Creá el perfil una sola vez: código de descuento, % de descuento, % de comisión, redes y nicho. Después cada canje nuevo se autocompleta eligiendo el perfil."},
-                {n:2,title:"Nuevo canje",desc:"Con '+ Canje' elegís el perfil o cargás los datos desde un pedido real ('Cargar desde pedido' trae cliente, productos con nombre corto, dirección y hasta el punto de retiro). Definí los productos, el contenido acordado y listo: arranca en 'Por enviar'."},
-                {n:3,title:"Etiqueta Andreani desde el alta",desc:"Si cargaste el pedido, el botón 'Exportar XLSX Andreani' del mismo modal te da el Excel del envío al toque. Sin crear el canje, ir al detalle y volver. Si el punto de retiro no existe en la lista de Andreani, se abre el selector de sucursales cercanas ordenadas por distancia."},
-                {n:4,title:"Kanban por estado",desc:"Las columnas son el ciclo completo: Por enviar → Enviado → Contenido pendiente → Cerrado. 'Contenido pendiente' se ordena por urgencia (lo más viejo arriba) y Cerrado muestra los últimos 30 días (con botón para ver todos)."},
-                {n:5,title:"Hoy en Canjes",desc:"La tira de arriba junta TODO lo que requiere acción: canjes sin despachar, envíos demorados, paquetes entregados o en sucursal, contenido vencido y recordatorios. Cada chip filtra el kanban a esos canjes con un click, y cada card muestra su próximo paso. Los umbrales de días se configuran con el engranaje de la tira. El badge de Canjes en el menú cuenta estas acciones pendientes."},
-                {n:6,title:"Contenido y recordatorios",desc:"En el detalle marcás los contenidos entregados sobre los acordados (la barra de progreso de cada card). Si a los 5 días de entregado falta contenido, te llega un recordatorio por email. También podés crear una tarea de guion para el equipo con fecha límite."},
-                {n:7,title:"Cupones y comisiones",desc:"En Historial se cruzan las ventas REALES de tu tienda (Tienda Nube o Shopify) con cada código de descuento: ves cuántas ventas trajo, cuánto facturó y la comisión exacta a pagar (con % editable por cupón). Marcá pagos hechos para llevar la cuenta, y con el botón 'Link' compartís un panel público donde el dueño del código ve sus ventas y su comisión del mes en tiempo real."},
+                {n:1,title:"Nuevo canje",desc:"Apenas acuerdan por WhatsApp: su @, su WhatsApp, cuántos productos, el contenido, el guion y el cupón (10 % de descuento y 7 % de comisión, editables). Sin número de pedido: queda en Esperando pedido y te da el link para mandarle."},
+                {n:2,title:"El pedido se une solo",desc:"El influencer hace el pedido en la web con transferencia y su @ en la nota. Growith lo encuentra entre los pedidos con pago pendiente y lo une al canje (si duda, te pregunta en Para hacer hoy)."},
+                {n:3,title:"Despachar",desc:"Un solo Excel de Andreani para todos los canjes listos; subís el PDF que te da Andreani y cada seguimiento va a su canje. El pedido pendiente se cancela solo en la tienda y, si usás el depósito, sale la tanda de canje."},
+                {n:4,title:"Para hacer hoy",desc:"A quién escribirle y con qué mensaje: pedido sin hacer, paquete en sucursal, visita fallida y días 0, 7, 10 y 12 del contenido. El botón abre WhatsApp con el texto listo (nunca se manda solo)."},
+                {n:5,title:"El link del influencer",desc:"Ve sus pasos, lo acordado, su cupón, la ficha de la marca, su guion, su carpeta de Drive y pega el link de cada pieza. Con todo entregado, el canje se cierra solo."},
+                {n:6,title:"Ficha del influencer",desc:"En Influencers: historial, si cumple y a tiempo, ventas del cupón y la marca de volver a trabajar o no."},
               ].map(s=>(
                 <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
                   <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
@@ -9195,154 +9409,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         </div>
         {/* En la pestaña Cupones estos bloques no aportan (pedido de Soluna) */}
         {viewTab!=="comisiones"&&(<>
-        {/* Stats — mismo patrón de tiles clickeables que Tareas/Reclamos */}
-        <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-          {[
-            {label:"Total",value:stats.total,color:T.textMd,estado:""},
-            {label:"Por enviar",value:stats.porEnviar,color:T.yellow,estado:"Por enviar"},
-            {label:"Enviados",value:stats.enviados,color:T.blue,estado:"Enviado"},
-            {label:"Cont. pendiente",value:stats.contPend,color:T.orange,estado:"Contenido pendiente"},
-            {label:"Cerrados",value:stats.cerrados,color:T.green,estado:"Cerrado"},
-          ].map(s=>{
-            const isActive=filterEstado===s.estado;
-            return (
-              <div key={s.label} onClick={()=>{setFilterEstado(s.estado);if(viewTab!=="comisiones"&&viewTab!=="perfiles")setViewTab("kanban");}}
-                style={{flex:"1 1 100px",background:isActive?s.color+"18":T.card,border:`1.5px solid ${isActive?s.color:s.color+"28"}`,borderRadius:DS.r.xl,padding:"14px 16px",cursor:"pointer",transition:"all 0.15s",userSelect:"none"}}
-                onMouseEnter={e=>{if(!isActive){e.currentTarget.style.borderColor=s.color+"70";e.currentTarget.style.background=s.color+"08";}}}
-                onMouseLeave={e=>{if(!isActive){e.currentTarget.style.borderColor=s.color+"28";e.currentTarget.style.background=T.card;}}}>
-                <div style={{fontSize:26,fontWeight:800,color:s.color,lineHeight:1,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.value??<Spinner size={16} color={s.color}/>}</div>
-                <div style={{fontSize:12,color:isActive?s.color:T.textSm,fontWeight:isActive?600:400,marginTop:5,fontFamily:"'Inter',system-ui,sans-serif"}}>{s.label}</div>
-              </div>
-            );
-          })}
-        </div>
-
         {viewTab==="kanban"&&<CanjesParaEscribir T={T} canjes={canjes} plantillas={plantillas} dudas={union.dudas} responsables={responsables} resp={respFiltro}
           setResp={v=>{ setRespFiltro(v); try{ localStorage.setItem(ghKey("growith_canjes_resp"),v); }catch(_){ } }}
-          onEscrito={marcarEscrito} onAbrir={id=>setDetail(id)} onUnir={(c,o)=>unirPedido(c,o,"manual")} onPlantillas={()=>setPlantillasOpen(true)} onMaterial={()=>setMaterialOpen(true)}
-          pend={pedidosPend} onBuscar={buscarPedidosPend} hayEsperando={hayEsperando}/>}
-        {materialOpen&&<CanjesMaterialModal T={T} uid={user?.uid} ficha={material.ficha} guiones={material.guiones} onCambio={x=>setMaterial(m=>({...m,...x}))} onClose={()=>setMaterialOpen(false)}/>}
-        {plantillasOpen&&<CanjesPlantillasModal T={T} plantillas={plantillas} onSave={guardarPlantillas} onClose={()=>setPlantillasOpen(false)}/>}
-        {/* ── HOY EN CANJES — tira única de acciones vencidas y novedades ── */}
-        {(()=>{
-          const g=acciones.grupos;
-          const avisos=canjes.filter(c=>{
-            const a=c.trackingAviso;
-            if(!a||a.visto) return false;
-            // Los "entregado" se auto-archivan a las 48h: dejan de ser novedad
-            if(a.cat==="entregado"&&isFinite(Date.parse(a.at||""))&&Date.now()-Date.parse(a.at)>48*3600e3) return false;
-            return true;
-          });
-          const worstCont=g.contenido.reduce((s,c)=>Math.max(s,acciones.map.get(c._docId)?.sev||0),0);
-          const chips=[
-            {id:"despachar",   items:g.despachar,   label:"sin despachar",  color:T.orange},
-            {id:"demorado",    items:g.demorado,    label:g.demorado.length===1?"demorado":"demorados", color:T.blue},
-            {id:"sinrespuesta",items:g.sinrespuesta,label:`sin respuesta +${alertCfg.sinrespuesta}d`, color:T.red},
-            {id:"contenido",   items:g.contenido,   label:"contenido vencido", color:worstCont>=2?T.red:T.orange},
-            {id:"recordatorio",items:g.recordatorio,label:g.recordatorio.length===1?"recordatorio":"recordatorios", color:T.yellow},
-          ].filter(ch=>ch.items.length>0);
-          const AVISO_TXT={entregado:"entregado",en_sucursal:"en sucursal para retirar",devolucion:"volviendo (devolución)",visita_fallida:"con visita fallida"};
-          const avisoDefs=[
-            {id:"entregado",  cats:["entregado"],  uno:"entregado",   varios:"entregados", color:T.green},
-            {id:"en_sucursal",cats:["en_sucursal"],uno:"en sucursal", varios:"en sucursal", color:T.yellow},
-            {id:"problema",   cats:["devolucion","visita_fallida"],uno:"con problema",varios:"con problema", color:T.red},
-          ].map(d=>({...d,items:avisos.filter(c=>d.cats.includes(c.trackingAviso.cat))})).filter(d=>d.items.length>0);
-          const nTotal=acciones.total+avisos.length;
-          if(nTotal===0) return null;
-          const toggleFiltro=(ch)=>{
-            if(alertFilter?.tipo===ch.id){ setAlertFilter(null); return; }
-            setAlertFilter({tipo:ch.id,label:`${ch.items.length} ${ch.label}`,color:ch.color,ids:ch.items.map(c=>c._docId)});
-            setViewTab("kanban"); setOpenAlertDrop(null);
-          };
-          const pill=(active,col)=>({display:"inline-flex",alignItems:"center",gap:7,padding:"6px 13px",borderRadius:99,cursor:"pointer",border:`1px solid ${active?col:col+"44"}`,background:active?col+"1c":col+"10",color:col,transition:"all 0.15s ease",userSelect:"none",fontSize:12,fontWeight:600,whiteSpace:"nowrap"});
-          return (
-            <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:11,flexShrink:0}}>
-                <div style={{width:34,height:34,borderRadius:9,background:T.accent+"18",color:T.accent,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-                </div>
-                <div>
-                  <div style={{fontSize:9.5,fontWeight:700,letterSpacing:"0.08em",color:T.textSm}}>HOY EN CANJES</div>
-                  <div style={{fontSize:15,fontWeight:800,color:T.text,lineHeight:1.25}}>{nTotal} {nTotal===1?"pendiente":"pendientes"}</div>
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",flex:1,minWidth:0}}>
-                {chips.map(ch=>{
-                  const active=alertFilter?.tipo===ch.id;
-                  return (
-                    <div key={ch.id} onClick={()=>toggleFiltro(ch)} title="Filtrar el kanban a estos canjes" style={pill(active,ch.color)}>
-                      <span style={{fontSize:13,fontWeight:800}}>{ch.items.length}</span>
-                      <span>{ch.label}</span>
-                      {active&&<span style={{fontSize:11,opacity:.8}}>✕</span>}
-                    </div>
-                  );
-                })}
-                {avisoDefs.map(d=>{
-                  const isOpen=openAlertDrop===d.id;
-                  return (
-                    <div key={d.id} style={{position:"relative"}}>
-                      <div onClick={()=>setOpenAlertDrop(isOpen?null:d.id)} style={pill(isOpen,d.color)}>
-                        <span style={{fontSize:13,fontWeight:800}}>{d.items.length}</span>
-                        <span>{d.items.length===1?d.uno:d.varios}</span>
-                        <span style={{fontSize:9,opacity:isOpen?.8:.5,transition:"transform 0.2s",display:"inline-block",transform:isOpen?"rotate(180deg)":"rotate(0deg)"}}>▼</span>
-                      </div>
-                      {isOpen&&(
-                        <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,width:380,maxWidth:"calc(100vw - 48px)",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,overflow:"hidden",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
-                          {d.items.map(c=>(
-                            <div key={c._docId} style={{display:"flex",alignItems:"center",gap:9,padding:"9px 12px",borderBottom:`1px solid ${T.borderL}`}}>
-                              <span style={{width:7,height:7,borderRadius:"50%",background:d.color,flexShrink:0}}/>
-                              <div style={{flex:1,minWidth:0}}>
-                                <div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.influencer||"Sin nombre"}</div>
-                                <div style={{fontSize:11,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Paquete {AVISO_TXT[c.trackingAviso.cat]||""}{c.trackingAviso.estado?` · "${c.trackingAviso.estado}"`:""}</div>
-                              </div>
-                              {(c.tracking||"").trim()&&<a href={`https://www.andreani.com/envio/${(c.tracking||"").trim()}`} target="_blank" rel="noopener noreferrer" style={{fontSize:11,color:T.blue,textDecoration:"none",flexShrink:0}}>Tracking →</a>}
-                              <button onClick={()=>{setDetail(c._docId);setOpenAlertDrop(null);}} style={{...BtnSecondary(T),padding:"4px 10px",fontSize:11,flexShrink:0}}>Abrir</button>
-                              <button onClick={async()=>{try{await updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true});}catch(_){}}} title="Marcar visto" style={{background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:14,padding:"2px 4px",flexShrink:0,fontFamily:"'Inter',system-ui,sans-serif"}}>✕</button>
-                            </div>
-                          ))}
-                          <button onClick={async()=>{setOpenAlertDrop(null);try{await Promise.all(d.items.map(c=>updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true})));}catch(_){}}}
-                            style={{width:"100%",background:"transparent",border:"none",color:T.textMd,cursor:"pointer",fontSize:11,fontWeight:600,padding:"8px 12px",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                            Marcar todos como vistos
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Umbrales configurables (días) */}
-              <div style={{position:"relative",marginLeft:"auto",flexShrink:0}}>
-                <button onClick={()=>setOpenAlertDrop(openAlertDrop==="cfg"?null:"cfg")} title="Configurar umbrales de alertas"
-                  style={{width:28,height:28,borderRadius:8,background:"transparent",border:`1px solid ${openAlertDrop==="cfg"?T.accent:T.border}`,color:openAlertDrop==="cfg"?T.accent:T.textSm,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-                </button>
-                {openAlertDrop==="cfg"&&(
-                  <div className="gh-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,width:280,background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 14px",boxShadow:"0 12px 32px rgba(0,0,0,0.35)"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:10}}>Umbrales de alerta (días)</div>
-                    {[
-                      {k:"despachar",label:"Sin despachar tras crear"},
-                      {k:"demora",label:"Envío demorado"},
-                      {k:"contAviso",label:"Aviso de contenido"},
-                      {k:"contUrgente",label:"Contenido urgente"},
-                      {k:"contCritico",label:"Contenido crítico"},
-                      {k:"sinrespuesta",label:"Sin respuesta"},
-                    ].map(f=>(
-                      <div key={f.k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:7}}>
-                        <span style={{fontSize:11,color:T.textMd}}>{f.label}</span>
-                        <input type="number" min={1} value={alertCfg[f.k]} onChange={e=>{const v=Number(e.target.value);if(isFinite(v)&&v>=1)saveAlertCfg({[f.k]:v});}}
-                          style={{width:56,padding:"4px 8px",borderRadius:7,border:`1px solid ${T.inputBorder}`,background:T.card,color:T.text,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif",textAlign:"center"}}/>
-                      </div>
-                    ))}
-                    <button onClick={()=>{setAlertCfg({...CANJE_ALERT_DEFAULTS});try{localStorage.removeItem(ghKey("growith_canjes_alertcfg"));}catch(_){}}}
-                      style={{marginTop:4,background:"transparent",border:"none",color:T.textSm,cursor:"pointer",fontSize:11,padding:0,fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>
-                      Restaurar valores por defecto
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+          onEscrito={marcarEscrito} onAbrir={id=>setDetail(id)} onUnir={(c,o)=>unirPedido(c,o,"manual")}
+          pend={pedidosPend} onBuscar={buscarPedidosPend} hayEsperando={hayEsperando}
+          despachables={candidatosDespacho.filter(c=>(c.pedidoRef||"").trim()).length} onDespachar={()=>setDespachoOpen({})} extras={extrasHoy}/>}
         </>)}
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
@@ -9574,6 +9645,17 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
                             <div style={{flex:1}}/>
 
+                            {/* Próximo paso con su botón (12/nov/2026) */}
+                            {(()=>{ const est=c.estado; const tel=ghRecTel(c.telefono); const parar=e=>e.stopPropagation();
+                              const b={display:"inline-flex",alignItems:"center",height:26,padding:"0 10px",borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"};
+                              const it=ghCanjeParaEscribir(c); const wa=(tpl)=>tel?`https://wa.me/${tel}?text=${encodeURIComponent(ghCanjeMensaje(tpl,c))}`:null;
+                              const botones=[];
+                              if(est==="Esperando pedido"){ if(ghCanjeLink(c)) botones.push(<button key="l" style={b} onClick={async e=>{ parar(e); try{ await navigator.clipboard.writeText(ghCanjeLink(c)); toast("Link copiado","success"); }catch(_){ } }}>Copiar link</button>);
+                                if(wa(plantillas.inicio)) botones.push(<a key="w" href={wa(it?.tipo==="pedido"?plantillas.pedido:plantillas.inicio)} target="_blank" rel="noopener noreferrer" style={{...b,color:T.green}} onClick={e=>{ parar(e); if(it) marcarEscrito(c,it.clave); }}>WhatsApp</a>); }
+                              else if((est==="Por enviar"||est==="Pendiente envío")&&!(c.tracking||"").trim()) botones.push(<button key="d" style={{...b,background:T.accentSolid,color:"#fff",border:"none"}} onClick={e=>{ parar(e); setDespachoOpen({ids:[c._docId]}); }}>Despachar</button>);
+                              else if(it&&wa(plantillas[it.tipo])) botones.push(<a key="w" href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} target="_blank" rel="noopener noreferrer" style={{...b,color:T.green}} onClick={e=>{ parar(e); marcarEscrito(c,it.clave); }}>Escribirle</a>);
+                              else if((c.tracking||"").trim()&&est==="Enviado") botones.push(<a key="t" href={`https://www.andreani.com/envio/${String(c.tracking).trim()}`} target="_blank" rel="noopener noreferrer" style={b} onClick={parar}>Seguimiento</a>);
+                              return botones.length?<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}} draggable={false} onMouseDown={parar}>{botones}</div>:null; })()}
                             {proxV&&estado!=="Cerrado"&&(
                               <div style={{fontSize:10,color:proxVencida?T.red:T.textSm,fontWeight:proxVencida?700:500,marginBottom:6}}>
                                 {proxVencida?"Contenido vencido el ":"Contenido para el "}{proxV.split("-").reverse().slice(0,2).join("/")}
@@ -10156,7 +10238,11 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     {c.email&&<a href={"mailto:"+c.email} style={pillA}><span style={{color:T.textSm,display:"inline-flex"}}>{IC.mail}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email}</span></a>}
                   </div>
                 </div>
-                <button onClick={()=>setForm({...emptyForm(),...c})} title="Editar seguidores, red, nicho, foto y carpeta de Drive" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",flexShrink:0}}>Editar</button>
+                {ghCanjeLink(c)&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={async()=>{ try{ await navigator.clipboard.writeText(ghCanjeLink(c)); toast("Link del influencer copiado","success"); }catch(_){ } }} title="Su página con los pasos, el cupón, la ficha, el guion y dónde dejar los links" style={{...BtnSecondary(T),fontSize:12}}>Copiar su link</button>
+                  {ghRecTel(c.telefono)&&<a href={`https://wa.me/${ghRecTel(c.telefono)}?text=${encodeURIComponent(ghCanjeMensaje(c.estado==="Esperando pedido"?(plantillas.inicio||GH_CANJE_PLANTILLAS.inicio):"Hola {nombre}! Acá tenés todo lo de tu canje: {link}",c))}`} target="_blank" rel="noopener noreferrer" title="Abre WhatsApp con el mensaje y su link (no se manda solo)" style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",color:T.green}}>WhatsApp</a>}
+                </div>}
+                <button onClick={()=>setForm({...emptyForm(),...c,_base:c})} title="Editar seguidores, red, nicho, foto y carpeta de Drive" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",flexShrink:0}}>Editar</button>
                 <TrackingChip c={c} size={10}/>
               </div>
 
@@ -10254,17 +10340,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
 
               {/* ── LINK PARA EL INFLUENCER (12/nov/2026): ficha, guion, carpeta y dónde deja sus links ── */}
               {(()=>{
-                const link=ghCanjeLink(c); const tel=ghRecTel(c.telefono);
-                const msg=ghCanjeMensaje("Hola {nombre}! Acá tenés todo lo de tu canje: lo que acordamos, la info de la marca, tu guion y dónde dejar los links de lo que subas: {link}",c);
+                const link=ghCanjeLink(c);
                 return (
                   <div style={secStyle}>
-                    {secHead(IC.link||IC.file,"Link para el influencer")}
-                    {link?(<div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-                      <span style={{flex:"1 1 200px",minWidth:0,fontSize:12,color:T.textMd,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{link}</span>
-                      <button onClick={async()=>{ try{ await navigator.clipboard.writeText(link); toast("Link copiado","success"); }catch(_){ } }} style={{...BtnSecondary(T),fontSize:12}}>Copiar</button>
-                      {tel&&<a href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",color:T.green}}>Mandar por WhatsApp</a>}
-                      <a href={link} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600}}>Ver como el influencer</a>
-                    </div>):<div style={{fontSize:12,color:T.textSm,marginBottom:12}}>Generando el link…</div>}
+                    {secHead(IC.link||IC.file,"Lo que ve el influencer",link?<a href={link} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600}}>Ver su página</a>:null)}
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                       <div>
                         <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:4}}>Guion</div>
@@ -10442,7 +10521,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                 const addPieza=(tipo)=>savePiezas([...piezas,{id:ghPiezaId(),tipo,estado:"pendiente",fechaLimite:fecha,link:"",nota:""}]);
                 const updPieza=(id,patch)=>savePiezas(piezas.map(x=>x.id!==id?x:({...x,...patch,...(patch.estado&&patch.estado!=="pendiente"&&!x.entregadaAt?{entregadaAt:new Date().toISOString()}:{})})));
                 const delPieza=(id)=>savePiezas(piezas.filter(x=>x.id!==id));
-                const setFecha=v=>savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"?{...x,fechaLimite:v||""}:x),{contenidoVence:v||""});
+                const setFecha=v=>savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"?{...x,fechaLimite:v||""}:x),{contenidoVence:v||"",contenidoVenceAuto:false});
                 const hoyP=hoyAR();
                 const faltan=piezas.filter(x=>(x.estado||"pendiente")==="pendiente").length;
                 const hechas=piezas.length-faltan;
@@ -10643,299 +10722,12 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         })()}
       </Modal>
 
-      {/* Modal NUEVO canje - form mínimo */}
-      <Modal T={T} open={!!form&&!form._docId} onClose={()=>setForm(null)} title="Nuevo canje" width={440}>
-        {form&&!form._docId&&(
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-
-            {/* Buscar por número de pedido */}
-            <div style={{background:T.surface,border:`1px solid ${form._pedidoCargado?T.green:T.borderL}`,borderRadius:10,padding:"10px 14px",transition:"border-color 0.2s"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.textSm}}>Cargar desde pedido</div>
-                {form._pedidoCargado&&(
-                  <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,fontWeight:700,color:T.green}}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    Pedido #{form._pedidoCargado} cargado
-                    <button type="button" onClick={()=>setForm(f=>({...f,_pedidoCargado:null}))} style={{background:"transparent",border:"none",cursor:"pointer",color:T.textSm,fontSize:12,padding:0,lineHeight:1}}>✕</button>
-                  </div>
-                )}
-              </div>
-              <OrderSearchField T={T} orders={orders} uid={user?.uid} onSelect={(num, orden)=>{
-                const o=orden||orders.find(o=>o.numero===String(num));
-                const prodsCanje=(o?.productos||[]).map(p=>({
-                  nombre:ghNombreCortoProducto(typeof p==="string"?p:(p.nombre||""),prefProds),
-                  cantidad:parseInt(p.cantidad)||1,
-                })).filter(p=>p.nombre);
-                setForm(f=>({...f,
-                  influencer:f.influencer||(o?.comprador||""),
-                  email:f.email||(o?.email||""),
-                  telefono:f.telefono||(o?.telefono||""),
-                  pedidoRef:String(num),
-                  productosCanje:prodsCanje.length>0?prodsCanje:(f.productosCanje||[]),
-                  producto:prodsCanje[0]?.nombre||f.producto||"",
-                  // Datos de envío del pedido: habilitan el export XLSX Andreani
-                  // desde este mismo modal y la card "Envío Andreani" del detalle.
-                  dni:o?.dni||f.dni||"", cp:o?.cp||f.cp||"",
-                  provincia:o?.provincia||f.provincia||"", localidad:o?.localidad||o?.ciudad||f.localidad||"",
-                  direccion:o?.direccion||f.direccion||"", dirNumero:o?.dirNumero||f.dirNumero||"", piso:o?.piso||f.piso||"",
-                  esSucursal:!!o?.esSucursal, pickupDetails:o?.pickupDetails||null,
-                  _pedidoCargado:String(num),
-                }));
-              }}/>
-            </div>
-
-            {/* Autocompletar desde perfil existente */}
-            {influencers.length>0&&(
-              <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:7}}>Autocompletar desde perfil guardado</div>
-                <select onChange={e=>{
-                  const inf=influencers.find(i=>i._docId===e.target.value);
-                  if(!inf) return;
-                  setForm(f=>({...f,
-                    influencer:inf.nombre||f.influencer,
-                    email:inf.email||f.email,
-                    telefono:inf.telefono||f.telefono,
-                    codigoDescuento:inf.codigoDescuento||f.codigoDescuento, _codigoTocado:!!inf.codigoDescuento||f._codigoTocado,
-                    comisionPct:inf.comisionPct||f.comisionPct, descuentoPct:inf.descuentoPct||f.descuentoPct,
-                    driveFolder:inf.driveFolder||f.driveFolder||"",
-                  }));
-                  e.target.value="";
-                }} defaultValue="" style={{...iS,fontSize:13}}>
-                  <option value="">Elegir un perfil...</option>
-                  {influencers.map(inf=><option key={inf._docId} value={inf._docId}>{inf.nombre}{inf.usuario?` @${inf.usuario}`:""}</option>)}
-                </select>
-              </div>
-            )}
-
-            {/* Nombre + @usuario en una fila */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>Nombre <span style={{color:T.red}}>*</span></label>
-                <input autoFocus style={iS} value={form.influencer||""} onChange={e=>setForm(f=>({...f,influencer:e.target.value}))} placeholder="Ej: Sofi García"/>
-              </div>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>@ Usuario</label>
-                <input style={iS} value={form.usuario||""} onChange={e=>{ const u=e.target.value.replace(/^@/,""); setForm(f=>({...f,usuario:u,...(f._codigoTocado?{}:{codigoDescuento:ghCanjeCodigoDe(u)})})); }} placeholder="sofigarcia"/>
-              </div>
-            </div>
-
-            {/* Cupón para sus seguidores (12/nov/2026): por defecto 10 % de descuento y 7 % de comisión,
-                editables por persona; el código sale del @ y se CREA solo en la tienda al guardar. */}
-            <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.textSm,flex:1}}>Cupón para sus seguidores</div>
-                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}><input type="checkbox" checked={form.crearCupon!==false} onChange={e=>setForm(f=>({...f,crearCupon:e.target.checked}))}/>Crearlo en la tienda al guardar</label>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px",gap:10}}>
-                <div><div style={{fontSize:11,color:T.textSm,marginBottom:3}}>Código</div><input style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1}} value={form.codigoDescuento||""} onChange={e=>setForm(f=>({...f,codigoDescuento:e.target.value.toUpperCase().replace(/\s+/g,""),_codigoTocado:true}))} placeholder="SOFISTYLE" list="gh-codigos-influencers"/></div>
-                <div><div style={{fontSize:11,color:T.textSm,marginBottom:3}}>% descuento</div><input style={iS} type="number" min="1" max="100" value={form.descuentoPct??""} onChange={e=>setForm(f=>({...f,descuentoPct:e.target.value}))} placeholder="10"/></div>
-                <div><div style={{fontSize:11,color:T.textSm,marginBottom:3}}>% comisión</div><input style={iS} type="number" min="0" max="100" step="0.5" value={form.comisionPct??""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="7"/></div>
-                <datalist id="gh-codigos-influencers">
-                  {influencers.filter(i=>i.codigoDescuento).map(i=><option key={i._docId} value={(i.codigoDescuento||"").toUpperCase()}>{i.nombre}</option>)}
-                </datalist>
-              </div>
-              <div style={{fontSize:11,color:T.textSm,marginTop:6}}>{(form.codigoDescuento||"").trim()?(form.crearCupon!==false?`Al guardar se crea ${form.codigoDescuento} con ${form.descuentoPct||10}% OFF en tu tienda (si ya existe, se usa el que hay).`:"Se vincula a un código que ya existe en tu tienda."):"Sin código: el canje no tiene cupón."}</div>
-            </div>
-
-            {/* Teléfono + Email en una fila */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>WhatsApp</label>
-                <input style={iS} value={form.telefono||""} onChange={e=>setForm(f=>({...f,telefono:e.target.value}))} placeholder="5491155555555"/>
-              </div>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>Email</label>
-                <input style={iS} type="email" value={form.email||""} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="sofi@mail.com"/>
-              </div>
-            </div>
-
-            {/* Lo acordado (12/nov/2026): cuántos anteojos y quién lo sigue */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>Anteojos acordados</label>
-                <input style={iS} type="number" min="0" value={form.anteojosAcordados||""} onChange={e=>setForm(f=>({...f,anteojosAcordados:e.target.value}))} placeholder="Ej: 2"/>
-              </div>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>Responsable</label>
-                <input style={iS} list="gh-canje-resp" value={form.responsable||""} onChange={e=>setForm(f=>({...f,responsable:e.target.value}))} placeholder="Quién lo sigue"/>
-                <datalist id="gh-canje-resp">{responsables.map(r=><option key={r} value={r}/>)}</datalist>
-              </div>
-            </div>
-            {!(form.pedidoRef||"").trim()&&<div style={{fontSize:12,color:T.textMd,lineHeight:1.5,background:T.purple+"12",border:`1px solid ${T.purple}33`,borderRadius:12,padding:"8px 12px"}}>Si todavía no hizo el pedido, dejá el número vacío: el canje queda en <strong>Esperando pedido</strong> y se une solo cuando entre su pedido con transferencia y su Instagram en la nota.</div>}
-
-            {/* Nº de pedido + Tracking en una fila */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>Nº de pedido</label>
-                <input style={iS} value={form.pedidoRef||""} onChange={e=>setForm(f=>({...f,pedidoRef:e.target.value}))} placeholder="Ej: 12345"/>
-              </div>
-              <div>
-                <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>Tracking Andreani</label>
-                <input style={iS} value={form.tracking||""} onChange={e=>setForm(f=>({...f,tracking:e.target.value}))} placeholder="3600029..."/>
-              </div>
-            </div>
-
-            {/* Productos — líneas con selector + cantidad */}
-            <div>
-              <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:8}}>Productos a enviar</label>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {(form.productosCanje||[]).map((prod,i)=>(
-                  <div key={i} style={{display:"flex",gap:6,alignItems:"center"}}>
-                    <select
-                      value={prod.nombre}
-                      onChange={e=>{
-                        const upd=(form.productosCanje||[]).map((p,j)=>j===i?{...p,nombre:e.target.value}:p);
-                        setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));
-                      }}
-                      style={{...iS,flex:1,padding:"8px 10px",fontSize:13}}>
-                      <option value="">Elegir producto...</option>
-                      {/* Valor guardado que no está en el catálogo (nombre viejo/largo): mostrarlo igual */}
-                      {prod.nombre&&!catalogoCanje.includes(prod.nombre)&&<option value={prod.nombre}>{ghNombreCortoProducto(prod.nombre,prefProds)}</option>}
-                      {catalogoCanje.map(p=><option key={p} value={p}>{p}</option>)}
-                    </select>
-                    <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-                      <button type="button" onClick={()=>{const upd=(form.productosCanje||[]).map((p,j)=>j===i?{...p,cantidad:Math.max(1,(parseInt(p.cantidad)||1)-1)}:p);setForm(f=>({...f,productosCanje:upd}));}} style={{width:28,height:28,borderRadius:6,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>−</button>
-                      <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:18,textAlign:"center"}}>{prod.cantidad||1}</span>
-                      <button type="button" onClick={()=>{const upd=(form.productosCanje||[]).map((p,j)=>j===i?{...p,cantidad:(parseInt(p.cantidad)||1)+1}:p);setForm(f=>({...f,productosCanje:upd}));}} style={{width:28,height:28,borderRadius:6,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>+</button>
-                    </div>
-                    <button type="button" onClick={()=>{const upd=(form.productosCanje||[]).filter((_,j)=>j!==i);setForm(f=>({...f,productosCanje:upd,producto:upd[0]?.nombre||""}));}} style={{width:28,height:28,borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.textSm,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>✕</button>
-                  </div>
-                ))}
-                <button type="button"
-                  onClick={()=>setForm(f=>({...f,productosCanje:[...(f.productosCanje||[]),{nombre:"",cantidad:1}]}))}
-                  style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:8,border:`1.5px dashed ${T.border}`,background:"transparent",color:T.textSm,cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.1s",width:"100%",justifyContent:"center"}}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor=T.purple;e.currentTarget.style.color=T.purple;}}
-                  onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.color=T.textSm;}}>
-                  + Agregar producto
-                </button>
-              </div>
-            </div>
-
-            {/* Contenido acordado */}
-            <div>
-              <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:8}}>Contenido acordado</label>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
-                {ACTIVIDADES.map(a=>{
-                  const item=(form.contenido||[]).find(x=>x.tipo===a&&(x.acordados||0)>0);
-                  return (
-                    <button key={a} type="button" onClick={()=>{
-                      const lista=form.contenido||[];
-                      const ex=lista.findIndex(x=>x.tipo===a);
-                      const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo:a,acordados:1,entregados:0}];
-                      setForm(f=>({...f,contenido:upd}));
-                    }} style={{fontSize:11,padding:"5px 12px",borderRadius:99,border:`1.5px solid ${item?T.accentSolid:T.border}`,background:item?T.accentSolid+"18":"transparent",color:item?T.accent:T.textMd,cursor:"pointer",fontWeight:item?700:400,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      {item?`${a} (${item.acordados})`:`+ ${a}`}
-                    </button>
-                  );
-                })}
-                {/* Chips de tipos personalizados ya agregados */}
-                {(form.contenido||[]).filter(x=>!ACTIVIDADES.includes(x.tipo)&&(x.acordados||0)>0).map(item=>(
-                  <button key={item.tipo} type="button" onClick={()=>{
-                    const lista=form.contenido||[];
-                    const ex=lista.findIndex(x=>x.tipo===item.tipo);
-                    const upd=lista.map((x,i)=>i===ex?{...x,acordados:x.acordados+1}:x);
-                    setForm(f=>({...f,contenido:upd}));
-                  }} style={{fontSize:11,padding:"5px 12px",borderRadius:99,border:`1.5px solid ${T.accentSolid}`,background:T.accentSolid+"18",color:T.accent,cursor:"pointer",fontWeight:700,transition:"all 0.12s",fontFamily:"'Inter',system-ui,sans-serif"}}>
-                    {item.tipo} ({item.acordados})
-                  </button>
-                ))}
-                {/* Input contenido personalizado */}
-                <form onSubmit={e=>{
-                  e.preventDefault();
-                  const tipo=customContenido.trim();
-                  if(!tipo) return;
-                  const lista=form.contenido||[];
-                  const ex=lista.findIndex(x=>x.tipo===tipo);
-                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,acordados:(x.acordados||0)+1}:x):[...lista,{tipo,acordados:1,entregados:0}];
-                  setForm(f=>({...f,contenido:upd}));
-                  setCustomContenido("");
-                }} style={{display:"flex",gap:4,alignItems:"center"}}>
-                  <input
-                    value={customContenido}
-                    onChange={e=>setCustomContenido(e.target.value)}
-                    placeholder="Personalizado…"
-                    style={{fontSize:11,padding:"5px 10px",borderRadius:99,border:`1.5px solid ${T.border}`,background:"transparent",color:T.text,outline:"none",width:130,fontFamily:"'Inter',system-ui,sans-serif"}}
-                  />
-                  {customContenido.trim()&&(
-                    <button type="submit" style={{fontSize:11,padding:"5px 10px",borderRadius:99,border:`1.5px solid ${T.accentSolid}`,background:T.accentSolid+"18",color:T.accent,cursor:"pointer",fontWeight:700,fontFamily:"'Inter',system-ui,sans-serif"}}>
-                      + Agregar
-                    </button>
-                  )}
-                </form>
-              </div>
-              {/* Ajustar cantidad por tipo */}
-              {(form.contenido||[]).filter(x=>(x.acordados||0)>0).map((item,i)=>{
-                const idx=(form.contenido||[]).findIndex(x=>x.tipo===item.tipo);
-                return (
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:12}}>
-                    <span style={{flex:1,color:T.text,fontWeight:600}}>{item.tipo}</span>
-                    <button type="button" onClick={()=>{const upd=(form.contenido||[]).map((x,j)=>j===idx?{...x,acordados:Math.max(0,x.acordados-1)}:x).filter(x=>x.acordados>0);setForm(f=>({...f,contenido:upd}));}} style={{width:22,height:22,borderRadius:5,border:`1px solid ${T.border}`,background:T.surface,color:T.red,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>−</button>
-                    <span style={{minWidth:16,textAlign:"center",fontWeight:700,color:T.text}}>{item.acordados}</span>
-                    <button type="button" onClick={()=>{const upd=(form.contenido||[]).map((x,j)=>j===idx?{...x,acordados:x.acordados+1}:x);setForm(f=>({...f,contenido:upd}));}} style={{width:22,height:22,borderRadius:5,border:`1px solid ${T.border}`,background:T.surface,color:T.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter',system-ui,sans-serif"}}>+</button>
-                  </div>
-                );
-              })}
-              {(form.contenido||[]).some(x=>(x.acordados||0)>0)&&(
-                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8,flexWrap:"wrap"}}>
-                  <span style={{fontSize:11,color:T.textSm,fontWeight:600}}>Fecha límite del contenido</span>
-                  <GhDatePicker T={T} value={form.contenidoVence||""} onChange={_v=>setForm(f=>({...f,contenidoVence:_v}))} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto"}}/>
-                  <span style={{fontSize:10,color:T.textSm}}>(opcional · cada pieza puede tener la suya después)</span>
-                </div>
-              )}
-            </div>
-
-            {/* Fecha de envío programado — opcional */}
-            <div style={{background:`${T.accentSolid}08`,border:`1px dashed ${T.accentSolid}40`,borderRadius:10,padding:"12px 14px"}}>
-              <label style={{display:"block",fontSize:12,fontWeight:700,color:T.accent,marginBottom:5}}>
-                Programar fecha de envío <span style={{fontWeight:400,color:T.textSm,textTransform:"none",letterSpacing:0}}>(opcional)</span>
-              </label>
-              <GhDatePicker T={T} value={form.fechaEnvioProgr||""} style={{...iS,fontSize:13,borderColor:form.fechaEnvioProgr?T.accentSolid+"60":undefined}}
-                onChange={_v=>setForm(f=>({...f,fechaEnvioProgr:_v}))}/>
-              {form.fechaEnvioProgr&&(
-                <div style={{fontSize:11,color:T.accent,marginTop:5,display:"flex",alignItems:"center",gap:5}}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.8 19.79 19.79 0 01.22 2.2 2 2 0 012.18 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.27 8a16 16 0 006.72 6.72l1.38-1.18a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
-                  Te mandamos un email el {new Date(form.fechaEnvioProgr+"T12:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"})} a las 9AM
-                </div>
-              )}
-            </div>
-
-            {/* Botones — flexWrap: en pantallas angostas el export pasa a su
-                propia línea en vez de desbordar el modal con scroll lateral */}
-            <div style={{display:"flex",gap:8,alignItems:"center",paddingTop:8,borderTop:"1px solid "+T.borderL,flexWrap:"wrap"}}>
-              {/* Export directo desde el alta: evita crear → ir al detalle → exportar */}
-              <AsyncButton onClick={async()=>{
-                let f={...form};
-                // Con envío a sucursal el destino es la sucursal del template,
-                // no hace falta domicilio.
-                const faltantes=x=>x.esSucursal?[]:[["dirección",x.direccion],["número",x.dirNumero],["CP",x.cp],["localidad",x.localidad],["provincia",x.provincia]].filter(([,v])=>!String(v||"").trim()).map(([l])=>l);
-                // Si el domicilio no está en el form (o no sabemos aún si el
-                // pedido es a sucursal) pero hay nº de pedido, se trae del
-                // pedido en el momento (cubre canjes cargados a mano).
-                if((faltantes(f).length || f.esSucursal==null) && (f.pedidoRef||"").trim()){
-                  const o=await ghFetchOrderByNum(user?.uid, f.pedidoRef);
-                  if(o){
-                    f={...f, dni:f.dni||o.dni||"", cp:f.cp||o.cp||"", provincia:f.provincia||o.provincia||"",
-                      localidad:f.localidad||o.localidad||o.ciudad||"", direccion:f.direccion||o.direccion||"",
-                      dirNumero:f.dirNumero||o.dirNumero||"", piso:f.piso||o.piso||"",
-                      esSucursal:!!o.esSucursal, pickupDetails:o.pickupDetails||f.pickupDetails||null};
-                    setForm(prev=>({...prev, dni:f.dni, cp:f.cp, provincia:f.provincia, localidad:f.localidad, direccion:f.direccion, dirNumero:f.dirNumero, piso:f.piso, esSucursal:f.esSucursal, pickupDetails:f.pickupDetails}));
-                  }
-                }
-                const falta=faltantes(f);
-                if(falta.length){ toast((f.pedidoRef||"").trim()?("El pedido no tiene estos datos de envío: "+falta.join(", ")):"Cargá primero el pedido (arriba) para traer la dirección de envío","warning",5000); return; }
-                try{
-                  const ok=await exportarXlsxCanje(f);
-                  if(ok) toast(f.esSucursal?"Excel generado (envío a sucursal) · subilo al portal de Andreani y pegá el tracking en el canje":"Excel generado. Subilo al portal de Andreani y pegá el tracking en el canje","success",5000);
-                }catch(e){ toast("Error al generar el Excel: "+e.message,"error"); }
-              }} style={{...BtnSecondary(T),fontSize:13,color:T.green,borderColor:T.green+"66",height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap"}}>Exportar XLSX Andreani</AsyncButton>
-              <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13,height:38,padding:"0 16px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",marginLeft:"auto"}}>Cancelar</button>
-              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,height:38,padding:"0 20px",boxSizing:"border-box",display:"inline-flex",alignItems:"center",whiteSpace:"nowrap",opacity:saving||!form.influencer?0.45:1}}>
-                {saving?"Creando...":"Crear canje →"}
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {/* Alta de canje en 3 pasos (12/nov/2026, reemplaza al formulario largo) */}
+      {form&&!form._docId&&<CanjeNuevoModal T={T} inicial={form} influencers={influencers} canjes={canjes} guiones={material.guiones} responsables={responsables} plantillas={plantillas}
+        catalogoContenido={[...new Set([...ACTIVIDADES,...canjes.flatMap(c=>ghPiezasDe(c).map(p=>p.tipo)).filter(Boolean)])].slice(0,14)}
+        onCrear={datos=>saveCanje(datos,{quedarse:true})} onAbrir={id=>{ setForm(null); setDetail(id); }}
+        onPedirGuion={id=>{ const c=canjes.find(x=>x._docId===id); if(c){ setForm(null); setDetail(id); abrirPedirGuion(c); } else toast("Esperá un segundo y volvé a tocar","info"); }}
+        onClose={()=>setForm(null)}/>}
 
       {/* Modal EDITAR canje existente */}
       <Modal T={T} open={!!form&&!!form._docId} onClose={()=>setForm(null)} title={"Editar: "+((form&&form.influencer)||"")} width={480}>
@@ -10962,7 +10754,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             </div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end",paddingTop:6,borderTop:"1px solid "+T.borderL}}>
               <button onClick={()=>setForm(null)} style={{...BtnSecondary(T),fontSize:13}}>Cancelar</button>
-              <button onClick={saveCanje} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,opacity:saving||!form.influencer?0.5:1}}>{saving?"Guardando...":"Guardar cambios"}</button>
+              <button onClick={()=>saveCanje()} disabled={saving||!form.influencer} style={{...BtnPurple(T),fontSize:13,opacity:saving||!form.influencer?0.5:1}}>{saving?"Guardando...":"Guardar cambios"}</button>
             </div>
           </div>
         )}
@@ -24272,16 +24064,18 @@ async function ghDepPdfDeEtiquetas(b64List){
 // ─── Portal de la ejecutiva de Andreani (#/andreani/TOKEN) ───
 // Sin login: ve todas las gestiones de los clientes de Growith y responde desde acá.
 // ─── Link del canje para el influencer (#/canje/TOKEN, 12/nov/2026) ───
-// Sin sesión: lo acordado, el plazo, la ficha de la marca, su guion y dónde pegar el link de cada pieza
-// (api/canjes.js, acciones portal*). No muestra datos de otros canjes ni plata.
+// Sin sesión, pensada para el celular. Arriba los 4 pasos (Pedido · Envío · Contenido · Listo) con el paso
+// actual marcado y, debajo, SOLO lo que le toca hacer ahora; lo de siempre (lo acordado, su cupón, la ficha,
+// el guion, la carpeta y los links) en tarjetas simples. api/canjes.js, acciones portal*.
+function ghPortalPaso(d){ const e=d?.estado||""; if(/Cerrado|Finalizado|Contenido entregado|Cancelado/.test(e)) return 4; if(e==="Contenido pendiente"||d?.entregado) return 3; if(e==="Esperando pedido"&&!d?.pedido) return 1; return 2; }
 function CanjePortalView({token}){
   const T=LIGHT;
   const [st,setSt]=useState({loading:true,d:null,error:""});
-  const [links,setLinks]=useState({}); const [guardando,setGuardando]=useState(""); const [okMsg,setOkMsg]=useState("");
-  const api=async(action,extra={},post=false)=>{
-    const r=post?await fetch(`/api/canjes?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({t:token,...extra})})
-      :await fetch(`/api/canjes?action=${action}&t=${encodeURIComponent(token)}${Object.entries(extra).map(([k,v])=>`&${k}=${encodeURIComponent(v)}`).join("")}`);
-    const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:"No pudimos cargar la página. Probá de nuevo.");
+  const [links,setLinks]=useState({}); const [guardando,setGuardando]=useState(""); const [msg,setMsg]=useState({}); const [copiado,setCopiado]=useState(false);
+  // Siempre por POST: el token no viaja en la URL de los pedidos (no queda en los logs).
+  const api=async(action,extra={})=>{
+    const r=await fetch(`/api/canjes?action=${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({t:token,...extra})});
+    const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(typeof d.error==="string"?d.error:"No pudimos cargar la página. Probá de nuevo en un rato.");
     return d;
   };
   const cargar=async()=>{ try{ const d=await api("portal"); setSt({loading:false,d,error:""}); setLinks(Object.fromEntries((d.piezas||[]).map(p=>[p.id,p.link||""]))); }catch(e){ setSt({loading:false,d:null,error:e.message}); } };
@@ -24290,64 +24084,112 @@ function CanjePortalView({token}){
     const w=window.open("","_blank");
     try{ const a=await api("portal_archivo",{id}); const bin=atob(a.data); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
       const url=URL.createObjectURL(new Blob([u8],{type:a.mime||"application/pdf"})); if(w&&!w.closed) w.location.href=url; else window.location.href=url; }
-    catch(e){ if(w&&!w.closed) w.close(); setOkMsg(e.message); }
+    catch(e){ if(w&&!w.closed) w.close(); alert(e.message); }
   }
   async function guardarLink(p){
-    setGuardando(p.id); setOkMsg("");
-    try{ const r=await api("portal_link",{piezaId:p.id,link:links[p.id]||""},true); setSt(s=>({...s,d:{...s.d,piezas:r.piezas,estado:r.cerrado?"Cerrado":s.d.estado}})); setOkMsg(r.cerrado?"¡Listo! Subiste todo el contenido. Muchas gracias.":"Guardado. Gracias."); }
-    catch(e){ setOkMsg(e.message); }
+    setGuardando(p.id); setMsg(m=>({...m,[p.id]:""}));
+    try{ const r=await api("portal_link",{piezaId:p.id,link:links[p.id]||""}); setSt(s=>({...s,d:{...s.d,piezas:r.piezas,estado:r.cerrado?"Cerrado":s.d.estado}})); setMsg(m=>({...m,[p.id]:r.cerrado?"¡Listo! Entregaste todo. Muchas gracias.":"Guardado"})); }
+    catch(e){ setMsg(m=>({...m,[p.id]:"error:"+e.message})); }
     setGuardando("");
   }
-  const d=st.d; const card={background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"18px 18px",marginBottom:14};
-  const h=t=><div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text,marginBottom:10}}>{t}</div>;
-  const btn={height:40,padding:"0 18px",borderRadius:99,border:"none",background:T.accentSolid,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"};
-  const fecha=v=>v?v.split("-").reverse().slice(0,2).join("/"):"";
-  const faltan=(d?.piezas||[]).filter(p=>p.estado==="pendiente").length;
+  const d=st.d; const paso=ghPortalPaso(d);
+  const card={background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"18px",marginBottom:12};
+  const h=(t,sub)=><div style={{marginBottom:12}}><div style={{fontSize:DS.font.lg,fontWeight:800,color:T.text}}>{t}</div>{sub&&<div style={{fontSize:DS.font.base,color:T.textMd,marginTop:3,lineHeight:1.5}}>{sub}</div>}</div>;
+  const btn={display:"inline-flex",alignItems:"center",justifyContent:"center",height:44,padding:"0 20px",borderRadius:99,border:"none",background:T.accentSolid,color:"#fff",fontSize:DS.font.base,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"none"};
+  const btn2={...btn,background:T.surface,color:T.text,border:`1px solid ${T.border}`};
+  const fecha=v=>v?new Date(v+"T12:00:00-03:00").toLocaleDateString("es-AR",{weekday:"long",day:"numeric",month:"long"}):"";
+  const restan=d?.vence?Math.round((Date.parse(d.vence+"T12:00:00-03:00")-Date.now())/86400000):null;
+  const piezas=d?.piezas||[]; const faltan=piezas.filter(p=>p.estado==="pendiente").length;
+  const resumenCont=Object.entries(piezas.reduce((m,p)=>({...m,[p.tipo]:(m[p.tipo]||0)+1}),{})).map(([t,n])=>`${n} ${t}`).join(" · ");
+  const PASOS=["Pedido","Envío","Contenido","Listo"];
+  const num=n=><span style={{width:24,height:24,borderRadius:99,background:T.accentSolid,color:"#fff",fontSize:12,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{n}</span>;
   return (
-    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",padding:"28px 16px 48px"}}>
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",padding:"24px 16px 48px"}}>
       <div style={{maxWidth:560,margin:"0 auto"}}>
-        {st.loading?<div style={{display:"flex",alignItems:"center",gap:10,color:T.textSm,fontSize:DS.font.base}}><Spinner size={14} color={T.textSm}/> Cargando…</div>
+        {st.loading?<div style={{display:"flex",alignItems:"center",gap:10,color:T.textSm,fontSize:DS.font.base,padding:"40px 0"}}><Spinner size={14} color={T.textSm}/> Cargando…</div>
         :st.error?<div style={card}><div style={{fontSize:DS.font.base,color:T.textMd}}>{st.error}</div></div>
         :(<>
-          <div style={{fontSize:DS.font.sm,fontWeight:700,color:T.textSm,marginBottom:6}}>{d.tienda}</div>
+          <div style={{fontSize:DS.font.sm,fontWeight:700,color:T.textSm,marginBottom:6}}>{d.tienda} · Canje</div>
           <div style={{fontSize:DS.font["2xl"],fontWeight:800,letterSpacing:-0.3,marginBottom:4}}>Hola{d.nombre?` ${d.nombre}`:""}!</div>
-          <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:20,lineHeight:1.5}}>Acá tenés todo lo de tu canje: lo que acordamos, la info de la marca, tu guion y dónde dejar el link de lo que vayas subiendo.</div>
+          <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:16,lineHeight:1.5}}>Acá tenés todo lo de tu canje. Guardá este link: lo vas a usar hasta que termines.</div>
+          {/* Pasos */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:16}}>
+            {PASOS.map((t,i)=>{ const n=i+1, hecho=n<paso, actual=n===paso; return (
+              <div key={t} style={{textAlign:"center"}}>
+                <div style={{height:6,borderRadius:99,background:hecho||actual?T.accentSolid:T.border,opacity:actual?1:hecho?0.55:1,marginBottom:6}}/>
+                <div style={{fontSize:DS.font.sm,fontWeight:actual?800:500,color:actual?T.text:T.textSm}}>{t}</div>
+              </div>); })}
+          </div>
+          {/* Lo que le toca ahora */}
+          {paso===1&&<div style={{...card,border:`2px solid ${T.accentSolid}`}}>
+            {h("Ahora: hacé tu pedido en la web","Así nos llegan tus datos y la sucursal donde querés recibirlo.")}
+            <div style={{display:"flex",flexDirection:"column",gap:10,fontSize:DS.font.base,color:T.text,lineHeight:1.5}}>
+              <div style={{display:"flex",gap:10}}>{num(1)}<span>Entrá a la web{d.web?"":" de la marca"} y elegí {d.anteojos?<strong>{d.anteojos} {d.anteojos===1?"producto":"productos"}</strong>:"los productos que acordamos"}.</span></div>
+              <div style={{display:"flex",gap:10}}>{num(2)}<span>Completá tus datos y elegí la <strong>sucursal o punto de Andreani</strong> (o tu domicilio).</span></div>
+              <div style={{display:"flex",gap:10}}>{num(3)}<span>Como forma de pago elegí <strong>transferencia</strong>. No tenés que pagar nada.</span></div>
+              <div style={{display:"flex",gap:10}}>{num(4)}<span>En la <strong>nota del pedido</strong> escribí tu Instagram: <strong>@{String(d.usuario||"tuusuario").replace(/^@/,"")}</strong>. Así sabemos que es tu canje.</span></div>
+            </div>
+            {d.web&&<a href={d.web} target="_blank" rel="noopener noreferrer" style={{...btn,marginTop:16,width:"100%",boxSizing:"border-box"}}>Ir a la web</a>}
+            <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:10}}>Cuando lo hagas, nosotros lo vemos solos. No hace falta que nos pases el número.</div>
+          </div>}
+          {paso===2&&<div style={{...card,border:`2px solid ${T.accentSolid}`}}>
+            {d.tracking?h("Ahora: tu paquete está en camino","Te avisamos por WhatsApp cuando llegue. Desde que lo recibís arrancan tus "+d.plazo+" días para el contenido.")
+              :h("Ahora: estamos preparando tu paquete","Ya tenemos tu pedido. Cuando lo despachemos vas a ver acá el seguimiento.")}
+            {d.tracking&&<a href={`https://www.andreani.com/envio/${d.tracking}`} target="_blank" rel="noopener noreferrer" style={{...btn,width:"100%",boxSizing:"border-box"}}>Seguir mi paquete</a>}
+          </div>}
+          {paso===3&&<div style={{...card,border:`2px solid ${restan!=null&&restan<0?T.red:T.accentSolid}`}}>
+            {h(restan==null?"Ahora: grabá y subí el contenido":restan<0?"Se pasó la fecha del contenido":restan===0?"Hoy es el último día para el contenido":`Te quedan ${restan} día${restan!==1?"s":""} para el contenido`,
+              d.vence?`Fecha límite: ${fecha(d.vence)}. ${faltan?`Te falta${faltan!==1?"n":""} ${faltan} de ${piezas.length}.`:""}`:"")}
+            <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>Mirá la ficha y tu guion más abajo, subí los videos a tu carpeta y pegá el link de cada publicación en "Tu contenido".</div>
+          </div>}
+          {paso===4&&<div style={{...card,border:`2px solid ${d.cancelado?T.border:T.green}`}}>{d.cancelado?h("Este canje quedó cancelado","Si creés que es un error, escribinos por WhatsApp."):h("¡Listo! Entregaste todo","Muchas gracias por tu contenido. Cualquier cosa nos escribís por WhatsApp.")}</div>}
+          {/* Lo acordado */}
           <div style={card}>
             {h("Lo que acordamos")}
-            {(d.productos||[]).length>0&&<div style={{fontSize:DS.font.base,color:T.text,marginBottom:8}}>{d.productos.map(x=>`${x.cantidad}x ${x.nombre}`).join(" · ")}</div>}
-            {(d.piezas||[]).length>0&&<div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:8}}>Contenido: {Object.entries((d.piezas||[]).reduce((m,p)=>({...m,[p.tipo]:(m[p.tipo]||0)+1}),{})).map(([t,n])=>`${n} ${t}`).join(" · ")}</div>}
-            {d.notaAcuerdo&&<div style={{fontSize:DS.font.base,color:T.textMd,whiteSpace:"pre-wrap",marginBottom:8}}>{d.notaAcuerdo}</div>}
-            <div style={{fontSize:DS.font.base,color:d.vence&&faltan?T.text:T.textMd,fontWeight:d.vence&&faltan?700:500}}>{d.vence?(faltan?`Tenés hasta el ${fecha(d.vence)} para subir el contenido.`:"Ya entregaste todo. ¡Gracias!"):`Tenés ${d.plazo} días para subir el contenido desde que te llega el paquete.`}</div>
-            {d.tracking&&!d.entregado&&<a href={`https://www.andreani.com/envio/${d.tracking}`} target="_blank" rel="noopener noreferrer" style={{display:"inline-block",marginTop:10,fontSize:DS.font.base,color:T.accent,fontWeight:700}}>Seguir mi paquete</a>}
+            <div style={{display:"flex",flexDirection:"column",gap:8,fontSize:DS.font.base,color:T.text}}>
+              {(d.productos||[]).length>0?<div><span style={{color:T.textSm}}>Productos: </span>{d.productos.map(x=>`${x.cantidad}x ${x.nombre}`).join(" · ")}</div>
+                :d.anteojos?<div><span style={{color:T.textSm}}>Productos: </span>{d.anteojos} a elección</div>:null}
+              {resumenCont&&<div><span style={{color:T.textSm}}>Contenido: </span>{resumenCont}</div>}
+              <div><span style={{color:T.textSm}}>Plazo: </span>{d.plazo} días desde que te llega el paquete{d.vence?` (hasta el ${d.vence.split("-").reverse().slice(0,2).join("/")})`:""}</div>
+              {d.notaAcuerdo&&<div style={{whiteSpace:"pre-wrap",color:T.textMd}}>{d.notaAcuerdo}</div>}
+            </div>
           </div>
-          {d.ficha&&<div style={card}>{h("La marca")}<div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:12}}>Lo que tenés que saber de la marca y los productos antes de grabar.</div><button onClick={()=>abrirArchivo(d.ficha.id)} style={btn}>Ver la ficha</button></div>}
-          {d.guion&&<div style={card}>
-            {h(d.guion.nombre||"Tu guion")}
-            {d.guion.pendiente?<div style={{fontSize:DS.font.base,color:T.textMd}}>Estamos preparando tu guion. Te avisamos cuando esté.</div>:null}
-            {d.guion.texto?<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.6,marginBottom:d.guion.archivo?12:0}}>{d.guion.texto}</div>:null}
-            {d.guion.archivo&&<button onClick={()=>abrirArchivo(d.guion.archivo.id)} style={btn}>Ver el guion</button>}
-            {d.guion.link&&<a href={d.guion.link} target="_blank" rel="noopener noreferrer" style={{...btn,display:"inline-flex",alignItems:"center",textDecoration:"none"}}>Ver el guion</a>}
+          {d.cupon&&<div style={card}>
+            {h("Tu código para tus seguidores",d.cupon.pct?`Les da ${d.cupon.pct}% de descuento en la web. Sumalo en tus historias y publicaciones.`:"Sumalo en tus historias y publicaciones.")}
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <div style={{flex:1,fontSize:22,fontWeight:800,letterSpacing:1.5,fontFamily:"'Cascadia Code','Consolas',monospace",color:T.accentSolid,background:T.accentSolid+"10",borderRadius:14,padding:"10px 14px",textAlign:"center"}}>{d.cupon.code}</div>
+              <button onClick={async()=>{ try{ await navigator.clipboard.writeText(d.cupon.code); setCopiado(true); setTimeout(()=>setCopiado(false),1600); }catch(_){ } }} style={btn2}>{copiado?"Copiado":"Copiar"}</button>
+            </div>
           </div>}
-          {(d.piezas||[]).length>0&&<div style={card}>
-            {h("Tu contenido")}
-            {d.carpeta&&<div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:16,padding:"12px 14px",marginBottom:12}}>
-              <div style={{fontSize:DS.font.base,color:T.text,fontWeight:700,marginBottom:4}}>Tu carpeta de Drive</div>
-              <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:10}}>Subí ahí los videos y fotos en buena calidad (sin marca de agua).</div>
-              <a href={d.carpeta} target="_blank" rel="noopener noreferrer" style={{...btn,display:"inline-flex",alignItems:"center",textDecoration:"none"}}>Abrir mi carpeta</a>
-            </div>}
-            <div style={{fontSize:DS.font.base,color:T.textMd,marginBottom:12}}>Cuando publiques o subas cada pieza, pegá acá el link (de la publicación o del archivo en Drive) y tocá Guardar.</div>
-            {(d.piezas||[]).map((p,i)=>(
-              <div key={p.id} style={{padding:"10px 0",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,flex:1}}>{p.tipo}</span><span style={{fontSize:DS.font.sm,fontWeight:700,color:p.estado==="pendiente"?T.textSm:T.green}}>{p.estado==="pendiente"?"Falta":p.estado==="publicada"?"Publicada":"Entregada"}</span></div>
-                <div style={{display:"flex",gap:8}}>
-                  <input value={links[p.id]||""} onChange={e=>setLinks(l=>({...l,[p.id]:e.target.value}))} placeholder="https://www.instagram.com/…" style={{...InputStyle(T),flex:1,fontSize:DS.font.base}}/>
-                  <button onClick={()=>guardarLink(p)} disabled={guardando===p.id||(links[p.id]||"")===(p.link||"")} style={{...btn,opacity:(links[p.id]||"")===(p.link||"")?0.5:1}}>{guardando===p.id?"…":"Guardar"}</button>
+          {(d.ficha||d.guion)&&<div style={card}>
+            {h("Para grabar","Antes de grabar, mirá la info de la marca y tu guion.")}
+            {d.ficha&&<button onClick={()=>abrirArchivo(d.ficha.id)} style={{...btn2,width:"100%",boxSizing:"border-box",marginBottom:d.guion?10:0}}>Ver la ficha de la marca</button>}
+            {d.guion&&(d.guion.pendiente?<div style={{fontSize:DS.font.base,color:T.textMd,background:T.surface,borderRadius:14,padding:"12px 14px"}}>Tu guion lo estamos preparando. Te avisamos cuando esté.</div>
+              :<div style={{background:T.surface,borderRadius:14,padding:"12px 14px"}}>
+                <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text,marginBottom:d.guion.texto?6:8}}>Tu guion: {d.guion.nombre}</div>
+                {d.guion.texto&&<div style={{fontSize:DS.font.base,color:T.text,whiteSpace:"pre-wrap",lineHeight:1.6,marginBottom:(d.guion.archivo||d.guion.link)?10:0}}>{d.guion.texto}</div>}
+                {d.guion.archivo&&<button onClick={()=>abrirArchivo(d.guion.archivo.id)} style={btn}>Ver el guion</button>}
+                {d.guion.link&&<a href={d.guion.link} target="_blank" rel="noopener noreferrer" style={btn}>Ver el guion</a>}
+              </div>)}
+          </div>}
+          {d.puedeCargar&&piezas.length>0&&<div style={card}>
+            {h("Tu contenido",paso===2?"Cuando te llegue el paquete y publiques, pegá acá el link de cada publicación.":"Pegá el link de cada publicación (o del video en tu carpeta) y tocá Guardar.")}
+            {d.carpeta&&<a href={d.carpeta} target="_blank" rel="noopener noreferrer" style={{...btn2,width:"100%",boxSizing:"border-box",marginBottom:12}}>Abrir mi carpeta de Drive (subí ahí los videos sin marca de agua)</a>}
+            {piezas.map((p,i)=>{ const m=msg[p.id]||""; const err=m.startsWith("error:"); const cambio=(links[p.id]||"")!==(p.link||"");
+              return (
+              <div key={p.id} style={{padding:"12px 0",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,flex:1}}>{p.tipo}{piezas.filter(x=>x.tipo===p.tipo).length>1?` ${piezas.filter(x=>x.tipo===p.tipo).indexOf(p)+1}`:""}</span>
+                  <span style={{fontSize:DS.font.sm,fontWeight:700,color:p.estado==="pendiente"?T.textSm:T.green,background:p.estado==="pendiente"?T.surface:T.green+"18",borderRadius:99,padding:"3px 10px"}}>{p.estado==="pendiente"?"Falta":"Entregado"}</span>
                 </div>
-              </div>
-            ))}
-            {okMsg&&<div style={{fontSize:DS.font.base,color:T.textMd,marginTop:8}}>{okMsg}</div>}
+                <div style={{display:"flex",gap:8}}>
+                  <input value={links[p.id]||""} onChange={e=>setLinks(l=>({...l,[p.id]:e.target.value}))} inputMode="url" placeholder="Pegá el link acá" style={{...InputStyle(T),flex:1,minWidth:0,fontSize:16,height:44}}/>
+                  <button onClick={()=>guardarLink(p)} disabled={guardando===p.id||!cambio} style={{...btn,opacity:cambio?1:0.45,cursor:cambio?"pointer":"default"}}>{guardando===p.id?"…":"Guardar"}</button>
+                </div>
+                {m&&<div style={{fontSize:DS.font.sm,color:err?T.red:T.green,marginTop:6}}>{err?m.slice(6):m}</div>}
+              </div>); })}
           </div>}
-          <div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center",marginTop:8}}>¿Alguna duda? Escribinos por WhatsApp.</div>
+          <div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center",marginTop:8,lineHeight:1.5}}>¿Dudas? Escribinos por WhatsApp, al mismo número de siempre.</div>
         </>)}
       </div>
     </div>
@@ -47468,7 +47310,7 @@ export default function App() {
   // Sincronizar hash con página y sub-tab activo
   useEffect(()=>{
     if(typeof window==="undefined") return;
-    if(colabToken || editorProdToken || boardToken || cuponToken || depositoPanelToken || depositoToken || ejecutivaToken || seguirNumero) return;
+    if(colabToken || editorProdToken || boardToken || cuponToken || depositoPanelToken || depositoToken || ejecutivaToken || seguirNumero || canjePortalToken) return;
     const sub = page==="stock"?`/${stockTab}`:page==="arca"?`/${arcaTab}`:((page==="gads"&&gadsTab==="publicar")||(page==="tiktokads"&&tiktokTab==="publicar"))?"/publicar":"";
     const newHash = `#/${page}${sub}`;
     if(window.location.hash !== newHash) {

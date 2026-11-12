@@ -1027,7 +1027,7 @@ export default async function handler(req, res) {
               // solo a "Contenido pendiente" y arranca el reloj del contenido.
               if (["Esperando pedido", "Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
               // Plazo del contenido (12/nov/2026): día de entrega + 12, si no se puso a mano. Se copia a las piezas pendientes.
-              if (!c.contenidoVence) { const v = new Date(Date.now() - 3 * 3600000 + 12 * 86400000).toISOString().slice(0, 10); upd.contenidoVence = v;
+              if (!c.contenidoVence) { const v = new Date(Date.now() - 3 * 3600000 + 12 * 86400000).toISOString().slice(0, 10); upd.contenidoVence = v; upd.contenidoVenceAuto = true;
                 if (Array.isArray(c.piezas) && c.piezas.length) upd.piezas = c.piezas.map(p => ((p.estado || "pendiente") === "pendiente" ? { ...p, fechaLimite: v } : p)); }
             }
             if (cat === "devolucion") upd.trackDone = true;
@@ -1117,7 +1117,11 @@ export default async function handler(req, res) {
           if (!c.ownerId) continue;
           // Tienda DEMO: sin recordatorio; se marca para que no vuelva a la cola.
           if (ownerDemo.get(String(c.ownerId))) { remDemo.push(d); continue; }
-          if (!c.trackEntregadoAt || c.trackEntregadoAt > cutoffRem || c.contentReminderAt) continue;
+          if (!c.trackEntregadoAt || c.contentReminderAt) continue;
+          // 12/nov/2026: con fecha límite (entrega + 12, el flujo nuevo) el mail sale el día que vence, igual
+          // que el aviso "Se venció" de Para hacer hoy; sin fecha, a los 5 días de la entrega como antes.
+          if (c.contenidoVence) { if (new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10) < c.contenidoVence) continue; }
+          else if (c.trackEntregadoAt > cutoffRem) continue;
           // Canjes v2: la verdad son las `piezas` (una por pieza de contenido,
           // estado pendiente|entregada|publicada). Los contadores `contenido[]`
           // quedan como fallback para canjes viejos sin piezas.
@@ -1365,7 +1369,7 @@ export default async function handler(req, res) {
               if (c.contentReminderAt === undefined) upd.contentReminderAt = null;
               if (["Esperando pedido", "Por enviar", "Pendiente envío", "Enviado"].includes(c.estado)) upd.estado = "Contenido pendiente";
               // Plazo del contenido (12/nov/2026): día de entrega + 12, si no se puso a mano. Se copia a las piezas pendientes.
-              if (!c.contenidoVence) { const v = new Date(Date.now() - 3 * 3600000 + 12 * 86400000).toISOString().slice(0, 10); upd.contenidoVence = v;
+              if (!c.contenidoVence) { const v = new Date(Date.now() - 3 * 3600000 + 12 * 86400000).toISOString().slice(0, 10); upd.contenidoVence = v; upd.contenidoVenceAuto = true;
                 if (Array.isArray(c.piezas) && c.piezas.length) upd.piezas = c.piezas.map(p => ((p.estado || "pendiente") === "pendiente" ? { ...p, fechaLimite: v } : p)); }
             }
             if (cat === "devolucion") upd.trackDone = true;

@@ -48,6 +48,7 @@ const RO_BLOQUEADAS = {
   meta:       ["publish"],                                       // campaña con presupuesto
   "google-ads": ["publish"],
   "tiktok-ads": ["publish"],
+  orders:     ["cancelar_canje"],                                // cancela un pedido en la tienda del cliente
 };
 // Endpoint a partir de la URL: /api/andreani?x=1 → "andreani".
 function _endpointOf(req) {

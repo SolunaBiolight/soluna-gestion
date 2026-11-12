@@ -67,14 +67,19 @@ export function aplicarLinkPieza(c, piezaId, link, ahoraIso) {
   const piezas = piezasDe(c).map(p => ({ ...p }));
   const p = piezas.find(x => String(x.id) === String(piezaId));
   if (!p) return null;
+  // Un link que cargó la marca no lo puede borrar el influencer (solo reemplazarlo por otro).
+  if (!link && p.link && !p.porInfluencer) return { bloqueado: true };
   p.link = link;
   if (link && (p.estado || "pendiente") === "pendiente") { p.estado = "entregada"; p.entregadaAt = ahoraIso; p.porInfluencer = true; }
   if (!link && p.porInfluencer && p.estado === "entregada") { p.estado = "pendiente"; delete p.entregadaAt; delete p.porInfluencer; }
   const upd = { piezas, contenido: contenidoDePiezas(piezas) };
   const todo = piezas.length > 0 && piezas.every(x => (x.estado || "pendiente") !== "pendiente");
   if (todo && !CERRADO.has(c.estado || "")) { upd.estado = "Cerrado"; upd.contenidoCompletoAt = ahoraIso; upd.finalizadoPor = "influencer"; }
+  // Lo cerró el influencer y después borró un link: vuelve a "Contenido pendiente".
+  if (!todo && c.estado === "Cerrado" && c.finalizadoPor === "influencer") { upd.estado = "Contenido pendiente"; upd.contenidoCompletoAt = null; upd.finalizadoPor = null; }
   return upd;
 }
+export const puedeCargar = c => !!(c?.trackEntregadoAt || String(c?.tracking || "").trim() || c?.estado === "Contenido pendiente" || (c?.estado === "Cerrado" && c?.finalizadoPor === "influencer"));
 const linkOk = l => { const s = String(l || "").trim(); if (!s) return ""; const u = /^https?:\/\//i.test(s) ? s : "https://" + s; try { const x = new URL(u); return /^https?:$/.test(x.protocol) && x.hostname.includes(".") ? u.slice(0, 500) : null; } catch (_) { return null; } };
 
 async function canjePorToken(db, t) {
@@ -120,6 +125,11 @@ export default async function handler(req, res) {
           estado: c.estado || "", entregado: !!c.trackEntregadoAt, tracking: c.tracking ? String(c.tracking).trim() : "",
           vence: venceDe(c), plazo: PLAZO, piezas, notaAcuerdo: String(c.acuerdoNota || "").slice(0, 1500),
           carpeta: /^https:\/\/(drive|docs)\.google\.com\//.test(String(c.driveFolder || "").trim()) ? String(c.driveFolder).trim() : "",
+          anteojos: Number(c.anteojosAcordados) || 0,
+          cupon: c.codigoDescuento ? { code: String(c.codigoDescuento).toUpperCase(), pct: Number(c.descuentoPct) || null } : null,
+          web: /^https?:\/\/[^\s]+$/.test(String(u.canjesWeb || "")) ? String(u.canjesWeb) : "",
+          pedido: c.pedidoRef ? String(c.pedidoRef) : "",
+          puedeCargar: puedeCargar(c), cancelado: c.estado === "Cancelado",
           ficha: ficha ? { id: ficha.id, nombre: ficha.nombre || "Ficha de la marca" } : null,
           guion: guion ? { nombre: guion.nombre || "Guion", texto: String(guion.texto || "").slice(0, 20000), archivo: guion.archivoId ? { id: guion.archivoId, nombre: guion.archivoNombre || guion.nombre || "Guion" } : null }
             : guionLink ? { nombre: "Tu guion", link: guionLink } : c.guionTareaId ? { nombre: "Tu guion", pendiente: true } : null,
@@ -136,11 +146,15 @@ export default async function handler(req, res) {
       if (action === "portal_link") {
         if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
         if (CERRADO.has(c.estado || "") && c.finalizadoPor !== "influencer") return res.status(409).json({ error: "Este canje ya está cerrado." });
+        // Recién se carga contenido con el paquete despachado (auditoría 12/nov/2026: antes, pegar links en
+        // "Esperando pedido" cerraba el canje y nunca se despachaba).
+        if (!puedeCargar(c)) return res.status(409).json({ error: "Todavía no te despachamos el paquete. Cuando esté en camino vas a poder dejar acá los links." });
         const link = linkOk(body.link);
         if (link === null) return res.status(400).json({ error: "Ese link no parece válido. Copiá el link de la publicación o del archivo." });
         const ahoraIso = new Date().toISOString();
         const upd = aplicarLinkPieza(c, body.piezaId, link, ahoraIso);
         if (!upd) return res.status(404).json({ error: "No encontré esa pieza." });
+        if (upd.bloqueado) return res.status(409).json({ error: "Ese link lo cargó la marca. Si querés cambiarlo, pegá el nuevo." });
         await d.ref.update({ ...upd, ...(upd.estado === "Cerrado" ? { finalizadoAt: FieldValue.serverTimestamp() } : {}), influencerUltimoLinkAt: ahoraIso, updatedAt: FieldValue.serverTimestamp() });
         return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: upd.piezas.map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" })) });
       }
@@ -192,8 +206,10 @@ export default async function handler(req, res) {
       const prev = (await uref.get()).data()?.canjesGuiones || [];
       const quedan = new Set(lista.map(x => x.archivoId).filter(Boolean));
       for (const p of prev) if (p.archivoId && !quedan.has(p.archivoId)) await db.collection("canjes_archivos").doc(p.archivoId).delete().catch(() => {});
-      await uref.set({ canjesGuiones: lista }, { merge: true });
-      return res.json({ ok: true, guiones: lista });
+      const extra = {};
+      if (typeof body.web === "string") { const w = body.web.trim(); const u2 = w ? (/^https?:\/\//i.test(w) ? w : "https://" + w) : ""; extra.canjesWeb = /^https?:\/\/[^\s]+\.[^\s]+$/.test(u2) ? u2.slice(0, 200) : ""; }
+      await uref.set({ canjesGuiones: lista, ...extra }, { merge: true });
+      return res.json({ ok: true, guiones: lista, web: extra.canjesWeb });
     }
     return res.status(400).json({ error: "Acción desconocida" });
   } catch (e) {
