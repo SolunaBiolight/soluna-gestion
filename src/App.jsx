@@ -7870,6 +7870,8 @@ function ghCanjeParaEscribir(c,ahora){
   }
   return null;
 }
+// Código del cupón a partir del @: "sofi.style" → "SOFISTYLE" (letras y números, hasta 20).
+function ghCanjeCodigoDe(usuario){ return String(usuario||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,20); }
 // Link del canje para el influencer (#/canje/<portalToken>, página CanjePortalView).
 function ghCanjeLink(c){ return c?.portalToken?`${typeof window!=="undefined"&&window.location?window.location.origin:"https://www.growithapp.com"}/#/canje/${c.portalToken}`:""; }
 function ghCanjeToken(){ const a=new Uint8Array(16); globalThis.crypto.getRandomValues(a); return [...a].map(x=>x.toString(16).padStart(2,"0")).join(""); }
@@ -8293,7 +8295,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const [form,setForm]=useState(null);
   const [detail,setDetail]=useState(null);
   const [cupEdit,setCupEdit]=useState(false); // edición inline del cupón en el detalle
-  const [formCupDesc,setFormCupDesc]=useState(""); // % off al crear el código desde el form
   useEffect(()=>{ setCupEdit(false); },[detail]);
   // Crea un cupón de % de descuento en Tienda Nube (para asignarlo a un canje
   // sin salir de Growith). Si ya existía, el backend responde yaExistia.
@@ -8805,7 +8806,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     historial:[],
     recordatorio:"",
     fechaEnvioProgr:"",
-    codigoDescuento:"", comisionPct:"",
+    codigoDescuento:"", comisionPct:"7", descuentoPct:"10", crearCupon:true,
   });
 
   async function saveCanje() {
@@ -8843,9 +8844,16 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         fechaEnvioProgr:form.fechaEnvioProgr||"",
         codigoDescuento:(form.codigoDescuento||"").toUpperCase().trim(),
         comisionPct:form.comisionPct||"",
+        descuentoPct:form.descuentoPct===""||form.descuentoPct==null?"":Number(form.descuentoPct),
         anteojosAcordados:parseInt(form.anteojosAcordados)||0,
         responsable:String(form.responsable||"").trim(),
       };
+      // Cupón nuevo: se crea en la tienda al guardar (si ya existía, se usa el que hay). Si falla, el canje se guarda igual.
+      if(!form._docId&&form.crearCupon!==false&&p.codigoDescuento){
+        const v=parseFloat(form.descuentoPct)||10;
+        try{ const r=await crearCuponTn(p.codigoDescuento,v); toast(r.yaExistia?`El cupón ${p.codigoDescuento} ya existía en tu tienda: quedó vinculado`:`Cupón ${p.codigoDescuento} creado (${v}% OFF)`,"success",5000); }
+        catch(e){ toast(`El canje se guarda, pero el cupón no se pudo crear: ${e.message}`,"warning",8000); }
+      }
       // Alta sin pedido = "Esperando pedido" (se une solo cuando entra); con pedido arranca en "Por enviar".
       if(!form._docId){ if(!(p.pedidoRef||"").trim()) p.estado="Esperando pedido"; else if(p.estado==="Esperando pedido") p.estado="Por enviar"; }
       // Datos de envío (vienen del pedido cargado): la card "Envío Andreani"
@@ -9040,7 +9048,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   // ── Unir pedidos con pago pendiente (12/nov/2026) ──
   function datosDePedido(o){
     const prods=(o?.productos||[]).map(p=>({nombre:ghNombreCortoProducto(typeof p==="string"?p:(p.nombre||""),prefProds),cantidad:parseInt(p.cantidad)||1})).filter(p=>p.nombre);
-    return {pedidoRef:String(o.numero), productosCanje:prods, producto:prods[0]?.nombre||"",
+    return {pedidoRef:String(o.numero), pedidoId:String(o.tnId||""), productosCanje:prods, producto:prods[0]?.nombre||"",
       dni:o.dni||"", cp:o.cp||"", provincia:o.provincia||"", localidad:o.localidad||o.ciudad||"",
       direccion:o.direccion||"", dirNumero:o.dirNumero||"", piso:o.piso||"", esSucursal:!!o.esSucursal, pickupDetails:o.pickupDetails||null};
   }
@@ -9084,11 +9092,26 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     return await exportarXlsxCanje(cx,{soloDatos:true})||null;
   }
   async function canjesExcelHecho(lista){ const at=new Date().toISOString(); await Promise.all(lista.map(c=>updateDoc(doc(db,"canjes",c._docId),{etiquetaVia:"excel",etiquetaAt:at}).catch(()=>{}))); }
+  // Etiqueta hecha → el pedido con pago pendiente del canje se cancela en la tienda (sin devolver stock ni
+  // mandar mail). Solo si sigue pendiente; si no, queda anotado y no se toca.
+  async function cancelarPedidoCanje(c){
+    const num=String(c.pedidoRef||"").trim(); if(!num||c.pedidoCancelado===true) return null;
+    try{
+      const r=await authFetch(`/api/orders?action=cancelar_canje&uid=${user?.uid||""}&numero=${encodeURIComponent(num)}${c.pedidoId?`&id=${encodeURIComponent(c.pedidoId)}`:""}`);
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.ok){ await updateDoc(doc(db,"canjes",c._docId),{pedidoCancelado:true,pedidoCanceladoAt:new Date().toISOString(),pedidoCancelError:""}).catch(()=>{}); return true; }
+      await updateDoc(doc(db,"canjes",c._docId),{pedidoCancelError:String(d.error||`HTTP ${r.status}`).slice(0,200)}).catch(()=>{});
+      return false;
+    }catch(e){ return false; }
+  }
   async function canjesTrackings(asign){
     const hoy=hoyAR();
     await Promise.all(asign.map(({c,tracking})=>updateDoc(doc(db,"canjes",c._docId),{tracking,trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null,
       fechaEnvio:c.fechaEnvio||hoy,fechaEnvioProgr:"",etiquetaVia:c.etiquetaVia||"excel",etiquetaAt:c.etiquetaAt||new Date().toISOString(),
       ...(["Esperando pedido","Por enviar","Pendiente envío"].includes(c.estado)?{estado:"Enviado"}:{}),updatedAt:serverTimestamp()}).catch(e=>toast(`${c.influencer}: no se guardó el seguimiento (${String(e?.message||e).slice(0,60)})`,"error"))));
+    const res=await Promise.all(asign.map(({c})=>cancelarPedidoCanje(c)));
+    const ok=res.filter(x=>x===true).length, mal=res.filter(x=>x===false).length;
+    if(ok||mal) toast(`${ok?`${ok} pedido${ok!==1?"s":""} cancelado${ok!==1?"s":""} en la tienda`:""}${ok&&mal?" · ":""}${mal?`${mal} no se pudo${mal!==1?"ieron":""} cancelar (miralo en el canje)`:""}`,mal?"warning":"success",6000);
   }
   const candidatosDespacho=canjes.filter(c=>["Por enviar","Pendiente envío"].includes(c.estado)&&!(c.tracking||"").trim());
   // Ficha: guardar marca/notas. Un influencer sin perfil (derivado de sus canjes) se crea al tocar algo.
@@ -10155,6 +10178,13 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <button onClick={()=>save({revisar:[]})} style={{...BtnSecondary(T),fontSize:12}}>Ya lo revisé</button>
                 </div>
               )}
+              {c.pedidoCancelError&&!c.pedidoCancelado&&(
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:12,padding:"10px 14px"}}>
+                  <span style={{flex:"1 1 220px",fontSize:13,color:T.text}}><strong>No se canceló el pedido #{c.pedidoRef} en la tienda:</strong> {c.pedidoCancelError}</span>
+                  <button onClick={()=>cancelarPedidoCanje({...c,pedidoCancelado:false}).then(r=>toast(r?"Pedido cancelado":"Sigue sin poder cancelarse",r?"success":"warning"))} style={{...BtnSecondary(T),fontSize:12}}>Reintentar</button>
+                  <button onClick={()=>save({pedidoCancelError:""})} style={{...BtnSecondary(T),fontSize:12}}>Lo cancelo a mano</button>
+                </div>
+              )}
               {c.estado==="Esperando pedido"&&!(c.pedidoRef||"").trim()&&(
                 <div style={{fontSize:13,color:T.textMd,lineHeight:1.5,background:T.purple+"12",border:`1px solid ${T.purple}33`,borderRadius:12,padding:"10px 14px"}}>
                   Esperando que haga el pedido en la web con transferencia y su Instagram{c.usuario?<> (<strong>@{String(c.usuario).replace(/^@/,"")}</strong>)</>:null} en la nota. Cuando entre, se une solo. Si ya te pasó el número, ponelo en <strong>Nº de pedido</strong>.
@@ -10181,7 +10211,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   }} placeholder="12345"/>
                   <Field label="Anteojos acordados" value={c.anteojosAcordados?String(c.anteojosAcordados):""} onSave={v=>save({anteojosAcordados:parseInt(v)||0})} placeholder="Ej: 2"/>
                   <Field label="Responsable" value={c.responsable} onSave={v=>save({responsable:String(v||"").trim()})} placeholder="Quién lo sigue"/>
-                  <Field label="Tracking Andreani" value={c.tracking} onSave={v=>save({tracking:v,...((v||"").trim()&&(v||"").trim()!==(c.tracking||"").trim()?{trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null}:{})})} placeholder="3600029..."
+                  <Field label="Tracking Andreani" value={c.tracking} onSave={v=>{ const nuevo=(v||"").trim()&&(v||"").trim()!==(c.tracking||"").trim(); save({tracking:v,...(nuevo?{trackDone:false,trackingCat:"",trackingEstado:"",trackingAviso:null}:{})}); if(nuevo) cancelarPedidoCanje(c).then(r=>{ if(r===true) toast(`Pedido #${c.pedidoRef} cancelado en la tienda`,"success"); else if(r===false) toast("No se pudo cancelar el pedido en la tienda: miralo en el canje","warning"); }); }} placeholder="3600029..."
                     href={c.tracking?"https://www.andreani.com/envio/"+String(c.tracking).replace(/\s+/g,""):null}/>
                   {/* Fecha de envío UNIFICADA: pasada/hoy = fecha real; futura =
                       envío programado con recordatorio por mail a las 9AM */}
@@ -10665,8 +10695,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     influencer:inf.nombre||f.influencer,
                     email:inf.email||f.email,
                     telefono:inf.telefono||f.telefono,
-                    codigoDescuento:inf.codigoDescuento||f.codigoDescuento,
-                    comisionPct:inf.comisionPct||f.comisionPct,
+                    codigoDescuento:inf.codigoDescuento||f.codigoDescuento, _codigoTocado:!!inf.codigoDescuento||f._codigoTocado,
+                    comisionPct:inf.comisionPct||f.comisionPct, descuentoPct:inf.descuentoPct||f.descuentoPct,
                     driveFolder:inf.driveFolder||f.driveFolder||"",
                   }));
                   e.target.value="";
@@ -10685,34 +10715,26 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
               </div>
               <div>
                 <label style={{display:"block",fontSize:12,fontWeight:700,color:T.textSm,marginBottom:5}}>@ Usuario</label>
-                <input style={iS} value={form.usuario||""} onChange={e=>setForm(f=>({...f,usuario:e.target.value.replace(/^@/,"")}))} placeholder="sofigarcia"/>
+                <input style={iS} value={form.usuario||""} onChange={e=>{ const u=e.target.value.replace(/^@/,""); setForm(f=>({...f,usuario:u,...(f._codigoTocado?{}:{codigoDescuento:ghCanjeCodigoDe(u)})})); }} placeholder="sofigarcia"/>
               </div>
             </div>
 
-            {/* Código de descuento + % comisión: vincula el canje con la pestaña
-                de Códigos y comisiones. Si el código todavía no existe en la
-                tienda, se puede CREAR (Tienda Nube o Shopify) desde acá mismo. */}
+            {/* Cupón para sus seguidores (12/nov/2026): por defecto 10 % de descuento y 7 % de comisión,
+                editables por persona; el código sale del @ y se CREA solo en la tienda al guardar. */}
             <div style={{background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:10,padding:"10px 14px"}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:7}}>Código de descuento</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 100px",gap:10,marginBottom:8}}>
-                <input style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1}} value={form.codigoDescuento||""} onChange={e=>setForm(f=>({...f,codigoDescuento:e.target.value.toUpperCase()}))} placeholder="SOFIA10" list="gh-codigos-influencers"/>
-                <input style={iS} type="number" min="0" max="100" step="0.5" value={form.comisionPct||""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="% comisión" title="% de comisión del influencer"/>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.textSm,flex:1}}>Cupón para sus seguidores</div>
+                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.textMd,cursor:"pointer"}}><input type="checkbox" checked={form.crearCupon!==false} onChange={e=>setForm(f=>({...f,crearCupon:e.target.checked}))}/>Crearlo en la tienda al guardar</label>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 90px 90px",gap:10}}>
+                <div><div style={{fontSize:11,color:T.textSm,marginBottom:3}}>Código</div><input style={{...iS,fontFamily:"'Cascadia Code','Consolas',monospace",letterSpacing:1}} value={form.codigoDescuento||""} onChange={e=>setForm(f=>({...f,codigoDescuento:e.target.value.toUpperCase().replace(/\s+/g,""),_codigoTocado:true}))} placeholder="SOFISTYLE" list="gh-codigos-influencers"/></div>
+                <div><div style={{fontSize:11,color:T.textSm,marginBottom:3}}>% descuento</div><input style={iS} type="number" min="1" max="100" value={form.descuentoPct??""} onChange={e=>setForm(f=>({...f,descuentoPct:e.target.value}))} placeholder="10"/></div>
+                <div><div style={{fontSize:11,color:T.textSm,marginBottom:3}}>% comisión</div><input style={iS} type="number" min="0" max="100" step="0.5" value={form.comisionPct??""} onChange={e=>setForm(f=>({...f,comisionPct:e.target.value}))} placeholder="7"/></div>
                 <datalist id="gh-codigos-influencers">
                   {influencers.filter(i=>i.codigoDescuento).map(i=><option key={i._docId} value={(i.codigoDescuento||"").toUpperCase()}>{i.nombre}</option>)}
                 </datalist>
               </div>
-              {(form.codigoDescuento||"").trim().length>=2&&(
-                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                  <span style={{fontSize:11,color:T.textSm}}>¿No existe todavía en tu tienda?</span>
-                  <input style={{...iS,width:70,fontSize:12,padding:"6px 8px"}} type="number" min="1" max="100" value={formCupDesc} onChange={e=>setFormCupDesc(e.target.value)} placeholder="% off"/>
-                  <AsyncButton onClick={async()=>{
-                    const v=parseFloat(formCupDesc);
-                    if(!isFinite(v)||v<=0||v>100) throw new Error("Poné el % de descuento del código (1 a 100)");
-                    const r=await crearCuponTn((form.codigoDescuento||"").toUpperCase().trim(),v);
-                    toast(r.creado?`Código ${r.code} creado en tu tienda (${v}% OFF) · quedó asignado a este canje al guardar`:`El código ${r.code} ya existía en tu tienda`,"success",6000);
-                  }} style={{...BtnSecondary(T),fontSize:11,padding:"6px 12px"}}>Crear en mi tienda</AsyncButton>
-                </div>
-              )}
+              <div style={{fontSize:11,color:T.textSm,marginTop:6}}>{(form.codigoDescuento||"").trim()?(form.crearCupon!==false?`Al guardar se crea ${form.codigoDescuento} con ${form.descuentoPct||10}% OFF en tu tienda (si ya existe, se usa el que hay).`:"Se vincula a un código que ya existe en tu tienda."):"Sin código: el canje no tiene cupón."}</div>
             </div>
 
             {/* Teléfono + Email en una fila */}

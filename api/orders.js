@@ -623,7 +623,7 @@ export default async function handler(req, res) {
     // Sección exigida a los miembros de equipo según la acción: las métricas
     // del Dashboard son "margenes", los cupones "canjes", el resto "envios".
     const _seccion = (action === 'daily_metrics') ? 'margenes'
-      : (action === 'coupons' || action === 'cupon_link' || action === 'crear_cupon') ? 'canjes'
+      : (action === 'coupons' || action === 'cupon_link' || action === 'crear_cupon' || action === 'cancelar_canje') ? 'canjes'
       : 'envios';
     if (!(await guardUid(req, res, uid, _seccion))) return;
   }
@@ -2866,6 +2866,7 @@ export default async function handler(req, res) {
         if (!isFinite(valorCup) || valorCup <= 0 || (tipoCup === "percentage" && valorCup > 100)) return res.status(400).json({ error: "Valor de descuento inválido." });
         return res.json({ ok: true, creado: true, code, id: null, type: tipoCup, value: String(valorCup) }); // demo: no se crea en ninguna tienda
       }
+      if (action === 'cancelar_canje') return res.json({ ok: true, demo: true }); // demo: no toca ninguna tienda
       // Envíos: solo el canal tienda (ML despacha con su logística → ml_envios)
       const { ventas } = await leerDemo(dbRef, uid);
       const tienda = ventas.filter(v => v.canal !== "ml"); // ya vienen de la más nueva a la más vieja
@@ -3303,6 +3304,41 @@ export default async function handler(req, res) {
       const token = randomBytes(16).toString("hex");
       await col.doc(token).set({ ...datos, createdAt: Date.now() });
       return res.status(200).json({ ok: true, token });
+    }
+
+    // ── Cancelar el pedido de un CANJE (12/nov/2026, pedido de Lautaro) ─────
+    // El influencer hace el pedido con transferencia (queda con pago pendiente) y nunca se confirma, para
+    // que la tienda no cobre comisión. Cuando la etiqueta del canje ya está hecha, Canjes lo cancela solo.
+    // Regla dura: SOLO un pedido con pago PENDIENTE y sin cancelar, y sin devolver el stock (la mercadería
+    // salió de verdad) ni mandarle mail al comprador.
+    if (action === 'cancelar_canje') {
+      const numero = String(req.query.numero || "").replace(/^#/, "").trim();
+      let id = String(req.query.id || "").trim();
+      if (!numero && !id) return res.status(400).json({ error: "Falta el pedido" });
+      if (platform === 'shopify') {
+        const shStore = (userData?.stores || []).find(s => s.type === "shopify" && s.accessToken && s.shop);
+        if (!shStore) return res.status(400).json({ error: "Sin Shopify conectado" });
+        const base = `https://${shStore.shop}/admin/api/2026-07`; const H = { "X-Shopify-Access-Token": shStore.accessToken, "Content-Type": "application/json" };
+        let o = null;
+        if (id) { const r = await fetch(`${base}/orders/${encodeURIComponent(id)}.json`, { headers: H }); o = r.ok ? (await r.json()).order : null; }
+        if (!o && numero) { const r = await fetch(`${base}/orders.json?status=any&name=${encodeURIComponent("#" + numero)}`, { headers: H }); o = r.ok ? ((await r.json()).orders || [])[0] : null; }
+        if (!o) return res.status(404).json({ error: "No encontré el pedido en Shopify" });
+        if (o.cancelled_at) return res.json({ ok: true, yaCancelado: true });
+        if (String(o.financial_status || "") !== "pending") return res.status(409).json({ code: "no_pendiente", error: "El pedido no está con pago pendiente: no se cancela solo." });
+        const r = await fetch(`${base}/orders/${o.id}/cancel.json`, { method: "POST", headers: H, body: JSON.stringify({ reason: "other", email: false }) });
+        if (!r.ok) return res.status(502).json({ error: `Shopify no dejó cancelar el pedido (HTTP ${r.status})` });
+        return res.json({ ok: true });
+      }
+      const H = { 'Authentication': `bearer ${accessToken}`, 'User-Agent': 'GrowithApp (contacto.growith@gmail.com)', 'Content-Type': 'application/json' };
+      let o = null;
+      if (id) { const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders/${encodeURIComponent(id)}`, { headers: H }); o = r.ok ? await r.json() : null; }
+      if (!o && numero) { const lista = await fetchPage(storeId, accessToken, `q=${encodeURIComponent(numero)}`, 1, 30); o = (lista || []).find(x => String(x.number) === numero) || null; }
+      if (!o || (numero && String(o.number) !== numero)) return res.status(404).json({ error: "No encontré el pedido en Tienda Nube" });
+      if (o.status === "cancelled" || o.cancelled_at) return res.json({ ok: true, yaCancelado: true });
+      if (String(o.payment_status || "") !== "pending") return res.status(409).json({ code: "no_pendiente", error: "El pedido no está con pago pendiente: no se cancela solo." });
+      const r = await fetch(`https://api.tiendanube.com/v1/${storeId}/orders/${o.id}/cancel`, { method: "POST", headers: H, body: JSON.stringify({ reason: "other", email: false, restock: false }) });
+      if (!r.ok) { const t = await r.text().catch(() => ""); return res.status(502).json({ error: `Tienda Nube no dejó cancelar el pedido (HTTP ${r.status}) ${t.slice(0, 160)}` }); }
+      return res.json({ ok: true });
     }
 
     // ── Crear un cupón de descuento en Tienda Nube desde Growith ─────────

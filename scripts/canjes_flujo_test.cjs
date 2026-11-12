@@ -8,7 +8,7 @@ const blk=cut("// GH_CANJES_FLUJO_BEGIN","// GH_CANJES_FLUJO_END");
 const piezas=cut("function ghPiezaId(","function CanjePiezaLink(");
 const nrm=cut("function ghNrmSuc(","// El rótulo suele pegar");
 const ACT=src.match(/const ACTIVIDADES = \[[^\]]+\];/)[0];
-const M=new Function(ACT+nrm+piezas+blk+"\nreturn {ghCanjeVence,ghCanjeParaEscribir,ghCanjeMensaje,ghCanjeScorePedido,ghCanjeUnirPedidos,ghCanjeRevisarPedido,ghInfluencerHistorial};")();
+const M=new Function(ACT+nrm+piezas+blk+"\nreturn {ghCanjeVence,ghCanjeParaEscribir,ghCanjeMensaje,ghCanjeScorePedido,ghCanjeUnirPedidos,ghCanjeRevisarPedido,ghInfluencerHistorial,ghCanjeCodigoDe};")();
 let n=0,f=0; const eq=(d,g,e)=>{ n++; if(JSON.stringify(g)!==JSON.stringify(e)){ f++; console.log("FAIL",d,"\n   got:",JSON.stringify(g),"\n   exp:",JSON.stringify(e)); } };
 const DIA=86400000; const ahora=Date.parse("2026-11-20T15:00:00-03:00");
 const hace=d=>new Date(ahora-d*DIA).toISOString();
@@ -65,6 +65,7 @@ eq("visita fallida",P({estado:"Enviado",trackingCat:"visita_fallida",tracking:"3
 const msg=M.ghCanjeMensaje("Hola {nombre}! {usuario} vence el {vence}, quedan {restan} días. {tracking}",{influencer:"Sofía Gómez",usuario:"@sofi.style",trackEntregadoAt:hace(7),tracking:"36001"},ahora);
 eq("mensaje con datos",msg,"Hola Sofía! @sofi.style vence el 25/11, quedan 5 días. 36001");
 
+eq("código del cupón desde el @",[M.ghCanjeCodigoDe("@sofi.style"),M.ghCanjeCodigoDe("Martín_López")],["SOFISTYLE","MARTINLOPEZ"]);
 // Historial
 const h=M.ghInfluencerHistorial({usuario:"@sofi.style"},[
   {usuario:"sofi.style",estado:"Cerrado",piezas:[{estado:"entregada"}],contenidoVence:"2026-10-10",contenidoCompletoAt:"2026-10-08T15:00:00Z",createdAt:"2026-09-20T15:00:00Z"},
