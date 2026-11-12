@@ -7813,9 +7813,9 @@ function ghCanjeAccion(c, cfg){
     return {tipo:"ok",sev:0,label:d!==null?`En camino · ${d}d`:"En camino"};
   }
   if(est==="Contenido pendiente"){
-    const cont=c.contenido||[];
-    const total=cont.reduce((s,x)=>s+(x.acordados||0),0);
-    const entregados=cont.reduce((s,x)=>s+(x.entregados||0),0);
+    const pzA=ghPiezasDe(c); // las piezas mandan (los contadores viejos solo si no hay piezas)
+    const total=pzA.length;
+    const entregados=pzA.filter(x=>(x.estado||"pendiente")!=="pendiente").length;
     const debe=total-entregados;
     const d=dias(c.trackEntregadoAt||c.fechaEnvio);
     if(total===0) return {tipo:"ok",sev:0,label:"Acordar contenido"};
@@ -8448,7 +8448,7 @@ function CanjeCuponEditor({T,iS,code,pct,onSave,onCancel,crearEnTn}){
   );
 }
 
-function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[], depositoCliente=null, depositoCfg=null}) {
+export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje, initialDetail, onClearInitialDetail, tab: tabProp, setTab: setTabProp, orders=[], depositoCliente=null, depositoCfg=null}) {
   const [canjes,setCanjes]=useState([]);
   // ── Flujo 12/nov/2026: pedidos con pago pendiente que se unen solos a los canjes "Esperando pedido",
   // plantillas de WhatsApp editables (users/{uid}.canjesPlantillas) y responsable por canje.
@@ -9190,6 +9190,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
   const filtered=useMemo(()=>canjes.filter(c=>{
     if(filterEstado&&c.estado!==filterEstado) return false;
     if(filterRed&&c.red!==filterRed) return false;
+    if(respFiltro&&String(c.responsable||"").trim()!==respFiltro) return false;
     if(filterNicho&&c.nicho!==filterNicho) return false;
     if(filterSoloPendientes){
       const cont=c.contenido||[];
@@ -9199,7 +9200,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
     }
     if(search){const s=search.toLowerCase();return c.influencer.toLowerCase().includes(s)||(c.usuario||"").toLowerCase().includes(s)||(c.email||"").toLowerCase().includes(s);}
     return true;
-  }),[canjes,search,filterEstado,filterRed,filterNicho,filterSoloPendientes]);
+  }),[canjes,search,filterEstado,filterRed,filterNicho,filterSoloPendientes,respFiltro]);
 
   // Alertas — motor unificado (ghCanjeAccion): próximo paso por canje +
   // grupos de vencidos para los chips de la tira "Hoy en Canjes".
@@ -9369,7 +9370,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
       {despachoOpen&&<CanjesDespachoModal T={T} candidatos={[...candidatosDespacho,...canjes.filter(c=>(despachoOpen.ids||[]).includes(c._docId)&&!candidatosDespacho.includes(c))]} preIds={despachoOpen.ids}
         armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} trackingsUsados={new Set(canjes.map(c=>String(c.tracking||"").trim()).filter(Boolean))} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
 
-      <div style={{padding:"24px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%"}}>
+      <div style={{padding:"24px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
         {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
         <div>
           {showGuia&&(
@@ -9409,7 +9410,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
         </div>
         {/* En la pestaña Cupones estos bloques no aportan (pedido de Soluna) */}
         {viewTab!=="comisiones"&&(<>
-        {viewTab==="kanban"&&<CanjesParaEscribir T={T} canjes={canjes} plantillas={plantillas} dudas={union.dudas} responsables={responsables} resp={respFiltro}
+        {viewTab==="kanban"&&<CanjesParaEscribir T={T} canjes={canjes} plantillas={plantillas} dudas={union.dudas} responsables={[]} resp={respFiltro}
           setResp={v=>{ setRespFiltro(v); try{ localStorage.setItem(ghKey("growith_canjes_resp"),v); }catch(_){ } }}
           onEscrito={marcarEscrito} onAbrir={id=>setDetail(id)} onUnir={(c,o)=>unirPedido(c,o,"manual")}
           pend={pedidosPend} onBuscar={buscarPedidosPend} hayEsperando={hayEsperando}
@@ -9420,12 +9421,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           {viewTab!=="comisiones"&&<>
             <div style={{position:"relative",flex:"1 1 220px",minWidth:180}}>
               <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,display:"inline-flex"}}><GhI n="search" size={13}/></span>
-              <input placeholder="Buscar influencer..." value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:36,fontSize:14}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
+              <input placeholder="Buscar por nombre o @" value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:36,fontSize:14}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
             </div>
-            <select value={filterEstado} onChange={e=>setFilterEstado(e.target.value)} style={{...iS,width:"auto",flex:"0 1 170px",fontSize:13,color:filterEstado?T.accent:T.textMd}}><option value="">Estado</option>{ESTADOS_C.map(e=><option key={e}>{e}</option>)}</select>
-            <select value={filterRed} onChange={e=>setFilterRed(e.target.value)} style={{...iS,width:"auto",flex:"0 1 130px",fontSize:13,color:filterRed?T.accent:T.textMd}}><option value="">Red</option>{REDES.map(r=><option key={r}>{r}</option>)}</select>
-            <select value={filterNicho} onChange={e=>setFilterNicho(e.target.value)} style={{...iS,width:"auto",flex:"0 1 130px",fontSize:13,color:filterNicho?T.accent:T.textMd}}><option value="">Nicho</option>{NICHOS.map(n=><option key={n}>{n}</option>)}</select>
-            <button onClick={()=>setFilterSoloPendientes(p=>!p)} style={{...BtnSecondary(T),fontSize:12,padding:"8px 12px",borderColor:filterSoloPendientes?T.orange:T.border,color:filterSoloPendientes?T.orange:T.textMd,background:filterSoloPendientes?T.orangeBg:T.card}}>Cont. pendiente</button>
+            {viewTab==="lista"&&<select value={filterEstado} onChange={e=>setFilterEstado(e.target.value)} style={{...iS,width:"auto",flex:"0 1 190px",fontSize:13,color:filterEstado?T.accent:T.textMd}}><option value="">Todas las etapas</option>{ESTADOS_C.map(e=><option key={e} value={e}>{e}</option>)}</select>}
+            {responsables.length>0&&<select value={respFiltro} onChange={e=>{ const v=e.target.value; setRespFiltro(v); try{ localStorage.setItem(ghKey("growith_canjes_resp"),v); }catch(_){ } }} style={{...iS,width:"auto",flex:"0 1 190px",fontSize:13,color:respFiltro?T.accent:T.textMd}}><option value="">Todo el equipo</option>{responsables.map(r=><option key={r} value={r}>{r}</option>)}</select>}
             {(viewTab==="kanban"||viewTab==="lista")&&(
               <div style={{display:"inline-flex",background:T.card,border:`1px solid ${T.border}`,borderRadius:99,padding:2,gap:2}}>
                 {[["kanban","Tablero"],["lista","Lista"]].map(([id,l])=>{const on=viewTab===id;return (
@@ -9529,6 +9528,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                     if(alertFilter&&!alertFilter.ids.includes(c._docId)) return false;
                     if(search&&!c.influencer?.toLowerCase().includes(search.toLowerCase())&&!c.usuario?.toLowerCase().includes(search.toLowerCase())) return false;
                     if(filterRed&&c.red!==filterRed) return false;
+                    if(respFiltro&&String(c.responsable||"").trim()!==respFiltro) return false;
                     return true;
                   });
                 // "Contenido pendiente" = lista de cobranza de contenido: los que
@@ -9562,27 +9562,27 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                       await updateDoc(doc(db,"canjes",docId),{estado,updatedAt:serverTimestamp(),...(estado==="Cerrado"&&c.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
                       toast(`Movido a "${estado}"`, "success");
                     }}
-                    style={{background:isDragOver?sc.dot+"10":T.card,borderRadius:12,border:`1.5px solid ${isDragOver?sc.dot:T.border}`,overflow:"hidden",transition:"border-color 0.15s,background 0.15s",boxShadow:isDragOver?`0 0 0 3px ${sc.dot}22`:"none"}}>
+                    style={{background:isDragOver?sc.dot+"10":T.bg,borderRadius:18,border:`1px solid ${isDragOver?sc.dot:T.borderL}`,overflow:"hidden",transition:"border-color 0.15s,background 0.15s",boxShadow:isDragOver?`0 0 0 3px ${sc.dot}22`:"none"}}>
                     {/* Header columna */}
-                    <div style={{padding:"10px 14px",borderBottom:`1px solid ${T.borderL}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:sc.dot+"10"}}>
+                    <div style={{padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:`linear-gradient(180deg, ${sc.dot}18, transparent)`}}>
                       <div style={{display:"flex",alignItems:"center",gap:7}}>
                         <span style={{width:9,height:9,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
-                        <span style={{fontSize:12,fontWeight:700,color:sc.text}}>{estado}</span>
+                        <span style={{fontSize:13,fontWeight:800,color:T.text}}>{estado}</span>
                       </div>
                       <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:99,padding:"1px 8px",minWidth:20,textAlign:"center"}}>{cols.length}</span>
                     </div>
 
                     {/* Tarjetas */}
-                    <div style={{padding:8,display:"flex",flexDirection:"column",gap:7,minHeight:120}}>
+                    <div style={{padding:"4px 10px 12px",display:"flex",flexDirection:"column",gap:10,minHeight:120}}>
                       {cols.length===0&&(
                         <div style={{textAlign:"center",padding:"24px 8px",fontSize:11,color:T.textSm,opacity:0.5,border:`1.5px dashed ${T.border}`,borderRadius:8,margin:4}}>
                           Soltá aquí
                         </div>
                       )}
                       {cols.map(c=>{
-                        const cont=(c.contenido||[]).filter(x=>(x.acordados||0)>0);
-                        const totalAcordado=cont.reduce((a,x)=>a+(x.acordados||0),0);
-                        const totalEntregado=cont.reduce((a,x)=>a+(x.entregados||0),0);
+                        const pzC=ghPiezasDe(c);
+                        const totalAcordado=pzC.length;
+                        const totalEntregado=pzC.filter(x=>(x.estado||"pendiente")!=="pendiente").length;
                         const pctContenido=totalAcordado>0?Math.round((totalEntregado/totalAcordado)*100):null;
                         // Próximo paso del motor de alertas: reemplaza los badges
                         // URGENTE/"126d" — la línea de abajo dice qué hacer y hace cuánto.
@@ -9598,36 +9598,25 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                             onDragStart={e=>{e.dataTransfer.setData("canjeId",c._docId);e.dataTransfer.effectAllowed="move";}}
                             onDragEnd={()=>setDragOverEstado(null)}
                             onClick={()=>setDetail(c._docId)}
-                            style={{background:T.card,border:`1.5px solid ${urgente?T.red:T.border}`,borderRadius:DS.r.xl,padding:"14px 16px 12px",cursor:"grab",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
-                            onMouseEnter={e=>{e.currentTarget.style.boxShadow=DS.shadow.lg;e.currentTarget.style.background=T.surface;}}
-                            onMouseLeave={e=>{e.currentTarget.style.boxShadow="none";e.currentTarget.style.background=T.card;}}>
+                            style={{background:`linear-gradient(180deg, ${T.surface} 0%, ${T.card} 100%)`,border:`1px solid ${urgente?T.red+"88":T.border}`,borderRadius:16,padding:"14px 14px 12px",cursor:"grab",boxShadow:"0 6px 18px rgba(0,0,0,0.12)",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
+                            onMouseEnter={e=>{e.currentTarget.style.borderColor=urgente?T.red:T.accentSolid+"66";}}
+                            onMouseLeave={e=>{e.currentTarget.style.borderColor=urgente?T.red+"88":T.border;}}>
 
-                            {/* Top: estado + badges */}
-                            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                              <div style={{display:"flex",alignItems:"center",gap:5}}>
-                                <div style={{width:6,height:6,borderRadius:"50%",background:urgente?T.red:sc.dot,flexShrink:0}}/>
-                                <span style={{fontSize:11,fontWeight:600,color:urgente?T.red:sc.text}}>{estado}</span>
-                              </div>
-                              <div style={{display:"flex",gap:4,alignItems:"center"}}>
-                                <TrackingChip c={c}/>
-                              </div>
-                            </div>
-
-                            {/* Influencer */}
-                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                              <Avatar src={c.foto} name={c.influencer} size={28} radius={8} T={T}/>
+                            {/* Influencer (la etapa ya la dice la columna) */}
+                            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                              <Avatar src={c.foto} name={c.influencer} size={34} radius={11} T={T}/>
                               <div style={{minWidth:0,flex:1}}>
-                                <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.influencer||"Sin nombre"}</div>
-                                {c.usuario&&<div style={{fontSize:10,color:T.accent}}>@{c.usuario}</div>}
+                                <div style={{fontSize:14,fontWeight:800,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:-0.2}}>{c.influencer||"Sin nombre"}</div>
+                                <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?`@${String(c.usuario).replace("@","")}`:""}{c.responsable?` · ${c.responsable}`:""}</div>
                               </div>
+                              <TrackingChip c={c}/>
                             </div>
-
                             {/* Chips info */}
                             {(c.nicho||prods.length>0)&&(
                               <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
-                                {c.nicho&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
+                                {c.nicho&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
                                 {prods.map((p,i)=>(
-                                  <span key={i} style={{fontSize:9,padding:"2px 7px",borderRadius:4,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.border}`,whiteSpace:"nowrap",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                  <span key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.borderL}`,whiteSpace:"nowrap",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}}>
                                     {ghNombreCortoProducto(p.nombre,prefProds)}{(p.cantidad||1)>1?` ×${p.cantidad}`:""}
                                   </span>
                                 ))}
@@ -9656,11 +9645,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                               else if(it&&wa(plantillas[it.tipo])) botones.push(<a key="w" href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} target="_blank" rel="noopener noreferrer" style={{...b,color:T.green}} onClick={e=>{ parar(e); marcarEscrito(c,it.clave); }}>Escribirle</a>);
                               else if((c.tracking||"").trim()&&est==="Enviado") botones.push(<a key="t" href={`https://www.andreani.com/envio/${String(c.tracking).trim()}`} target="_blank" rel="noopener noreferrer" style={b} onClick={parar}>Seguimiento</a>);
                               return botones.length?<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}} draggable={false} onMouseDown={parar}>{botones}</div>:null; })()}
-                            {proxV&&estado!=="Cerrado"&&(
-                              <div style={{fontSize:10,color:proxVencida?T.red:T.textSm,fontWeight:proxVencida?700:500,marginBottom:6}}>
-                                {proxVencida?"Contenido vencido el ":"Contenido para el "}{proxV.split("-").reverse().slice(0,2).join("/")}
-                              </div>
-                            )}
                             {/* Footer: barra de progreso contenido */}
                             {pctContenido!==null&&(
                               <div style={{paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
@@ -10156,7 +10140,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           </div>
         )}
       </Modal>
-      <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title="" width={540}>
+      <Modal T={T} open={!!detail} onClose={()=>{setDetail(null);setDeleteConfirm(null);}} title="" width={940}>
         {detailC&&(()=>{
           const c=canjes.find(x=>x._docId===detailC._docId)||detailC;
           const totalAcordados=(c.contenido||[]).reduce((s,x)=>s+(x.acordados||0),0);
@@ -10166,7 +10150,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           const save=async(fields)=>{try{await updateDoc(doc(db,"canjes",c._docId),{...fields,updatedAt:serverTimestamp()});}catch(e){}};
           const igHref=c.usuario?"https://instagram.com/"+c.usuario.replace("@",""):null;
           // ── Sistema visual del detalle: cards uniformes + cabecera con ícono ──
-          const secStyle={background:T.card,border:`1px solid ${T.border}`,borderRadius:14,padding:"16px 18px"};
+          const secStyle={background:`linear-gradient(180deg, ${T.surface} 0%, ${T.card} 100%)`,border:`1px solid ${T.border}`,borderRadius:18,padding:"16px 18px",boxShadow:"0 10px 30px rgba(0,0,0,0.14)"};
           const svgI=(paths)=><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{paths}</svg>;
           const IC={
             user:svgI(<><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></>),
@@ -10182,8 +10166,8 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           // Cabecera de sección (función, no componente: no remonta los inputs al re-renderizar)
           const secHead=(icon,label,right,mb=12)=>(
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:mb,minWidth:0}}>
-              <span style={{width:24,height:24,borderRadius:7,background:T.surface,border:`1px solid ${T.borderL}`,display:"inline-flex",alignItems:"center",justifyContent:"center",color:T.textMd,flexShrink:0}}>{icon}</span>
-              <span style={{fontSize:12,fontWeight:700,color:T.textSm}}>{label}</span>
+              <span style={{width:28,height:28,borderRadius:9,background:T.accentSolid+"1c",display:"inline-flex",alignItems:"center",justifyContent:"center",color:T.accent,flexShrink:0}}>{icon}</span>
+              <span style={{fontSize:14,fontWeight:800,color:T.text}}>{label}</span>
               {right?<span style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:8}}>{right}</span>:null}
             </div>
           );
@@ -10196,7 +10180,7 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
             React.useEffect(()=>setVal(value||""),[value]);
             return (
               <div style={{gridColumn:`span ${span}`}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{fontSize:11,fontWeight:600,color:T.textSm,marginBottom:2,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                   {label}
                   {href&&value&&<a href={href} target="_blank" rel="noopener noreferrer" style={{fontSize:9,color:T.accent,textDecoration:"none",fontWeight:600}}>abrir ↗</a>}
                 </div>
@@ -10209,9 +10193,10 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                         style={{...iS,fontSize:12,padding:"6px 10px",flex:1}}/>}
                       {type!=="date"&&<button onClick={()=>{onSave(val);setEditing(false);}} style={{...bS,background:T.accentSolid,border:"none",color:"#fff"}}><GhI n="check" size={12}/></button>}
                     </div>
-                  : <div onClick={()=>setEditing(true)} style={{fontSize:13,color:value?T.text:T.textSm,padding:"7px 10px",borderRadius:8,border:"1px solid "+T.borderL,background:T.bg,cursor:"text",minHeight:34,display:"flex",alignItems:"center",gap:6,transition:"border-color 0.15s"}}
-                      onMouseEnter={e=>e.currentTarget.style.borderColor=T.border}
-                      onMouseLeave={e=>e.currentTarget.style.borderColor=T.borderL}>
+                  : <div onClick={()=>setEditing(true)} style={{fontSize:14,fontWeight:600,color:value?T.text:T.textSm,padding:"6px 8px",margin:"0 -8px",borderRadius:10,border:"1px solid transparent",background:"transparent",cursor:"text",minHeight:32,display:"flex",alignItems:"center",gap:6,transition:"background 0.15s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=T.surface}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+
                       <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{value||<span style={{color:T.textSm,fontSize:12}}>{placeholder||"—"}</span>}</span>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.textSm} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,opacity:0.5}}><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     </div>
@@ -10223,40 +10208,72 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
           return (
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
-              {/* ── HEADER: avatar con anillo accent, nombre editable, contacto en chips ── */}
-              <div style={{display:"flex",alignItems:"center",gap:14,padding:"2px 2px 4px"}}>
-                <div style={{padding:2,borderRadius:16,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.accentSolid}22)`,flexShrink:0}}>
-                  <Avatar src={c.foto} name={c.influencer} size={52} radius={14} T={T}/>
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:20,fontWeight:800,color:T.text,lineHeight:1.2,letterSpacing:-0.3}}>
-                    <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:20,fontWeight:800}}/>
+              {/* ── HEADER (rediseño 12/nov/2026): identidad a la izquierda, acciones a la derecha, nada apretado ── */}
+              <div style={{position:"relative",overflow:"hidden",borderRadius:20,padding:"18px 20px",background:`linear-gradient(135deg, ${T.accentSolid}22 0%, ${T.card} 55%)`,border:`1px solid ${T.border}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                  <div style={{padding:2,borderRadius:18,background:`linear-gradient(135deg, ${T.accentSolid}, ${T.accentSolid}33)`,flexShrink:0}}>
+                    <Avatar src={c.foto} name={c.influencer} size={56} radius={16} T={T}/>
                   </div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:7,alignItems:"center"}}>
-                    {c.telefono&&<a href={"https://wa.me/"+c.telefono.replace(/\D/g,"")} target="_blank" rel="noopener noreferrer" style={pillA}><svg width="12" height="12" viewBox="0 0 24 24" fill={T.green}><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.telefono}</span></a>}
-                    {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer" style={pillA}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#E1306C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?"@"+c.usuario.replace("@",""):"Instagram"}</span></a>}
-                    {c.email&&<a href={"mailto:"+c.email} style={pillA}><span style={{color:T.textSm,display:"inline-flex"}}>{IC.mail}</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.email}</span></a>}
+                  <div style={{flex:"1 1 220px",minWidth:0}}>
+                    <div style={{fontSize:22,fontWeight:800,color:T.text,lineHeight:1.15,letterSpacing:-0.4}}>
+                      <InlineField value={c.influencer} onSave={v=>save({influencer:v})} placeholder="Nombre" T={T} iS={iS} style={{fontSize:22,fontWeight:800}}/>
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8,alignItems:"center"}}>
+                      {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer" style={pillA}>@{String(c.usuario).replace("@","")}</a>}
+                      {c.seguidores&&<span style={pillA}>{c.seguidores} seguidores</span>}
+                      {c.nicho&&<span style={pillA}>{c.nicho}</span>}
+                      {c.responsable&&<span style={pillA}>A cargo: {c.responsable}</span>}
+                      <TrackingChip c={c} size={10}/>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                    {ghCanjeLink(c)&&<button onClick={async()=>{ try{ await navigator.clipboard.writeText(ghCanjeLink(c)); toast("Link del influencer copiado","success"); }catch(_){ } }} title="Su página con los pasos, el cupón, la ficha, el guion y dónde dejar los links" style={{...BtnSecondary(T),fontSize:12}}>Copiar su link</button>}
+                    {ghRecTel(c.telefono)&&<a href={`https://wa.me/${ghRecTel(c.telefono)}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",color:T.green}}>WhatsApp</a>}
+                    <button onClick={()=>setForm({...emptyForm(),...c,_base:c})} title="Editar seguidores, red, nicho, foto y contenido acordado" style={{...BtnSecondary(T),fontSize:12}}>Editar</button>
                   </div>
                 </div>
-                {ghCanjeLink(c)&&<div style={{display:"flex",gap:6,flexShrink:0}}>
-                  <button onClick={async()=>{ try{ await navigator.clipboard.writeText(ghCanjeLink(c)); toast("Link del influencer copiado","success"); }catch(_){ } }} title="Su página con los pasos, el cupón, la ficha, el guion y dónde dejar los links" style={{...BtnSecondary(T),fontSize:12}}>Copiar su link</button>
-                  {ghRecTel(c.telefono)&&<a href={`https://wa.me/${ghRecTel(c.telefono)}?text=${encodeURIComponent(ghCanjeMensaje(c.estado==="Esperando pedido"?(plantillas.inicio||GH_CANJE_PLANTILLAS.inicio):"Hola {nombre}! Acá tenés todo lo de tu canje: {link}",c))}`} target="_blank" rel="noopener noreferrer" title="Abre WhatsApp con el mensaje y su link (no se manda solo)" style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",color:T.green}}>WhatsApp</a>}
-                </div>}
-                <button onClick={()=>setForm({...emptyForm(),...c,_base:c})} title="Editar seguidores, red, nicho, foto y carpeta de Drive" style={{...BtnSecondary(T),fontSize:11,padding:"5px 10px",flexShrink:0}}>Editar</button>
-                <TrackingChip c={c} size={10}/>
               </div>
 
-              {/* ── ESTADO: control segmentado, ancho completo ── */}
-              <div style={{display:"grid",gridTemplateColumns:`repeat(${ESTADOS_C.length},1fr)`,gap:4,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:4}}>
-                {ESTADOS_C.map(est=>{
-                  const s2=getEstadoCC(T,est);
-                  const active=c.estado===est||(est==="Por enviar"&&c.estado==="Pendiente envío");
-                  return <button key={est} onClick={async()=>{if(active)return;await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});}}
-                    style={{fontSize:12,fontWeight:active?700:500,padding:"8px 6px",borderRadius:9,border:`1px solid ${active?s2.dot+"66":"transparent"}`,background:active?s2.bg:"transparent",color:active?s2.text:T.textSm,cursor:active?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6,whiteSpace:"nowrap",fontFamily:"'Inter',system-ui,sans-serif",transition:"all 0.12s"}}>
-                    <span style={{width:6,height:6,borderRadius:"50%",background:active?s2.dot:T.borderL,flexShrink:0}}/>{est}
-                  </button>;
-                })}
-              </div>
+              {/* ── ETAPAS: línea de pasos (se toca para mover el canje) ── */}
+              {(()=>{ const CORTO={"Esperando pedido":"Pedido","Por enviar":"Despacho","Enviado":"En camino","Contenido pendiente":"Contenido","Cerrado":"Cerrado"};
+                const actualI=Math.max(0,ESTADOS_C.findIndex(e=>c.estado===e||(e==="Por enviar"&&c.estado==="Pendiente envío")||(e==="Cerrado"&&GH_CANJE_CERRADO.has(c.estado||""))));
+                return (
+                  <div style={{display:"grid",gridTemplateColumns:`repeat(${ESTADOS_C.length},minmax(0,1fr))`,gap:6}}>
+                    {ESTADOS_C.map((est,i)=>{ const hecho=i<actualI, actual=i===actualI; const s2=getEstadoCC(T,est);
+                      return (<button key={est} title={est} onClick={async()=>{ if(actual) return; await save({estado:est,...(est==="Cerrado"?{finalizadoAt:serverTimestamp()}:{})}); }}
+                        style={{background:"transparent",border:"none",padding:0,cursor:actual?"default":"pointer",textAlign:"left",fontFamily:"'Inter',system-ui,sans-serif"}}>
+                        <div style={{height:6,borderRadius:99,background:actual?s2.dot:hecho?T.accentSolid+"77":T.border,marginBottom:7}}/>
+                        <div style={{fontSize:12,fontWeight:actual?800:500,color:actual?T.text:hecho?T.textMd:T.textSm,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{CORTO[est]||est}</div>
+                      </button>); })}
+                  </div>); })()}
+
+              {/* ── PRÓXIMO PASO: qué hay que hacer ahora con este canje y su botón ── */}
+              {(()=>{ const est=c.estado; const tel=ghRecTel(c.telefono); const it=ghCanjeParaEscribir(c);
+                const pz=ghPiezasDe(c); const falta=pz.filter(x=>(x.estado||"pendiente")==="pendiente").length; const vence=ghCanjeVence(c);
+                const r=vence?Math.round((Date.parse(vence+"T12:00:00-03:00")-Date.now())/86400000):null;
+                let titulo="",sub="",col=T.accentSolid,acciones=[];
+                const btnP={...BtnPrimary(T),fontSize:13,textDecoration:"none"}; const btnS={...BtnSecondary(T),fontSize:13,textDecoration:"none"};
+                const wa=tpl=>tel?`https://wa.me/${tel}?text=${encodeURIComponent(ghCanjeMensaje(tpl,c))}`:null;
+                if(est==="Esperando pedido"){ titulo="Esperando que haga el pedido"; sub=`Pedido en la web con transferencia y ${c.usuario?"@"+String(c.usuario).replace("@",""):"su @"} en la nota. Se une solo cuando entra.`;
+                  if(wa(plantillas.inicio)) acciones.push(<a key="w" href={wa(it?.tipo==="pedido"?plantillas.pedido:plantillas.inicio)} target="_blank" rel="noopener noreferrer" onClick={()=>{ if(it) marcarEscrito(c,it.clave); }} style={btnP}>Mandarle las instrucciones</a>); }
+                else if((est==="Por enviar"||est==="Pendiente envío")&&!(c.tracking||"").trim()){ titulo="Listo para despachar"; sub=(c.pedidoRef?`Pedido #${c.pedidoRef}. `:"")+"Falta la etiqueta de Andreani."; col=T.yellow;
+                  acciones.push(<button key="d" onClick={()=>setDespachoOpen({ids:[c._docId]})} style={btnP}>Despachar</button>); }
+                else if(est==="Enviado"||((est==="Por enviar"||est==="Pendiente envío")&&(c.tracking||"").trim())){ titulo=c.trackingCat==="en_sucursal"?"El paquete está en la sucursal":c.trackingCat==="visita_fallida"?"Andreani no lo encontró":"En camino"; sub=c.trackingEstado||"El seguimiento se actualiza solo."; col=T.blue;
+                  if((c.tracking||"").trim()) acciones.push(<a key="t" href={`https://www.andreani.com/envio/${String(c.tracking).trim()}`} target="_blank" rel="noopener noreferrer" style={btnS}>Ver seguimiento</a>); }
+                else if(est==="Contenido pendiente"){ titulo=falta?`Debe ${falta} de ${pz.length} pieza${pz.length!==1?"s":""}`:"Entregó todo el contenido"; sub=vence?(r<0?`Venció el ${vence.split("-").reverse().slice(0,2).join("/")} (hace ${-r} días)`:r===0?"Vence hoy":`Vence el ${vence.split("-").reverse().slice(0,2).join("/")} · quedan ${r} días`):"El plazo arranca cuando Andreani lo entrega."; col=r!=null&&r<0?T.red:T.orange; }
+                else if(GH_CANJE_CERRADO.has(est||"")){ titulo="Canje cerrado"; sub=pz.length?`Entregó ${pz.length-falta} de ${pz.length} piezas.`:""; col=T.green; }
+                if(it&&wa(plantillas[it.tipo])&&est!=="Esperando pedido") acciones.push(<a key="e" href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} target="_blank" rel="noopener noreferrer" onClick={()=>marcarEscrito(c,it.clave)} style={{...btnP,background:T.green}}>Escribirle por WhatsApp</a>);
+                if(!titulo) return null;
+                return (
+                  <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",borderRadius:18,padding:"14px 16px",background:`linear-gradient(90deg, ${col}1f, ${col}08)`,border:`1px solid ${col}44`}}>
+                    <span style={{width:10,height:10,borderRadius:99,background:col,boxShadow:`0 0 0 4px ${col}22`,flexShrink:0}}/>
+                    <div style={{flex:"1 1 240px",minWidth:0}}>
+                      <div style={{fontSize:11,fontWeight:700,color:T.textSm,marginBottom:2}}>Próximo paso</div>
+                      <div style={{fontSize:16,fontWeight:800,color:T.text}}>{titulo}</div>
+                      {sub&&<div style={{fontSize:12,color:T.textMd,marginTop:2,lineHeight:1.45}}>{sub}</div>}
+                    </div>
+                    {acciones.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{acciones}</div>}
+                  </div>); })()}
 
               {(c.revisar||[]).length>0&&(
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:12,padding:"10px 14px"}}>
@@ -10271,11 +10288,140 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <button onClick={()=>save({pedidoCancelError:""})} style={{...BtnSecondary(T),fontSize:12}}>Lo cancelo a mano</button>
                 </div>
               )}
-              {c.estado==="Esperando pedido"&&!(c.pedidoRef||"").trim()&&(
-                <div style={{fontSize:13,color:T.textMd,lineHeight:1.5,background:T.purple+"12",border:`1px solid ${T.purple}33`,borderRadius:12,padding:"10px 14px"}}>
-                  Esperando que haga el pedido en la web con transferencia y su Instagram{c.usuario?<> (<strong>@{String(c.usuario).replace(/^@/,"")}</strong>)</>:null} en la nota. Cuando entre, se une solo. Si ya te pasó el número, ponelo en <strong>Nº de pedido</strong>.
+              <div className="gh-canje-cols" style={{display:"grid",gridTemplateColumns:"minmax(0,1.3fr) minmax(0,1fr)",gap:16,alignItems:"start"}}>
+                <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
+              {/* ── CONTENIDO (10/nov/2026, simplificado): UNA fecha para todo el contenido
+                     (contenidoVence; se copia a las piezas pendientes para las alertas) y cada
+                     pieza en una línea: qué es, en qué está y su link. ── */}
+              {(()=>{
+                const piezas=ghPiezasDe(c);
+                const fecha=c.contenidoVence||piezas.filter(x=>(x.estado||"pendiente")==="pendiente"&&x.fechaLimite).map(x=>x.fechaLimite).sort()[0]||"";
+                // Todo entregado → el canje se cierra solo (12/nov/2026) y queda la fecha para el historial del influencer.
+                const savePiezas=(pz,extra)=>{ const todo=pz.length>0&&pz.every(x=>(x.estado||"pendiente")!=="pendiente"); const cierre=todo&&!GH_CANJE_CERRADO.has(c.estado||"")?{estado:"Cerrado",finalizadoAt:serverTimestamp(),contenidoCompletoAt:new Date().toISOString()}:{}; if(cierre.estado) toast("Entregó todo el contenido: el canje quedó cerrado","success"); return save({...(extra||{}),...cierre,piezas:pz,contenido:ghContenidoDePiezas(pz)}); };
+                const addPieza=(tipo)=>savePiezas([...piezas,{id:ghPiezaId(),tipo,estado:"pendiente",fechaLimite:fecha,link:"",nota:""}]);
+                const updPieza=(id,patch)=>savePiezas(piezas.map(x=>x.id!==id?x:({...x,...patch,...(patch.estado&&patch.estado!=="pendiente"&&!x.entregadaAt?{entregadaAt:new Date().toISOString()}:{})})));
+                const delPieza=(id)=>savePiezas(piezas.filter(x=>x.id!==id));
+                const setFecha=v=>savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"?{...x,fechaLimite:v||""}:x),{contenidoVence:v||"",contenidoVenceAuto:false});
+                const hoyP=hoyAR();
+                const faltan=piezas.filter(x=>(x.estado||"pendiente")==="pendiente").length;
+                const hechas=piezas.length-faltan;
+                const vencido=faltan>0&&fecha&&fecha<hoyP;
+                const infDe=influencers.find(i=>(c.usuario&&i.usuario&&i.usuario.replace("@","").toLowerCase()===c.usuario.replace("@","").toLowerCase())||(i.nombre&&i.nombre===c.influencer));
+                const carpeta=(c.driveFolder||infDe?.driveFolder||"").trim();
+                const EST={pendiente:[T.textSm,"Pendiente"],entregada:[T.blue,"Entregada"],publicada:[T.green,"Publicada"]};
+                const tiposExtra=[...new Set(piezas.map(x=>x.tipo).filter(t=>t&&!ACTIVIDADES.includes(t)))];
+                const chipBtn={fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+T.border,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"};
+                const resumen=!piezas.length?null:faltan===0?<span style={{fontSize:11,fontWeight:700,color:T.green}}>Todo entregado</span>:<span style={{fontSize:11,fontWeight:700,color:vencido?T.red:T.textMd}}>{hechas} de {piezas.length} entregadas</span>;
+                return (
+                  <div style={secStyle}>
+                    {secHead(IC.clap,"Contenido",resumen,10)}
+                    <div style={{display:"flex",flexWrap:"wrap",gap:12,alignItems:"flex-end",marginBottom:12}}>
+                      <div style={{minWidth:0,flex:"1 1 220px"}}>
+                        <Field label="Carpeta de Drive" value={c.driveFolder||infDe?.driveFolder||""} onSave={v=>save({driveFolder:(v||"").trim()})} href={carpeta?(/^https?:/i.test(carpeta)?carpeta:"https://"+carpeta):null} placeholder="Link donde sube el contenido"/>
+                        {!carpeta&&<div style={{marginTop:6,display:"flex",gap:6}}><BtnCarpetaExistente onElegida={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/><BtnCarpeta nombre={c.influencer} usuario={c.usuario} email={c.email} onCreada={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/></div>}
+                      </div>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,color:vencido?T.red:T.textSm,marginBottom:4}}>{vencido?"Venció el":"Para cuándo"}</div>
+                        <GhDatePicker T={T} value={fecha} onChange={setFecha} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto",borderColor:vencido?T.red+"88":undefined}}/>
+                      </div>
+                    </div>
+                    {piezas.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Todavía no anotaste qué tiene que subir. Agregalo abajo.</div>}
+                    {piezas.length>0&&<div style={{display:"flex",flexDirection:"column",border:`1px solid ${T.borderL}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+                      {piezas.map((pz,i)=>{
+                        const estK=(pz.estado||"pendiente");
+                        const mismos=piezas.filter(x=>x.tipo===pz.tipo);
+                        const nro=mismos.indexOf(pz)+1;
+                        return (
+                          <div key={pz.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
+                            <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:90}}>{pz.tipo||"Pieza"}{mismos.length>1&&<span style={{color:T.textSm,fontWeight:500}}> {nro}</span>}</span>
+                            <div style={{display:"inline-flex",gap:2,background:T.card,border:`1px solid ${T.borderL}`,borderRadius:99,padding:2}}>
+                              {PIEZA_ESTADOS.map(([k,lbl])=>{const on=estK===k;const col=EST[k][0];return (
+                                <button key={k} onClick={()=>{if(!on)updPieza(pz.id,{estado:k});}} style={{fontSize:10,fontWeight:on?700:500,padding:"3px 9px",borderRadius:99,border:"none",background:on?col+"22":"transparent",color:on?col:T.textSm,cursor:on?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lbl}</button>
+                              );})}
+                            </div>
+                            <div style={{flex:"1 1 180px",minWidth:0,display:"flex"}}><CanjePiezaLink T={T} iS={iS} value={pz.link} onSave={v=>updPieza(pz.id,{link:v})}/></div>
+                            <button onClick={()=>delPieza(pz.id)} title="Quitar" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",padding:4,display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                          </div>
+                        );
+                      })}
+                    </div>}
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
+                      {[...ACTIVIDADES,...tiposExtra].map(a=><button key={a} onClick={()=>addPieza(a)} style={chipBtn}>+ {a}</button>)}
+                      <input value={customContenido} onChange={e=>setCustomContenido(e.target.value)}
+                        onKeyDown={e=>{ if(e.key==="Enter"&&customContenido.trim()){ addPieza(customContenido.trim()); setCustomContenido(""); } }}
+                        placeholder="+ Otro (Enter)" style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:`1px solid ${T.border}`,background:"transparent",color:T.text,outline:"none",width:110,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* ── LINK PARA EL INFLUENCER (12/nov/2026): ficha, guion, carpeta y dónde deja sus links ── */}
+              {(()=>{
+                const link=ghCanjeLink(c);
+                return (
+                  <div style={secStyle}>
+                    {secHead(IC.link||IC.file,"Lo que ve el influencer",link?<a href={link} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600}}>Ver su página</a>:null)}
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:4}}>Guion</div>
+                        <select value={c.guionId||(c.guionTareaId?"__tarea":"")} onChange={e=>{ const v=e.target.value; if(v==="__pedir"){ abrirPedirGuion(c); return; } save({guionId:v==="__tarea"?"":v}); }} style={{...iS,fontSize:12,padding:"6px 10px"}}>
+                          <option value="">Sin guion</option>
+                          {material.guiones.map(g=><option key={g.id} value={g.id}>{g.nombre}</option>)}
+                          {c.guionTareaId&&<option value="__tarea">Personalizado (tarea #{c.guionTareaNum||""})</option>}
+                          {!c.guionTareaId&&<option value="__pedir">Personalizado: pedir guion…</option>}
+                        </select>
+                        {!material.guiones.length&&<div style={{fontSize:10,color:T.textSm,marginTop:3}}>Cargá los guiones fijos en "Ficha y guiones".</div>}
+                      </div>
+                      <Field label="Lo que acordamos (lo ve el influencer)" value={c.acuerdoNota} onSave={v=>save({acuerdoNota:String(v||"").slice(0,1500)})} placeholder="Ej.: 1 reel + 3 historias con link"/>
+                    </div>
+                    {c.guionTareaId&&<div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,flexWrap:"wrap"}}><span style={{fontSize:12,color:T.textMd,flex:1}}>Guion personalizado: tarea #{c.guionTareaNum||""}. Cuando el guionista lo sube, lo ve en su página.</span><AsyncButton onClick={()=>verGuion(c)} style={{...BtnSecondary(T),fontSize:12}}>Ver guion</AsyncButton></div>}
+                    {c.influencerUltimoLinkAt&&<div style={{fontSize:11,color:T.green,marginTop:8}}>El influencer cargó links el {new Date(c.influencerUltimoLinkAt).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}.</div>}
+                  </div>
+                );
+              })()}
+              {(()=>{
+                const code=(c.codigoDescuento||"").toUpperCase().trim();
+                const guardarCupon=(cod,pct)=>{
+                  save({codigoDescuento:cod,comisionPct:pct});
+                  setCupEdit(false);
+                  toast(cod?"Código asignado al canje. Se sincroniza con Códigos y comisiones":"Código quitado del canje","success",4500);
+                };
+                return (
+                  <div style={{background:code&&!cupEdit?`linear-gradient(135deg, ${T.accentSolid}16, transparent 65%)`:T.card,border:`1px solid ${code&&!cupEdit?T.accentSolid+"44":T.border}`,borderRadius:14,padding:"16px 18px"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:code&&!cupEdit?4:10,gap:8}}>
+                      {secHead(IC.tag,code&&!cupEdit?"Código asignado":"Código de descuento",null,0)}
+                      {code&&!cupEdit&&(
+                        <button onClick={()=>setCupEdit(true)} title="Cambiar código o % de comisión" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
+                      )}
+                    </div>
+                    {(!code||cupEdit)?(
+                      <>
+                        {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y desde acá abrís sus métricas. Sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
+                        <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null} crearEnTn={crearCuponTn}/>
+                      </>
+                    ):(
+                      <>
+                        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
+                          <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:0.5,fontFamily:"'Cascadia Code','Consolas',monospace",lineHeight:1.1}}>{c.codigoDescuento}</div>
+                          <button onClick={()=>{try{navigator.clipboard.writeText(code);toast("Código copiado","success");}catch(_){}}} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 9px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
+                          {c.comisionPct&&<span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:`1px solid ${T.green}44`,borderRadius:99,padding:"2px 9px"}}>{c.comisionPct}% comisión</span>}
+                        </div>
+                        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                          <AsyncButton onClick={()=>verMetricasCupon(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver métricas</AsyncButton>
+                          <span style={{fontSize:11,color:T.textSm,lineHeight:1.5,flex:1,minWidth:180}}>Pedidos, ventas y comisión en tiempo real. El mismo panel que ve el/la influencer.</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+              {/* ── NOTAS + HISTORIAL en una sola card (antes eran dos bloques sueltos) ── */}
+              <div style={secStyle}>
+                {secHead(IC.edit,"Notas y seguimiento")}
+                <NotasInline value={c.notas} onSave={v=>save({notas:v})} T={T} iS={iS}/>
+                <NotasRapidas T={T} canje={c} onAdd={addNota}/>
+              </div>
                 </div>
-              )}
+                <div style={{display:"flex",flexDirection:"column",gap:16,minWidth:0}}>
               {/* ── DATOS CLAVE en grilla 2 columnas (contacto vive en el header) ── */}
               <div style={secStyle}>
                 {secHead(IC.user,"Datos del canje")}
@@ -10337,31 +10483,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   <Field label="Recordatorio" type="date" value={c.recordatorio} onSave={v=>save({recordatorio:v})} placeholder="Sin recordatorio"/>
                 </div>
               </div>
-
-              {/* ── LINK PARA EL INFLUENCER (12/nov/2026): ficha, guion, carpeta y dónde deja sus links ── */}
-              {(()=>{
-                const link=ghCanjeLink(c);
-                return (
-                  <div style={secStyle}>
-                    {secHead(IC.link||IC.file,"Lo que ve el influencer",link?<a href={link} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.accent,fontWeight:600}}>Ver su página</a>:null)}
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                      <div>
-                        <div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:4}}>Guion</div>
-                        <select value={c.guionId||(c.guionTareaId?"__tarea":"")} onChange={e=>{ const v=e.target.value; if(v==="__pedir"){ abrirPedirGuion(c); return; } save({guionId:v==="__tarea"?"":v}); }} style={{...iS,fontSize:12,padding:"6px 10px"}}>
-                          <option value="">Sin guion</option>
-                          {material.guiones.map(g=><option key={g.id} value={g.id}>{g.nombre}</option>)}
-                          {c.guionTareaId&&<option value="__tarea">Personalizado (tarea #{c.guionTareaNum||""})</option>}
-                          {!c.guionTareaId&&<option value="__pedir">Personalizado: pedir guion…</option>}
-                        </select>
-                        {!material.guiones.length&&<div style={{fontSize:10,color:T.textSm,marginTop:3}}>Cargá los guiones fijos en "Ficha y guiones".</div>}
-                      </div>
-                      <Field label="Lo que acordamos (lo ve el influencer)" value={c.acuerdoNota} onSave={v=>save({acuerdoNota:String(v||"").slice(0,1500)})} placeholder="Ej.: 1 reel + 3 historias con link"/>
-                    </div>
-                    {c.influencerUltimoLinkAt&&<div style={{fontSize:11,color:T.green,marginTop:8}}>El influencer cargó links el {new Date(c.influencerUltimoLinkAt).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}.</div>}
-                  </div>
-                );
-              })()}
-
               {/* ── ENVÍO ANDREANI: dirección SOLO LECTURA (viene del pedido) +
                      export XLSX de 1 fila. No se edita desde acá a propósito. ── */}
               {(()=>{
@@ -10449,7 +10570,37 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </div>
                 );
               })()}
-
+              {/* ── PRODUCTOS ── */}
+              <div style={secStyle}>
+                {secHead(IC.box,"Productos enviados",(c.productosCanje||[]).length>0?<span style={{fontSize:11,fontWeight:700,color:T.textMd}}>{(c.productosCanje||[]).reduce((a,p)=>a+(p.cantidad||1),0)} u.</span>:null)}
+                {(c.productosCanje||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin productos aún</div>}
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+                  {(c.productosCanje||[]).map((p,pi)=>(
+                    <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,background:T.bg,border:"1px solid "+T.borderL}}>
+                      <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{ghNombreCortoProducto(p.nombre,prefProds)}</span>
+                      <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await save({productosCanje:upd});}} style={bS}>−</button>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:20,textAlign:"center"}}>{p.cantidad||1}</span>
+                      <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await save({productosCanje:upd});}} style={bS}>+</button>
+                      <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await save({productosCanje:upd,producto:(upd[0]?.nombre||"")});}} style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+                {/* Selector rápido de productos */}
+                <select onChange={async e=>{
+                  const pr=e.target.value; if(!pr) return;
+                  const lista=c.productosCanje||[];
+                  const ex=lista.findIndex(x=>x.nombre===pr);
+                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:pr,cantidad:1}];
+                  await save({productosCanje:upd,producto:upd[0]?.nombre||""});
+                  e.target.value="";
+                }} defaultValue="" style={{...iS,fontSize:12,padding:"7px 10px",color:T.textSm}}>
+                  <option value="">+ Agregar producto...</option>
+                  {catalogoCanje.map(pr=><option key={pr} value={pr}>{pr}</option>)}
+                </select>
+              </div>
+                </div>
+              </div>
+              <style>{`@media (max-width:820px){.gh-canje-cols{grid-template-columns:1fr !important}}`}</style>
               {/* Modal Pedir guion (portal, por encima del detalle) */}
               <Modal T={T} open={!!pedirGuion} onClose={()=>setPedirGuion(null)} title="Pedir guion" width={480} zIndex={2400}>
                 {pedirGuion&&(
@@ -10480,162 +10631,6 @@ function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendingCanje
                   </div>
                 )}
               </Modal>
-
-              {/* ── PRODUCTOS ── */}
-              <div style={secStyle}>
-                {secHead(IC.box,"Productos enviados",(c.productosCanje||[]).length>0?<span style={{fontSize:11,fontWeight:700,color:T.textMd}}>{(c.productosCanje||[]).reduce((a,p)=>a+(p.cantidad||1),0)} u.</span>:null)}
-                {(c.productosCanje||[]).length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Sin productos aún</div>}
-                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
-                  {(c.productosCanje||[]).map((p,pi)=>(
-                    <div key={pi} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,background:T.bg,border:"1px solid "+T.borderL}}>
-                      <span style={{flex:1,fontSize:13,color:T.text,fontWeight:500}}>{ghNombreCortoProducto(p.nombre,prefProds)}</span>
-                      <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:Math.max(1,(x.cantidad||1)-1)}:x);await save({productosCanje:upd});}} style={bS}>−</button>
-                      <span style={{fontSize:13,fontWeight:700,color:T.text,minWidth:20,textAlign:"center"}}>{p.cantidad||1}</span>
-                      <button onClick={async()=>{const upd=(c.productosCanje||[]).map((x,j)=>j===pi?{...x,cantidad:(x.cantidad||1)+1}:x);await save({productosCanje:upd});}} style={bS}>+</button>
-                      <button onClick={async()=>{const upd=(c.productosCanje||[]).filter((_,j)=>j!==pi);await save({productosCanje:upd,producto:(upd[0]?.nombre||"")});}} style={{...bS,border:"1px solid "+T.red+"44",color:T.red}}>✕</button>
-                    </div>
-                  ))}
-                </div>
-                {/* Selector rápido de productos */}
-                <select onChange={async e=>{
-                  const pr=e.target.value; if(!pr) return;
-                  const lista=c.productosCanje||[];
-                  const ex=lista.findIndex(x=>x.nombre===pr);
-                  const upd=ex>=0?lista.map((x,i)=>i===ex?{...x,cantidad:(x.cantidad||1)+1}:x):[...lista,{nombre:pr,cantidad:1}];
-                  await save({productosCanje:upd,producto:upd[0]?.nombre||""});
-                  e.target.value="";
-                }} defaultValue="" style={{...iS,fontSize:12,padding:"7px 10px",color:T.textSm}}>
-                  <option value="">+ Agregar producto...</option>
-                  {catalogoCanje.map(pr=><option key={pr} value={pr}>{pr}</option>)}
-                </select>
-              </div>
-
-              {/* ── CONTENIDO (10/nov/2026, simplificado): UNA fecha para todo el contenido
-                     (contenidoVence; se copia a las piezas pendientes para las alertas) y cada
-                     pieza en una línea: qué es, en qué está y su link. ── */}
-              {(()=>{
-                const piezas=ghPiezasDe(c);
-                const fecha=c.contenidoVence||piezas.filter(x=>(x.estado||"pendiente")==="pendiente"&&x.fechaLimite).map(x=>x.fechaLimite).sort()[0]||"";
-                // Todo entregado → el canje se cierra solo (12/nov/2026) y queda la fecha para el historial del influencer.
-                const savePiezas=(pz,extra)=>{ const todo=pz.length>0&&pz.every(x=>(x.estado||"pendiente")!=="pendiente"); const cierre=todo&&!GH_CANJE_CERRADO.has(c.estado||"")?{estado:"Cerrado",finalizadoAt:serverTimestamp(),contenidoCompletoAt:new Date().toISOString()}:{}; if(cierre.estado) toast("Entregó todo el contenido: el canje quedó cerrado","success"); return save({...(extra||{}),...cierre,piezas:pz,contenido:ghContenidoDePiezas(pz)}); };
-                const addPieza=(tipo)=>savePiezas([...piezas,{id:ghPiezaId(),tipo,estado:"pendiente",fechaLimite:fecha,link:"",nota:""}]);
-                const updPieza=(id,patch)=>savePiezas(piezas.map(x=>x.id!==id?x:({...x,...patch,...(patch.estado&&patch.estado!=="pendiente"&&!x.entregadaAt?{entregadaAt:new Date().toISOString()}:{})})));
-                const delPieza=(id)=>savePiezas(piezas.filter(x=>x.id!==id));
-                const setFecha=v=>savePiezas(piezas.map(x=>(x.estado||"pendiente")==="pendiente"?{...x,fechaLimite:v||""}:x),{contenidoVence:v||"",contenidoVenceAuto:false});
-                const hoyP=hoyAR();
-                const faltan=piezas.filter(x=>(x.estado||"pendiente")==="pendiente").length;
-                const hechas=piezas.length-faltan;
-                const vencido=faltan>0&&fecha&&fecha<hoyP;
-                const infDe=influencers.find(i=>(c.usuario&&i.usuario&&i.usuario.replace("@","").toLowerCase()===c.usuario.replace("@","").toLowerCase())||(i.nombre&&i.nombre===c.influencer));
-                const carpeta=(c.driveFolder||infDe?.driveFolder||"").trim();
-                const EST={pendiente:[T.textSm,"Pendiente"],entregada:[T.blue,"Entregada"],publicada:[T.green,"Publicada"]};
-                const tiposExtra=[...new Set(piezas.map(x=>x.tipo).filter(t=>t&&!ACTIVIDADES.includes(t)))];
-                const chipBtn={fontSize:11,padding:"4px 10px",borderRadius:20,border:"1px solid "+T.border,background:"transparent",color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"};
-                const resumen=!piezas.length?null:faltan===0?<span style={{fontSize:11,fontWeight:700,color:T.green}}>Todo entregado</span>:<span style={{fontSize:11,fontWeight:700,color:vencido?T.red:T.textMd}}>{hechas} de {piezas.length} entregadas</span>;
-                return (
-                  <div style={secStyle}>
-                    {secHead(IC.clap,"Contenido",resumen,10)}
-                    <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) auto",gap:10,alignItems:"end",marginBottom:12}}>
-                      <div style={{minWidth:0}}>
-                        <Field label="Carpeta de Drive" value={c.driveFolder||infDe?.driveFolder||""} onSave={v=>save({driveFolder:(v||"").trim()})} href={carpeta?(/^https?:/i.test(carpeta)?carpeta:"https://"+carpeta):null} placeholder="Link donde sube el contenido"/>
-                        {!carpeta&&<div style={{marginTop:6,display:"flex",gap:6}}><BtnCarpetaExistente onElegida={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/><BtnCarpeta nombre={c.influencer} usuario={c.usuario} email={c.email} onCreada={l=>{ save({driveFolder:l}); if(infDe?._docId&&!infDe.driveFolder) updateDoc(doc(db,"influencers",infDe._docId),{driveFolder:l,updatedAt:serverTimestamp()}).catch(()=>{}); }}/></div>}
-                      </div>
-                      <div>
-                        <div style={{fontSize:12,fontWeight:700,color:vencido?T.red:T.textSm,marginBottom:4}}>{vencido?"Venció el":"Para cuándo"}</div>
-                        <GhDatePicker T={T} value={fecha} onChange={setFecha} style={{...iS,fontSize:12,padding:"6px 10px",width:"auto",borderColor:vencido?T.red+"88":undefined}}/>
-                      </div>
-                    </div>
-                    {piezas.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Todavía no anotaste qué tiene que subir. Agregalo abajo.</div>}
-                    {piezas.length>0&&<div style={{display:"flex",flexDirection:"column",border:`1px solid ${T.borderL}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
-                      {piezas.map((pz,i)=>{
-                        const estK=(pz.estado||"pendiente");
-                        const mismos=piezas.filter(x=>x.tipo===pz.tipo);
-                        const nro=mismos.indexOf(pz)+1;
-                        return (
-                          <div key={pz.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
-                            <span style={{fontSize:13,fontWeight:600,color:T.text,minWidth:90}}>{pz.tipo||"Pieza"}{mismos.length>1&&<span style={{color:T.textSm,fontWeight:500}}> {nro}</span>}</span>
-                            <div style={{display:"inline-flex",gap:2,background:T.card,border:`1px solid ${T.borderL}`,borderRadius:99,padding:2}}>
-                              {PIEZA_ESTADOS.map(([k,lbl])=>{const on=estK===k;const col=EST[k][0];return (
-                                <button key={k} onClick={()=>{if(!on)updPieza(pz.id,{estado:k});}} style={{fontSize:10,fontWeight:on?700:500,padding:"3px 9px",borderRadius:99,border:"none",background:on?col+"22":"transparent",color:on?col:T.textSm,cursor:on?"default":"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{lbl}</button>
-                              );})}
-                            </div>
-                            <div style={{flex:"1 1 180px",minWidth:0,display:"flex"}}><CanjePiezaLink T={T} iS={iS} value={pz.link} onSave={v=>updPieza(pz.id,{link:v})}/></div>
-                            <button onClick={()=>delPieza(pz.id)} title="Quitar" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",padding:4,display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-                          </div>
-                        );
-                      })}
-                    </div>}
-                    <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
-                      {[...ACTIVIDADES,...tiposExtra].map(a=><button key={a} onClick={()=>addPieza(a)} style={chipBtn}>+ {a}</button>)}
-                      <input value={customContenido} onChange={e=>setCustomContenido(e.target.value)}
-                        onKeyDown={e=>{ if(e.key==="Enter"&&customContenido.trim()){ addPieza(customContenido.trim()); setCustomContenido(""); } }}
-                        placeholder="+ Otro (Enter)" style={{fontSize:11,padding:"4px 10px",borderRadius:20,border:`1px solid ${T.border}`,background:"transparent",color:T.text,outline:"none",width:110,fontFamily:"'Inter',system-ui,sans-serif"}}/>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* ── RESULTADOS DEL CUPÓN (ROI del canje) ── */}
-              {/* ── GUION: tarea asignada + acceso al PDF entregado (arriba del
-                     código de descuento, pedido de Soluna) ── */}
-              <div style={secStyle}>
-                {secHead(IC.file,"Guion",c.guionTareaNum?<span style={{fontSize:11,fontWeight:700,color:T.accent}}>Tarea #{c.guionTareaNum}</span>:null)}
-                {c.guionTareaId?(
-                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <AsyncButton onClick={()=>verGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver guion</AsyncButton>
-                    <span style={{fontSize:11,color:T.textSm}}>Abre el último archivo subido a la tarea, listo para mandarlo por WhatsApp.</span>
-                  </div>
-                ):(
-                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <button onClick={()=>abrirPedirGuion(c)} style={{...BtnPrimary(T),fontSize:12}}>Pedir guion</button>
-                    <span style={{fontSize:11,color:T.textSm}}>Crea la tarea con los datos del canje y las redes del influencer, y le avisa por mail al asignado.</span>
-                  </div>
-                )}
-              </div>
-
-              {(()=>{
-                const code=(c.codigoDescuento||"").toUpperCase().trim();
-                const guardarCupon=(cod,pct)=>{
-                  save({codigoDescuento:cod,comisionPct:pct});
-                  setCupEdit(false);
-                  toast(cod?"Código asignado al canje. Se sincroniza con Códigos y comisiones":"Código quitado del canje","success",4500);
-                };
-                return (
-                  <div style={{background:code&&!cupEdit?`linear-gradient(135deg, ${T.accentSolid}16, transparent 65%)`:T.card,border:`1px solid ${code&&!cupEdit?T.accentSolid+"44":T.border}`,borderRadius:14,padding:"16px 18px"}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:code&&!cupEdit?4:10,gap:8}}>
-                      {secHead(IC.tag,code&&!cupEdit?"Código asignado":"Código de descuento",null,0)}
-                      {code&&!cupEdit&&(
-                        <button onClick={()=>setCupEdit(true)} title="Cambiar código o % de comisión" style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Editar</button>
-                      )}
-                    </div>
-                    {(!code||cupEdit)?(
-                      <>
-                        {!code&&<div style={{fontSize:12,color:T.textSm,marginBottom:10,lineHeight:1.5}}>Este canje no tiene código asignado. Asignale uno y desde acá abrís sus métricas. Sincronizado con la pestaña <strong style={{color:T.textMd}}>Códigos y comisiones</strong>.</div>}
-                        <CanjeCuponEditor key={(c._docId||"")+"_"+code} T={T} iS={iS} code={c.codigoDescuento||""} pct={c.comisionPct||""} onSave={guardarCupon} onCancel={code?()=>setCupEdit(false):null} crearEnTn={crearCuponTn}/>
-                      </>
-                    ):(
-                      <>
-                        <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
-                          <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:0.5,fontFamily:"'Cascadia Code','Consolas',monospace",lineHeight:1.1}}>{c.codigoDescuento}</div>
-                          <button onClick={()=>{try{navigator.clipboard.writeText(code);toast("Código copiado","success");}catch(_){}}} style={{background:"transparent",border:`1px solid ${T.border}`,borderRadius:6,padding:"3px 9px",fontSize:10,fontWeight:600,color:T.textMd,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Copiar</button>
-                          {c.comisionPct&&<span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:`1px solid ${T.green}44`,borderRadius:99,padding:"2px 9px"}}>{c.comisionPct}% comisión</span>}
-                        </div>
-                        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                          <AsyncButton onClick={()=>verMetricasCupon(c)} style={{...BtnPrimary(T),fontSize:12}}>Ver métricas</AsyncButton>
-                          <span style={{fontSize:11,color:T.textSm,lineHeight:1.5,flex:1,minWidth:180}}>Pedidos, ventas y comisión en tiempo real. El mismo panel que ve el/la influencer.</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── NOTAS + HISTORIAL en una sola card (antes eran dos bloques sueltos) ── */}
-              <div style={secStyle}>
-                {secHead(IC.edit,"Notas y seguimiento")}
-                <NotasInline value={c.notas} onSave={v=>save({notas:v})} T={T} iS={iS}/>
-                <NotasRapidas T={T} canje={c} onAdd={addNota}/>
-              </div>
 
               {/* Footer */}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",paddingTop:10,borderTop:"1px solid "+T.borderL}}>

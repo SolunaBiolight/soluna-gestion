@@ -4,7 +4,7 @@
 const fs=require("fs");
 const src=fs.readFileSync("src/App.jsx","utf8");
 const cut=(a,b)=>{ const i=src.indexOf(a); const j=src.indexOf(b,i); if(i<0||j<0) throw new Error("no encontré "+a); return src.slice(i,j); };
-const blk=cut("// GH_CANJES_FLUJO_BEGIN","// GH_CANJES_FLUJO_END");
+const blk=cut("// GH_CANJES_FLUJO_BEGIN","// GH_CANJES_FLUJO_END").replace(/^export /gm,"");
 const piezas=cut("function ghPiezaId(","function CanjePiezaLink(");
 const nrm=cut("function ghNrmSuc(","// El rótulo suele pegar");
 const ACT=src.match(/const ACTIVIDADES = \[[^\]]+\];/)[0];
