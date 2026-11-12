@@ -1087,7 +1087,7 @@ async function tomarMarcaEmision(db, uid, cuitEmit, orderId, orden, resultados) 
       return { skip: true };
     }
     if (m && m.estado !== "rechazado" && atMs && Date.now() - atMs < 10 * 60000) {
-      resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, total: orden.total,
+      resultados.push({ orden_id: orderId, ok: false, ya_facturada: true, en_curso: true, total: orden.total,
         obs: "Hay otra emisión de esta orden en curso — no se re-emite. Revisá el resultado en unos minutos." });
       return { skip: true };
     }

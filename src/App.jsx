@@ -33218,20 +33218,29 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                     <>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
                         <div style={{fontSize:16,fontWeight:800,color:T.text,flex:1}}>Emisión completada</div>
-                        <DSBadge T={T} color={resultados.filter(r=>r.ok).length===resultados.length?T.green:T.orange} size="sm">{resultados.filter(r=>r.ok).length}/{resultados.length} ok</DSBadge>
+                        <DSBadge T={T} color={resultados.filter(r=>r.ok||r.ya_facturada).length===resultados.length?T.green:T.orange} size="sm">{resultados.filter(r=>r.ok).length}/{resultados.length} ok</DSBadge>
                       </div>
+                      {/* 12/nov/2026: "ya tenía factura" y "otra emisión en curso" NO son errores: son la protección contra
+                          facturar dos veces (pasa si el piloto automático u otra pestaña estaba facturando las mismas ventas). */}
+                      {(()=>{ const ya=resultados.filter(r=>!r.ok&&r.ya_facturada&&!r.en_curso).length, cur=resultados.filter(r=>!r.ok&&r.en_curso).length, mal=resultados.filter(r=>!r.ok&&!r.ya_facturada).length;
+                        if(!ya&&!cur) return null;
+                        return <div style={{fontSize:12,color:T.text,lineHeight:1.55,background:T.blue+"12",border:`1px solid ${T.blue}40`,borderRadius:12,padding:"10px 12px"}}>
+                          {ya>0&&<div><strong>{ya} ya estaban facturadas</strong> (otra emisión las facturó antes, por ejemplo el piloto automático u otra pestaña). No se duplicó nada.</div>}
+                          {cur>0&&<div><strong>{cur} se están facturando en otra emisión</strong> en este momento. No se duplicó nada: en unos minutos aparecen en Registros. Si a los 10 minutos siguen sin factura, volvé a facturarlas.</div>}
+                          {mal>0?<div style={{marginTop:4}}><strong>{mal}</strong> tuvieron un error de verdad (abajo, en rojo).</div>:<div style={{marginTop:4}}>No hubo errores de ARCA.</div>}
+                        </div>; })()}
                       <div style={{maxHeight:320,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
                         {resultados.map((r,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:`1px solid ${T.borderL}`}}>
-                            {r.ok
-                              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            {(r.ok||r.ya_facturada)
+                              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={r.ok?T.green:T.blue} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                               : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,marginTop:1}}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                             }
                             <div style={{flex:1,minWidth:0}}>
                               <div style={{fontSize:12,fontWeight:600,color:T.text}}>{r.orden_id}</div>
                               {r.ok
                                 ? <div style={{fontSize:11,color:T.textSm}}>F-{r.letra} Nro {String(r.comprobante).padStart(8,"0")} · CAE {r.cae} · Vto {r.cae_vto}</div>
-                                : <div style={{fontSize:11,color:T.red}}>{r.obs}</div>}
+                                : <div style={{fontSize:11,color:r.ya_facturada?T.textMd:T.red}}>{r.en_curso?"Se está facturando en otra emisión. No se duplica.":r.ya_facturada?r.obs.replace(/ — no se re-emite.*$/,". No se duplicó."):r.obs}</div>}
                               {r.ok&&r.fallback_ab&&(
                                 <div style={{fontSize:11,color:T.orange,marginTop:4,padding:"6px 8px",background:T.orange+"14",border:`1px solid ${T.orange}44`,borderRadius:6,lineHeight:1.4}}>
                                   <b>Salió Factura B, no A.</b> {r.fallback_ab}{/10000|CLASE 'A'|CLASE "A"/i.test(r.fallback_ab)?". Tu CUIT emisor no está habilitado por AFIP para clase A: pedí la habilitación en AFIP → Regímenes de Facturación y Registración → Habilitación de comprobantes (F.855/856).":""}
@@ -33250,7 +33259,7 @@ function AppArca({T, user, onHome, tab: sidebarTab, setTab: setSidebarTab}) {
                       {/* Reintentar solo las que fallaron: vuelve a la fase de preview con
                           el subset fallido, sin tener que buscarlas de nuevo en la lista. */}
                       {(()=>{
-                        const failed = resultados.filter(r=>!r.ok&&ordenes&&ordenes[r.orden_id]);
+                        const failed = resultados.filter(r=>!r.ok&&!r.ya_facturada&&ordenes&&ordenes[r.orden_id]);
                         if(failed.length===0) return null;
                         return (
                           <button onClick={()=>{
