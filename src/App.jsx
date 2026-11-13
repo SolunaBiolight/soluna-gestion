@@ -8225,8 +8225,13 @@ export function CanjeNuevoModal({T,inicial,influencers,canjes,guiones,responsabl
 // Despacho de canjes (12/nov/2026): varios canjes en UN Excel de Andreani, después UN PDF con todas las
 // etiquetas → cada seguimiento va a su canje (por N° de pedido del rótulo o por el nombre) y, si la cuenta es
 // cliente del depósito, la tanda sale como envío especial de canje con los productos de cada uno.
-function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,trackingsUsados=new Set(),depositoCliente,depositoCfg,uid,onClose}){
-  const [sel,setSel]=React.useState(()=>new Set(preIds&&preIds.length?preIds:candidatos.map(c=>c._docId)));
+// Días que el canje lleva esperando la etiqueta (desde que se unió el pedido o, si no, desde que se creó).
+function ghCanjeDiasPorEnviar(c){ const t=ghCanjeMs(c?.pedidoUnidoAt)||ghCanjeMs(c?.createdAt); return t?Math.floor((Date.now()-t)/86400000):null; }
+const GH_DESP_VIEJO=14;
+function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,onYaSalio,trackingsUsados=new Set(),depositoCliente,depositoCfg,uid,onClose}){
+  // Nada viejo viene tildado (12/nov/2026, Lautaro: "capaz mando cosas que ya están despachadas"): solo los que
+  // esperan la etiqueta hace menos de 14 días; los más viejos se tildan a mano, con aviso.
+  const [sel,setSel]=React.useState(()=>new Set(preIds&&preIds.length?preIds:candidatos.filter(c=>{ const d=ghCanjeDiasPorEnviar(c); return d==null||d<GH_DESP_VIEJO; }).map(c=>c._docId)));
   const [paso,setPaso]=React.useState(1); const [busy,setBusy]=React.useState(false);
   const [res,setRes]=React.useState(null); // {pdf, pags, asign:[{c,tracking,pagina}], sinAsignar:[pagina]}
   const [dep,setDep]=React.useState(null);
@@ -8234,7 +8239,10 @@ function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,t
   const lista=candidatos.filter(c=>sel.has(c._docId));
   const prods=c=>(c.productosCanje||[]).map(x=>`${x.cantidad||1}x ${x.nombre}`).join(", ")||c.producto||"";
   async function bajarExcel(){
-    if(!lista.length||busy) return; setBusy(true);
+    if(!lista.length||busy) return;
+    const viejos=lista.filter(c=>(ghCanjeDiasPorEnviar(c)??0)>=GH_DESP_VIEJO);
+    if(!(await appConfirm(`Vas a bajar ${lista.length} etiqueta${lista.length!==1?"s":""} para pagar en Andreani:\n\n${lista.map(c=>`• ${c.influencer||"—"}${c.pedidoRef?` (pedido #${c.pedidoRef})`:""}`).join("\n")}${viejos.length?`\n\nOjo: ${viejos.length} lleva${viejos.length!==1?"n":""} más de ${GH_DESP_VIEJO} días en Por enviar. Confirmá que no hayan salido ya.`:""}`,{okLabel:"Bajar el Excel"}))) return;
+    setBusy(true);
     try{
       const filas=[],fuera=[],fueraIds=new Set();
       for(const c of lista){ try{ const f=await armarFila(c); if(f) filas.push({...f,_id:c._docId}); else { fuera.push(c.influencer||"—"); fueraIds.add(c._docId); } }catch(e){ fuera.push(`${c.influencer||"—"} (${e.message})`); fueraIds.add(c._docId); } }
@@ -8293,15 +8301,21 @@ function CanjesDespachoModal({T,candidatos,preIds,armarFila,onExcel,onTracking,t
       <div style={{display:"flex",gap:8,marginBottom:14,fontSize:12,color:T.textSm}}>{["Elegir y bajar el Excel","Subir el PDF de Andreani","Listo"].map((t,i)=><span key={t} style={{fontWeight:paso===i+1?800:500,color:paso===i+1?T.text:T.textSm}}>{i+1}. {t}{i<2?" ›":""}</span>)}</div>
       {paso===1&&(<>
         {!candidatos.length&&<div style={{fontSize:13,color:T.textSm,padding:"10px 0"}}>No hay canjes en Por enviar sin etiqueta.</div>}
-        {candidatos.length>0&&<div style={{maxHeight:"46vh",overflowY:"auto"}}>{candidatos.map(c=>(
-          <label key={c._docId} style={{...fila,cursor:"pointer"}}>
-            <input type="checkbox" checked={sel.has(c._docId)} onChange={e=>setSel(x=>{ const n=new Set(x); e.target.checked?n.add(c._docId):n.delete(c._docId); return n; })}/>
+        {candidatos.length>0&&<div style={{fontSize:12,color:T.textMd,lineHeight:1.5,marginBottom:8}}>Revisá cada uno antes de bajar el Excel: cada fila tildada es <strong>una etiqueta que vas a pagar en Andreani</strong>. Si alguno ya salió, tocá "Ya salió" y deja de aparecer.</div>}
+        {candidatos.length>0&&<div style={{maxHeight:"50vh",overflowY:"auto"}}>{[...candidatos].sort((a,b)=>(ghCanjeDiasPorEnviar(a)??0)-(ghCanjeDiasPorEnviar(b)??0)).map(c=>{ const d=ghCanjeDiasPorEnviar(c); const viejo=d!=null&&d>=GH_DESP_VIEJO;
+          const dest=c.esSucursal?(c.pickupDetails?.name||"Sucursal"):[[c.direccion,c.dirNumero].filter(Boolean).join(" "),c.localidad].filter(Boolean).join(", ")||"Domicilio";
+          return (
+          <div key={c._docId} style={{...fila,alignItems:"flex-start",background:viejo?T.yellow+"0d":"transparent",borderRadius:viejo?10:0,padding:"10px 6px"}}>
+            <input type="checkbox" style={{marginTop:3}} checked={sel.has(c._docId)} onChange={e=>setSel(x=>{ const n=new Set(x); e.target.checked?n.add(c._docId):n.delete(c._docId); return n; })}/>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text}}>{c.influencer||"—"}{c.pedidoRef?<span style={{fontWeight:500,color:T.textSm}}> · #{c.pedidoRef}</span>:null}</div>
-              <div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.esSucursal?"Sucursal":"Domicilio"} · {prods(c)||"sin productos"}</div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>{c.influencer||"—"}{c.usuario?<span style={{fontWeight:500,color:T.textSm}}> · @{String(c.usuario).replace("@","")}</span>:null}{c.pedidoRef?<span style={{fontWeight:500,color:T.textSm}}> · pedido #{c.pedidoRef}</span>:null}</div>
+              <div style={{fontSize:12,color:T.textMd,marginTop:2}}>{prods(c)||"sin productos"}</div>
+              <div style={{fontSize:12,color:T.textSm,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.esSucursal?"Retira en: ":"A domicilio: "}{dest}</div>
+              {d!=null&&<div style={{fontSize:12,fontWeight:viejo?700:500,color:viejo?T.yellow:T.textSm,marginTop:2}}>{viejo?`Hace ${d} días en Por enviar: fijate que no haya salido ya.`:d===0?"Pedido de hoy":`Esperando etiqueta hace ${d} día${d!==1?"s":""}`}</div>}
               {(c.revisar||[]).length>0&&<div style={{fontSize:12,color:T.yellow,fontWeight:600}}>Revisar: {(c.revisar||[]).join(" · ")}</div>}
             </div>
-          </label>))}</div>}
+            {onYaSalio&&<button onClick={async()=>{ const r=await onYaSalio(c); if(r) setSel(x=>{ const n=new Set(x); n.delete(c._docId); return n; }); }} title="Ya lo despacharon por otro lado: pasa a Enviado" style={{height:28,padding:"0 10px",borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.textMd,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Ya salió</button>}
+          </div>); })}</div>}
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14,flexWrap:"wrap"}}>
           <Btn T={T} variant="secondary" onClick={()=>setPaso(2)}>Ya tengo el PDF</Btn>
           <Btn T={T} variant="primary" onClick={bajarExcel} disabled={busy||!lista.length}>{busy?"Armando…":`Bajar Excel de Andreani (${lista.length})`}</Btn>
@@ -9342,6 +9356,16 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
     if(ok||mal) toast(`${ok?`${ok} pedido${ok!==1?"s":""} cancelado${ok!==1?"s":""} en la tienda`:""}${ok&&mal?" · ":""}${mal?`${mal} no se pudo${mal!==1?"ieron":""} cancelar (miralo en el canje)`:""}`,mal?"warning":"success",6000);
   }
   const candidatosDespacho=canjes.filter(c=>["Por enviar","Pendiente envío"].includes(c.estado)&&!(c.tracking||"").trim());
+  // "Ya salió": lo despacharon por otro lado. Con el seguimiento, igual que Despachar (seguimiento automático y
+  // cancela el pedido pendiente); sin él, solo pasa a Enviado.
+  async function canjeYaSalio(c){
+    const t=await appPrompt(`${c.influencer||"Este canje"} ya salió. Si tenés el número de seguimiento de Andreani, pegalo (así se sigue solo). Si no, dejalo vacío.`,"",{okLabel:"Marcar como enviado"});
+    if(t===null||t===undefined) return false;
+    const tr=String(t).replace(/\s+/g,"").trim();
+    if(tr){ if(new Set(canjes.map(x=>String(x.tracking||"").trim())).has(tr)){ toast("Ese seguimiento ya lo tiene otro canje","warning"); return false; } await canjesTrackings([{c,tracking:tr}]); }
+    else await updateDoc(doc(db,"canjes",c._docId),{estado:"Enviado",etiquetaVia:"manual",fechaEnvio:c.fechaEnvio||hoyAR(),updatedAt:serverTimestamp()}).catch(()=>{});
+    toast(`${c.influencer||"Canje"} pasó a Enviado`,"success"); return true;
+  }
   // Ficha: guardar marca/notas. Un influencer sin perfil (derivado de sus canjes) se crea al tocar algo.
   async function guardarInfluencer(inf,patch){
     try{
@@ -9383,7 +9407,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
 {materialOpen&&<CanjesMaterialModal T={T} uid={user?.uid} ficha={material.ficha} guiones={material.guiones} web={material.web} onCambio={x=>setMaterial(m=>({...m,...x}))} onClose={()=>setMaterialOpen(false)}/>}
       {plantillasOpen&&<CanjesPlantillasModal T={T} plantillas={plantillas} onSave={guardarPlantillas} onClose={()=>setPlantillasOpen(false)}/>}
       {despachoOpen&&<CanjesDespachoModal T={T} candidatos={[...candidatosDespacho,...canjes.filter(c=>(despachoOpen.ids||[]).includes(c._docId)&&!candidatosDespacho.includes(c))]} preIds={despachoOpen.ids}
-        armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} trackingsUsados={new Set(canjes.map(c=>String(c.tracking||"").trim()).filter(Boolean))} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
+        armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} onYaSalio={canjeYaSalio} trackingsUsados={new Set(canjes.map(c=>String(c.tracking||"").trim()).filter(Boolean))} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
 
       <div style={{padding:"24px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
         {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
@@ -9430,7 +9454,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
           onEscrito={marcarEscrito} onAbrir={id=>setDetail(id)} onUnir={(c,o)=>unirPedido(c,o,"manual")}
           onDescartar={c=>{ updateDoc(doc(db,"canjes",c._docId),{paraHacerOculto:c.estado||""}).catch(()=>{}); toast(`${c.influencer||"Canje"}: descartado de Para hacer hoy`,"info",2500); }}
           pend={pedidosPend} onBuscar={buscarPedidosPend} hayEsperando={hayEsperando}
-          despachables={candidatosDespacho.filter(c=>(c.pedidoRef||"").trim()).length} onDespachar={()=>setDespachoOpen({})} extras={extrasHoy}/>}
+          despachables={candidatosDespacho.filter(c=>(c.pedidoRef||"").trim()&&(ghCanjeDiasPorEnviar(c)??0)<GH_DESP_VIEJO).length} onDespachar={()=>setDespachoOpen({})} extras={extrasHoy}/>}
         </>)}
 
         <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
