@@ -438,6 +438,8 @@ function normalizeLinks(links) {
 }
 
 // Cada request con su contexto de mail (uid de la tienda → bloqueo de mails demo).
+// Estados en los que el colaborador YA entregó (o está publicado / aprobado): no reciben "vence mañana" ni "vencida".
+const TAREA_ENTREGADA = new Set(["entregado", "revision", "aprobado", "publicado"]);
 export default function handler(req, res) {
   return _mailCtx.run({ uid: null, demo: undefined }, () => handlerTareas(req, res));
 }
@@ -482,6 +484,8 @@ async function handlerTareas(req, res) {
       if (!guardCron(req, res)) return;
       const ahora = new Date();
       const en36h = new Date(ahora.getTime() + 36 * 3600000);
+      const diaARde = d => new Date(d.getTime() - 3 * 3600000).toISOString().slice(0, 10);
+      const hoyARd = diaARde(ahora), mananaAR = diaARde(new Date(ahora.getTime() + 86400000));
       const desde = new Date(ahora.getTime() - 14 * 86400000);
       const hasta = new Date(ahora.getTime() + 8 * 86400000);
       const snapT = await db.collection("tareas").where("deadline", ">=", desde).where("deadline", "<=", hasta).get();
@@ -555,10 +559,15 @@ async function handlerTareas(req, res) {
         // mitad del loop (timeout), las tareas quedaban marcadas como "ya
         // notificadas" sin que el mail hubiera salido, y el recordatorio se
         // perdía para siempre. Peor un mail repetido que uno que nunca llega.
-        if (dl > ahora && dl <= en36h && !t.remPreAt) {
+        // 12/nov/2026: por DÍA en hora argentina (antes "dentro de 36 h": una tarea que vencía mañana a la noche
+        // no entraba hoy y el "vence mañana" llegaba el mismo día) y nunca a quien ya entregó (estaba esperando
+        // la revisión y le llegaba "tu tarea está vencida").
+        if (TAREA_ENTREGADA.has(String(t.estado || ""))) continue;
+        const dDl = diaARde(dl);
+        if (dDl === mananaAR && !t.remPreAt) {
           juntar(t, true); pre++;
           await t._ref.set({ remPreAt: now }, { merge: true });
-        } else if (dl < ahora && !t.remVencidaAt) {
+        } else if (dDl < hoyARd && !t.remVencidaAt) {
           juntar(t, false); venc++;
           await t._ref.set({ remVencidaAt: now }, { merge: true });
           (vencidasPorUid[t.uid] = vencidasPorUid[t.uid] || []).push(t);
@@ -2081,6 +2090,8 @@ async function handlerTareas(req, res) {
       const deadlineCambio = deadline!==undefined && dlDia(dlMs(prevData.deadline)) !== dlDia(deadline ? new Date(deadline).getTime() : 0);
       // Si cambió la fecha o se (re)activó el recordatorio, el aviso al dueño vuelve a correr.
       if (deadlineCambio || (recordarMail && !prevData.recordarMail)) clean.remOwnerAt = null;
+      // La fecha cambió: los avisos al colaborador ("vence mañana" y "vencida") vuelven a correr con la nueva.
+      if (deadlineCambio) { clean.remPreAt = null; clean.remVencidaAt = null; }
       if (estado!==undefined) clean.estado = estado;
       if (asignadoEmail!==undefined) clean.asignadoEmail = asignadoEmail;
       if (asignadoNombre!==undefined) clean.asignadoNombre = asignadoNombre;

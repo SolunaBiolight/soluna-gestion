@@ -2574,7 +2574,9 @@ async function ejecutarEmision(db, uid, cfg, { cuitEmit, ordenes, product_map, f
           // factura ya salió y ya está guardada). La manual no manda mail (no
           // hay email del receptor). Si el PDF falló, va sin adjunto con la
           // aclaración de pedirla respondiendo el mail.
-          if (cfg.envio_mail?.enabled && orden.email && !String(orderId).startsWith("MANUAL-")) {
+          // 12/nov/2026 (cuota diaria de mails): a las ventas de Mercado Libre NO se les manda la factura por mail:
+          // Growith ya la sube a ML y el comprador la ve ahí; era un mail por venta que llenaba el cupo del día.
+          if (cfg.envio_mail?.enabled && orden.email && !String(orderId).startsWith("MANUAL-") && !String(orderId).startsWith("ML-")) {
             let mailOk = false;
             try {
               mailOk = await enviarFacturaEmail({
