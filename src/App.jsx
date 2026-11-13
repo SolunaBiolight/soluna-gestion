@@ -9388,8 +9388,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
 
   return (
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}
-        onHelp={()=>setShowGuia(s=>!s)}>
+      <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}>
         <DepMenu T={T} label="Más" items={[
           {ico:"file",label:"Ficha de la marca, guiones y web",onClick:()=>setMaterialOpen(true)},
           {ico:"note",label:"Mensajes de WhatsApp",onClick:()=>setPlantillasOpen(true)},
@@ -9397,7 +9396,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
           {ico:"file",label:"Exportar CSV",onClick:exportCSV},
           {ico:"eye",label:showGuia?"Ocultar cómo funciona":"Cómo funciona",onClick:()=>setShowGuia(x=>!x),sep:true},
         ]}/>
-        <Btn T={T} variant="secondary" onClick={()=>setDespachoOpen({})}>Despachar{candidatosDespacho.length?` (${candidatosDespacho.length})`:""}</Btn>
+        <Btn T={T} variant="secondary" onClick={()=>setDespachoOpen({})}>Despachar{candidatosDespacho.length?<span style={{marginLeft:8,minWidth:20,height:20,padding:"0 6px",borderRadius:99,background:T.accentSolid,color:"#fff",fontSize:11,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>{candidatosDespacho.length}</span>:null}</Btn>
         <Btn T={T} variant="primary" onClick={()=>setForm(emptyForm())}>+ Nuevo canje</Btn>
       </AppTopbar>
       {fichaInf&&<InfluencerFichaModal T={T} inf={fichaInf} canjes={canjes} cupon={(comData?.coupons||[]).find(x=>fichaInf.codigoDescuento&&x.code===String(fichaInf.codigoDescuento).toUpperCase())||null}
@@ -9431,22 +9430,34 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
           )}
         </div>
 
-        {/* ── Tabs internos — arriba de todo para no perderse entre stats y alertas ── */}
-        <div style={{display:"flex",gap:2,background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:4,marginBottom:16,overflowX:"auto",alignItems:"center"}}>
-          {[
-            {id:"kanban",    label:"Canjes activos"},
-            {id:"comisiones",label:"Cupones"},
-            {id:"perfiles",  label:"Influencers"},
-          ].map(t=>{
-            const isActive=viewTab===t.id;
-            return (
-              <button key={t.id} onClick={()=>setViewTab(t.id)}
-                style={{padding:"7px 16px",fontSize:12,fontWeight:isActive?700:500,borderRadius:DS.r.md,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",background:isActive?T.surface:"transparent",color:isActive?T.text:T.textSm,whiteSpace:"nowrap",transition:"all 0.15s",flexShrink:0}}>
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* ── Barra de la sección (12/nov/2026): pestañas a la izquierda; buscador, equipo y vista a la derecha ── */}
+        {(()=>{ const activos=canjes.filter(c=>!GH_CANJE_CERRADO.has(c.estado||"")).length;
+          const TABS=[["kanban","Canjes",activos],["comisiones","Cupones",null],["perfiles","Influencers",influencers.length||null]];
+          const enCanjes=viewTab==="kanban"||viewTab==="lista";
+          const ctl={height:40,borderRadius:99,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",boxSizing:"border-box"};
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:20}}>
+              <div style={{display:"inline-flex",background:T.surface,border:`1px solid ${T.border}`,borderRadius:99,padding:4,gap:2}}>
+                {TABS.map(([id,l,n])=>{ const on=id==="kanban"?enCanjes:viewTab===id; return (
+                  <button key={id} onClick={()=>setViewTab(id)} style={{height:34,padding:"0 16px",borderRadius:99,border:"none",cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",fontSize:13,fontWeight:on?700:500,background:on?T.card:"transparent",color:on?T.text:T.textSm,boxShadow:on?"0 1px 3px rgba(0,0,0,0.25)":"none",display:"inline-flex",alignItems:"center",gap:7,whiteSpace:"nowrap"}}>
+                    {l}{n!=null&&<span style={{fontSize:11,fontWeight:700,color:on?T.accent:T.textSm,fontVariantNumeric:"tabular-nums"}}>{n}</span>}
+                  </button>); })}
+              </div>
+              <span style={{flex:1}}/>
+              {enCanjes&&<>
+                <div style={{position:"relative",flex:"0 1 300px",minWidth:200}}>
+                  <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:T.textSm,display:"inline-flex"}}><GhI n="search" size={14}/></span>
+                  <input placeholder="Buscar por nombre o @" value={search} onChange={e=>setSearch(e.target.value)} style={{...ctl,width:"100%",padding:"0 14px 0 38px"}}/>
+                </div>
+                {responsables.length>0&&<select value={respFiltro} onChange={e=>{ const v=e.target.value; setRespFiltro(v); try{ localStorage.setItem(ghKey("growith_canjes_resp"),v); }catch(_){ } }} style={{...ctl,padding:"0 14px",color:respFiltro?T.accent:T.textMd}}><option value="">Todo el equipo</option>{responsables.map(r=><option key={r} value={r}>{r}</option>)}</select>}
+                {viewTab==="lista"&&<select value={filterEstado} onChange={e=>setFilterEstado(e.target.value)} style={{...ctl,padding:"0 14px",color:filterEstado?T.accent:T.textMd}}><option value="">Todas las etapas</option>{ESTADOS_C.map(e=><option key={e} value={e}>{e}</option>)}</select>}
+                <div style={{display:"inline-flex",background:T.surface,border:`1px solid ${T.border}`,borderRadius:99,padding:3,gap:2}}>
+                  {[["kanban","Tablero","M3 3h7v18H3zM14 3h7v10h-7z"],["lista","Lista","M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"]].map(([id,l,d])=>{ const on=viewTab===id; return (
+                    <button key={id} onClick={()=>setViewTab(id)} title={l} aria-label={l} style={{width:36,height:32,borderRadius:99,border:"none",cursor:"pointer",background:on?T.card:"transparent",color:on?T.text:T.textSm,boxShadow:on?"0 1px 3px rgba(0,0,0,0.25)":"none",display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d}/></svg></button>); })}
+                </div>
+              </>}
+            </div>); })()}
         {/* En la pestaña Cupones estos bloques no aportan (pedido de Soluna) */}
         {viewTab!=="comisiones"&&(<>
         {viewTab==="kanban"&&<CanjesParaEscribir T={T} canjes={canjes} plantillas={plantillas} dudas={union.dudas} responsables={[]} resp={respFiltro}
@@ -9456,25 +9467,6 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
           pend={pedidosPend} onBuscar={buscarPedidosPend} hayEsperando={hayEsperando}
           despachables={candidatosDespacho.filter(c=>(c.pedidoRef||"").trim()&&(ghCanjeDiasPorEnviar(c)??0)<GH_DESP_VIEJO).length} onDespachar={()=>setDespachoOpen({})} extras={extrasHoy}/>}
         </>)}
-
-        <div style={{padding:"14px 0 8px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-          {viewTab!=="comisiones"&&<>
-            <div style={{position:"relative",flex:"1 1 220px",minWidth:180}}>
-              <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:T.textSm,display:"inline-flex"}}><GhI n="search" size={13}/></span>
-              <input placeholder="Buscar por nombre o @" value={search} onChange={e=>setSearch(e.target.value)} style={{...iS,paddingLeft:36,fontSize:14}} onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.inputBorder}/>
-            </div>
-            {viewTab==="lista"&&<select value={filterEstado} onChange={e=>setFilterEstado(e.target.value)} style={{...iS,width:"auto",flex:"0 1 190px",fontSize:13,color:filterEstado?T.accent:T.textMd}}><option value="">Todas las etapas</option>{ESTADOS_C.map(e=><option key={e} value={e}>{e}</option>)}</select>}
-            {responsables.length>0&&<select value={respFiltro} onChange={e=>{ const v=e.target.value; setRespFiltro(v); try{ localStorage.setItem(ghKey("growith_canjes_resp"),v); }catch(_){ } }} style={{...iS,width:"auto",flex:"0 1 190px",fontSize:13,color:respFiltro?T.accent:T.textMd}}><option value="">Todo el equipo</option>{responsables.map(r=><option key={r} value={r}>{r}</option>)}</select>}
-            {(viewTab==="kanban"||viewTab==="lista")&&(
-              <div style={{display:"inline-flex",background:T.card,border:`1px solid ${T.border}`,borderRadius:99,padding:2,gap:2}}>
-                {[["kanban","Tablero"],["lista","Lista"]].map(([id,l])=>{const on=viewTab===id;return (
-                  <button key={id} onClick={()=>setViewTab(id)} style={{fontSize:11,fontWeight:on?700:500,padding:"5px 12px",borderRadius:99,border:"none",background:on?T.surface:"transparent",color:on?T.text:T.textSm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{l}</button>
-                );})}
-              </div>
-            )}
-            <span style={{fontSize:12,color:T.textSm,marginLeft:"auto"}}>{filtered.length} canjes</span>
-          </>}
-        </div>
 
         {/* LISTA */}
         {viewTab==="lista"&&<div key="lista" className="gh-tab-content" style={{paddingBottom:48,overflowX:"auto"}}>
@@ -9546,19 +9538,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
         {/* KANBAN con drag-and-drop */}
         {viewTab==="kanban"&&(
           <div key="kanban" style={{paddingBottom:48}}>
-            {/* El buscador y los filtros viven en la fila de filtros de arriba —
-                acá solo queda el hint de drag para no duplicar controles */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10,flexWrap:"wrap"}}>
-              {alertFilter?(
-                <div onClick={()=>setAlertFilter(null)} title="Quitar el filtro"
-                  style={{display:"inline-flex",alignItems:"center",gap:7,padding:"5px 12px",borderRadius:99,cursor:"pointer",border:`1px solid ${alertFilter.color}`,background:alertFilter.color+"1c",color:alertFilter.color,fontSize:12,fontWeight:600,userSelect:"none"}}>
-                  Mostrando: {alertFilter.label}
-                  <span style={{fontSize:11,opacity:.85}}>✕</span>
-                </div>
-              ):<span/>}
-              <span style={{fontSize:11,color:T.textSm}}>Arrastrá las tarjetas para cambiar estado</span>
-            </div>
-
+            {/* El buscador y los filtros viven en la barra de arriba. Las tarjetas se arrastran entre columnas. */}
             <div className="stack-mobile" style={{display:"grid",gridTemplateColumns:`repeat(${ESTADOS_C.length},minmax(0,1fr))`,gap:12,alignItems:"start"}}>
               {ESTADOS_C.map(estado=>{
                 const sc=getEstadoCC(T,estado);
