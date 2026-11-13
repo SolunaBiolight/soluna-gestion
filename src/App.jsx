@@ -7996,19 +7996,29 @@ export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,
   // Cada tarea es una TARJETA con la info y sus botones juntos (12/nov/2026: en filas, los botones quedaban
   // en la otra punta de la pantalla). Grilla que se acomoda al ancho.
   const nTot=items.length+dudasV.length+extrasV.length+(despachables?1:0);
+  // Tarjeta horizontal y baja: foto · quién y qué hacer · botones de ícono en la misma tarjeta.
+  const ico={check:"M20 6 9 17l-5-5",abrir:"M7 17 17 7M8 7h9v9",x:"M18 6 6 18M6 6l12 12",copiar:"M9 9h11v11H9zM5 15H4V4h11v1"};
+  const iBtn=(d,title,onClick)=><button onClick={onClick} title={title} aria-label={title} style={{width:32,height:32,borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.textMd,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={d}/></svg></button>;
   const tarjeta=(key,col,c,titulo,sub,botones,extra)=>(
-    <div key={key} style={{display:"flex",flexDirection:"column",gap:12,padding:"14px 14px 12px",borderRadius:16,background:`linear-gradient(180deg, ${T.surface} 0%, ${T.card} 100%)`,border:`1px solid ${T.border}`,borderLeft:`3px solid ${col}`,minWidth:0}}>
-      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-        {c?<Avatar src={c.foto} name={c.influencer} size={36} radius={11} T={T}/>:<span style={{width:36,height:36,borderRadius:11,background:col+"22",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{width:9,height:9,borderRadius:99,background:col}}/></span>}
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:14,fontWeight:800,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{titulo}</div>
-          {c&&(c.usuario||c.responsable)&&<div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?`@${String(c.usuario).replace(/^@/,"")}`:""}{c.responsable?`${c.usuario?" · ":""}${c.responsable}`:""}</div>}
+    <div key={key} style={{borderRadius:16,background:T.card,border:`1px solid ${T.border}`,padding:"12px 12px 12px 14px",minWidth:0,boxShadow:"0 1px 2px rgba(0,0,0,0.12)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{position:"relative",flexShrink:0}}>
+          {c?<Avatar src={c.foto} name={c.influencer} size={40} radius={99} T={T}/>:<span style={{width:40,height:40,borderRadius:99,background:col+"22",display:"inline-flex",alignItems:"center",justifyContent:"center"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>}
+          <span style={{position:"absolute",right:-1,bottom:-1,width:12,height:12,borderRadius:99,background:col,border:`2px solid ${T.card}`}}/>
         </div>
-        {c&&<button onClick={()=>onDescartar(c)} title="Descartar: no es algo para hacer (vuelve si el canje cambia de etapa)" style={{width:28,height:28,margin:"-4px -4px 0 0",borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:6,minWidth:0}}>
+            <span style={{fontSize:14,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{titulo}</span>
+            {c?.usuario&&<span style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>@{String(c.usuario).replace(/^@/,"")}</span>}
+          </div>
+          <div style={{fontSize:12.5,fontWeight:col===T.red?600:500,color:col===T.red?T.red:T.textMd,marginTop:2,lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}} title={sub}>{sub}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+          {botones}
+          {c&&<button onClick={()=>onDescartar(c)} title="Descartar: no es algo para hacer (vuelve si el canje cambia de etapa)" aria-label="Descartar" style={{width:28,height:28,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d={ico.x}/></svg></button>}
+        </div>
       </div>
-      <div style={{fontSize:13,fontWeight:600,color:col===T.red?T.red:T.textMd,lineHeight:1.4}}>{sub}</div>
-      {extra}
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:"auto"}}>{botones}</div>
+      {extra&&<div style={{marginTop:10,paddingLeft:52}}>{extra}</div>}
     </div>);
   return (
     <div style={{marginBottom:18}}>
@@ -8019,25 +8029,25 @@ export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,
         {hayEsperando&&<button onClick={()=>onBuscar(true)} disabled={!!pend?.cargando} style={btn}>Buscar pedidos</button>}
       </div>
       {nTot===0?<div style={{fontSize:13,color:T.textSm,background:T.card,border:`1px dashed ${T.border}`,borderRadius:16,padding:"16px"}}>Nada pendiente por ahora. Cuando haya que escribirle a alguien o despachar, aparece acá.</div>
-      :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:12}}>
-        {despachables>0&&tarjeta("desp",T.yellow,null,`${despachables} canje${despachables!==1?"s":""} para despachar`,"Ya tienen el pedido unido: falta la etiqueta de Andreani.",<button onClick={onDespachar} style={{...btn,background:T.accentSolid,color:"#fff",border:"none",height:34,padding:"0 16px"}}>Despachar</button>)}
+      :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,440px),1fr))",gap:10}}>
+        {despachables>0&&tarjeta("desp",T.yellow,null,`${despachables} canje${despachables!==1?"s":""} para despachar`,"Tienen el pedido: falta la etiqueta",<button onClick={onDespachar} style={{...btn,background:T.accentSolid,color:"#fff",border:"none",height:32,padding:"0 14px"}}>Despachar</button>)}
         {dudasV.map(d=>tarjeta("d"+d.canje._docId,T.yellow,d.canje,d.canje.influencer||"Canje","¿Es su pedido?",
-          <button onClick={()=>setDescartadas(x=>new Set([...x,d.canje._docId]))} style={btn}>No es ninguno</button>,
+          <button onClick={()=>setDescartadas(x=>new Set([...x,d.canje._docId]))} style={btn}>No es</button>,
           <div style={{display:"flex",flexDirection:"column",gap:6}}>{d.opciones.map(o=>(
             <button key={o.numero} onClick={()=>onUnir(d.canje,o)} style={{textAlign:"left",background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"8px 10px",cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
               <div style={{fontSize:12,fontWeight:700}}>Pedido #{o.numero} · {o.comprador||"—"}</div>
               <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{(o.productos||[]).map(p=>`${p.cantidad||1}x ${typeof p==="string"?p:p.nombre}`).join(", ")} · tocá para unirlo</div>
             </button>))}</div>))}
         {extrasV.map(x=>tarjeta(x.key,colDe(x.sev),x.c,x.c.influencer||"Sin nombre",x.txt,<>
-          {x.link&&<a href={x.link} target="_blank" rel="noopener noreferrer" style={{...btn,textDecoration:"none"}}>Seguimiento</a>}
-          {x.onOk&&<button onClick={x.onOk} style={btn}>{x.okLabel||"Ya está"}</button>}
-          <button onClick={()=>onAbrir(x.c._docId)} style={btn}>Abrir</button></>))}
+          {x.link&&<a href={x.link} target="_blank" rel="noopener noreferrer" style={{...btn,textDecoration:"none",height:32}}>Seguimiento</a>}
+          {x.onOk&&iBtn(ico.check,x.okLabel||"Ya está",x.onOk)}
+          {iBtn(ico.abrir,"Abrir el canje",()=>onAbrir(x.c._docId))}</>))}
         {items.map(({c,it})=>{ const tpl=plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo]||""; const msg=ghCanjeMensaje(tpl,c); const tel=ghRecTel(c.telefono);
           return tarjeta(c._docId,colDe(it.sev),c,c.influencer||"Sin nombre",it.txt,<>
-            {tel?<GhWaBtn size={34} href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} onClick={()=>onEscrito(c,it.clave)}/>
-              :<button onClick={async()=>{ try{ await navigator.clipboard.writeText(msg); toast("Mensaje copiado (el canje no tiene WhatsApp cargado)","info"); }catch(_){ } }} style={btn}>Copiar mensaje</button>}
-            <button onClick={()=>onEscrito(c,it.clave)} title="Ya le escribí por otro lado" style={btn}>Ya está</button>
-            <button onClick={()=>onAbrir(c._docId)} style={btn}>Abrir</button></>); })}
+            {tel?<GhWaBtn size={32} href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} onClick={()=>onEscrito(c,it.clave)}/>
+              :iBtn(ico.copiar,"Copiar el mensaje (no tiene WhatsApp cargado)",async()=>{ try{ await navigator.clipboard.writeText(msg); toast("Mensaje copiado","success"); }catch(_){ } })}
+            {iBtn(ico.check,"Ya le escribí (sacarlo de la lista)",()=>onEscrito(c,it.clave))}
+            {iBtn(ico.abrir,"Abrir el canje",()=>onAbrir(c._docId))}</>); })}
       </div>}
       {nViejos>0&&<button onClick={()=>setVerViejos(v=>!v)} style={{marginTop:10,background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>{verViejos?"Ver solo lo de la última semana":`Ver ${nViejos} más viejo${nViejos!==1?"s":""} (de hace más de una semana)`}</button>}
     </div>
@@ -9568,15 +9578,16 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                       await updateDoc(doc(db,"canjes",docId),{estado,updatedAt:serverTimestamp(),...(estado==="Cerrado"&&c.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
                       toast(`Movido a "${estado}"`, "success");
                     }}
-                    style={{background:isDragOver?sc.dot+"0d":T.card,borderRadius:16,border:`1px solid ${isDragOver?sc.dot:T.border}`,borderTop:`3px solid ${sc.dot}`,overflow:"hidden",transition:"border-color 0.15s,background 0.15s",boxShadow:isDragOver?`0 0 0 3px ${sc.dot}22`:"none"}}>
+                    style={{background:isDragOver?sc.dot+"0d":T.surface+"80",borderRadius:16,border:`1px solid ${isDragOver?sc.dot:"transparent"}`,overflow:"hidden",transition:"border-color 0.15s,background 0.15s",boxShadow:isDragOver?`0 0 0 3px ${sc.dot}22`:"none"}}>
                     {/* Header columna */}
-                    <div style={{padding:"14px 16px 10px",display:"flex",alignItems:"baseline",gap:8}}>
+                    <div style={{padding:"12px 14px 8px",display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{width:8,height:8,borderRadius:99,background:sc.dot,flexShrink:0}}/>
                       <span style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:-0.1}}>{estado}</span>
                       <span style={{fontSize:12,fontWeight:600,color:T.textSm,fontVariantNumeric:"tabular-nums"}}>{cols.length}</span>
                     </div>
 
                     {/* Tarjetas */}
-                    <div style={{padding:"4px 10px 12px",display:"flex",flexDirection:"column",gap:10,minHeight:120}}>
+                    <div style={{padding:"2px 8px 10px",display:"flex",flexDirection:"column",gap:8,minHeight:120}}>
                       {cols.length===0&&(
                         <div style={{textAlign:"center",padding:"24px 8px",fontSize:11,color:T.textSm,opacity:0.5,border:`1.5px dashed ${T.border}`,borderRadius:8,margin:4}}>
                           Soltá aquí
@@ -9601,65 +9612,33 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                             onDragStart={e=>{e.dataTransfer.setData("canjeId",c._docId);e.dataTransfer.effectAllowed="move";}}
                             onDragEnd={()=>setDragOverEstado(null)}
                             onClick={()=>setDetail(c._docId)}
-                            style={{background:`linear-gradient(180deg, ${T.surface} 0%, ${T.card} 100%)`,border:`1px solid ${urgente?T.red+"88":T.border}`,borderRadius:16,padding:"14px 14px 12px",cursor:"grab",boxShadow:"0 6px 18px rgba(0,0,0,0.12)",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
+                            style={{background:T.card,border:`1px solid ${urgente?T.red+"66":T.border}`,borderRadius:14,padding:"12px 14px",cursor:"grab",boxShadow:"0 1px 2px rgba(0,0,0,0.12)",transition:"box-shadow 0.15s, background 0.12s",userSelect:"none",display:"flex",flexDirection:"column",fontFamily:"'Inter',system-ui,sans-serif"}}
                             onMouseEnter={e=>{e.currentTarget.style.borderColor=urgente?T.red:T.accentSolid+"66";}}
-                            onMouseLeave={e=>{e.currentTarget.style.borderColor=urgente?T.red+"88":T.border;}}>
+                            onMouseLeave={e=>{e.currentTarget.style.borderColor=urgente?T.red+"66":T.border;}}>
 
-                            {/* Influencer (la etapa ya la dice la columna) */}
-                            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                              <Avatar src={c.foto} name={c.influencer} size={34} radius={11} T={T}/>
+                            {/* Tarjeta compacta (12/nov/2026, 3ra vuelta): quién · qué lleva · próximo paso + contenido + WhatsApp */}
+                            <div style={{display:"flex",alignItems:"center",gap:10}}>
+                              <Avatar src={c.foto} name={c.influencer} size={30} radius={99} T={T}/>
                               <div style={{minWidth:0,flex:1}}>
-                                <div style={{fontSize:14,fontWeight:800,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:-0.2}}>{c.influencer||"Sin nombre"}</div>
+                                <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.influencer||"Sin nombre"}</div>
                                 <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?`@${String(c.usuario).replace("@","")}`:""}{c.responsable?` · ${c.responsable}`:""}</div>
                               </div>
                               <TrackingChip c={c}/>
                             </div>
-                            {/* Chips info */}
-                            {(c.nicho||prods.length>0)&&(
-                              <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
-                                {c.nicho&&<span style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.purpleBg,color:T.purple,fontWeight:600}}>{c.nicho}</span>}
-                                {prods.map((p,i)=>(
-                                  <span key={i} style={{fontSize:10,padding:"2px 8px",borderRadius:99,background:T.surface,color:T.textMd,fontWeight:500,border:`1px solid ${T.borderL}`,whiteSpace:"nowrap",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis"}}>
-                                    {ghNombreCortoProducto(p.nombre,prefProds)}{(p.cantidad||1)>1?` ×${p.cantidad}`:""}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-
-                            {(c.revisar||[]).length>0&&<div style={{fontSize:10.5,fontWeight:700,color:T.yellow,marginBottom:6}}>Revisar: {(c.revisar||[]).join(" · ")}</div>}
-                            {/* Próximo paso — la card dice qué toca hacer con este canje */}
-                            {accion&&(
-                              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
-                                <span style={{width:6,height:6,borderRadius:"50%",background:accionCol,flexShrink:0}}/>
-                                <span style={{fontSize:10.5,fontWeight:accion.sev>=1?600:500,color:accionCol,lineHeight:1.3}}>{accion.label}</span>
-                              </div>
-                            )}
-
-                            <div style={{flex:1}}/>
-
-                            {/* Próximo paso con su botón (12/nov/2026) */}
-                            {(()=>{ const est=c.estado; const tel=ghRecTel(c.telefono); const parar=e=>e.stopPropagation();
-                              const b={display:"inline-flex",alignItems:"center",height:26,padding:"0 10px",borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",fontFamily:"'Inter',system-ui,sans-serif"};
-                              const it=ghCanjeParaEscribir(c); const wa=(tpl)=>tel?`https://wa.me/${tel}?text=${encodeURIComponent(ghCanjeMensaje(tpl,c))}`:null;
-                              const botones=[];
-                              if(est==="Esperando pedido"){ if(ghCanjeLink(c)) botones.push(<button key="l" style={b} onClick={async e=>{ parar(e); try{ await navigator.clipboard.writeText(ghCanjeLink(c)); toast("Link copiado","success"); }catch(_){ } }}>Copiar link</button>);
-                                if(wa(plantillas.inicio)) botones.push(<GhWaBtn key="w" size={26} href={wa(it?.tipo==="pedido"?plantillas.pedido:plantillas.inicio)} onClick={e=>{ parar(e); if(it) marcarEscrito(c,it.clave); }}/>); }
-                              else if((est==="Por enviar"||est==="Pendiente envío")&&!(c.tracking||"").trim()) botones.push(<button key="d" style={{...b,background:T.accentSolid,color:"#fff",border:"none"}} onClick={e=>{ parar(e); setDespachoOpen({ids:[c._docId]}); }}>Despachar</button>);
-                              else if(it&&wa(plantillas[it.tipo])) botones.push(<GhWaBtn key="w" size={26} href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} onClick={e=>{ parar(e); marcarEscrito(c,it.clave); }}/>);
-                              else if((c.tracking||"").trim()&&est==="Enviado") botones.push(<a key="t" href={`https://www.andreani.com/envio/${String(c.tracking).trim()}`} target="_blank" rel="noopener noreferrer" style={b} onClick={parar}>Seguimiento</a>);
-                              return botones.length?<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}} draggable={false} onMouseDown={parar}>{botones}</div>:null; })()}
-                            {/* Footer: barra de progreso contenido */}
-                            {pctContenido!==null&&(
-                              <div style={{paddingTop:10,borderTop:`1px solid ${T.borderL||T.border}`}}>
-                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                                  <span style={{fontSize:10,color:T.textSm}}>Contenido</span>
-                                  <span style={{fontSize:10,fontWeight:700,color:pctContenido===100?T.green:urgente?T.red:T.textMd}}>{totalEntregado}/{totalAcordado}</span>
-                                </div>
-                                <div style={{height:3,borderRadius:2,background:T.borderL,overflow:"hidden"}}>
-                                  <div style={{height:"100%",width:`${pctContenido}%`,background:pctContenido===100?T.green:urgente?T.red:T.orange,borderRadius:2,transition:"width 0.3s"}}/>
-                                </div>
-                              </div>
-                            )}
+                            {prods.length>0&&<div title={prods.map(p=>`${p.cantidad||1}x ${p.nombre}`).join(", ")} style={{fontSize:12,color:T.textMd,marginTop:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{prods.slice(0,2).map(p=>`${ghNombreCortoProducto(p.nombre,prefProds)}${(p.cantidad||1)>1?` ×${p.cantidad}`:""}`).join(" · ")}{prods.length>2?` +${prods.length-2}`:""}</div>}
+                            {(c.revisar||[]).length>0&&<div style={{fontSize:11,fontWeight:600,color:T.yellow,marginTop:6}}>Revisar: {(c.revisar||[]).join(" · ")}</div>}
+                            {(()=>{ const est=c.estado; const tel=ghRecTel(c.telefono); const parar=e=>e.stopPropagation(); const it=ghCanjeParaEscribir(c);
+                              const wa=tpl=>tel?`https://wa.me/${tel}?text=${encodeURIComponent(ghCanjeMensaje(tpl,c))}`:null;
+                              const waHref=est==="Esperando pedido"?wa(it?.tipo==="pedido"?plantillas.pedido:plantillas.inicio):(it?wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo]):null);
+                              const despachar=(est==="Por enviar"||est==="Pendiente envío")&&!(c.tracking||"").trim();
+                              return (
+                                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10,paddingTop:10,borderTop:`1px solid ${T.borderL}`}} onMouseDown={parar}>
+                                  <span style={{width:6,height:6,borderRadius:99,background:accion?accionCol:T.textSm,flexShrink:0}}/>
+                                  <span style={{flex:1,minWidth:0,fontSize:11.5,fontWeight:accion&&accion.sev>=1?700:500,color:accion?accionCol:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={accion?.label||""}>{accion?.label||(GH_CANJE_CERRADO.has(est||"")?"Cerrado":"")}</span>
+                                  {totalAcordado>0&&<span title="Contenido entregado" style={{fontSize:11,fontWeight:700,color:totalEntregado===totalAcordado?T.green:T.textMd,fontVariantNumeric:"tabular-nums",flexShrink:0}}>{totalEntregado}/{totalAcordado}</span>}
+                                  {despachar&&<button onClick={e=>{ parar(e); setDespachoOpen({ids:[c._docId]}); }} style={{height:26,padding:"0 10px",borderRadius:99,border:"none",background:T.accentSolid,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>Despachar</button>}
+                                  {!despachar&&waHref&&<GhWaBtn size={26} href={waHref} onClick={e=>{ parar(e); if(it) marcarEscrito(c,it.clave); }}/>}
+                                </div>); })()}
                           </div>
                         );
                       })}
