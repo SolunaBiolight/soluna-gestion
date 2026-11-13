@@ -9250,6 +9250,10 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
   const extrasHoy=useMemo(()=>{
     const out=[]; const hoy=hoyAR();
     for(const c of canjes){
+      // El influencer cargó links en su página (también si con eso se cerró el canje): avisar para revisarlo.
+      const subioMs=ghCanjeMs(c.influencerUltimoLinkAt), vistoMs=ghCanjeMs(c.linksVistoAt)||0;
+      if(subioMs&&subioMs>vistoMs){ const pzS=ghPiezasDe(c); const ent=pzS.filter(x=>(x.estado||"pendiente")!=="pendiente").length;
+        out.push({key:"sub"+c._docId,c,sev:1,antig:Math.floor((Date.now()-subioMs)/86400000),txt:`Subió contenido: ${ent} de ${pzS.length} entregado${pzS.length!==1?"s":""}${GH_CANJE_CERRADO.has(c.estado||"")?" (completó todo)":""}. Revisalo`,okLabel:"Ya lo revisé",onOk:()=>updateDoc(doc(db,"canjes",c._docId),{linksVistoAt:new Date().toISOString()}).catch(()=>{})}); }
       if(GH_CANJE_CERRADO.has(c.estado||"")) continue;
       const a=acciones.map.get(c._docId);
       const dEnv=c.fechaEnvio&&isFinite(Date.parse(c.fechaEnvio))?Math.floor((Date.now()-Date.parse(c.fechaEnvio))/86400000):0;
@@ -9388,17 +9392,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
 
   return (
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
-      <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}>
-        <DepMenu T={T} label="Más" items={[
-          {ico:"file",label:"Ficha de la marca, guiones y web",onClick:()=>setMaterialOpen(true)},
-          {ico:"note",label:"Mensajes de WhatsApp",onClick:()=>setPlantillasOpen(true)},
-          {ico:"truck",label:refrescando?"Actualizando envíos…":"Actualizar envíos ahora",onClick:()=>{ if(!refrescando) refrescarTracking(true); }},
-          {ico:"file",label:"Exportar CSV",onClick:exportCSV},
-          {ico:"eye",label:showGuia?"Ocultar cómo funciona":"Cómo funciona",onClick:()=>setShowGuia(x=>!x),sep:true},
-        ]}/>
-        <Btn T={T} variant="secondary" onClick={()=>setDespachoOpen({})}>Despachar{candidatosDespacho.length?<span style={{marginLeft:8,minWidth:20,height:20,padding:"0 6px",borderRadius:99,background:T.accentSolid,color:"#fff",fontSize:11,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>{candidatosDespacho.length}</span>:null}</Btn>
-        <Btn T={T} variant="primary" onClick={()=>setForm(emptyForm())}>+ Nuevo canje</Btn>
-      </AppTopbar>
+      <AppTopbar T={T} section="Canjes" sectionId="canjes" onHome={onHome}/>
       {fichaInf&&<InfluencerFichaModal T={T} inf={fichaInf} canjes={canjes} cupon={(comData?.coupons||[]).find(x=>fichaInf.codigoDescuento&&x.code===String(fichaInf.codigoDescuento).toUpperCase())||null}
         onClose={()=>setFichaInf(null)} onMarca={(v,m)=>guardarInfluencer(fichaInf,{volverATrabajar:v,motivoNo:v===false?String(m||"").trim():""})} onNotas={n=>guardarInfluencer(fichaInf,{notas:n})}
         onAbrirCanje={id=>{ setFichaInf(null); setDetail(id); }} onNuevoCanje={()=>nuevoCanjeDe(fichaInf)}
@@ -9409,30 +9403,30 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
         armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} onYaSalio={canjeYaSalio} trackingsUsados={new Set(canjes.map(c=>String(c.tracking||"").trim()).filter(Boolean))} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
 
       <div style={{padding:"24px 24px 64px",maxWidth:"100%",margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
-        {/* GUÍA ¿Cómo funciona? — se abre con el botón "?" del topbar */}
-        <div>
-          {showGuia&&(
-            <div style={{marginBottom:16,display:"flex",flexDirection:"column",gap:5,paddingLeft:2}}>
-              {[
-                {n:1,title:"Nuevo canje",desc:"Apenas acuerdan por WhatsApp: su @, su WhatsApp, cuántos productos, el contenido, el guion y el cupón (10 % de descuento y 7 % de comisión, editables). Sin número de pedido: queda en Esperando pedido y te da el link para mandarle."},
-                {n:2,title:"El pedido se une solo",desc:"El influencer hace el pedido en la web con transferencia y su @ en la nota. Growith lo encuentra entre los pedidos con pago pendiente y lo une al canje (si duda, te pregunta en Para hacer hoy)."},
-                {n:3,title:"Despachar",desc:"Un solo Excel de Andreani para todos los canjes listos; subís el PDF que te da Andreani y cada seguimiento va a su canje. El pedido pendiente se cancela solo en la tienda y, si usás el depósito, sale la tanda de canje."},
-                {n:4,title:"Para hacer hoy",desc:"A quién escribirle y con qué mensaje: pedido sin hacer, paquete en sucursal, visita fallida y días 0, 7, 10 y 12 del contenido. El botón abre WhatsApp con el texto listo (nunca se manda solo)."},
-                {n:5,title:"El link del influencer",desc:"Ve sus pasos, lo acordado, su cupón, la ficha de la marca, su guion, su carpeta de Drive y pega el link de cada pieza. Con todo entregado, el canje se cierra solo."},
-                {n:6,title:"Ficha del influencer",desc:"En Influencers: historial, si cumple y a tiempo, ventas del cupón y la marca de volver a trabajar o no."},
-              ].map(s=>(
-                <div key={s.n} style={{display:"flex",gap:7,fontSize:11,color:T.textSm,lineHeight:1.55}}>
-                  <span style={{flexShrink:0,fontWeight:600}}>{s.n}.</span>
-                  <span><span style={{color:T.textMd,fontWeight:500}}>{s.title}</span>: {s.desc}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* ── Encabezado (12/nov/2026): título + resumen del día, y las dos acciones grandes al lado ── */}
+        {(()=>{ const activos=canjes.filter(c=>!GH_CANJE_CERRADO.has(c.estado||"")).length; const ahoraH=Date.now();
+          const nHoy=canjes.filter(c=>!(c.paraHacerOculto&&c.paraHacerOculto===(c.estado||""))).map(c=>ghCanjeParaEscribir(c,ahoraH)).filter(it=>it&&(it.antig??0)<=7).length;
+          const nDesp=candidatosDespacho.length;
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",marginBottom:20}}>
+              <div style={{flex:"1 1 280px",minWidth:0}}>
+                <div style={{fontSize:26,fontWeight:800,color:T.text,letterSpacing:-0.5,lineHeight:1.15}}>Canjes</div>
+                <div style={{fontSize:13,color:T.textMd,marginTop:4}}>{activos} activo{activos!==1?"s":""}{nHoy?<> · <strong style={{color:T.text}}>{nHoy} para hacer hoy</strong></>:null}{nDesp?<> · {nDesp} para despachar</>:null}</div>
+              </div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                <button onClick={()=>setDespachoOpen({})} style={{height:46,padding:"0 20px",borderRadius:99,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:10}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                  Despachar{nDesp?<span style={{minWidth:22,height:22,padding:"0 7px",borderRadius:99,background:T.accentSolid,color:"#fff",fontSize:12,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",boxSizing:"border-box"}}>{nDesp}</span>:null}
+                </button>
+                <button onClick={()=>setForm(emptyForm())} style={{height:46,padding:"0 22px",borderRadius:99,border:"none",background:T.accentSolid,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:8,boxShadow:`0 6px 18px ${T.accentSolid}44`}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>Nuevo canje
+                </button>
+              </div>
+            </div>); })()}
 
         {/* ── Barra de la sección (12/nov/2026): pestañas a la izquierda; buscador, equipo y vista a la derecha ── */}
         {(()=>{ const activos=canjes.filter(c=>!GH_CANJE_CERRADO.has(c.estado||"")).length;
-          const TABS=[["kanban","Canjes",activos],["comisiones","Cupones",null],["perfiles","Influencers",influencers.length||null]];
+          const TABS=[["kanban","Canjes",activos],["comisiones","Cupones",null],["perfiles","Influencers",influencers.length||null],["config","Configuración",null]];
           const enCanjes=viewTab==="kanban"||viewTab==="lista";
           const ctl={height:40,borderRadius:99,border:`1px solid ${T.border}`,background:T.card,color:T.text,fontSize:13,fontFamily:"'Inter',system-ui,sans-serif",outline:"none",boxSizing:"border-box"};
           return (
@@ -9625,7 +9619,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                               <Avatar src={c.foto} name={c.influencer} size={30} radius={99} T={T}/>
                               <div style={{minWidth:0,flex:1}}>
                                 <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.influencer||"Sin nombre"}</div>
-                                <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?`@${String(c.usuario).replace("@","")}`:""}{c.responsable?` · ${c.responsable}`:""}</div>
+                                <div style={{fontSize:11,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?`@${String(c.usuario).replace("@","")}`:""}</div>
                               </div>
                               <TrackingChip c={c}/>
                             </div>
@@ -9877,6 +9871,31 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
         )}
 
         {/* ── TAB PERFILES ── */}
+        {/* ── CONFIGURACIÓN de Canjes (12/nov/2026, antes en el menú "Más") ── */}
+        {viewTab==="config"&&(()=>{ const card={background:T.card,border:`1px solid ${T.border}`,borderRadius:18,padding:"18px 20px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"};
+          const fila=(titulo,desc,boton,estado)=>(<div style={card}><div style={{flex:"1 1 280px",minWidth:0}}><div style={{fontSize:15,fontWeight:800,color:T.text}}>{titulo}</div><div style={{fontSize:13,color:T.textMd,marginTop:3,lineHeight:1.5}}>{desc}</div>{estado&&<div style={{fontSize:12,color:T.textSm,marginTop:6}}>{estado}</div>}</div>{boton}</div>);
+          return (
+          <div key="config" className="gh-tab-content" style={{display:"flex",flexDirection:"column",gap:12,maxWidth:900,paddingBottom:48}}>
+            {fila("Lo que ven los influencers","La ficha de la marca (una para todos), los guiones fijos y la web de la tienda que aparece en el link de cada canje.",<Btn T={T} variant="primary" onClick={()=>setMaterialOpen(true)}>Editar</Btn>,
+              [material.ficha?.id?"Ficha cargada":"Sin ficha",`${material.guiones.length} guion${material.guiones.length!==1?"es":""} fijo${material.guiones.length!==1?"s":""}`,material.web?`Web: ${material.web}`:"Sin web"].join(" · "))}
+            {fila("Mensajes de WhatsApp","Los textos que se arman solos para cada paso: al crear el canje, pedido sin hacer, paquete en sucursal y días 0, 7, 10 y 12 del contenido.",<Btn T={T} variant="secondary" onClick={()=>setPlantillasOpen(true)}>Editar mensajes</Btn>)}
+            {fila("Seguimiento de envíos","Growith consulta Andreani cada tanto. Si querés ver el estado ya, actualizalo ahora.",<Btn T={T} variant="secondary" onClick={()=>{ if(!refrescando) refrescarTracking(true); }} disabled={refrescando}>{refrescando?"Actualizando…":"Actualizar ahora"}</Btn>)}
+            {fila("Exportar","Todos los canjes en una planilla (CSV) con influencer, productos, estado, seguimiento, cupón y contenido.",<Btn T={T} variant="secondary" onClick={exportCSV}>Bajar CSV</Btn>)}
+            <div style={{...card,display:"block"}}>
+              <div style={{fontSize:15,fontWeight:800,color:T.text,marginBottom:10}}>Cómo funciona</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {[
+{n:1,title:"Nuevo canje",desc:"Apenas acuerdan por WhatsApp: su @, su WhatsApp, cuántos productos, el contenido, el guion y el cupón (10 % de descuento y 7 % de comisión, editables). Sin número de pedido: queda en Esperando pedido y te da el link para mandarle."},
+                {n:2,title:"El pedido se une solo",desc:"El influencer hace el pedido en la web con transferencia y su @ en la nota. Growith lo encuentra entre los pedidos con pago pendiente y lo une al canje (si duda, te pregunta en Para hacer hoy)."},
+                {n:3,title:"Despachar",desc:"Un solo Excel de Andreani para todos los canjes listos; subís el PDF que te da Andreani y cada seguimiento va a su canje. El pedido pendiente se cancela solo en la tienda y, si usás el depósito, sale la tanda de canje."},
+                {n:4,title:"Para hacer hoy",desc:"A quién escribirle y con qué mensaje: pedido sin hacer, paquete en sucursal, visita fallida y días 0, 7, 10 y 12 del contenido. El botón abre WhatsApp con el texto listo (nunca se manda solo)."},
+                {n:5,title:"El link del influencer",desc:"Ve sus pasos, lo acordado, su cupón, la ficha de la marca, su guion, su carpeta de Drive y pega el link de cada pieza. Con todo entregado, el canje se cierra solo."},
+                {n:6,title:"Ficha del influencer",desc:"En Influencers: historial, si cumple y a tiempo, ventas del cupón y la marca de volver a trabajar o no."},
+                ].map(x=>(<div key={x.n} style={{display:"flex",gap:12,alignItems:"flex-start"}}><span style={{width:24,height:24,borderRadius:99,background:T.accentSolid+"22",color:T.accent,fontSize:12,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{x.n}</span><div style={{fontSize:13,color:T.textMd,lineHeight:1.55}}><strong style={{color:T.text}}>{x.title}.</strong> {x.desc}</div></div>))}
+              </div>
+            </div>
+          </div>); })()}
+
         {viewTab==="perfiles"&&(()=>{
           // Cada persona con un canje ES un influencer: los que no tienen perfil
           // creado a mano aparecen igual, derivados de sus canjes, con un botón
@@ -10208,7 +10227,6 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                       {igHref&&<a href={igHref} target="_blank" rel="noopener noreferrer" style={pillA}>@{String(c.usuario).replace("@","")}</a>}
                       {c.seguidores&&<span style={pillA}>{c.seguidores} seguidores</span>}
                       {c.nicho&&<span style={pillA}>{c.nicho}</span>}
-                      {c.responsable&&<span style={pillA}>A cargo: {c.responsable}</span>}
                       <TrackingChip c={c} size={10}/>
                     </div>
                   </div>
