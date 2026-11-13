@@ -7874,10 +7874,11 @@ function ghCanjeParaEscribir(c,ahora){
     if(String(c.pedidoRef||"").trim()) return null;
     const d=dias(c.createdAt); if(d==null||d<3) return null;
     const k=`pedido_${Math.floor(d/3)}`; if(esc[k]) return null;
-    return {clave:k,tipo:"pedido",sev:1,txt:`Acordaron hace ${d} días y todavía no hizo el pedido`};
+    return {clave:k,tipo:"pedido",sev:1,antig:d-3,txt:`Acordaron hace ${d} días y todavía no hizo el pedido`};
   }
-  if(!c.trackDone&&c.trackingCat==="en_sucursal"){ const k=`sucursal_${c.tracking||""}`; if(!esc[k]) return {clave:k,tipo:"sucursal",sev:2,txt:"El paquete está en la sucursal para retirar"}; }
-  if(!c.trackDone&&c.trackingCat==="visita_fallida"){ const k=`visita_${c.tracking||""}`; if(!esc[k]) return {clave:k,tipo:"visita",sev:2,txt:"Andreani pasó y no lo encontró"}; }
+  const antEnv=dias(c.trackingAviso?.at||c.trackingLastCheck||c.fechaEnvio)??0;
+  if(!c.trackDone&&c.trackingCat==="en_sucursal"){ const k=`sucursal_${c.tracking||""}`; if(!esc[k]) return {clave:k,tipo:"sucursal",sev:2,antig:antEnv,txt:"El paquete está en la sucursal para retirar"}; }
+  if(!c.trackDone&&c.trackingCat==="visita_fallida"){ const k=`visita_${c.tracking||""}`; if(!esc[k]) return {clave:k,tipo:"visita",sev:2,antig:antEnv,txt:"Andreani pasó y no lo encontró"}; }
   // Días de CALENDARIO en hora argentina (no bloques de 24 h desde la entrega) y contra la fecha límite
   // vigente: si se corrió a mano, los avisos de "quedan 2 días" y "se venció" se corren con ella.
   if(c.trackEntregadoAt&&ghCanjeDebeContenido(c)){
@@ -7889,7 +7890,7 @@ function ghCanjeParaEscribir(c,ahora){
     const paso=restan<=0?12:restan<=2?10:d>=7?7:0;
     const k=`dia${paso}`; if(esc[k]) return null;
     const txt=paso===0?"Le llegó el paquete":paso===12?(restan<0?`Se venció el plazo hace ${-restan} día${-restan!==1?"s":""}`:"Hoy vence el plazo del contenido"):paso===10?`Le quedan ${restan} día${restan!==1?"s":""} para el contenido`:`Día ${d} desde que le llegó`;
-    return {clave:k,tipo:`dia${paso}`,sev:paso>=12?3:paso>=10?2:1,txt};
+    return {clave:k,tipo:`dia${paso}`,sev:paso>=12?3:paso>=10?2:1,antig:paso===12?Math.max(0,-restan):0,txt};
   }
   return null;
 }
@@ -7964,78 +7965,81 @@ function ghInfluencerHistorial(inf,canjes){
   return {canjes:mios,n:mios.length,abiertos,cerrados,cumplidos,aTiempo,conPlazo,piezasAc,piezasEnt,ultimo};
 }
 // GH_CANJES_FLUJO_END
+// Botón de WhatsApp con el logo oficial (12/nov/2026): redondo, verde de WhatsApp, sin texto.
+const GH_WA_PATH="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z";
+function GhWaBtn({href,onClick,title="Abrir WhatsApp con el mensaje listo",size=32}){
+  return <a href={href} target="_blank" rel="noopener noreferrer" onClick={onClick} title={title} aria-label={title}
+    style={{width:size,height:size,borderRadius:99,background:"#25D366",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,textDecoration:"none",boxShadow:"0 2px 8px rgba(37,211,102,0.25)"}}>
+    <svg width={Math.round(size*0.56)} height={Math.round(size*0.56)} viewBox="0 0 24 24" fill="#fff"><path d={GH_WA_PATH}/></svg></a>;
+}
 // "Para escribir hoy" (12/nov/2026): a quién hay que escribirle hoy por WhatsApp y con qué mensaje, más los
 // pedidos con pago pendiente que podrían ser de un canje y hay que confirmar a mano.
-export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp,onEscrito,onAbrir,onUnir,pend,onBuscar,hayEsperando,despachables=0,onDespachar,extras=[]}){
+export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,setResp,onEscrito,onAbrir,onUnir,onDescartar,pend,onBuscar,hayEsperando,despachables=0,onDespachar,extras=[]}){
   const [descartadas,setDescartadas]=React.useState(()=>new Set());
   const ahora=Date.now();
-  const items=canjes.map(c=>({c,it:ghCanjeParaEscribir(c,ahora)})).filter(x=>x.it&&(!resp||String(x.c.responsable||"").trim()===resp)).sort((a,b)=>b.it.sev-a.it.sev);
+  // Descartado a mano (la cruz): no vuelve hasta que el canje cambie de etapa. Y solo lo de la última semana:
+  // lo más viejo queda atrás de "Ver N más viejos" (12/nov/2026, Lautaro: canjes "prehistóricos" que no son tarea).
+  const [verViejos,setVerViejos]=React.useState(false);
+  const oculto=c=>c.paraHacerOculto&&c.paraHacerOculto===(c.estado||"");
+  const DIAS_MAX=7;
+  const itemsTodos=canjes.filter(c=>!oculto(c)).map(c=>({c,it:ghCanjeParaEscribir(c,ahora)})).filter(x=>x.it&&(!resp||String(x.c.responsable||"").trim()===resp)).sort((a,b)=>b.it.sev-a.it.sev);
+  const extrasTodos=(extras||[]).filter(x=>!oculto(x.c)&&(!resp||String(x.c.responsable||"").trim()===resp));
+  const viejo=a=>(a??0)>DIAS_MAX;
+  const items=verViejos?itemsTodos:itemsTodos.filter(x=>!viejo(x.it.antig));
+  const nViejos=itemsTodos.filter(x=>viejo(x.it.antig)).length+extrasTodos.filter(x=>viejo(x.antig)).length;
   const dudasV=(dudas||[]).filter(d=>!descartadas.has(d.canje._docId)&&(!resp||String(d.canje.responsable||"").trim()===resp));
-  const extrasV=(extras||[]).filter(x=>!resp||String(x.c.responsable||"").trim()===resp);
+  const extrasV=verViejos?extrasTodos:extrasTodos.filter(x=>!viejo(x.antig));
+  const xBtn=c=><button onClick={()=>onDescartar(c)} title="Descartar: no es algo para hacer (vuelve si el canje cambia de etapa)" style={{width:30,height:30,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>;
   const colDe=sev=>sev>=3?T.red:sev>=2?T.orange:T.accent;
   const btn={height:30,padding:"0 12px",borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap"};
   const hace=pend?.ts?Math.max(0,Math.round((ahora-pend.ts)/60000)):null;
+  // Cada tarea es una TARJETA con la info y sus botones juntos (12/nov/2026: en filas, los botones quedaban
+  // en la otra punta de la pantalla). Grilla que se acomoda al ancho.
+  const nTot=items.length+dudasV.length+extrasV.length+(despachables?1:0);
+  const tarjeta=(key,col,c,titulo,sub,botones,extra)=>(
+    <div key={key} style={{display:"flex",flexDirection:"column",gap:12,padding:"14px 14px 12px",borderRadius:16,background:`linear-gradient(180deg, ${T.surface} 0%, ${T.card} 100%)`,border:`1px solid ${T.border}`,borderLeft:`3px solid ${col}`,minWidth:0}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+        {c?<Avatar src={c.foto} name={c.influencer} size={36} radius={11} T={T}/>:<span style={{width:36,height:36,borderRadius:11,background:col+"22",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{width:9,height:9,borderRadius:99,background:col}}/></span>}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:800,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{titulo}</div>
+          {c&&(c.usuario||c.responsable)&&<div style={{fontSize:12,color:T.textSm,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.usuario?`@${String(c.usuario).replace(/^@/,"")}`:""}{c.responsable?`${c.usuario?" · ":""}${c.responsable}`:""}</div>}
+        </div>
+        {c&&<button onClick={()=>onDescartar(c)} title="Descartar: no es algo para hacer (vuelve si el canje cambia de etapa)" style={{width:28,height:28,margin:"-4px -4px 0 0",borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>}
+      </div>
+      <div style={{fontSize:13,fontWeight:600,color:col===T.red?T.red:T.textMd,lineHeight:1.4}}>{sub}</div>
+      {extra}
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:"auto"}}>{botones}</div>
+    </div>);
   return (
-    <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.xl,padding:"14px 16px",marginBottom:16}}>
+    <div style={{marginBottom:18}}>
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
-        <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>Para hacer hoy{(items.length+dudasV.length+extrasV.length+(despachables?1:0))?<span style={{color:T.accent}}> · {(items.length+dudasV.length+extrasV.length+(despachables?1:0))}</span>:null}</div>
+        <div style={{fontSize:DS.font.xl,fontWeight:800,color:T.text}}>Para hacer hoy{nTot?<span style={{color:T.accent}}> · {nTot}</span>:null}</div>
         <span style={{flex:1}}/>
         {hayEsperando&&<span style={{fontSize:12,color:T.textSm}}>{pend?.cargando?"Buscando pedidos de canje…":hace!=null?`Pedidos revisados hace ${hace} min`:""}</span>}
         {hayEsperando&&<button onClick={()=>onBuscar(true)} disabled={!!pend?.cargando} style={btn}>Buscar pedidos</button>}
-        {responsables.length>0&&<select value={resp} onChange={e=>setResp(e.target.value)} style={{...btn,paddingRight:8}}><option value="">Todos</option>{responsables.map(r=><option key={r} value={r}>{r}</option>)}</select>}
-
       </div>
-      {dudasV.map(d=>(
-        <div key={"d"+d.canje._docId} style={{border:`1px solid ${T.yellow}55`,background:T.yellow+"10",borderRadius:14,padding:"10px 12px",marginBottom:8}}>
-          <div style={{fontSize:13,color:T.text,marginBottom:6}}><strong>¿Es el pedido de {d.canje.influencer||"este canje"}?</strong> <span style={{color:T.textSm}}>{d.canje.usuario?"@"+String(d.canje.usuario).replace(/^@/,""):""}</span></div>
-          {d.opciones.map(o=>(
-            <div key={o.numero} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"4px 0"}}>
-              <span style={{fontSize:13,color:T.text,flex:"1 1 220px"}}>Pedido <strong>#{o.numero}</strong> · {o.comprador||"—"} · {(o.productos||[]).map(p=>`${p.cantidad||1}x ${typeof p==="string"?p:p.nombre}`).join(", ")}</span>
-              <button onClick={()=>onUnir(d.canje,o)} style={{...btn,background:T.accentSolid,color:"#fff",border:"none"}}>Sí, es este</button>
-            </div>
-          ))}
-          <button onClick={()=>setDescartadas(x=>new Set([...x,d.canje._docId]))} style={{...btn,height:26,marginTop:4,background:"transparent"}}>No es ninguno</button>
-        </div>
-      ))}
-      {despachables>0&&(
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"9px 0",borderTop:`1px solid ${T.borderL}`}}>
-          <span style={{width:8,height:8,borderRadius:99,background:T.yellow,flexShrink:0}}/>
-          <div style={{flex:"1 1 240px",fontSize:13,color:T.text}}><strong>{despachables} canje{despachables!==1?"s":""} para despachar</strong><div style={{fontSize:12,color:T.textMd,marginTop:1}}>Ya tienen el pedido unido: falta la etiqueta de Andreani.</div></div>
-          <button onClick={onDespachar} style={{...btn,background:T.accentSolid,color:"#fff",border:"none"}}>Despachar</button>
-        </div>
-      )}
-      {extrasV.map(x=>(
-        <div key={x.key} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"9px 0",borderTop:`1px solid ${T.borderL}`}}>
-          <span style={{width:8,height:8,borderRadius:99,background:colDe(x.sev),flexShrink:0}}/>
-          <div style={{flex:"1 1 240px",minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.c.influencer||"Sin nombre"}{x.c.usuario?<span style={{fontWeight:500,color:T.textSm}}> · @{String(x.c.usuario).replace(/^@/,"")}</span>:null}</div>
-            <div style={{fontSize:12,color:x.sev>=3?T.red:T.textMd,marginTop:1}}>{x.txt}</div>
-          </div>
+      {nTot===0?<div style={{fontSize:13,color:T.textSm,background:T.card,border:`1px dashed ${T.border}`,borderRadius:16,padding:"16px"}}>Nada pendiente por ahora. Cuando haya que escribirle a alguien o despachar, aparece acá.</div>
+      :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))",gap:12}}>
+        {despachables>0&&tarjeta("desp",T.yellow,null,`${despachables} canje${despachables!==1?"s":""} para despachar`,"Ya tienen el pedido unido: falta la etiqueta de Andreani.",<button onClick={onDespachar} style={{...btn,background:T.accentSolid,color:"#fff",border:"none",height:34,padding:"0 16px"}}>Despachar</button>)}
+        {dudasV.map(d=>tarjeta("d"+d.canje._docId,T.yellow,d.canje,d.canje.influencer||"Canje","¿Es su pedido?",
+          <button onClick={()=>setDescartadas(x=>new Set([...x,d.canje._docId]))} style={btn}>No es ninguno</button>,
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>{d.opciones.map(o=>(
+            <button key={o.numero} onClick={()=>onUnir(d.canje,o)} style={{textAlign:"left",background:T.bg,border:`1px solid ${T.border}`,borderRadius:12,padding:"8px 10px",cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+              <div style={{fontSize:12,fontWeight:700}}>Pedido #{o.numero} · {o.comprador||"—"}</div>
+              <div style={{fontSize:11,color:T.textSm,marginTop:2}}>{(o.productos||[]).map(p=>`${p.cantidad||1}x ${typeof p==="string"?p:p.nombre}`).join(", ")} · tocá para unirlo</div>
+            </button>))}</div>))}
+        {extrasV.map(x=>tarjeta(x.key,colDe(x.sev),x.c,x.c.influencer||"Sin nombre",x.txt,<>
           {x.link&&<a href={x.link} target="_blank" rel="noopener noreferrer" style={{...btn,textDecoration:"none"}}>Seguimiento</a>}
           {x.onOk&&<button onClick={x.onOk} style={btn}>{x.okLabel||"Ya está"}</button>}
-          <button onClick={()=>onAbrir(x.c._docId)} style={btn}>Abrir</button>
-        </div>
-      ))}
-      {items.length===0&&!dudasV.length&&!extrasV.length&&!despachables&&<div style={{fontSize:13,color:T.textSm}}>Nada pendiente por ahora. Cuando haya que escribirle a alguien o despachar, aparece acá.</div>}
-      {items.map(({c,it})=>{
-        const tpl=plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo]||"";
-        const msg=ghCanjeMensaje(tpl,c);
-        const tel=ghRecTel(c.telefono);
-        const col=colDe(it.sev);
-        return (
-          <div key={c._docId} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"9px 0",borderTop:`1px solid ${T.borderL}`}}>
-            <span style={{width:8,height:8,borderRadius:99,background:col,flexShrink:0}}/>
-            <div style={{flex:"1 1 240px",minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.influencer||"Sin nombre"}{c.usuario?<span style={{fontWeight:500,color:T.textSm}}> · @{String(c.usuario).replace(/^@/,"")}</span>:null}{c.responsable?<span style={{fontWeight:500,color:T.textSm}}> · {c.responsable}</span>:null}</div>
-              <div style={{fontSize:12,color:it.sev>=3?T.red:T.textMd,marginTop:1}}>{it.txt}</div>
-            </div>
-            {tel?<a href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noopener noreferrer" onClick={()=>onEscrito(c,it.clave)} style={{...btn,background:T.green,color:"#fff",border:"none",textDecoration:"none"}}>WhatsApp</a>
-              :<button onClick={async()=>{ try{ await navigator.clipboard.writeText(msg); toast("Mensaje copiado (el canje no tiene WhatsApp cargado)","info"); }catch(_){} }} style={btn}>Copiar mensaje</button>}
+          <button onClick={()=>onAbrir(x.c._docId)} style={btn}>Abrir</button></>))}
+        {items.map(({c,it})=>{ const tpl=plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo]||""; const msg=ghCanjeMensaje(tpl,c); const tel=ghRecTel(c.telefono);
+          return tarjeta(c._docId,colDe(it.sev),c,c.influencer||"Sin nombre",it.txt,<>
+            {tel?<GhWaBtn size={34} href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} onClick={()=>onEscrito(c,it.clave)}/>
+              :<button onClick={async()=>{ try{ await navigator.clipboard.writeText(msg); toast("Mensaje copiado (el canje no tiene WhatsApp cargado)","info"); }catch(_){ } }} style={btn}>Copiar mensaje</button>}
             <button onClick={()=>onEscrito(c,it.clave)} title="Ya le escribí por otro lado" style={btn}>Ya está</button>
-            <button onClick={()=>onAbrir(c._docId)} style={btn}>Abrir</button>
-          </div>
-        );
-      })}
+            <button onClick={()=>onAbrir(c._docId)} style={btn}>Abrir</button></>); })}
+      </div>}
+      {nViejos>0&&<button onClick={()=>setVerViejos(v=>!v)} style={{marginTop:10,background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>{verViejos?"Ver solo lo de la última semana":`Ver ${nViejos} más viejo${nViejos!==1?"s":""} (de hace más de una semana)`}</button>}
     </div>
   );
 }
@@ -9224,9 +9228,10 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
     for(const c of canjes){
       if(GH_CANJE_CERRADO.has(c.estado||"")) continue;
       const a=acciones.map.get(c._docId);
-      if(a?.tipo==="demorado"||a?.tipo==="sinrespuesta") out.push({key:"dem"+c._docId,c,sev:a.sev,txt:a.label,link:(c.tracking||"").trim()?`https://www.andreani.com/envio/${String(c.tracking).trim()}`:null});
-      if(c.trackingCat==="devolucion"&&!(c.trackingAviso?.visto)) out.push({key:"dev"+c._docId,c,sev:3,txt:"El paquete vuelve a la marca (devolución)",okLabel:"Ya lo vi",onOk:()=>updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true}).catch(()=>{}),link:(c.tracking||"").trim()?`https://www.andreani.com/envio/${String(c.tracking).trim()}`:null});
-      if(c.recordatorio&&c.recordatorio<=hoy) out.push({key:"rec"+c._docId,c,sev:1,txt:`Recordatorio del ${c.recordatorio.split("-").reverse().slice(0,2).join("/")}`,onOk:()=>updateDoc(doc(db,"canjes",c._docId),{recordatorio:""}).catch(()=>{})});
+      const dEnv=c.fechaEnvio&&isFinite(Date.parse(c.fechaEnvio))?Math.floor((Date.now()-Date.parse(c.fechaEnvio))/86400000):0;
+      if(a?.tipo==="demorado"||a?.tipo==="sinrespuesta") out.push({key:"dem"+c._docId,c,sev:a.sev,antig:Math.max(0,dEnv-(a.tipo==="demorado"?alertCfg.demora:alertCfg.sinrespuesta)),txt:a.label,link:(c.tracking||"").trim()?`https://www.andreani.com/envio/${String(c.tracking).trim()}`:null});
+      if(c.trackingCat==="devolucion"&&!(c.trackingAviso?.visto)) out.push({key:"dev"+c._docId,c,sev:3,antig:c.trackingAviso?.at&&isFinite(Date.parse(c.trackingAviso.at))?Math.floor((Date.now()-Date.parse(c.trackingAviso.at))/86400000):0,txt:"El paquete vuelve a la marca (devolución)",okLabel:"Ya lo vi",onOk:()=>updateDoc(doc(db,"canjes",c._docId),{"trackingAviso.visto":true}).catch(()=>{}),link:(c.tracking||"").trim()?`https://www.andreani.com/envio/${String(c.tracking).trim()}`:null});
+      if(c.recordatorio&&c.recordatorio<=hoy) out.push({key:"rec"+c._docId,c,sev:1,antig:Math.round((Date.parse(hoy+"T12:00:00Z")-Date.parse(c.recordatorio+"T12:00:00Z"))/86400000),txt:`Recordatorio del ${c.recordatorio.split("-").reverse().slice(0,2).join("/")}`,onOk:()=>updateDoc(doc(db,"canjes",c._docId),{recordatorio:""}).catch(()=>{})});
     }
     return out.sort((a,b)=>b.sev-a.sev);
   },[canjes,acciones]);
@@ -9413,6 +9418,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
         {viewTab==="kanban"&&<CanjesParaEscribir T={T} canjes={canjes} plantillas={plantillas} dudas={union.dudas} responsables={[]} resp={respFiltro}
           setResp={v=>{ setRespFiltro(v); try{ localStorage.setItem(ghKey("growith_canjes_resp"),v); }catch(_){ } }}
           onEscrito={marcarEscrito} onAbrir={id=>setDetail(id)} onUnir={(c,o)=>unirPedido(c,o,"manual")}
+          onDescartar={c=>{ updateDoc(doc(db,"canjes",c._docId),{paraHacerOculto:c.estado||""}).catch(()=>{}); toast(`${c.influencer||"Canje"}: descartado de Para hacer hoy`,"info",2500); }}
           pend={pedidosPend} onBuscar={buscarPedidosPend} hayEsperando={hayEsperando}
           despachables={candidatosDespacho.filter(c=>(c.pedidoRef||"").trim()).length} onDespachar={()=>setDespachoOpen({})} extras={extrasHoy}/>}
         </>)}
@@ -9637,9 +9643,9 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                               const it=ghCanjeParaEscribir(c); const wa=(tpl)=>tel?`https://wa.me/${tel}?text=${encodeURIComponent(ghCanjeMensaje(tpl,c))}`:null;
                               const botones=[];
                               if(est==="Esperando pedido"){ if(ghCanjeLink(c)) botones.push(<button key="l" style={b} onClick={async e=>{ parar(e); try{ await navigator.clipboard.writeText(ghCanjeLink(c)); toast("Link copiado","success"); }catch(_){ } }}>Copiar link</button>);
-                                if(wa(plantillas.inicio)) botones.push(<a key="w" href={wa(it?.tipo==="pedido"?plantillas.pedido:plantillas.inicio)} target="_blank" rel="noopener noreferrer" style={{...b,color:T.green}} onClick={e=>{ parar(e); if(it) marcarEscrito(c,it.clave); }}>WhatsApp</a>); }
+                                if(wa(plantillas.inicio)) botones.push(<GhWaBtn key="w" size={26} href={wa(it?.tipo==="pedido"?plantillas.pedido:plantillas.inicio)} onClick={e=>{ parar(e); if(it) marcarEscrito(c,it.clave); }}/>); }
                               else if((est==="Por enviar"||est==="Pendiente envío")&&!(c.tracking||"").trim()) botones.push(<button key="d" style={{...b,background:T.accentSolid,color:"#fff",border:"none"}} onClick={e=>{ parar(e); setDespachoOpen({ids:[c._docId]}); }}>Despachar</button>);
-                              else if(it&&wa(plantillas[it.tipo])) botones.push(<a key="w" href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} target="_blank" rel="noopener noreferrer" style={{...b,color:T.green}} onClick={e=>{ parar(e); marcarEscrito(c,it.clave); }}>Escribirle</a>);
+                              else if(it&&wa(plantillas[it.tipo])) botones.push(<GhWaBtn key="w" size={26} href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} onClick={e=>{ parar(e); marcarEscrito(c,it.clave); }}/>);
                               else if((c.tracking||"").trim()&&est==="Enviado") botones.push(<a key="t" href={`https://www.andreani.com/envio/${String(c.tracking).trim()}`} target="_blank" rel="noopener noreferrer" style={b} onClick={parar}>Seguimiento</a>);
                               return botones.length?<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}} draggable={false} onMouseDown={parar}>{botones}</div>:null; })()}
                             {/* Footer: barra de progreso contenido */}
@@ -10225,7 +10231,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                   </div>
                   <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                     {ghCanjeLink(c)&&<button onClick={async()=>{ try{ await navigator.clipboard.writeText(ghCanjeLink(c)); toast("Link del influencer copiado","success"); }catch(_){ } }} title="Su página con los pasos, el cupón, la ficha, el guion y dónde dejar los links" style={{...BtnSecondary(T),fontSize:12}}>Copiar su link</button>}
-                    {ghRecTel(c.telefono)&&<a href={`https://wa.me/${ghRecTel(c.telefono)}`} target="_blank" rel="noopener noreferrer" style={{...BtnSecondary(T),fontSize:12,textDecoration:"none",color:T.green}}>WhatsApp</a>}
+                    {ghRecTel(c.telefono)&&<GhWaBtn size={36} href={`https://wa.me/${ghRecTel(c.telefono)}`} title="Abrir su WhatsApp"/>}
                     <button onClick={()=>setForm({...emptyForm(),...c,_base:c})} title="Editar seguidores, red, nicho, foto y contenido acordado" style={{...BtnSecondary(T),fontSize:12}}>Editar</button>
                   </div>
                 </div>
@@ -10259,7 +10265,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                   if((c.tracking||"").trim()) acciones.push(<a key="t" href={`https://www.andreani.com/envio/${String(c.tracking).trim()}`} target="_blank" rel="noopener noreferrer" style={btnS}>Ver seguimiento</a>); }
                 else if(est==="Contenido pendiente"){ titulo=falta?`Debe ${falta} de ${pz.length} pieza${pz.length!==1?"s":""}`:"Entregó todo el contenido"; sub=vence?(r<0?`Venció el ${vence.split("-").reverse().slice(0,2).join("/")} (hace ${-r} días)`:r===0?"Vence hoy":`Vence el ${vence.split("-").reverse().slice(0,2).join("/")} · quedan ${r} días`):"El plazo arranca cuando Andreani lo entrega."; col=r!=null&&r<0?T.red:T.orange; }
                 else if(GH_CANJE_CERRADO.has(est||"")){ titulo="Canje cerrado"; sub=pz.length?`Entregó ${pz.length-falta} de ${pz.length} piezas.`:""; col=T.green; }
-                if(it&&wa(plantillas[it.tipo])&&est!=="Esperando pedido") acciones.push(<a key="e" href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} target="_blank" rel="noopener noreferrer" onClick={()=>marcarEscrito(c,it.clave)} style={{...btnP,background:T.green}}>Escribirle por WhatsApp</a>);
+                if(it&&wa(plantillas[it.tipo])&&est!=="Esperando pedido") acciones.push(<a key="e" href={wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo])} target="_blank" rel="noopener noreferrer" onClick={()=>marcarEscrito(c,it.clave)} style={{...btnP,background:"#25D366",display:"inline-flex",alignItems:"center",gap:8}}><svg width="16" height="16" viewBox="0 0 24 24" fill="#fff"><path d={GH_WA_PATH}/></svg>Escribirle</a>);
                 if(!titulo) return null;
                 return (
                   <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",borderRadius:18,padding:"14px 16px",background:`linear-gradient(90deg, ${col}1f, ${col}08)`,border:`1px solid ${col}44`}}>
