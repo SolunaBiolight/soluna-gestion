@@ -9562,14 +9562,11 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                       await updateDoc(doc(db,"canjes",docId),{estado,updatedAt:serverTimestamp(),...(estado==="Cerrado"&&c.estado!=="Cerrado"?{finalizadoAt:serverTimestamp()}:{})});
                       toast(`Movido a "${estado}"`, "success");
                     }}
-                    style={{background:isDragOver?sc.dot+"10":T.bg,borderRadius:18,border:`1px solid ${isDragOver?sc.dot:T.borderL}`,overflow:"hidden",transition:"border-color 0.15s,background 0.15s",boxShadow:isDragOver?`0 0 0 3px ${sc.dot}22`:"none"}}>
+                    style={{background:isDragOver?sc.dot+"0d":T.card,borderRadius:16,border:`1px solid ${isDragOver?sc.dot:T.border}`,borderTop:`3px solid ${sc.dot}`,overflow:"hidden",transition:"border-color 0.15s,background 0.15s",boxShadow:isDragOver?`0 0 0 3px ${sc.dot}22`:"none"}}>
                     {/* Header columna */}
-                    <div style={{padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:`linear-gradient(180deg, ${sc.dot}18, transparent)`}}>
-                      <div style={{display:"flex",alignItems:"center",gap:7}}>
-                        <span style={{width:9,height:9,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
-                        <span style={{fontSize:13,fontWeight:800,color:T.text}}>{estado}</span>
-                      </div>
-                      <span style={{fontSize:11,fontWeight:800,color:sc.dot,background:sc.dot+"22",borderRadius:99,padding:"1px 8px",minWidth:20,textAlign:"center"}}>{cols.length}</span>
+                    <div style={{padding:"14px 16px 10px",display:"flex",alignItems:"baseline",gap:8}}>
+                      <span style={{fontSize:13,fontWeight:700,color:T.text,letterSpacing:-0.1}}>{estado}</span>
+                      <span style={{fontSize:12,fontWeight:600,color:T.textSm,fontVariantNumeric:"tabular-nums"}}>{cols.length}</span>
                     </div>
 
                     {/* Tarjetas */}
