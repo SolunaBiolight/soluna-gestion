@@ -8127,7 +8127,10 @@ function CanjesMaterialModal({T,uid,ficha,guiones,web:webIni,onCambio,onClose}){
 }
 // Alta de un canje en 3 pasos (12/nov/2026): Quién → Qué acordamos → Listo (con el link y el WhatsApp armado).
 // Lo que llega con el pedido (productos, dirección, seguimiento) no se pide acá.
-export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,responsables,plantillas,catalogoContenido,onCrear,onAbrir,onPedirGuion,onClose}){
+export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,responsables,plantillas,catalogoContenido,onCrear,onAbrir,onPedirGuion,onCargarPedido,onClose}){
+  // Si ya hizo el pedido, el número trae todo (12/nov/2026, el flujo de siempre de Soluna): nombre, contacto,
+  // productos exactos y envío. Si no, el canje queda "Esperando pedido" y se une solo.
+  const [pedNum,setPedNum]=React.useState(""); const [pedEst,setPedEst]=React.useState(null); // null | "buscando" | {ok,txt} | {error}
   // Catálogo de la tienda (variantes con SKU, solo lo publicado) para elegir los productos EXACTOS del canje.
   const [catalogo,setCatalogo]=React.useState(null); const [prodQ,setProdQ]=React.useState("");
   React.useEffect(()=>{ if(!uid) return; let vivo=true; authFetch(`/api/stock?action=catalogo_envio&uid=${uid}`).then(r=>r.json()).then(j=>{ if(vivo) setCatalogo(Array.isArray(j?.productos)?j.productos:[]); }).catch(()=>{ if(vivo) setCatalogo([]); }); return ()=>{ vivo=false; }; },[uid]);
@@ -8151,6 +8154,15 @@ export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,respon
       ...(perfil.descuentoPct?{descuentoPct:String(perfil.descuentoPct)}:{}),...(perfil.comisionPct?{comisionPct:String(perfil.comisionPct)}:{})})); },[perfil]);
   const cont=(f.contenido||[]); const nCont=t=>(cont.find(x=>x.tipo===t)?.acordados)||0;
   const setCont=(t,d)=>setF(o=>{ const l=[...(o.contenido||[])]; const i=l.findIndex(x=>x.tipo===t); const v=Math.max(0,(i>=0?l[i].acordados:0)+d); if(i>=0) l[i]={...l[i],acordados:v}; else if(v>0) l.push({tipo:t,acordados:v,entregados:0}); return {...o,contenido:l.filter(x=>x.acordados>0)}; });
+  async function traerPedido(){
+    const n=String(pedNum||"").replace(/[^\d]/g,""); if(!n||pedEst==="buscando") return;
+    if((canjes||[]).some(c=>String(c.pedidoRef||"").replace(/^#/,"").trim()===n)){ setPedEst({error:`El pedido #${n} ya está en otro canje.`}); return; }
+    setPedEst("buscando");
+    try{ const r=await onCargarPedido(n); if(!r){ setPedEst({error:`No encontré el pedido #${n} en la tienda.`}); return; }
+      setF(o=>({...o,...r.patch,influencer:o.influencer||r.patch.influencer||"",telefono:o.telefono||r.patch.telefono||"",email:o.email||r.patch.email||""}));
+      setPedEst({ok:true,txt:r.resumen}); }
+    catch(e){ setPedEst({error:"No pude leer el pedido: "+String(e?.message||e).slice(0,80)}); }
+  }
   const puede1=String(f.usuario||"").trim()&&String(f.influencer||"").trim();
   const elegidos=f.productosCanje||[]; const totalElegidos=elegidos.reduce((a,x)=>a+(parseInt(x.cantidad)||1),0);
   const nrmQ=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
@@ -8181,6 +8193,16 @@ export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,respon
         {PASOS.map((t,i)=>(<div key={t}><div style={{height:5,borderRadius:99,background:i+1<=paso?T.accentSolid:T.border,opacity:i+1<paso?0.55:1,marginBottom:5}}/><div style={{fontSize:12,fontWeight:i+1===paso?800:500,color:i+1===paso?T.text:T.textSm}}>{i+1}. {t}</div></div>))}
       </div>
       {paso===1&&(<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{background:T.surface,border:`1px solid ${pedEst?.ok?T.green+"66":T.borderL}`,borderRadius:14,padding:"12px 14px"}}>
+          {lbl("¿Ya hizo el pedido? Poné el número y se completa todo")}
+          <div style={{display:"flex",gap:8}}>
+            <input style={{...iS,flex:1}} value={pedNum} onChange={e=>{ setPedNum(e.target.value); if(pedEst&&pedEst!=="buscando") setPedEst(null); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); traerPedido(); } }} placeholder="N° de pedido (ej.: 8123)" inputMode="numeric"/>
+            <Btn T={T} variant="secondary" onClick={traerPedido} disabled={!pedNum.trim()||pedEst==="buscando"}>{pedEst==="buscando"?"Buscando…":"Traer"}</Btn>
+          </div>
+          {pedEst?.ok&&<div style={{fontSize:12,color:T.green,marginTop:6,fontWeight:600}}>{pedEst.txt}</div>}
+          {pedEst?.error&&<div style={{fontSize:12,color:T.red,marginTop:6}}>{pedEst.error}</div>}
+          {!pedEst&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>Si todavía no lo hizo, seguí sin número: queda esperando y se une solo cuando entre.</div>}
+        </div>
         <div>{lbl("Instagram")}<input autoFocus style={iS} value={f.usuario} onChange={e=>{ const v=e.target.value.replace(/^@/,"").replace(/.*instagram\.com\//i,"").replace(/[/?].*$/,"").trim(); setF(o=>({...o,usuario:v,...(o._codigoTocado?{}:{codigoDescuento:ghCanjeCodigoDe(v)})})); }} placeholder="@usuario o el link de su perfil"/></div>
         {(perfil||hist?.n>0)&&(<div style={{background:perfil?.volverATrabajar===false?T.red+"12":T.surface,border:`1px solid ${perfil?.volverATrabajar===false?T.red+"55":T.borderL}`,borderRadius:12,padding:"10px 12px",fontSize:13,color:T.text,lineHeight:1.5}}>
           <strong>Ya trabajaron{hist?.n?`: ${hist.n} canje${hist.n!==1?"s":""}`:""}.</strong>{hist?.cerrados?` Cumplió ${hist.cumplidos} de ${hist.cerrados}${hist.conPlazo?`, a tiempo ${hist.aTiempo} de ${hist.conPlazo}`:""}.`:""}
@@ -8232,7 +8254,8 @@ export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,respon
           </div>
           <div style={{fontSize:11,color:T.textSm,marginTop:6}}>{f.codigoDescuento?`${f.descuentoPct||10}% de descuento para sus seguidores y ${f.comisionPct||0}% de comisión para el influencer.${f.crearCupon?" Se crea en la tienda al guardar.":" Tiene que existir en la tienda."}`:"Sin cupón."}</div>
         </div>
-        <details><summary style={{fontSize:12,color:T.textMd,cursor:"pointer"}}>¿Ya hizo el pedido? Cargá el número</summary><input style={{...iS,marginTop:8}} value={f.pedidoRef} onChange={e=>set({pedidoRef:e.target.value.replace(/[^\d]/g,"")})} placeholder="N° de pedido (si no, se une solo cuando entre)"/></details>
+        {f.pedidoRef&&pedEst?.ok?<div style={{fontSize:12,color:T.green,fontWeight:600}}>{pedEst.txt}. Al crear el canje queda listo para despachar.</div>:
+        <details><summary style={{fontSize:12,color:T.textMd,cursor:"pointer"}}>¿Ya hizo el pedido? Cargá el número</summary><input style={{...iS,marginTop:8}} value={f.pedidoRef} onChange={e=>set({pedidoRef:e.target.value.replace(/[^\d]/g,"")})} placeholder="N° de pedido (si no, se une solo cuando entre)"/></details>}
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}><Btn T={T} variant="ghost" onClick={()=>setPaso(1)} disabled={busy}>Volver</Btn><Btn T={T} variant="primary" onClick={crear} disabled={busy}>{busy?"Creando…":"Crear canje"}</Btn></div>
       </div>)}
       {paso===3&&hecho&&(()=>{ const c=hecho.datos; const link=ghCanjeLink(c); const tel=ghRecTel(c.telefono); const msg=ghCanjeMensaje(plantillas.inicio||GH_CANJE_PLANTILLAS.inicio,c);
@@ -9106,6 +9129,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
         // Contenido acordado → una pieza por unidad, con la fecha límite general del alta
         p.piezas=ghPiezasDe({contenido:p.contenido}).map(x=>({...x,id:ghPiezaId(),fechaLimite:f.contenidoVence||""}));
         p.contenidoVence=f.contenidoVence||"";
+        if(f.pedidoId) p.pedidoId=String(f.pedidoId);
         Object.assign(p,{dni:f.dni||"", cp:f.cp||"", provincia:f.provincia||"",
           localidad:f.localidad||"", direccion:f.direccion||"",
           dirNumero:f.dirNumero||"", piso:f.piso||"",
@@ -10751,7 +10775,12 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
       </Modal>
 
       {/* Alta de canje en 3 pasos (12/nov/2026, reemplaza al formulario largo) */}
-      {form&&!form._docId&&<CanjeNuevoModal T={T} uid={user?.uid} inicial={form} influencers={influencers} canjes={canjes} guiones={material.guiones} responsables={responsables} plantillas={plantillas}
+      {form&&!form._docId&&<CanjeNuevoModal T={T} uid={user?.uid} onCargarPedido={async n=>{ const o=await ghFetchOrderByNum(user?.uid,n); if(!o||String(o.numero)!==String(n)) return null;
+          const d=datosDePedido(o); const prods=(o.productos||[]).map(p=>({nombre:ghNombreCortoProducto(typeof p==="string"?p:(p.nombre||""),prefProds),cantidad:parseInt(p.cantidad)||1,sku:p.sku||""})).filter(p=>p.nombre);
+          const tot=prods.reduce((a,p)=>a+p.cantidad,0);
+          return {patch:{...d,productosCanje:prods,producto:prods[0]?.nombre||"",anteojosAcordados:tot||1,influencer:o.comprador||"",telefono:o.telefono||"",email:o.email||"",pedidoId:String(o.tnId||"")},
+            resumen:`Pedido #${n} · ${o.comprador||"—"} · ${tot} producto${tot!==1?"s":""} · ${o.esSucursal?"retira en sucursal":"a domicilio"}`}; }}
+        inicial={form} influencers={influencers} canjes={canjes} guiones={material.guiones} responsables={responsables} plantillas={plantillas}
         catalogoContenido={[...new Set([...ACTIVIDADES,...canjes.flatMap(c=>ghPiezasDe(c).map(p=>p.tipo)).filter(Boolean)])].slice(0,14)}
         onCrear={datos=>saveCanje(datos,{quedarse:true})} onAbrir={id=>{ setForm(null); setDetail(id); }}
         onPedirGuion={id=>{ const c=canjes.find(x=>x._docId===id); if(c){ setForm(null); setDetail(id); abrirPedirGuion(c); } else toast("Esperá un segundo y volvé a tocar","info"); }}
