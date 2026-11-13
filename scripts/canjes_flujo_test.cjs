@@ -39,6 +39,8 @@ r=M.ghCanjeUnirPedidos([C({telefono:"",email:""})],[O({numero:"1",comprador:"Sof
 eq("dos pedidos con el mismo nombre = duda con dos opciones",[r.auto.length,r.dudas[0]?.opciones.length],[0,2]);
 eq("revisar: pidió más de lo acordado",M.ghCanjeRevisarPedido({anteojosAcordados:2},{productos:[{cantidad:2},{cantidad:1}]}),["Pidió 3 productos y acordaron 2"]);
 eq("revisar: coincide",M.ghCanjeRevisarPedido({anteojosAcordados:2},{productos:[{cantidad:2}]}),[]);
+eq("revisar: productos exactos iguales",M.ghCanjeRevisarPedido({anteojosAcordados:2,productosCanje:[{sku:"ROJ-NN",cantidad:1},{sku:"CLIP-ON",cantidad:1}]},{productos:[{sku:"roj-nn",cantidad:1},{sku:"CLIP-ON",cantidad:1}]}),[]);
+eq("revisar: eligió otro anteojo",M.ghCanjeRevisarPedido({anteojosAcordados:1,productosCanje:[{sku:"ROJ-NN",cantidad:1}]},{productos:[{sku:"NARAN-TT",cantidad:1}]}),["Pidió otros productos: NARAN-TT · acordamos ROJ-NN"]);
 eq("revisar: sin cantidad acordada no avisa",M.ghCanjeRevisarPedido({},{productos:[{cantidad:5}]}),[]);
 
 // Plazo

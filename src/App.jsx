@@ -7947,6 +7947,12 @@ function ghCanjeUnirPedidos(canjes,pedidos){
 function ghCanjeRevisarPedido(c,o){
   const out=[]; const u=(o?.productos||[]).reduce((s,p)=>s+(parseInt(p?.cantidad)||1),0); const a=parseInt(c?.anteojosAcordados)||0;
   if(a>0&&u!==a) out.push(`Pidió ${u} producto${u!==1?"s":""} y acordaron ${a}`);
+  // Productos exactos acordados (con SKU): ¿pidió los mismos?
+  const acord=(c?.productosCanje||[]).filter(p=>p&&p.sku);
+  if(acord.length){ const cuenta=l=>{ const m={}; l.forEach(p=>{ const k=String(p.sku||"").trim().toUpperCase(); if(k) m[k]=(m[k]||0)+(parseInt(p.cantidad)||1); }); return m; };
+    const A=cuenta(acord), P=cuenta(o?.productos||[]);
+    const faltan=Object.keys(A).filter(k=>(P[k]||0)<A[k]), sobran=Object.keys(P).filter(k=>(A[k]||0)<P[k]);
+    if(faltan.length||sobran.length) out.push(`Pidió otros productos${sobran.length?`: ${sobran.join(", ")}`:""}${faltan.length?` · acordamos ${faltan.join(", ")}`:""}`); }
   return out;
 }
 // Historial de un influencer (ficha): todos sus canjes por @ o nombre.
@@ -8121,7 +8127,10 @@ function CanjesMaterialModal({T,uid,ficha,guiones,web:webIni,onCambio,onClose}){
 }
 // Alta de un canje en 3 pasos (12/nov/2026): Quién → Qué acordamos → Listo (con el link y el WhatsApp armado).
 // Lo que llega con el pedido (productos, dirección, seguimiento) no se pide acá.
-export function CanjeNuevoModal({T,inicial,influencers,canjes,guiones,responsables,plantillas,catalogoContenido,onCrear,onAbrir,onPedirGuion,onClose}){
+export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,responsables,plantillas,catalogoContenido,onCrear,onAbrir,onPedirGuion,onClose}){
+  // Catálogo de la tienda (variantes con SKU, solo lo publicado) para elegir los productos EXACTOS del canje.
+  const [catalogo,setCatalogo]=React.useState(null); const [prodQ,setProdQ]=React.useState("");
+  React.useEffect(()=>{ if(!uid) return; let vivo=true; authFetch(`/api/stock?action=catalogo_envio&uid=${uid}`).then(r=>r.json()).then(j=>{ if(vivo) setCatalogo(Array.isArray(j?.productos)?j.productos:[]); }).catch(()=>{ if(vivo) setCatalogo([]); }); return ()=>{ vivo=false; }; },[uid]);
   const iS=InputStyle(T);
   const [paso,setPaso]=React.useState(1); const [busy,setBusy]=React.useState(false); const [hecho,setHecho]=React.useState(null);
   const [f,setF]=React.useState({influencer:"",usuario:"",telefono:"",email:"",red:"Instagram",anteojosAcordados:1,contenido:[],guionId:"",guionPedir:false,acuerdoNota:"",codigoDescuento:"",descuentoPct:"10",comisionPct:"7",crearCupon:true,responsable:"",pedidoRef:"",_codigoTocado:false,
@@ -8143,6 +8152,12 @@ export function CanjeNuevoModal({T,inicial,influencers,canjes,guiones,responsabl
   const cont=(f.contenido||[]); const nCont=t=>(cont.find(x=>x.tipo===t)?.acordados)||0;
   const setCont=(t,d)=>setF(o=>{ const l=[...(o.contenido||[])]; const i=l.findIndex(x=>x.tipo===t); const v=Math.max(0,(i>=0?l[i].acordados:0)+d); if(i>=0) l[i]={...l[i],acordados:v}; else if(v>0) l.push({tipo:t,acordados:v,entregados:0}); return {...o,contenido:l.filter(x=>x.acordados>0)}; });
   const puede1=String(f.usuario||"").trim()&&String(f.influencer||"").trim();
+  const elegidos=f.productosCanje||[]; const totalElegidos=elegidos.reduce((a,x)=>a+(parseInt(x.cantidad)||1),0);
+  const nrmQ=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const hits=prodQ.trim().length>=1?(catalogo||[]).filter(o=>{ const n=nrmQ(`${o.sku} ${o.producto} ${o.variante}`); return nrmQ(prodQ).split(/\s+/).filter(Boolean).every(t=>n.includes(t)); }).slice(0,8):[];
+  const nombreProd=o=>[o.producto,o.variante].filter(Boolean).join(" - ")||o.sku;
+  const agregarProd=o=>{ setF(x=>{ const l=[...(x.productosCanje||[])]; const i=l.findIndex(p=>p.sku===o.sku); if(i>=0) l[i]={...l[i],cantidad:(parseInt(l[i].cantidad)||1)+1}; else l.push({nombre:nombreProd(o),sku:o.sku,cantidad:1}); return {...x,productosCanje:l,anteojosAcordados:l.reduce((a,p)=>a+(parseInt(p.cantidad)||1),0),producto:l[0]?.nombre||""}; }); setProdQ(""); };
+  const cantProd=(k,d)=>setF(x=>{ const l=(x.productosCanje||[]).map((p,i)=>i===k?{...p,cantidad:Math.max(0,(parseInt(p.cantidad)||1)+d)}:p).filter(p=>p.cantidad>0); return {...x,productosCanje:l,anteojosAcordados:l.length?l.reduce((a,p)=>a+(parseInt(p.cantidad)||1),0):x.anteojosAcordados,producto:l[0]?.nombre||""}; });
   async function crear(){
     if(busy) return;
     if(perfil?.volverATrabajar===false&&!(await appConfirm(`Marcaste a ${perfil.nombre||"esta persona"} como "No volver a trabajar"${perfil.motivoNo?`: ${perfil.motivoNo}`:""}. ¿Crear el canje igual?`,{okLabel:"Crear igual",danger:true}))) return;
@@ -8180,10 +8195,24 @@ export function CanjeNuevoModal({T,inicial,influencers,canjes,guiones,responsabl
         <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:4}}><Btn T={T} variant="secondary" onClick={onClose}>Cancelar</Btn><Btn T={T} variant="primary" onClick={()=>setPaso(2)} disabled={!puede1}>Siguiente</Btn></div>
       </div>)}
       {paso===2&&(<div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:14,alignItems:"end"}}>
-          <div>{lbl("Productos")}<div style={{display:"flex",alignItems:"center",gap:10,height:40}}><button style={mini} onClick={()=>set({anteojosAcordados:Math.max(1,(parseInt(f.anteojosAcordados)||1)-1)})}>−</button><strong style={{fontSize:16,minWidth:18,textAlign:"center"}}>{f.anteojosAcordados}</strong><button style={mini} onClick={()=>set({anteojosAcordados:(parseInt(f.anteojosAcordados)||0)+1})}>+</button></div></div>
-          <div>{lbl("Responsable")}<input style={iS} list="gh-canje-resp2" value={f.responsable} onChange={e=>set({responsable:e.target.value})} placeholder="Quién lo sigue"/><datalist id="gh-canje-resp2">{(responsables||[]).map(r=><option key={r} value={r}/>)}</datalist></div>
+        <div>
+          {lbl("Productos que le mandamos")}
+          {elegidos.length>0&&<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>{elegidos.map((p,k)=>(
+            <div key={p.sku||k} style={{display:"flex",alignItems:"center",gap:10,background:T.surface,border:`1px solid ${T.borderL}`,borderRadius:12,padding:"8px 10px"}}>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:T.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>{p.sku&&<div style={{fontSize:11,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{p.sku}</div>}</div>
+              <button style={mini} onClick={()=>cantProd(k,-1)}>−</button><strong style={{minWidth:16,textAlign:"center"}}>{p.cantidad}</strong><button style={mini} onClick={()=>cantProd(k,1)}>+</button>
+            </div>))}</div>}
+          <div style={{position:"relative"}}>
+            <input style={iS} value={prodQ} onChange={e=>setProdQ(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"&&hits[0]){ e.preventDefault(); agregarProd(hits[0]); } }} placeholder={catalogo===null?"Cargando el catálogo de tu tienda…":catalogo.length?"Buscá el anteojo por nombre o SKU (ej.: ROJ-NN)":"No pude leer el catálogo de la tienda"}/>
+            {hits.length>0&&<div style={{position:"absolute",left:0,right:0,top:"calc(100% + 4px)",zIndex:5,background:T.card,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",boxShadow:"0 12px 30px rgba(0,0,0,0.35)"}}>
+              {hits.map(o=><button key={o.sku} onClick={()=>agregarProd(o)} style={{display:"flex",width:"100%",gap:10,alignItems:"center",textAlign:"left",background:"transparent",border:"none",borderBottom:`1px solid ${T.borderL}`,padding:"9px 12px",cursor:"pointer",color:T.text,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <span style={{flex:1,fontSize:13}}>{nombreProd(o)}</span><span style={{fontSize:11,color:T.textSm,fontFamily:"'Cascadia Code','Consolas',monospace"}}>{o.sku}</span></button>)}
+            </div>}
+          </div>
+          {!elegidos.length&&<div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,fontSize:12,color:T.textSm}}>O solo la cantidad, si eligen ellos: <button style={mini} onClick={()=>set({anteojosAcordados:Math.max(1,(parseInt(f.anteojosAcordados)||1)-1)})}>−</button><strong style={{color:T.text,minWidth:14,textAlign:"center"}}>{f.anteojosAcordados}</strong><button style={mini} onClick={()=>set({anteojosAcordados:(parseInt(f.anteojosAcordados)||0)+1})}>+</button></div>}
+          {elegidos.length>0&&<div style={{fontSize:12,color:T.textSm,marginTop:6}}>{totalElegidos} producto{totalElegidos!==1?"s":""} en total. Si en el pedido elige otros, Growith te avisa.</div>}
         </div>
+        <div>{lbl("Responsable")}<input style={iS} list="gh-canje-resp2" value={f.responsable} onChange={e=>set({responsable:e.target.value})} placeholder="Quién lo sigue (opcional)"/><datalist id="gh-canje-resp2">{(responsables||[]).map(r=><option key={r} value={r}/>)}</datalist></div>
         <div>{lbl("Contenido")}<div style={{display:"flex",flexWrap:"wrap",gap:6}}>
           {catalogoContenido.map(t=>{ const n=nCont(t); return n>0
             ?<span key={t} style={chip(true)}>{t} <button style={mini} onClick={()=>setCont(t,-1)}>−</button><strong>{n}</strong><button style={mini} onClick={()=>setCont(t,1)}>+</button></span>
@@ -10722,7 +10751,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
       </Modal>
 
       {/* Alta de canje en 3 pasos (12/nov/2026, reemplaza al formulario largo) */}
-      {form&&!form._docId&&<CanjeNuevoModal T={T} inicial={form} influencers={influencers} canjes={canjes} guiones={material.guiones} responsables={responsables} plantillas={plantillas}
+      {form&&!form._docId&&<CanjeNuevoModal T={T} uid={user?.uid} inicial={form} influencers={influencers} canjes={canjes} guiones={material.guiones} responsables={responsables} plantillas={plantillas}
         catalogoContenido={[...new Set([...ACTIVIDADES,...canjes.flatMap(c=>ghPiezasDe(c).map(p=>p.tipo)).filter(Boolean)])].slice(0,14)}
         onCrear={datos=>saveCanje(datos,{quedarse:true})} onAbrir={id=>{ setForm(null); setDetail(id); }}
         onPedirGuion={id=>{ const c=canjes.find(x=>x._docId===id); if(c){ setForm(null); setDetail(id); abrirPedirGuion(c); } else toast("Esperá un segundo y volvé a tocar","info"); }}
