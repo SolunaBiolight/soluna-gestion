@@ -7999,8 +7999,10 @@ export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,
   // Tarjeta horizontal y baja: foto · quién y qué hacer · botones de ícono en la misma tarjeta.
   const ico={check:"M20 6 9 17l-5-5",abrir:"M7 17 17 7M8 7h9v9",x:"M18 6 6 18M6 6l12 12",copiar:"M9 9h11v11H9zM5 15H4V4h11v1"};
   const iBtn=(d,title,onClick)=><button onClick={onClick} title={title} aria-label={title} style={{width:32,height:32,borderRadius:99,border:`1px solid ${T.border}`,background:T.surface,color:T.textMd,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d={d}/></svg></button>;
-  const tarjeta=(key,col,c,titulo,sub,botones,extra)=>(
-    <div key={key} style={{borderRadius:16,background:T.card,border:`1px solid ${T.border}`,padding:"12px 12px 12px 14px",minWidth:0,boxShadow:"0 1px 2px rgba(0,0,0,0.12)"}}>
+  // Tocar la tarjeta abre el canje (12/nov/2026); los botones de adentro no la disparan (stopPropagation).
+  const tarjeta=(key,col,c,titulo,sub,botones,extra,onTarjeta)=>(
+    <div key={key} onClick={onTarjeta||(c?()=>onAbrir(c._docId):undefined)} style={{borderRadius:16,background:T.card,border:`1px solid ${T.border}`,padding:"12px 12px 12px 14px",minWidth:0,boxShadow:"0 1px 2px rgba(0,0,0,0.12)",cursor:(onTarjeta||c)?"pointer":"default",transition:"border-color 0.15s"}}
+      onMouseEnter={e=>{ if(onTarjeta||c) e.currentTarget.style.borderColor=T.accentSolid+"66"; }} onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; }}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{position:"relative",flexShrink:0}}>
           {c?<Avatar src={c.foto} name={c.influencer} size={40} radius={99} T={T}/>:<span style={{width:40,height:40,borderRadius:99,background:col+"22",display:"inline-flex",alignItems:"center",justifyContent:"center"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg></span>}
@@ -8013,12 +8015,12 @@ export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,
           </div>
           <div style={{fontSize:12.5,fontWeight:col===T.red?600:500,color:col===T.red?T.red:T.textMd,marginTop:2,lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}} title={sub}>{sub}</div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}} onClick={e=>e.stopPropagation()}>
           {botones}
           {c&&<button onClick={()=>onDescartar(c)} title="Descartar: no es algo para hacer (vuelve si el canje cambia de etapa)" aria-label="Descartar" style={{width:28,height:28,borderRadius:99,border:"none",background:"transparent",color:T.textSm,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d={ico.x}/></svg></button>}
         </div>
       </div>
-      {extra&&<div style={{marginTop:10,paddingLeft:52}}>{extra}</div>}
+      {extra&&<div style={{marginTop:10,paddingLeft:52}} onClick={e=>e.stopPropagation()}>{extra}</div>}
     </div>);
   return (
     <div style={{marginBottom:18}}>
@@ -8030,7 +8032,7 @@ export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,
       </div>
       {nTot===0?<div style={{fontSize:13,color:T.textSm,background:T.card,border:`1px dashed ${T.border}`,borderRadius:16,padding:"16px"}}>Nada pendiente por ahora. Cuando haya que escribirle a alguien o despachar, aparece acá.</div>
       :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,440px),1fr))",gap:10}}>
-        {despachables>0&&tarjeta("desp",T.yellow,null,`${despachables} canje${despachables!==1?"s":""} para despachar`,"Tienen el pedido: falta la etiqueta",<button onClick={onDespachar} style={{...btn,background:T.accentSolid,color:"#fff",border:"none",height:32,padding:"0 14px"}}>Despachar</button>)}
+        {despachables>0&&tarjeta("desp",T.yellow,null,`${despachables} canje${despachables!==1?"s":""} para despachar`,"Tienen el pedido: falta la etiqueta",<button onClick={onDespachar} style={{...btn,background:T.accentSolid,color:"#fff",border:"none",height:32,padding:"0 14px"}}>Despachar</button>,null,onDespachar)}
         {dudasV.map(d=>tarjeta("d"+d.canje._docId,T.yellow,d.canje,d.canje.influencer||"Canje","¿Es su pedido?",
           <button onClick={()=>setDescartadas(x=>new Set([...x,d.canje._docId]))} style={btn}>No es</button>,
           <div style={{display:"flex",flexDirection:"column",gap:6}}>{d.opciones.map(o=>(
@@ -8040,14 +8042,12 @@ export function CanjesParaEscribir({T,canjes,plantillas,dudas,responsables,resp,
             </button>))}</div>))}
         {extrasV.map(x=>tarjeta(x.key,colDe(x.sev),x.c,x.c.influencer||"Sin nombre",x.txt,<>
           {x.link&&<a href={x.link} target="_blank" rel="noopener noreferrer" style={{...btn,textDecoration:"none",height:32}}>Seguimiento</a>}
-          {x.onOk&&iBtn(ico.check,x.okLabel||"Ya está",x.onOk)}
-          {iBtn(ico.abrir,"Abrir el canje",()=>onAbrir(x.c._docId))}</>))}
+          {x.onOk&&iBtn(ico.check,x.okLabel||"Ya está",x.onOk)}</>))}
         {items.map(({c,it})=>{ const tpl=plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo]||""; const msg=ghCanjeMensaje(tpl,c); const tel=ghRecTel(c.telefono);
           return tarjeta(c._docId,colDe(it.sev),c,c.influencer||"Sin nombre",it.txt,<>
             {tel?<GhWaBtn size={32} href={`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`} onClick={()=>onEscrito(c,it.clave)}/>
               :iBtn(ico.copiar,"Copiar el mensaje (no tiene WhatsApp cargado)",async()=>{ try{ await navigator.clipboard.writeText(msg); toast("Mensaje copiado","success"); }catch(_){ } })}
-            {iBtn(ico.check,"Ya le escribí (sacarlo de la lista)",()=>onEscrito(c,it.clave))}
-            {iBtn(ico.abrir,"Abrir el canje",()=>onAbrir(c._docId))}</>); })}
+            {iBtn(ico.check,"Ya le escribí (sacarlo de la lista)",()=>onEscrito(c,it.clave))}</>); })}
       </div>}
       {nViejos>0&&<button onClick={()=>setVerViejos(v=>!v)} style={{marginTop:10,background:"none",border:"none",color:T.textSm,cursor:"pointer",fontSize:12,padding:"4px 0",fontFamily:"'Inter',system-ui,sans-serif",textDecoration:"underline"}}>{verViejos?"Ver solo lo de la última semana":`Ver ${nViejos} más viejo${nViejos!==1?"s":""} (de hace más de una semana)`}</button>}
     </div>
