@@ -45323,7 +45323,11 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
     }
     if (mlRet && mlRet.total>0 && !mlRet.on) qItems.push({k:"comisiones", msg:`Mercado Libre te retuvo ${fmtM(mlRet.total)} en percepciones y retenciones este período y no están descontadas del profit. Si tu "Impuestos de Mercado Libre" no las contempla, activá "Descontar las percepciones y retenciones reales" en Comisiones e impuestos`, cta:"Activar"});
     if (q.mpSinConfig && !mpParcial) qItems.push({k:"comisiones", msg:`Ventas con Mercado Pago sin cargo real informado${q.tnFees?.pendientes?" (se están leyendo de a 60 por cálculo. Recargá en un rato)":""}: se estima 7,61% (dinero al instante + IVA). Cargá tu % real en Comisiones e impuestos → Comisión de Mercado Pago`, cta:"Configurar"});
-    if (rendData?.meta?.metaFallo) qItems.push({k:null, msg:`Meta Ads está conectado pero el gasto no está entrando: la pauta figura en $0 y la ganancia de este período está inflada${rendData?.meta?.metaPermisos?". Meta bloqueó el acceso a la API: revisá en developers.facebook.com que la app esté en modo Activo y que ads_read tenga Acceso avanzado":rendData?.meta?.metaTokenExpired?". El token venció, reconectá Meta desde Configuración → Integraciones":""}`});
+    if (rendData?.meta?.metaFallo) qItems.push({k:null, msg:`Meta Ads está conectado pero el gasto no está entrando: la pauta figura en $0 y la ganancia de este período está inflada${rendData?.meta?.metaTokenExpired?". La conexión venció, reconectá Meta desde Configuración → Integraciones":rendData?.meta?.metaPermisos?". Meta no deja leer tus cuentas publicitarias: reconectá Meta con el usuario de Facebook que administra la cuenta publicitaria":""}`});
+    { const mp = rendData?.meta?.metaParcial; if (Array.isArray(mp) && mp.length) {
+      const noms = mp.map(c=>c.nombre?`${c.nombre} (${c.id})`:c.id).join(", ");
+      qItems.push({k:"costos", cta:"Elegir cuentas", msg:`${mp.length===1?"Una cuenta de Meta Ads no se pudo leer":`${mp.length} cuentas de Meta Ads no se pudieron leer`}: ${noms}. El gasto de las demás sí está sumado. Si ${mp.length===1?"esa cuenta no es":"esas cuentas no son"} de esta tienda (o ya no la${mp.length===1?"":"s"} usás), tildá solo las tuyas en Costos → Cuentas de Meta Ads y el aviso se va. Si sí es tuya, tu usuario de Facebook tiene que tener acceso a esa cuenta publicitaria`});
+    } }
     if (rendData?.meta?.googleAdsConectado && rendData?.meta?.googleAdsFuente!=="auto") qItems.push({k:null, msg:`Google Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.googleAdsDiag?` · ${rendData.meta.googleAdsDiag}`:""}`});
     if (rendData?.meta?.tiktokAdsConectado && rendData?.meta?.tiktokAdsFuente!=="auto") qItems.push({k:null, msg:`TikTok Ads está conectado pero el gasto automático no está entrando${rendData?.meta?.tiktokAdsDiag?` · ${rendData.meta.tiktokAdsDiag}`:""}`});
     if (rendData?.meta?.mlAdsConectado && rendData?.meta?.mlAdsFuente!=="auto") qItems.push({k:null, msg:"Mercado Libre está conectado pero el gasto de Mercado Ads no está entrando: si estás pauteando, la ganancia de este período está inflada. Suele ser que la cuenta no tiene Product Ads habilitado"});
@@ -45632,8 +45636,10 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
 
       {/* Meta no respondió: la pauta quedó en $0 y eso INFLA el ROAS y el
           profit de abajo. El mensaje cambia según la causa, porque el arreglo
-          es distinto: el token vencido se resuelve reconectando, un bloqueo de
-          permisos de la app NO (hay que tocarla en developers.facebook.com). */}
+          es distinto. Solo sale si NINGUNA cuenta se pudo leer (metaFallo): si
+          una sola de varias falla va como aviso de precisión (metaParcial).
+          Nunca mandar al cliente a developers.facebook.com: la app de Meta es
+          de Growith, el cliente no la puede tocar. */}
       {(rendData?.meta?.metaTokenExpired || rendData?.meta?.metaFallo) && (
         <div style={{background:T.red+"18",borderBottom:`1px solid ${T.red}44`,padding:"10px 24px",display:"flex",alignItems:"flex-start",gap:10,fontSize:13,color:T.text,flexWrap:"wrap"}}>
           <span style={{width:8,height:8,borderRadius:"50%",background:T.red,flexShrink:0,marginTop:6}}/>
@@ -45641,7 +45647,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
             {rendData?.meta?.metaTokenExpired ? (
               <><strong>El token de Meta Ads venció.</strong> Reconectá Meta Ads desde <strong>Configuración → Integraciones</strong>.</>
             ) : rendData?.meta?.metaPermisos ? (
-              <><strong>Meta bloqueó el acceso a la API.</strong> Reconectar no alcanza: revisá en <strong>developers.facebook.com</strong> que la app esté en modo <strong>Activo</strong> (no Desarrollo) y que <code style={{background:T.bg,padding:"1px 5px",borderRadius:3,fontSize:11}}>ads_read</code> tenga <strong>Acceso avanzado</strong>.</>
+              <><strong>Meta no deja leer tus cuentas publicitarias.</strong> Reconectá Meta desde <strong>Configuración → Integraciones</strong> con el usuario de Facebook que administra la cuenta publicitaria. Si ya lo hiciste y sigue, escribinos y lo revisamos.</>
             ) : (
               <><strong>No se pudo leer la inversión de Meta Ads.</strong> Probá refrescar; si sigue, revisá la conexión en <strong>Configuración → Integraciones</strong>.</>
             )}

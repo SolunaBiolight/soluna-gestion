@@ -68,6 +68,7 @@ async function fetchMetaDailySpend(cfg, since, until, errRef) {
         impressions: parseInt(row.impressions) || 0, clicks: parseInt(row.clicks) || 0, reach: parseInt(row.reach) || 0,
       };
     }
+    if (errRef) errRef.ok = (errRef.ok || 0) + 1;
     return byDate;
   } catch(e) {
     console.error("Meta daily spend error:", e.message);
@@ -79,6 +80,9 @@ async function fetchMetaDailySpend(cfg, since, until, errRef) {
     if (errRef) {
       errRef.fallo = true;
       errRef.motivo = msg.slice(0, 300);
+      // Qué cuenta falló: con varias cuentas publicitarias una vieja o
+      // desactivada no puede prender el cartel de "no entra el gasto".
+      (errRef.cuentas = errRef.cuentas || []).push({ id: String(cfg.ad_account_id || "").replace(/^act_/, ""), nombre: cfg.nombre || null, motivo: msg.slice(0, 160) });
       // Token vencido/revocado: se arregla reconectando desde Config.
       if (/expired|invalid.*token|oauth.*token|session|\b190\b|access token/i.test(msg)) errRef.expired = true;
       // Permisos de la APP (200 "API access blocked", 10, 803): reconectar NO
@@ -697,6 +701,8 @@ export default async function handler(req, res) {
         "mpi:1",
         // 7/oct/2026: percepciones y retenciones de Mercado Libre por pago
         "mlret:1",
+        // 14/nov/2026: el aviso de Meta distingue "ninguna cuenta se leyó" de "falló una de varias"
+        "metap:1",
         // 3/nov/2026: Shopify reparte la venta por lo cobrado en cada línea (2x1 de un producto)
         ...(stores.some(s => s.type === "shopify") ? ["lpv:1"] : []),
         // 26/oct/2026: el fulfillment propio ya no se suma a las ventas de ML Full (solo invalida a quien lo usa)
@@ -1071,7 +1077,7 @@ export default async function handler(req, res) {
         } else {
           try {
             const acc = await metaGet("me/adaccounts", { fields: "account_id,name,currency", limit: "100" }, token);
-            accounts = (acc.data||[]).map(a => ({ id: "act_" + a.account_id, currency: a.currency || null }));
+            accounts = (acc.data||[]).map(a => ({ id: "act_" + a.account_id, currency: a.currency || null, nombre: a.name || null }));
           } catch(e) { console.error("Meta adaccounts list error:", e.message); }
           if (!accounts.length) accounts = metaAccounts.map(a => ({ id: a.ad_account_id, currency: null })).filter(a => a.id);
         }
@@ -1087,7 +1093,7 @@ export default async function handler(req, res) {
         dolarAdsHistDias = histMap ? histMap.size : -1;
         const fxMeta = accounts.some(a => a.currency && !["ARS", "USD"].includes(String(a.currency).toUpperCase())) ? await fxPorUsd() : null;
         const arr = await Promise.all(accounts.map(async a => {
-          const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id }, s, u, eRef);
+          const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id, nombre: a.nombre }, s, u, eRef);
           const curCode = String(a.currency || "ARS").toUpperCase();
           if (a.currency && a.currency !== "ARS") {
             // Moneda que no es USD ni ARS (COP, MXN, EUR…): primero a USD.
@@ -2588,9 +2594,12 @@ export default async function handler(req, res) {
           stockDegradado: curr.degradado || prev.degradado || null, // ts del snapshot servido cuando TN/ML no respondieron en vivo
           stockDegradadoMotivo: curr.degradadoMotivo || prev.degradadoMotivo || null, // qué falló exactamente (timeout, HTTP, red)
           mlAdsDebug, mlEnvioDebug,
-          metaTokenExpired: !!metaErr.expired,
+          metaTokenExpired: !!metaErr.expired && !metaErr.ok,
           // El Dashboard necesita distinguir "no gastó" de "no pude leer Meta".
-          metaFallo: !!metaErr.fallo,
+          // metaFallo = NINGUNA cuenta se pudo leer (el gasto quedó en $0).
+          // Si alguna sí entró, es metaParcial: solo faltan esas cuentas.
+          metaFallo: !!metaErr.fallo && !metaErr.ok,
+          metaParcial: (!!metaErr.fallo && metaErr.ok > 0) ? (metaErr.cuentas || []).slice(0, 10) : null,
           metaPermisos: !!metaErr.permisos,
           metaMotivo: metaErr.motivo || null,
           costosConfigurados: { cogs: Object.keys(cogsMap).length, impuestos: pctImp*100, impuestosML: pctImpML*100, mpPct: mpPctCfg*100, plataforma: pctPlat*100, pago: pctPago*100, envioProm, envioModo: envioModoTienda, mlFlex: envioMlFlex, fulfillment: fulfillFee, fijosMensual, costosAdic: costosAdicList.length, feeAd: feeAd*100, dolar: +dolarValorEf.toFixed(2), dolarAdsTipo, dolarAdsHistDias, dolarAdsFallback: +dolarAdsFallback.toFixed(2) } } };
