@@ -10824,6 +10824,8 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
 // ===========================================
 // APP ENVIOS
 // ===========================================
+// Andreani rechaza el Excel masivo ENTERO (sin decir por qué) si trae más de ~100 envíos: se baja en partes.
+const GH_ANDREANI_MAX_FILAS=100;
 function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPedidos={}, depositoCliente=null, depositoCfg=null, tab:tabProp, setTab:setTabProp}) {
   const [rastrearOpen,setRastrearOpen]=useState(false);
   const [tab,setTabState]=useState(tabProp||"panel");
@@ -11419,7 +11421,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     const vistos=new Set();
     return r.filter(s=>{const k=nrmSp(s);if(vistos.has(k))return false;vistos.add(k);return true;}).slice(0,25);
   }
-  async function generateAndreaniXlsx(ordersData,locs,cfgOverride) {
+  async function generateAndreaniXlsx(ordersData,locs,cfgOverride,opts={}) {
     if(!window.JSZip){await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
     const tRes=await fetch('/andreani_template.xlsx?v='+Date.now());
     if(!tRes.ok) throw new Error("No se pudo cargar el template. Verificá que andreani_template.xlsx esté en public/");
@@ -11591,7 +11593,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     exclOperRef.current=new Set();
     let sucursalOrdersOk=sucursalOrders;
     const nombresSuc=[...new Set(sucEscritas.map(s=>s.sucursal).filter(Boolean))];
-    if(nombresSuc.length){
+    // opts.sinVerif: partes de un Excel ya verificado entero (más de GH_ANDREANI_MAX_FILAS pedidos)
+    if(nombresSuc.length&&!opts.sinVerif){
       let faltantes=[];
       try{
         setExportProgress({step:"Verificando que las sucursales estén operativas en Andreani…",pct:63,current:0,total:0});
@@ -11630,7 +11633,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     // positivo — se resuelve el string a la sucursal real y se compara SU
     // dirección contra el punto del pedido. Si no coincide (o la API no
     // responde), el aviso queda.
-    if(verifRows.some(v=>v.tipo==="sucursal")){
+    if(!opts.sinVerif&&verifRows.some(v=>v.tipo==="sucursal")){
       setExportProgress({step:"Verificando destinos contra el listado oficial de Andreani…",pct:65,current:0,total:0});
       const quedan=[];
       for(const vr of verifRows){
@@ -11645,7 +11648,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       }
       verifRows.length=0; verifRows.push(...quedan);
     }
-    if(verifRows.length){
+    if(!opts.sinVerif&&verifRows.length){
       setExporting(false);
       const seguir=await new Promise(resolve=>setVerifModal({items:verifRows,resolve}));
       setVerifModal(null);
@@ -12375,12 +12378,32 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       if(exclOperRef.current.size) finalOrders=finalOrders.filter(o=>!exclOperRef.current.has(o.numero));
       setExportProgress({step:"Descargando...",pct:90,current:finalOrders.length,total:finalOrders.length});
       const date=hoyAR();
-      const a=document.createElement('a');
-      a.href=URL.createObjectURL(b);
-      a.download='EnvioMasivoExcelPaquetes-'+date+'.xlsx';
-      a.style.display="none"; document.body.appendChild(a);
-      a.click();
-      setTimeout(()=>{ try{ a.remove(); }catch(_){} },1000);
+      const nVerif=verifRowsRef.current.length;
+      // Andreani rechaza el archivo entero con más de GH_ANDREANI_MAX_FILAS envíos
+      // (15/nov/2026: 135 pedidos fallaban "sacando todo"; hasta ~100 siempre anduvo).
+      // Se verifica UNA vez con todos (b) y se baja en partes sin volver a preguntar.
+      let partes=[{blob:b,nombre:'EnvioMasivoExcelPaquetes-'+date+'.xlsx'}];
+      if(finalOrders.length>GH_ANDREANI_MAX_FILAS){
+        partes=[]; const nP=Math.ceil(finalOrders.length/GH_ANDREANI_MAX_FILAS);
+        for(let i=0;i<nP;i++){
+          const lote=finalOrders.slice(i*GH_ANDREANI_MAX_FILAS,(i+1)*GH_ANDREANI_MAX_FILAS);
+          setExportProgress({step:`Armando la parte ${i+1} de ${nP}…`,pct:90,current:finalOrders.length,total:finalOrders.length});
+          const bp=await generateAndreaniXlsx(lote,locs,undefined,{sinVerif:true});
+          if(!bp){ setExporting(false); toast("No se pudo armar el Excel en partes","error"); return; }
+          partes.push({blob:bp,nombre:`EnvioMasivoExcelPaquetes-${date}-parte${i+1}de${nP}.xlsx`});
+        }
+      }
+      let a=null;
+      for(let i=0;i<partes.length;i++){
+        if(i) await new Promise(r=>setTimeout(r,900)); // el navegador frena varias descargas juntas
+        a=document.createElement('a');
+        a.href=URL.createObjectURL(partes[i].blob);
+        a.download=partes[i].nombre;
+        a.style.display="none"; document.body.appendChild(a);
+        a.click();
+        const aa=a; setTimeout(()=>{ try{ aa.remove(); }catch(_){} },1000);
+      }
+      if(partes.length>1) toast(`Eran ${finalOrders.length} pedidos y Andreani acepta hasta ${GH_ANDREANI_MAX_FILAS} por archivo: se bajaron ${partes.length} Excel. Importalos uno por uno.`,"info",12000);
       setExcelListo(prev=>{ if(prev?.url&&prev.url!==a.href){ try{ URL.revokeObjectURL(prev.url); }catch(_){} } return {url:a.href,nombre:a.download,n:finalOrders.length}; });
       try{
         const hist=JSON.parse(localStorage.getItem(ghKey("growith_exportHistory"))||"[]");
@@ -12395,8 +12418,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       finalOrders.forEach(o=>{ delete locationOverridesRef.current[ovrKey(o)]; delete sucursalOverridesRef.current[ovrKey(o)]; sucReemplazoRef.current.delete(ovrKey(o)); });
       persistOverrides(); persistSucReemplazo();
       // Éxito → toast (sin modal que pida click); si quedaron pedidos en
-      toast(verifRowsRef.current.length
-        ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel. Descargado (${verifRowsRef.current.length} destino${verifRowsRef.current.length!==1?"s":""} sin verificar)`
+      if(partes.length<=1) toast(nVerif
+        ?`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel. Descargado (${nVerif} destino${nVerif!==1?"s":""} sin verificar)`
         :`${finalOrders.length} etiqueta${finalOrders.length!==1?"s":""} en el Excel. Descargado destinos verificados con tu tienda`,"success");
       setExportDone({count:finalOrders.length, ts:Date.now()}); // ya no abre modal: refresca el mapa "ya exportado"
       logUsage("etiquetas", finalOrders.length);
