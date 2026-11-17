@@ -459,6 +459,27 @@ export default async function handler(req, res) {
     if (desde > hasta) return res.status(400).json({ error: "rango inválido" });
     if ((new Date(hasta) - new Date(desde)) / 86400000 > 400) return res.status(400).json({ error: "El rango máximo es de un año." });
     const code = String(link.code || "").toUpperCase().trim();
+    // % de comisión VIGENTE (17/nov/2026, PLANTPOWER: 6 ventas y $0): el link guardaba el % del
+    // momento en que se generó y si fue con 0 quedaba en 0 para siempre. Ahora manda lo que hoy
+    // dice Growith: el % de la pestaña Cupones (comisionOverrides), el canje más nuevo con ese
+    // código, el perfil del influencer y recién después lo guardado en el link.
+    const pctActual = async () => {
+      const n = v => { const x = parseFloat(v); return isFinite(x) && x > 0 ? x : 0; };
+      const ov = n(((uSnap.exists && uSnap.data().comisionOverrides) || {})[code]);
+      if (ov) return ov;
+      try {
+        const cs = await db.collection("canjes").where("ownerId", "==", link.uid).where("codigoDescuento", "==", code).get();
+        const c = cs.docs.map(d => d.data()).filter(x => n(x.comisionPct)).sort((a, b) => ((b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)))[0];
+        if (c) return n(c.comisionPct);
+      } catch (_) {}
+      try {
+        const is = await db.collection("influencers").where("ownerId", "==", link.uid).where("codigoDescuento", "==", code).limit(5).get();
+        const i = is.docs.map(d => d.data()).find(x => n(x.comisionPct));
+        if (i) return n(i.comisionPct);
+      } catch (_) {}
+      return n(link.comisionPct);
+    };
+    const conPct = async (r) => { const pct = await pctActual(); return { ...r, comisionPct: pct, comision: Math.round((r.neto || 0) * (pct / 100)) }; };
     if (demoCup) {
       // Tienda DEMO: agregado desde las ventas ficticias (mismo formato, sin caché)
       const agg = code === CUPON_DEMO ? cuponDemoAgg((await leerDemo(db, link.uid, desde, hasta)).ventas) : { usos: 0, ventas: 0, descuento: 0 };
@@ -482,7 +503,7 @@ export default async function handler(req, res) {
     const _dbg = req.query.debug === "1" ? { rama: tn ? "tiendanube" : "shopify", paginas: [], codigos: {} } : null;
     try {
       const hit = await cacheRef.get();
-      if (!_dbg && hit.exists && Date.now() - (hit.data().ts || 0) < ttl) return res.status(200).json(hit.data().resp);
+      if (!_dbg && hit.exists && Date.now() - (hit.data().ts || 0) < ttl) return res.status(200).json(await conPct(hit.data().resp));
     } catch (_) {}
     let usos = 0, ventas = 0, descuento = 0;
     if (tn) {
@@ -571,9 +592,9 @@ export default async function handler(req, res) {
       usos, ventas: Math.round(ventas), descuento: Math.round(descuento),
       neto: Math.round(neto), comisionPct: pct, comision: Math.round(neto * (pct / 100)),
     };
-    if (_dbg) return res.status(200).json({ ...resp, _debug: _dbg }); // sin cachear
+    if (_dbg) return res.status(200).json({ ...(await conPct(resp)), _debug: _dbg }); // sin cachear
     try { await cacheRef.set({ ts: Date.now(), resp }); } catch (_) {}
-    return res.status(200).json(resp);
+    return res.status(200).json(await conPct(resp));
   }
 
   // ── Recompra: carga del historial de clientes (cron cada 10 min, 19/oct/2026) ──────────────────

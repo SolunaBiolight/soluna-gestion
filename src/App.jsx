@@ -1910,7 +1910,9 @@ function CuponPublicoView({token}){
                   <span style={{fontSize:12,fontWeight:700,color:T.textSm}}>Tu comisión</span>
                   {Number(data.comisionPct)>0&&<span style={{fontSize:10,fontWeight:800,color:T.green,background:T.green+"18",border:`1px solid ${T.green}44`,borderRadius:99,padding:"1px 8px"}}>{data.comisionPct}%</span>}
                 </div>
-                <div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-0.5}}>{fmt(data.comision)}</div>
+                {Number(data.comisionPct)>0
+                  ?<div style={{fontSize:28,fontWeight:800,color:T.green,letterSpacing:-0.5}}>{fmt(data.comision)}</div>
+                  :<div style={{fontSize:12,color:T.textSm,lineHeight:1.5,marginTop:4}}>La marca todavía no cargó tu % de comisión. Cuando lo cargue, se calcula sola.</div>}
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
