@@ -106,8 +106,6 @@ export function aplicarMaterialPieza(c, piezaId, ahoraIso) {
 }
 const folderIdDe = l => { const m = String(l || "").match(/\/folders\/([A-Za-z0-9_-]{10,})/) || String(l || "").match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m ? m[1] : ""; };
 const nomDrive = s => String(s || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
-// Alcanza con Google Drive conectado: si no hay carpeta madre se crea sola (17/nov/2026).
-const subidaDisponible = (u) => !!u?.googleDrive?.refresh_token;
 async function carpetaHija(H, parentId, nombre) {
   const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${nombre.replace(/'/g, "\\'")}' and trashed=false`);
   const ex = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,webViewLink)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: H, signal: AbortSignal.timeout(15000) });
@@ -118,8 +116,23 @@ async function carpetaHija(H, parentId, nombre) {
   if (!r.ok) { const e = new Error(`Drive no creó la carpeta "${nombre}" (HTTP ${r.status})`); e.status = r.status; throw e; }
   return j;
 }
+// Cuenta cuyo Google Drive se usa (17/nov/2026: Drive "Conectado" en Config pero el portal decía que no):
+// la del dueño del canje; si esa no lo tiene, el perfil dueño de la tienda (ownerUid) o una tienda de ese
+// perfil (multi-tienda: un canje viejo puede tener de ownerId el perfil y Drive estar en la tienda, o al revés).
+async function driveCuenta(db, uid, u) {
+  if (u?.googleDrive?.refresh_token) return { uid, u };
+  const cand = [];
+  if (u?.ownerUid) cand.push(String(u.ownerUid));
+  try { const qs = await db.collection("users").where("ownerUid", "==", String(uid)).limit(10).get(); qs.docs.forEach(x => cand.push(x.id)); } catch (_) {}
+  if (u?.ownerUid) { try { const qs = await db.collection("users").where("ownerUid", "==", String(u.ownerUid)).limit(10).get(); qs.docs.forEach(x => cand.push(x.id)); } catch (_) {} }
+  for (const id of [...new Set(cand)].filter(x => x !== uid)) {
+    const d = (await db.collection("users").doc(id).get()).data();
+    if (d?.googleDrive?.refresh_token) return { uid: id, u: d };
+  }
+  return null;
+}
 // Carpeta del influencer + Crudos / Editados, guardadas en el canje para no buscarlas cada vez.
-async function carpetasCanje(db, dref, c, u, H) {
+async function carpetasCanje(db, dref, c, u, H, driveUid) {
   const ds = c.driveSubidas || {};
   if (ds.carpetaId && ds.crudos && ds.editados) return ds;
   let carpetaId = ds.carpetaId || folderIdDe(c.driveFolder), carpetaLink = ds.carpetaLink || (carpetaId ? String(c.driveFolder || "") : "");
@@ -134,7 +147,7 @@ async function carpetasCanje(db, dref, c, u, H) {
       let f = (await ex.json().catch(() => ({}))).files?.[0];
       if (!f) { const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name", { method: "POST", headers: H, body: JSON.stringify({ name: NOMBRE, mimeType: "application/vnd.google-apps.folder" }), signal: AbortSignal.timeout(15000) }); f = await r.json().catch(() => ({})); if (!r.ok || !f.id) throw new Error("Drive no creó la carpeta madre"); }
       parentId = f.id;
-      await db.collection("users").doc(String(c.ownerId)).set({ canjesDriveParent: { id: f.id, name: f.name || NOMBRE } }, { merge: true });
+      await db.collection("users").doc(String(driveUid || c.ownerId)).set({ canjesDriveParent: { id: f.id, name: f.name || NOMBRE } }, { merge: true });
     }
     const usr = String(c.usuario || "").replace(/^@/, "").trim();
     const f = await carpetaHija(H, parentId, nomDrive(`${c.influencer || "Influencer"}${usr ? " @" + usr : ""}`).slice(0, 120));
@@ -197,7 +210,7 @@ export default async function handler(req, res) {
           web: /^https?:\/\/[^\s]+$/.test(String(u.canjesWeb || "")) ? String(u.canjesWeb) : "",
           pedido: c.pedidoRef ? String(c.pedidoRef) : "",
           puedeCargar: puedeCargar(c), cancelado: c.estado === "Cancelado",
-          subida: subidaDisponible(u),
+          subida: !!(await driveCuenta(db, uid, u)),
           material: (Array.isArray(c.material) ? c.material : []).map(m => ({ id: m.id, piezaId: m.piezaId || "", tipo: m.tipo, nombre: m.nombre, size: m.size || 0, at: m.at })),
           ficha: ficha ? { id: ficha.id, nombre: ficha.nombre || "Ficha de la marca" } : null,
           guion: guion ? { nombre: guion.nombre || "Guion", texto: String(guion.texto || "").slice(0, 20000), archivo: guion.archivoId ? { id: guion.archivoId, nombre: guion.archivoNombre || guion.nombre || "Guion" } : null }
@@ -231,7 +244,8 @@ export default async function handler(req, res) {
         if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
         if (c.estado === "Cancelado") return res.status(409).json({ error: "Este canje está cancelado." });
         if (!puedeCargar(c)) return res.status(409).json({ error: "Todavía no te despachamos el paquete. Cuando esté en camino vas a poder subir el material." });
-        if (!subidaDisponible(u)) return res.status(409).json({ error: "La marca todavía no activó la subida de archivos. Escribile por WhatsApp." });
+        const dc = await driveCuenta(db, uid, u);
+        if (!dc) return res.status(409).json({ error: "La marca todavía no activó la subida de archivos. Escribile por WhatsApp." });
         const tipo = body.tipo === "editado" ? "editado" : "crudo";
         const piezaId = String(body.piezaId || "");
         const pz = piezasDe(c).find(x => String(x.id) === piezaId);
@@ -240,11 +254,11 @@ export default async function handler(req, res) {
         if (size <= 0 || size > MAX_SUBIDA) return res.status(400).json({ error: "El archivo es demasiado grande (máximo 10 GB)." });
         if (!/^(video|image|audio)\//.test(mime) && !/\.(mov|mp4|m4v|heic|jpe?g|png|webp|avi|mkv|zip)$/i.test(String(body.nombre || ""))) return res.status(400).json({ error: "Subí videos, fotos o audios." });
         if ((Array.isArray(c.material) ? c.material.length : 0) >= 150) return res.status(409).json({ error: "Llegaste al máximo de archivos de este canje. Escribile a la marca." });
-        let t; try { t = await getValidDriveToken(db, uid); } catch (_) { t = null; }
+        let t; try { t = await getValidDriveToken(db, dc.uid); } catch (_) { t = null; }
         if (!t) return res.status(409).json({ error: "La marca tiene que volver a conectar su Google Drive. Escribile por WhatsApp." });
         const H = { Authorization: `Bearer ${t.accessToken}`, "Content-Type": "application/json" };
         let ds;
-        try { ds = await carpetasCanje(db, d.ref, c, u, H); }
+        try { ds = await carpetasCanje(db, d.ref, c, { ...dc.u, canjesDriveParent: u.canjesDriveParent || dc.u.canjesDriveParent }, H, dc.uid); }
         catch (e) { console.error("[canjes subida carpeta]", e.message); return res.status(502).json({ error: "No pudimos preparar la carpeta de la marca en Drive. Probá en un rato o avisale a la marca." }); }
         const piezas = piezasDe(c), mismas = piezas.filter(x => x.tipo === pz.tipo);
         const etiqueta = `${pz.tipo || "Contenido"}${mismas.length > 1 ? " " + (mismas.indexOf(pz) + 1) : ""}`;
@@ -259,7 +273,7 @@ export default async function handler(req, res) {
         const url = r.headers.get("location");
         if (!r.ok || !url) { const j = await r.json().catch(() => ({})); console.error("[canjes subida]", r.status, j?.error?.message); return res.status(502).json({ error: "Drive no aceptó la subida. Probá de nuevo en un rato." }); }
         const sid = randomBytes(12).toString("hex");
-        await db.collection("canjes_subidas").doc(sid).set({ canjeId: d.id, uid, piezaId, tipo, nombre, nombreOriginal: String(body.nombre || "").slice(0, 200), size, mime, folderId: tipo === "editado" ? ds.editados : ds.crudos, at: new Date().toISOString() });
+        await db.collection("canjes_subidas").doc(sid).set({ canjeId: d.id, uid, driveUid: dc.uid, piezaId, tipo, nombre, nombreOriginal: String(body.nombre || "").slice(0, 200), size, mime, folderId: tipo === "editado" ? ds.editados : ds.crudos, at: new Date().toISOString() });
         return res.json({ ok: true, sid, url });
       }
       if (action === "portal_subida_fin") {
@@ -268,7 +282,7 @@ export default async function handler(req, res) {
         if (!/^[a-f0-9]{24}$/.test(sid) || !/^[A-Za-z0-9_-]{10,120}$/.test(fileId)) return res.status(400).json({ error: "Datos inválidos" });
         const sref = db.collection("canjes_subidas").doc(sid); const sub = (await sref.get()).data();
         if (!sub || sub.canjeId !== d.id) return res.status(404).json({ error: "No encontré esa subida." });
-        const t = await getValidDriveToken(db, uid).catch(() => null);
+        const t = await getValidDriveToken(db, sub.driveUid || uid).catch(() => null);
         if (!t) return res.status(409).json({ error: "La marca tiene que volver a conectar su Google Drive." });
         const fr = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,size,mimeType,webViewLink,parents&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${t.accessToken}` }, signal: AbortSignal.timeout(15000) });
         const f = await fr.json().catch(() => ({}));
