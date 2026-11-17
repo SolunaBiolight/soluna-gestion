@@ -8575,7 +8575,8 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
   // Después cada perfil/canje nuevo crea su carpeta adentro, la comparte por
   // link con permiso de subir y guarda el link en el perfil y en el canje.
   const [driveParent,setDriveParent]=useState(undefined); // undefined=cargando, null=sin elegir, {id,name}
-  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>setDriveParent(s.data()?.canjesDriveParent||null)).catch(()=>setDriveParent(null)); },[user?.uid]);
+  const [driveOk,setDriveOk]=useState(undefined); // Google Drive conectado (alcanza para que el influencer suba desde su link)
+  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>{ setDriveParent(s.data()?.canjesDriveParent||null); setDriveOk(!!s.data()?.googleDrive?.refresh_token); }).catch(()=>{ setDriveParent(null); setDriveOk(undefined); }); },[user?.uid]);
   const [driveBusy,setDriveBusy]=useState(false);
   const [driveParentLink,setDriveParentLink]=useState("");
   // Sin el selector de Google (si la API key del Picker falla): la app crea
@@ -10385,7 +10386,8 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                       </div>
                     </div>
                     {c.driveSubidas?.carpetaLink?<div style={{fontSize:12,color:T.textMd,marginBottom:10}}>Lo que sube desde su link va solo a <a href={c.driveSubidas.carpetaLink} target="_blank" rel="noopener noreferrer" style={{color:T.accent,fontWeight:600}}>su carpeta en tu Drive</a> (Crudos y Editados).</div>
-                      :!driveParent?.id&&driveParent!==undefined?<div style={{fontSize:12,color:T.textMd,background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"8px 12px",marginBottom:10}}>Para que suba los videos solo desde su link y te queden en tu Drive, elegí la carpeta madre en Canjes → Influencers (con Google Drive conectado).</div>:null}
+                      :driveOk===false?<div style={{fontSize:12,color:T.textMd,background:T.yellow+"12",border:`1px solid ${T.yellow}44`,borderRadius:10,padding:"8px 12px",marginBottom:10}}>Para que suba los videos desde su link y te queden en tu Drive, conectá Google Drive en <a href="#/config/integraciones" style={{color:T.accent,fontWeight:600}}>Configuración → Integraciones</a>. Es una sola vez.</div>
+                      :<div style={{fontSize:12,color:T.textSm,marginBottom:10}}>Lo que suba desde su link va solo a tu Drive, en una carpeta con su nombre (Crudos y Editados).</div>}
                     {piezas.length===0&&<div style={{fontSize:12,color:T.textSm,marginBottom:8}}>Todavía no anotaste qué tiene que subir. Agregalo abajo.</div>}
                     {piezas.length>0&&<div style={{display:"flex",flexDirection:"column",border:`1px solid ${T.borderL}`,borderRadius:12,marginBottom:10,overflow:"hidden"}}>
                       {piezas.map((pz,i)=>{

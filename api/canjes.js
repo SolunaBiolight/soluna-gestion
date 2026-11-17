@@ -106,7 +106,8 @@ export function aplicarMaterialPieza(c, piezaId, ahoraIso) {
 }
 const folderIdDe = l => { const m = String(l || "").match(/\/folders\/([A-Za-z0-9_-]{10,})/) || String(l || "").match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m ? m[1] : ""; };
 const nomDrive = s => String(s || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
-const subidaDisponible = (u, c) => !!(u?.googleDrive?.refresh_token && (u?.canjesDriveParent?.id || c?.driveSubidas?.carpetaId || folderIdDe(c?.driveFolder)));
+// Alcanza con Google Drive conectado: si no hay carpeta madre se crea sola (17/nov/2026).
+const subidaDisponible = (u) => !!u?.googleDrive?.refresh_token;
 async function carpetaHija(H, parentId, nombre) {
   const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${nombre.replace(/'/g, "\\'")}' and trashed=false`);
   const ex = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,webViewLink)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: H, signal: AbortSignal.timeout(15000) });
@@ -123,9 +124,20 @@ async function carpetasCanje(db, dref, c, u, H) {
   if (ds.carpetaId && ds.crudos && ds.editados) return ds;
   let carpetaId = ds.carpetaId || folderIdDe(c.driveFolder), carpetaLink = ds.carpetaLink || (carpetaId ? String(c.driveFolder || "") : "");
   if (!carpetaId) {
-    if (!u.canjesDriveParent?.id) throw Object.assign(new Error("sin_carpeta"), { status: 409 });
+    let parentId = u.canjesDriveParent?.id;
+    if (!parentId) {
+      // Sin carpeta madre elegida: la app crea "Influencers (Growith)" en la raíz del Drive del dueño
+      // (lo mismo que gdriveParentCreate de integrations.js) y la deja como madre de Canjes.
+      const NOMBRE = "Influencers (Growith)";
+      const q = encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${NOMBRE}' and trashed=false`);
+      const ex = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, { headers: H, signal: AbortSignal.timeout(15000) });
+      let f = (await ex.json().catch(() => ({}))).files?.[0];
+      if (!f) { const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name", { method: "POST", headers: H, body: JSON.stringify({ name: NOMBRE, mimeType: "application/vnd.google-apps.folder" }), signal: AbortSignal.timeout(15000) }); f = await r.json().catch(() => ({})); if (!r.ok || !f.id) throw new Error("Drive no creó la carpeta madre"); }
+      parentId = f.id;
+      await db.collection("users").doc(String(c.ownerId)).set({ canjesDriveParent: { id: f.id, name: f.name || NOMBRE } }, { merge: true });
+    }
     const usr = String(c.usuario || "").replace(/^@/, "").trim();
-    const f = await carpetaHija(H, u.canjesDriveParent.id, nomDrive(`${c.influencer || "Influencer"}${usr ? " @" + usr : ""}`).slice(0, 120));
+    const f = await carpetaHija(H, parentId, nomDrive(`${c.influencer || "Influencer"}${usr ? " @" + usr : ""}`).slice(0, 120));
     carpetaId = f.id; carpetaLink = f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`;
   }
   const cr = await carpetaHija(H, carpetaId, "Crudos"), ed = await carpetaHija(H, carpetaId, "Editados");
@@ -185,7 +197,7 @@ export default async function handler(req, res) {
           web: /^https?:\/\/[^\s]+$/.test(String(u.canjesWeb || "")) ? String(u.canjesWeb) : "",
           pedido: c.pedidoRef ? String(c.pedidoRef) : "",
           puedeCargar: puedeCargar(c), cancelado: c.estado === "Cancelado",
-          subida: subidaDisponible(u, c),
+          subida: subidaDisponible(u),
           material: (Array.isArray(c.material) ? c.material : []).map(m => ({ id: m.id, piezaId: m.piezaId || "", tipo: m.tipo, nombre: m.nombre, size: m.size || 0, at: m.at })),
           ficha: ficha ? { id: ficha.id, nombre: ficha.nombre || "Ficha de la marca" } : null,
           guion: guion ? { nombre: guion.nombre || "Guion", texto: String(guion.texto || "").slice(0, 20000), archivo: guion.archivoId ? { id: guion.archivoId, nombre: guion.archivoNombre || guion.nombre || "Guion" } : null }
@@ -219,7 +231,7 @@ export default async function handler(req, res) {
         if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
         if (c.estado === "Cancelado") return res.status(409).json({ error: "Este canje está cancelado." });
         if (!puedeCargar(c)) return res.status(409).json({ error: "Todavía no te despachamos el paquete. Cuando esté en camino vas a poder subir el material." });
-        if (!subidaDisponible(u, c)) return res.status(409).json({ error: "La marca todavía no activó la subida de archivos. Escribile por WhatsApp." });
+        if (!subidaDisponible(u)) return res.status(409).json({ error: "La marca todavía no activó la subida de archivos. Escribile por WhatsApp." });
         const tipo = body.tipo === "editado" ? "editado" : "crudo";
         const piezaId = String(body.piezaId || "");
         const pz = piezasDe(c).find(x => String(x.id) === piezaId);
