@@ -10,12 +10,24 @@
 // archivoId}] y la ficha en users/{uid}.canjesFicha {id, nombre} (las escribe este endpoint).
 //
 // Acciones del dueño (sesión, sección canjes): archivo_subir, archivo_ver, archivo_quitar, guion_guardar.
-// Acciones públicas (por token, 40 por minuto por IP): portal, portal_archivo, portal_link.
+// Acciones públicas (por token, 40 por minuto por IP): portal, portal_archivo, portal_link,
+// portal_subida_iniciar, portal_subida_fin.
+//
+// Material del influencer directo al Drive de la marca (17/nov/2026, pedido de Lautaro: "que no dependan
+// de que yo les responda para subir el contenido"): desde su link sube los CRUDOS (obligatorio) y, si
+// quiere, el EDITADO de cada pieza. El servidor arma la carpeta del influencer adentro de la carpeta madre
+// de Canjes (users/{uid}.canjesDriveParent) o usa la del canje, con dos subcarpetas "Crudos" y "Editados",
+// y abre una subida reanudable de Drive con el token del dueño; el navegador del influencer sube el
+// archivo DIRECTO a Google (videos pesados sin pasar por Vercel) y al terminar `portal_subida_fin`
+// verifica el archivo en Drive y lo registra en canjes/{id}.material [{id, piezaId, tipo, nombre, size,
+// mime, driveId, link, at}]. La pieza pasa a "entregada" con el primer archivo, como con un link.
+// Pendientes de subida en la colección server-only canjes_subidas/{sid} (se borran al terminar).
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { randomBytes } from "crypto";
 import { requireUid } from "./_auth.js";
+import { getValidDriveToken } from "./google-drive-callback.js";
 
 function initAdmin() {
   if (getApps().length > 0) return getFirestore();
@@ -80,6 +92,49 @@ export function aplicarLinkPieza(c, piezaId, link, ahoraIso) {
   return upd;
 }
 export const puedeCargar = c => !!(c?.trackEntregadoAt || String(c?.tracking || "").trim() || c?.estado === "Contenido pendiente" || (c?.estado === "Cerrado" && c?.finalizadoPor === "influencer"));
+// Igual que aplicarLinkPieza pero por material subido (sin tocar el link). Pura.
+export function aplicarMaterialPieza(c, piezaId, ahoraIso) {
+  const piezas = piezasDe(c).map(p => ({ ...p }));
+  const p = piezas.find(x => String(x.id) === String(piezaId));
+  if (!p) return null;
+  p.materialAt = ahoraIso;
+  if ((p.estado || "pendiente") === "pendiente") { p.estado = "entregada"; p.entregadaAt = ahoraIso; p.porInfluencer = true; }
+  const upd = { piezas, contenido: contenidoDePiezas(piezas) };
+  const todo = piezas.length > 0 && piezas.every(x => (x.estado || "pendiente") !== "pendiente");
+  if (todo && !CERRADO.has(c.estado || "")) { upd.estado = "Cerrado"; upd.contenidoCompletoAt = ahoraIso; upd.finalizadoPor = "influencer"; }
+  return upd;
+}
+const folderIdDe = l => { const m = String(l || "").match(/\/folders\/([A-Za-z0-9_-]{10,})/) || String(l || "").match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m ? m[1] : ""; };
+const nomDrive = s => String(s || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+const subidaDisponible = (u, c) => !!(u?.googleDrive?.refresh_token && (u?.canjesDriveParent?.id || c?.driveSubidas?.carpetaId || folderIdDe(c?.driveFolder)));
+async function carpetaHija(H, parentId, nombre) {
+  const q = encodeURIComponent(`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${nombre.replace(/'/g, "\\'")}' and trashed=false`);
+  const ex = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,webViewLink)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { headers: H, signal: AbortSignal.timeout(15000) });
+  const exJ = await ex.json().catch(() => ({}));
+  if (exJ.files?.[0]) return exJ.files[0];
+  const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,webViewLink&supportsAllDrives=true", { method: "POST", headers: H, body: JSON.stringify({ name: nombre, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }), signal: AbortSignal.timeout(15000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(`Drive no creó la carpeta "${nombre}" (HTTP ${r.status})`); e.status = r.status; throw e; }
+  return j;
+}
+// Carpeta del influencer + Crudos / Editados, guardadas en el canje para no buscarlas cada vez.
+async function carpetasCanje(db, dref, c, u, H) {
+  const ds = c.driveSubidas || {};
+  if (ds.carpetaId && ds.crudos && ds.editados) return ds;
+  let carpetaId = ds.carpetaId || folderIdDe(c.driveFolder), carpetaLink = ds.carpetaLink || (carpetaId ? String(c.driveFolder || "") : "");
+  if (!carpetaId) {
+    if (!u.canjesDriveParent?.id) throw Object.assign(new Error("sin_carpeta"), { status: 409 });
+    const usr = String(c.usuario || "").replace(/^@/, "").trim();
+    const f = await carpetaHija(H, u.canjesDriveParent.id, nomDrive(`${c.influencer || "Influencer"}${usr ? " @" + usr : ""}`).slice(0, 120));
+    carpetaId = f.id; carpetaLink = f.webViewLink || `https://drive.google.com/drive/folders/${f.id}`;
+  }
+  const cr = await carpetaHija(H, carpetaId, "Crudos"), ed = await carpetaHija(H, carpetaId, "Editados");
+  const out = { carpetaId, carpetaLink: carpetaLink || `https://drive.google.com/drive/folders/${carpetaId}`, crudos: cr.id, editados: ed.id };
+  await dref.update({ driveSubidas: out });
+  return out;
+}
+const ORIGENES = ["https://www.growithapp.com", "https://growithapp.com", "https://soluna-gestion.vercel.app"];
+const MAX_SUBIDA = 10 * 1024 * 1024 * 1024; // 10 GB por archivo
 const linkOk = l => { const s = String(l || "").trim(); if (!s) return ""; const u = /^https?:\/\//i.test(s) ? s : "https://" + s; try { const x = new URL(u); return /^https?:$/.test(x.protocol) && x.hostname.includes(".") ? u.slice(0, 500) : null; } catch (_) { return null; } };
 
 async function canjePorToken(db, t) {
@@ -130,6 +185,8 @@ export default async function handler(req, res) {
           web: /^https?:\/\/[^\s]+$/.test(String(u.canjesWeb || "")) ? String(u.canjesWeb) : "",
           pedido: c.pedidoRef ? String(c.pedidoRef) : "",
           puedeCargar: puedeCargar(c), cancelado: c.estado === "Cancelado",
+          subida: subidaDisponible(u, c),
+          material: (Array.isArray(c.material) ? c.material : []).map(m => ({ id: m.id, piezaId: m.piezaId || "", tipo: m.tipo, nombre: m.nombre, size: m.size || 0, at: m.at })),
           ficha: ficha ? { id: ficha.id, nombre: ficha.nombre || "Ficha de la marca" } : null,
           guion: guion ? { nombre: guion.nombre || "Guion", texto: String(guion.texto || "").slice(0, 20000), archivo: guion.archivoId ? { id: guion.archivoId, nombre: guion.archivoNombre || guion.nombre || "Guion" } : null }
             : guionLink ? { nombre: "Tu guion", link: guionLink } : c.guionTareaId ? { nombre: "Tu guion", pendiente: true } : null,
@@ -157,6 +214,61 @@ export default async function handler(req, res) {
         if (upd.bloqueado) return res.status(409).json({ error: "Ese link lo cargó la marca. Si querés cambiarlo, pegá el nuevo." });
         await d.ref.update({ ...upd, ...(upd.estado === "Cerrado" ? { finalizadoAt: FieldValue.serverTimestamp() } : {}), influencerUltimoLinkAt: ahoraIso, updatedAt: FieldValue.serverTimestamp() });
         return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: upd.piezas.map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" })) });
+      }
+      if (action === "portal_subida_iniciar") {
+        if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+        if (c.estado === "Cancelado") return res.status(409).json({ error: "Este canje está cancelado." });
+        if (!puedeCargar(c)) return res.status(409).json({ error: "Todavía no te despachamos el paquete. Cuando esté en camino vas a poder subir el material." });
+        if (!subidaDisponible(u, c)) return res.status(409).json({ error: "La marca todavía no activó la subida de archivos. Escribile por WhatsApp." });
+        const tipo = body.tipo === "editado" ? "editado" : "crudo";
+        const piezaId = String(body.piezaId || "");
+        const pz = piezasDe(c).find(x => String(x.id) === piezaId);
+        if (!pz) return res.status(404).json({ error: "No encontré esa pieza." });
+        const size = Number(body.size) || 0, mime = String(body.mime || "application/octet-stream").slice(0, 100);
+        if (size <= 0 || size > MAX_SUBIDA) return res.status(400).json({ error: "El archivo es demasiado grande (máximo 10 GB)." });
+        if (!/^(video|image|audio)\//.test(mime) && !/\.(mov|mp4|m4v|heic|jpe?g|png|webp|avi|mkv|zip)$/i.test(String(body.nombre || ""))) return res.status(400).json({ error: "Subí videos, fotos o audios." });
+        if ((Array.isArray(c.material) ? c.material.length : 0) >= 150) return res.status(409).json({ error: "Llegaste al máximo de archivos de este canje. Escribile a la marca." });
+        let t; try { t = await getValidDriveToken(db, uid); } catch (_) { t = null; }
+        if (!t) return res.status(409).json({ error: "La marca tiene que volver a conectar su Google Drive. Escribile por WhatsApp." });
+        const H = { Authorization: `Bearer ${t.accessToken}`, "Content-Type": "application/json" };
+        let ds;
+        try { ds = await carpetasCanje(db, d.ref, c, u, H); }
+        catch (e) { console.error("[canjes subida carpeta]", e.message); return res.status(502).json({ error: "No pudimos preparar la carpeta de la marca en Drive. Probá en un rato o avisale a la marca." }); }
+        const piezas = piezasDe(c), mismas = piezas.filter(x => x.tipo === pz.tipo);
+        const etiqueta = `${pz.tipo || "Contenido"}${mismas.length > 1 ? " " + (mismas.indexOf(pz) + 1) : ""}`;
+        const fecha = diaAR(Date.now());
+        const nombre = nomDrive(`${fecha} ${etiqueta} ${tipo} - ${String(body.nombre || "archivo")}`).slice(0, 200);
+        const origin = ORIGENES.includes(String(req.headers.origin || "")) || /^http:\/\/localhost:\d+$/.test(String(req.headers.origin || "")) ? String(req.headers.origin) : ORIGENES[0];
+        const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,size,webViewLink,parents", {
+          method: "POST", headers: { ...H, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mime, "X-Upload-Content-Length": String(size), Origin: origin },
+          body: JSON.stringify({ name: nombre, parents: [tipo === "editado" ? ds.editados : ds.crudos], description: `Canje de ${c.influencer || ""} ${c.usuario ? "@" + String(c.usuario).replace(/^@/, "") : ""} · ${etiqueta} · ${tipo}` }),
+          signal: AbortSignal.timeout(20000),
+        });
+        const url = r.headers.get("location");
+        if (!r.ok || !url) { const j = await r.json().catch(() => ({})); console.error("[canjes subida]", r.status, j?.error?.message); return res.status(502).json({ error: "Drive no aceptó la subida. Probá de nuevo en un rato." }); }
+        const sid = randomBytes(12).toString("hex");
+        await db.collection("canjes_subidas").doc(sid).set({ canjeId: d.id, uid, piezaId, tipo, nombre, nombreOriginal: String(body.nombre || "").slice(0, 200), size, mime, folderId: tipo === "editado" ? ds.editados : ds.crudos, at: new Date().toISOString() });
+        return res.json({ ok: true, sid, url });
+      }
+      if (action === "portal_subida_fin") {
+        if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+        const sid = String(body.sid || ""); const fileId = String(body.fileId || "");
+        if (!/^[a-f0-9]{24}$/.test(sid) || !/^[A-Za-z0-9_-]{10,120}$/.test(fileId)) return res.status(400).json({ error: "Datos inválidos" });
+        const sref = db.collection("canjes_subidas").doc(sid); const sub = (await sref.get()).data();
+        if (!sub || sub.canjeId !== d.id) return res.status(404).json({ error: "No encontré esa subida." });
+        const t = await getValidDriveToken(db, uid).catch(() => null);
+        if (!t) return res.status(409).json({ error: "La marca tiene que volver a conectar su Google Drive." });
+        const fr = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,size,mimeType,webViewLink,parents&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${t.accessToken}` }, signal: AbortSignal.timeout(15000) });
+        const f = await fr.json().catch(() => ({}));
+        if (!fr.ok || !(f.parents || []).includes(sub.folderId)) return res.status(409).json({ error: "No encontramos el archivo en la carpeta de la marca. Probá subirlo de nuevo." });
+        const ahoraIso = new Date().toISOString();
+        const item = { id: sid, piezaId: sub.piezaId, tipo: sub.tipo, nombre: sub.nombreOriginal || f.name, size: Number(f.size) || sub.size, mime: f.mimeType || sub.mime, driveId: f.id, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, at: ahoraIso };
+        const fresco = (await d.ref.get()).data() || c;
+        const upd = aplicarMaterialPieza(fresco, sub.piezaId, ahoraIso) || {};
+        await d.ref.update({ ...upd, ...(upd.estado === "Cerrado" ? { finalizadoAt: FieldValue.serverTimestamp() } : {}), material: FieldValue.arrayUnion(item), influencerUltimoLinkAt: ahoraIso, updatedAt: FieldValue.serverTimestamp() });
+        await sref.delete().catch(() => {});
+        const piezasR = (upd.piezas || piezasDe(fresco)).map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" }));
+        return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: piezasR, item: { id: item.id, piezaId: item.piezaId, tipo: item.tipo, nombre: item.nombre, size: item.size, at: item.at } });
       }
       return res.status(400).json({ error: "Acción desconocida" });
     }

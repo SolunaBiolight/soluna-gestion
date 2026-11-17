@@ -97,6 +97,11 @@ import("../api/canjes.js").then(A=>{
   eq("el influencer no borra un link de la marca",A.aplicarLinkPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"entregada",link:"x"}]},"a","","t"),{bloqueado:true});
   const re=A.aplicarLinkPieza({estado:"Cerrado",finalizadoPor:"influencer",piezas:[{id:"a",tipo:"Reel",estado:"entregada",link:"x",porInfluencer:true}]},"a","","t");
   eq("si lo cerró el influencer y borra, vuelve a Contenido pendiente",re.estado,"Contenido pendiente");
+  const m1=A.aplicarMaterialPieza(c,"a","2026-11-20T10:00:00Z");
+  eq("material subido marca la pieza entregada y no toca el link",[m1.piezas[0].estado,m1.piezas[0].link,m1.piezas[0].materialAt,m1.estado],["entregada",undefined,"2026-11-20T10:00:00Z",undefined]);
+  eq("material de la última pieza cierra el canje",A.aplicarMaterialPieza({...c,piezas:m1.piezas},"b","t").estado,"Cerrado");
+  eq("material de una pieza ya publicada no la baja",A.aplicarMaterialPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"publicada"},{id:"b",estado:"pendiente"}]},"a","t").piezas[0].estado,"publicada");
+  eq("material de pieza inexistente",A.aplicarMaterialPieza(c,"zz","t"),null);
   eq("no puede cargar sin despacho",[A.puedeCargar({estado:"Esperando pedido"}),A.puedeCargar({estado:"Por enviar"}),A.puedeCargar({estado:"Enviado",tracking:"36"}),A.puedeCargar({estado:"Contenido pendiente"})],[false,false,true,true]);
   eq("vence en el servidor igual que en el front",A.venceDe({trackEntregadoAt:"2026-11-01T18:00:00.000Z"}),"2026-11-13");
   console.log(f?`${f} de ${n} fallaron`:`${n}/${n} ok`); process.exit(f?1:0);
