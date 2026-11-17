@@ -258,7 +258,7 @@ export default async function handler(req, res) {
         if (!t) return res.status(409).json({ error: "La marca tiene que volver a conectar su Google Drive. Escribile por WhatsApp." });
         const H = { Authorization: `Bearer ${t.accessToken}`, "Content-Type": "application/json" };
         let ds;
-        try { ds = await carpetasCanje(db, d.ref, c, { ...dc.u, canjesDriveParent: u.canjesDriveParent || dc.u.canjesDriveParent }, H, dc.uid); }
+        try { ds = await carpetasCanje(db, d.ref, c, { ...dc.u, canjesDriveParent: dc.u.canjesDriveParent || u.canjesDriveParent }, H, dc.uid); }
         catch (e) { console.error("[canjes subida carpeta]", e.message); return res.status(502).json({ error: "No pudimos preparar la carpeta de la marca en Drive. Probá en un rato o avisale a la marca." }); }
         const piezas = piezasDe(c), mismas = piezas.filter(x => x.tipo === pz.tipo);
         const etiqueta = `${pz.tipo || "Contenido"}${mismas.length > 1 ? " " + (mismas.indexOf(pz) + 1) : ""}`;
