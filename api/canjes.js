@@ -106,6 +106,35 @@ export function aplicarMaterialPieza(c, piezaId, ahoraIso) {
   if (todo && !CERRADO.has(c.estado || "")) { upd.estado = "Cerrado"; upd.contenidoCompletoAt = ahoraIso; upd.finalizadoPor = "influencer"; }
   return upd;
 }
+// Quitar un archivo subido por error (17/nov/2026). Si la pieza se había dado por entregada SOLO por ese
+// material (sin otro archivo ni link), vuelve a pendiente; si con eso el canje que había cerrado el
+// influencer ya no está completo, vuelve a "Contenido pendiente". Pura.
+export function quitarMaterial(c, matId) {
+  const mat = Array.isArray(c?.material) ? c.material : [];
+  const it = mat.find(m => String(m.id) === String(matId));
+  if (!it) return null;
+  const material = mat.filter(m => m !== it);
+  const piezas = piezasDe(c).map(p => ({ ...p }));
+  const p = piezas.find(x => String(x.id) === String(it.piezaId));
+  if (p) {
+    const quedan = material.some(m => m.piezaId === it.piezaId);
+    if (!quedan) delete p.materialAt;
+    if (!quedan && !p.link && p.porInfluencer && p.estado === "entregada") { p.estado = "pendiente"; delete p.entregadaAt; delete p.porInfluencer; }
+  }
+  const upd = { material, piezas, contenido: contenidoDePiezas(piezas) };
+  const todo = piezas.length > 0 && piezas.every(x => (x.estado || "pendiente") !== "pendiente");
+  if (!todo && c.estado === "Cerrado" && c.finalizadoPor === "influencer") { upd.estado = "Contenido pendiente"; upd.contenidoCompletoAt = null; upd.finalizadoPor = null; }
+  return { upd, item: it };
+}
+async function papeleraDrive(db, uid, u, driveId) {
+  if (!driveId) return false;
+  try {
+    const dc = await driveCuenta(db, uid, u); const t = dc ? await getValidDriveToken(db, dc.uid) : null;
+    if (!t) return false;
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?supportsAllDrives=true`, { method: "PATCH", headers: { Authorization: `Bearer ${t.accessToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ trashed: true }), signal: AbortSignal.timeout(10000) });
+    return r.ok;
+  } catch (_) { return false; }
+}
 const folderIdDe = l => { const m = String(l || "").match(/\/folders\/([A-Za-z0-9_-]{10,})/) || String(l || "").match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m ? m[1] : ""; };
 const nomDrive = s => String(s || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
 async function carpetaHija(H, parentId, nombre) {
@@ -308,6 +337,14 @@ export default async function handler(req, res) {
         const piezasR = (upd.piezas || piezasDe(fresco)).map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" }));
         return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: piezasR, item: { id: item.id, piezaId: item.piezaId, tipo: item.tipo, nombre: item.nombre, size: item.size, at: item.at, w: item.w || 0, h: item.h || 0, dur: item.dur || 0 } });
       }
+      if (action === "portal_material_quitar") {
+        if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
+        const q = quitarMaterial(c, body.id);
+        if (!q) return res.status(404).json({ error: "No encontré ese archivo." });
+        const enDrive = await papeleraDrive(db, uid, u, q.item.driveId);
+        await d.ref.update({ ...q.upd, updatedAt: FieldValue.serverTimestamp() });
+        return res.json({ ok: true, enDrive, piezas: q.upd.piezas.map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" })), estado: q.upd.estado || c.estado || "" });
+      }
       return res.status(400).json({ error: "Acción desconocida" });
     }
 
@@ -344,6 +381,16 @@ export default async function handler(req, res) {
       const u = (await uref.get()).data() || {};
       if (u.canjesFicha?.id === id) await uref.update({ canjesFicha: FieldValue.delete() });
       return res.json({ ok: true });
+    }
+    if (action === "material_quitar") {
+      const ref = db.collection("canjes").doc(String(body.canjeId || "x"));
+      const c = (await ref.get()).data();
+      if (!c || c.ownerId !== uid) return res.status(404).json({ error: "No encontrado" });
+      const q = quitarMaterial(c, body.id);
+      if (!q) return res.status(404).json({ error: "No encontré ese archivo." });
+      const enDrive = body.drive === false ? false : await papeleraDrive(db, uid, (await uref.get()).data() || {}, q.item.driveId);
+      await ref.update({ ...q.upd, updatedAt: FieldValue.serverTimestamp() });
+      return res.json({ ok: true, enDrive });
     }
     // Completa resolución y duración del material que Drive todavía estaba procesando al subirse.
     if (action === "material_meta") {

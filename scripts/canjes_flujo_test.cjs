@@ -104,6 +104,13 @@ import("../api/canjes.js").then(A=>{
   eq("material de la última pieza cierra el canje",A.aplicarMaterialPieza({...c,piezas:m1.piezas},"b","t").estado,"Cerrado");
   eq("material de una pieza ya publicada no la baja",A.aplicarMaterialPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"publicada"},{id:"b",estado:"pendiente"}]},"a","t").piezas[0].estado,"publicada");
   eq("material de pieza inexistente",A.aplicarMaterialPieza(c,"zz","t"),null);
+  { const cq={estado:"Cerrado",finalizadoPor:"influencer",piezas:[{id:"a",tipo:"Reel",estado:"entregada",porInfluencer:true,materialAt:"t"}],material:[{id:"m1",piezaId:"a",tipo:"crudo",driveId:"d1"}]};
+    const q=A.quitarMaterial(cq,"m1");
+    eq("quitar el único archivo vuelve la pieza a pendiente y reabre el canje",[q.upd.piezas[0].estado,q.upd.material.length,q.upd.estado,q.item.driveId],["pendiente",0,"Contenido pendiente","d1"]);
+    const q2=A.quitarMaterial({...cq,material:[...cq.material,{id:"m2",piezaId:"a",tipo:"crudo"}]},"m1");
+    eq("con otro archivo de la pieza sigue entregada",[q2.upd.piezas[0].estado,q2.upd.estado],["entregada",undefined]);
+    eq("con link publicado no se baja",A.quitarMaterial({...cq,piezas:[{...cq.piezas[0],estado:"publicada",link:"x"}]},"m1").upd.piezas[0].estado,"publicada");
+    eq("archivo inexistente",A.quitarMaterial(cq,"zz"),null); }
   eq("no puede cargar sin despacho",[A.puedeCargar({estado:"Esperando pedido"}),A.puedeCargar({estado:"Por enviar"}),A.puedeCargar({estado:"Enviado",tracking:"36"}),A.puedeCargar({estado:"Contenido pendiente"})],[false,false,true,true]);
   eq("vence en el servidor igual que en el front",A.venceDe({trackEntregadoAt:"2026-11-01T18:00:00.000Z"}),"2026-11-13");
   console.log(f?`${f} de ${n} fallaron`:`${n}/${n} ok`); process.exit(f?1:0);

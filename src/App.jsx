@@ -10424,11 +10424,15 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                             <button onClick={()=>delPieza(pz.id)} title="Quitar" style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",padding:4,display:"flex"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                           </div>
                           {mat.length>0&&<div style={{display:"flex",flexDirection:"column",gap:4,padding:"0 10px 8px 10px"}}>
-                            {mat.map(m=><a key={m.id} href={m.link} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,textDecoration:"none"}}>
+                            {mat.map(m=><div key={m.id} style={{display:"flex",alignItems:"center",gap:8}}><a href={m.link} target="_blank" rel="noopener noreferrer" style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,textDecoration:"none"}}>
                               <span style={{fontSize:10,fontWeight:700,color:m.tipo==="editado"?T.purple:T.blue,background:(m.tipo==="editado"?T.purple:T.blue)+"18",borderRadius:99,padding:"2px 8px",flexShrink:0}}>{m.tipo==="editado"?"Editado":"Crudo"}</span>
                               <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{m.nombre}</span>
                               <span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(m)?ghMediaInfo(m)+" · ":""}{m.size>=1073741824?(m.size/1073741824).toFixed(1).replace(".",",")+" GB":Math.max(1,Math.round((m.size||0)/1048576))+" MB"} · {new Date(m.at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
-                            </a>)}
+                            </a>
+                            <button title="Quitar este archivo" onClick={async()=>{ if(!await appConfirm(`¿Quitar "${m.nombre}" de este canje? También se manda a la papelera de Drive (se puede recuperar desde ahí 30 días). Si era lo único de la pieza, la pieza vuelve a "Pendiente".`,{okLabel:"Quitar",danger:true})) return;
+                              try{ const r=await ghCanjesApi("material_quitar",{uid:user?.uid,canjeId:c._docId,id:m.id}); toast(r.enDrive?"Archivo quitado y enviado a la papelera de Drive":"Archivo quitado del canje (en Drive no se pudo borrar: hacelo a mano)",r.enDrive?"success":"warning",6000); }catch(e){ toast(e.message,"error"); } }}
+                              style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",padding:4,display:"flex",flexShrink:0}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                            </div>)}
                           </div>}
                           </div>
                         );
@@ -24250,6 +24254,14 @@ function CanjePortalView({token}){
       setSt(s=>({...s,d:{...s.d,piezas:r.piezas,estado:r.cerrado?"Cerrado":s.d.estado,material:[...(s.d.material||[]),r.item]}}));
     }catch(e){ upd({estado:"error",msg:e.message||"No se pudo subir"}); }
   }
+  const [quitando,setQuitando]=useState("");
+  async function quitarMat(p,x){
+    if(!window.confirm(`¿Quitar "${x.nombre}"? Se borra de la carpeta de la marca. Si te equivocaste de archivo, después subí el correcto.`)) return;
+    setQuitando(x.id);
+    try{ const r=await api("portal_material_quitar",{id:x.id}); setSt(s=>({...s,d:{...s.d,piezas:r.piezas,estado:r.estado||s.d.estado,material:(s.d.material||[]).filter(m=>m.id!==x.id)}})); setMsg(m=>({...m,[p.id]:"Archivo quitado."})); }
+    catch(e){ setMsg(m=>({...m,[p.id]:"error:"+e.message})); }
+    setQuitando("");
+  }
   const tam=n=>n>=1073741824?(n/1073741824).toFixed(1).replace(".",",")+" GB":n>=1048576?Math.round(n/1048576)+" MB":Math.max(1,Math.round(n/1024))+" KB";
   const d=st.d; const paso=ghPortalPaso(d);
   const card={background:T.card,border:`1px solid ${T.border}`,borderRadius:20,padding:"18px",marginBottom:12};
@@ -24299,7 +24311,8 @@ function CanjePortalView({token}){
                     {(ya.length>0||enCurso.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
                       {ya.map(x=><div key={x.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,color:T.textMd}}>
                         <GhI n="check" size={13} style={{color:T.green}}/><span style={{fontWeight:700,color:T.text}}>{x.tipo==="editado"?"Editado":"Crudo"}</span>
-                        <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(x)||tam(x.size||0)}</span></div>)}
+                        <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(x)||tam(x.size||0)}</span>
+                        <button onClick={()=>quitarMat(p,x)} disabled={quitando===x.id} style={{background:"none",border:"none",color:T.red,fontSize:DS.font.sm,fontWeight:600,cursor:"pointer",padding:"2px 4px",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>{quitando===x.id?"…":"Quitar"}</button></div>)}
                       {enCurso.map(x=><div key={x.k} style={{fontSize:DS.font.sm,color:x.estado==="error"?T.red:T.textMd}}>
                         <div style={{display:"flex",gap:8}}><span style={{fontWeight:700}}>{x.tipo==="editado"?"Editado":"Crudo"}</span><span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span>{x.estado==="error"?"No se subió":x.pct+" %"}</span></div>
                         {x.estado==="subiendo"&&<div style={{height:5,borderRadius:99,background:T.surface,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:x.pct+"%",background:T.accentSolid,transition:"width .2s"}}/></div>}
