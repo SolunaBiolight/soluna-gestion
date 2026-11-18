@@ -135,6 +135,10 @@ async function papeleraDrive(db, uid, u, driveId) {
     return r.ok;
   } catch (_) { return false; }
 }
+// Nombre que ve el influencer ("Soluna Biolight · Canje"). Mismos campos que el resto de la app; si el dueño
+// del canje no lo tiene (un canje viejo puede tener de ownerId el perfil y no la tienda), se toma de la cuenta
+// vinculada (driveCuenta). Nunca el mail.
+const nombreMarca = u => String(u?.nombreTienda || u?.businessName || u?.storeName || u?.tiendaNombre || (u?.stores || []).find(x => x?.storeName || x?.name)?.storeName || (u?.stores || []).find(x => x?.name)?.name || (!/@/.test(String(u?.nombre || "")) ? u?.nombre : "") || "").trim();
 const folderIdDe = l => { const m = String(l || "").match(/\/folders\/([A-Za-z0-9_-]{10,})/) || String(l || "").match(/[?&]id=([A-Za-z0-9_-]{10,})/); return m ? m[1] : ""; };
 const nomDrive = s => String(s || "").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
 async function carpetaHija(H, parentId, nombre) {
@@ -238,7 +242,7 @@ export default async function handler(req, res) {
         }
         const piezas = piezasDe(c).map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" }));
         return res.json({
-          tienda: String(u.businessName || u.storeName || u.nombreTienda || (u.stores || [])[0]?.storeName || (u.stores || [])[0]?.name || "").trim() || "la marca",
+          tienda: nombreMarca(u) || nombreMarca(dcP?.u) || "la marca",
           nombre: String(c.influencer || "").split(" ")[0] || "",
           usuario: c.usuario || "",
           productos: (c.productosCanje || []).map(x => ({ nombre: x.nombre, cantidad: x.cantidad || 1 })),
