@@ -87,15 +87,17 @@ eq("historial",[h.n,h.abiertos,h.cerrados,h.cumplidos,h.aTiempo,h.conPlazo],[3,1
 import("../api/canjes.js").then(A=>{
   const c={estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"pendiente"},{id:"b",tipo:"Historia",estado:"pendiente"}]};
   let u=A.aplicarLinkPieza(c,"a","https://instagram.com/p/1","2026-11-20T10:00:00Z");
-  eq("link marca la pieza entregada",[u.piezas[0].estado,u.piezas[0].link,u.estado],["entregada","https://instagram.com/p/1",undefined]);
+  eq("link marca la pieza publicada",[u.piezas[0].estado,u.piezas[0].link,u.estado],["publicada","https://instagram.com/p/1",undefined]);
   eq("contadores",u.contenido,[{tipo:"Reel",acordados:1,entregados:1},{tipo:"Historia",acordados:1,entregados:0}]);
   u=A.aplicarLinkPieza({...c,piezas:u.piezas},"b","https://x.com/2","2026-11-20T11:00:00Z");
   eq("la última cierra el canje",[u.estado,u.contenidoCompletoAt],["Cerrado","2026-11-20T11:00:00Z"]);
-  const v=A.aplicarLinkPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"entregada",link:"x",porInfluencer:true}]},"a","","t");
+  const v=A.aplicarLinkPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"publicada",link:"x",porInfluencer:true}]},"a","","t");
+  eq("borrar el link con material subido vuelve a entregada",A.aplicarLinkPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"publicada",link:"x",porInfluencer:true,materialAt:"t0"}]},"a","","t").piezas[0].estado,"entregada");
+  eq("link sobre material recibido la pasa a publicada",A.aplicarLinkPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"entregada",materialAt:"t0"}]},"a","https://ig.com/p","t").piezas[0].estado,"publicada");
   eq("borrar su link la vuelve a pendiente",v.piezas[0].estado,"pendiente");
   eq("pieza inexistente",A.aplicarLinkPieza(c,"zz","https://a.com","t"),null);
   eq("el influencer no borra un link de la marca",A.aplicarLinkPieza({estado:"Contenido pendiente",piezas:[{id:"a",tipo:"Reel",estado:"entregada",link:"x"}]},"a","","t"),{bloqueado:true});
-  const re=A.aplicarLinkPieza({estado:"Cerrado",finalizadoPor:"influencer",piezas:[{id:"a",tipo:"Reel",estado:"entregada",link:"x",porInfluencer:true}]},"a","","t");
+  const re=A.aplicarLinkPieza({estado:"Cerrado",finalizadoPor:"influencer",piezas:[{id:"a",tipo:"Reel",estado:"publicada",link:"x",porInfluencer:true}]},"a","","t");
   eq("si lo cerró el influencer y borra, vuelve a Contenido pendiente",re.estado,"Contenido pendiente");
   const m1=A.aplicarMaterialPieza(c,"a","2026-11-20T10:00:00Z");
   eq("material subido marca la pieza entregada y no toca el link",[m1.piezas[0].estado,m1.piezas[0].link,m1.piezas[0].materialAt,m1.estado],["entregada",undefined,"2026-11-20T10:00:00Z",undefined]);

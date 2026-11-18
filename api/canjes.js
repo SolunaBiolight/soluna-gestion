@@ -82,8 +82,10 @@ export function aplicarLinkPieza(c, piezaId, link, ahoraIso) {
   // Un link que cargó la marca no lo puede borrar el influencer (solo reemplazarlo por otro).
   if (!link && p.link && !p.porInfluencer) return { bloqueado: true };
   p.link = link;
-  if (link && (p.estado || "pendiente") === "pendiente") { p.estado = "entregada"; p.entregadaAt = ahoraIso; p.porInfluencer = true; }
-  if (!link && p.porInfluencer && p.estado === "entregada") { p.estado = "pendiente"; delete p.entregadaAt; delete p.porInfluencer; }
+  // Con la subida de material (17/nov/2026) el link es el de la PUBLICACIÓN: la pieza queda "publicada".
+  // Sin material, publicar también cuenta como entregar.
+  if (link && (p.estado || "pendiente") !== "publicada") { if (!p.entregadaAt) p.entregadaAt = ahoraIso; p.estado = "publicada"; p.publicadaAt = ahoraIso; p.porInfluencer = true; }
+  if (!link && p.porInfluencer && p.estado === "publicada") { delete p.publicadaAt; if (p.materialAt) p.estado = "entregada"; else { p.estado = "pendiente"; delete p.entregadaAt; delete p.porInfluencer; } }
   const upd = { piezas, contenido: contenidoDePiezas(piezas) };
   const todo = piezas.length > 0 && piezas.every(x => (x.estado || "pendiente") !== "pendiente");
   if (todo && !CERRADO.has(c.estado || "")) { upd.estado = "Cerrado"; upd.contenidoCompletoAt = ahoraIso; upd.finalizadoPor = "influencer"; }
@@ -158,6 +160,14 @@ async function carpetasCanje(db, dref, c, u, H, driveUid) {
   await dref.update({ driveSubidas: out });
   return out;
 }
+// Resolución y duración que Drive calcula al procesar el archivo (un video recién subido puede tardar unos
+// minutos: material_meta lo completa después desde el detalle del canje).
+const META_FIELDS = "id,name,size,mimeType,webViewLink,parents,videoMediaMetadata(width,height,durationMillis),imageMediaMetadata(width,height)";
+function metaDe(f) {
+  const v = f?.videoMediaMetadata, i = f?.imageMediaMetadata;
+  const w = Number(v?.width || i?.width) || 0, h = Number(v?.height || i?.height) || 0, dur = Math.round((Number(v?.durationMillis) || 0) / 1000);
+  return w && h ? { w, h, ...(dur ? { dur } : {}) } : {};
+}
 const ORIGENES = ["https://www.growithapp.com", "https://growithapp.com", "https://soluna-gestion.vercel.app"];
 const MAX_SUBIDA = 10 * 1024 * 1024 * 1024; // 10 GB por archivo
 const linkOk = l => { const s = String(l || "").trim(); if (!s) return ""; const u = /^https?:\/\//i.test(s) ? s : "https://" + s; try { const x = new URL(u); return /^https?:$/.test(x.protocol) && x.hostname.includes(".") ? u.slice(0, 500) : null; } catch (_) { return null; } };
@@ -192,6 +202,7 @@ export default async function handler(req, res) {
       const ficha = u.canjesFicha?.id ? u.canjesFicha : null;
 
       if (action === "portal") {
+        const dcP = await driveCuenta(db, uid, u);
         let guionLink = "";
         if (!guion && c.guionTareaId) {
           try { const t = (await db.collection("tareas").doc(String(c.guionTareaId)).get()).data(); if (t && t.uid === uid) { const dl = (t.deliverables || []).filter(x => x.link); guionLink = dl.length ? String(dl[dl.length - 1].link) : ""; } } catch (_) {}
@@ -210,8 +221,9 @@ export default async function handler(req, res) {
           web: /^https?:\/\/[^\s]+$/.test(String(u.canjesWeb || "")) ? String(u.canjesWeb) : "",
           pedido: c.pedidoRef ? String(c.pedidoRef) : "",
           puedeCargar: puedeCargar(c), cancelado: c.estado === "Cancelado",
-          subida: !!(await driveCuenta(db, uid, u)),
-          material: (Array.isArray(c.material) ? c.material : []).map(m => ({ id: m.id, piezaId: m.piezaId || "", tipo: m.tipo, nombre: m.nombre, size: m.size || 0, at: m.at })),
+          subida: !!dcP,
+          wa: String(u.canjesWa || dcP?.u?.canjesWa || "").replace(/\D/g, "").slice(-13),
+          material: (Array.isArray(c.material) ? c.material : []).map(m => ({ id: m.id, piezaId: m.piezaId || "", tipo: m.tipo, nombre: m.nombre, size: m.size || 0, at: m.at, w: m.w || 0, h: m.h || 0, dur: m.dur || 0 })),
           ficha: ficha ? { id: ficha.id, nombre: ficha.nombre || "Ficha de la marca" } : null,
           guion: guion ? { nombre: guion.nombre || "Guion", texto: String(guion.texto || "").slice(0, 20000), archivo: guion.archivoId ? { id: guion.archivoId, nombre: guion.archivoNombre || guion.nombre || "Guion" } : null }
             : guionLink ? { nombre: "Tu guion", link: guionLink } : c.guionTareaId ? { nombre: "Tu guion", pendiente: true } : null,
@@ -284,17 +296,17 @@ export default async function handler(req, res) {
         if (!sub || sub.canjeId !== d.id) return res.status(404).json({ error: "No encontré esa subida." });
         const t = await getValidDriveToken(db, sub.driveUid || uid).catch(() => null);
         if (!t) return res.status(409).json({ error: "La marca tiene que volver a conectar su Google Drive." });
-        const fr = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,size,mimeType,webViewLink,parents&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${t.accessToken}` }, signal: AbortSignal.timeout(15000) });
+        const fr = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=${META_FIELDS}&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${t.accessToken}` }, signal: AbortSignal.timeout(15000) });
         const f = await fr.json().catch(() => ({}));
         if (!fr.ok || !(f.parents || []).includes(sub.folderId)) return res.status(409).json({ error: "No encontramos el archivo en la carpeta de la marca. Probá subirlo de nuevo." });
         const ahoraIso = new Date().toISOString();
-        const item = { id: sid, piezaId: sub.piezaId, tipo: sub.tipo, nombre: sub.nombreOriginal || f.name, size: Number(f.size) || sub.size, mime: f.mimeType || sub.mime, driveId: f.id, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, at: ahoraIso };
+        const item = { id: sid, piezaId: sub.piezaId, tipo: sub.tipo, nombre: sub.nombreOriginal || f.name, size: Number(f.size) || sub.size, mime: f.mimeType || sub.mime, driveId: f.id, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, at: ahoraIso, ...metaDe(f) };
         const fresco = (await d.ref.get()).data() || c;
         const upd = aplicarMaterialPieza(fresco, sub.piezaId, ahoraIso) || {};
         await d.ref.update({ ...upd, ...(upd.estado === "Cerrado" ? { finalizadoAt: FieldValue.serverTimestamp() } : {}), material: FieldValue.arrayUnion(item), influencerUltimoLinkAt: ahoraIso, updatedAt: FieldValue.serverTimestamp() });
         await sref.delete().catch(() => {});
         const piezasR = (upd.piezas || piezasDe(fresco)).map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" }));
-        return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: piezasR, item: { id: item.id, piezaId: item.piezaId, tipo: item.tipo, nombre: item.nombre, size: item.size, at: item.at } });
+        return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: piezasR, item: { id: item.id, piezaId: item.piezaId, tipo: item.tipo, nombre: item.nombre, size: item.size, at: item.at, w: item.w || 0, h: item.h || 0, dur: item.dur || 0 } });
       }
       return res.status(400).json({ error: "Acción desconocida" });
     }
@@ -333,6 +345,28 @@ export default async function handler(req, res) {
       if (u.canjesFicha?.id === id) await uref.update({ canjesFicha: FieldValue.delete() });
       return res.json({ ok: true });
     }
+    // Completa resolución y duración del material que Drive todavía estaba procesando al subirse.
+    if (action === "material_meta") {
+      const ref = db.collection("canjes").doc(String(body.canjeId || "x"));
+      const c = (await ref.get()).data();
+      if (!c || c.ownerId !== uid) return res.status(404).json({ error: "No encontrado" });
+      const mat = Array.isArray(c.material) ? c.material : [];
+      const faltan = mat.filter(m => !m.w && m.driveId && Date.now() - (Date.parse(m.at) || 0) < 14 * 86400000).slice(0, 20);
+      if (!faltan.length) return res.json({ ok: true, material: mat });
+      const dc = await driveCuenta(db, uid, (await uref.get()).data() || {});
+      const t = dc ? await getValidDriveToken(db, dc.uid).catch(() => null) : null;
+      if (!t) return res.json({ ok: true, material: mat });
+      let cambio = false;
+      for (const m of faltan) {
+        try {
+          const r = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(m.driveId)}?fields=${META_FIELDS}&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${t.accessToken}` }, signal: AbortSignal.timeout(10000) });
+          if (!r.ok) continue; const md = metaDe(await r.json());
+          if (md.w) { Object.assign(m, md); cambio = true; }
+        } catch (_) {}
+      }
+      if (cambio) await ref.update({ material: mat });
+      return res.json({ ok: true, material: mat });
+    }
     // Lista de guiones fijos: [{id, nombre, texto, archivoId, archivoNombre}] (el archivo se sube aparte).
     if (action === "guion_guardar") {
       if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
@@ -346,8 +380,9 @@ export default async function handler(req, res) {
       for (const p of prev) if (p.archivoId && !quedan.has(p.archivoId)) await db.collection("canjes_archivos").doc(p.archivoId).delete().catch(() => {});
       const extra = {};
       if (typeof body.web === "string") { const w = body.web.trim(); const u2 = w ? (/^https?:\/\//i.test(w) ? w : "https://" + w) : ""; extra.canjesWeb = /^https?:\/\/[^\s]+\.[^\s]+$/.test(u2) ? u2.slice(0, 200) : ""; }
+      if (typeof body.wa === "string") { const n = body.wa.replace(/\D/g, ""); extra.canjesWa = n.length >= 8 && n.length <= 13 ? n : ""; }
       await uref.set({ canjesGuiones: lista, ...extra }, { merge: true });
-      return res.json({ ok: true, guiones: lista, web: extra.canjesWeb });
+      return res.json({ ok: true, guiones: lista, web: extra.canjesWeb, wa: extra.canjesWa });
     }
     return res.status(400).json({ error: "Acción desconocida" });
   } catch (e) {

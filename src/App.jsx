@@ -8087,20 +8087,23 @@ async function ghCanjesLeerArchivo(file){
   const b64=await new Promise((ok,ko)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(",")[1]||""); fr.onerror=ko; fr.readAsDataURL(file); });
   return {nombre:file.name,mime:file.type||"application/pdf",data:b64};
 }
-function CanjesMaterialModal({T,uid,ficha,guiones,web:webIni,onCambio,onClose}){
+function CanjesMaterialModal({T,uid,ficha,guiones,web:webIni,wa:waIni,onCambio,onClose}){
   const [web,setWeb]=React.useState(webIni||"");
+  const [wa,setWa]=React.useState(waIni||"");
   const [lista,setLista]=React.useState(()=>(guiones||[]).map(g=>({...g})));
   const [busy,setBusy]=React.useState(""); const iS=InputStyle(T);
   async function subirFicha(file){ setBusy("ficha"); try{ const a=await ghCanjesLeerArchivo(file); const r=await ghCanjesApi("archivo_subir",{uid,tipo:"ficha",...a}); onCambio({ficha:{id:r.id,nombre:r.nombre}}); toast("Ficha subida","success"); }catch(e){ toast(e.message,"error",7000); } setBusy(""); }
   async function verArchivo(id){ const w=window.open("","_blank"); try{ const a=await ghCanjesApi("archivo_ver",{uid,id}); const bin=atob(a.data); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); const url=URL.createObjectURL(new Blob([u8],{type:a.mime})); if(w&&!w.closed) w.location.href=url; }catch(e){ if(w&&!w.closed) w.close(); toast(e.message,"error"); } }
   async function archivoGuion(k,file){ setBusy("g"+k); try{ const a=await ghCanjesLeerArchivo(file); const r=await ghCanjesApi("archivo_subir",{uid,tipo:"guion",...a}); setLista(l=>l.map((g,i)=>i===k?{...g,archivoId:r.id,archivoNombre:r.nombre}:g)); }catch(e){ toast(e.message,"error",7000); } setBusy(""); }
-  async function guardar(){ setBusy("guardar"); try{ const r=await ghCanjesApi("guion_guardar",{uid,web,guiones:lista.filter(g=>String(g.nombre||"").trim())}); onCambio({guiones:r.guiones,web:r.web||""}); toast("Guardado","success"); onClose(); }catch(e){ toast(e.message,"error"); } setBusy(""); }
+  async function guardar(){ setBusy("guardar"); try{ const r=await ghCanjesApi("guion_guardar",{uid,web,wa,guiones:lista.filter(g=>String(g.nombre||"").trim())}); onCambio({guiones:r.guiones,web:r.web||"",wa:r.wa||""}); toast("Guardado","success"); onClose(); }catch(e){ toast(e.message,"error"); } setBusy(""); }
   const lbl=t=><div style={{fontSize:12,fontWeight:700,color:T.textSm,marginBottom:6}}>{t}</div>;
   return (
     <Modal T={T} open onClose={onClose} title="Lo que ven los influencers" width={640}>
       <div style={{fontSize:12,color:T.textMd,lineHeight:1.6,marginBottom:14}}>Esto es lo que ve cada influencer en su link del canje. La ficha es la misma para todos; el guion lo elegís en cada canje (uno fijo de esta lista, o uno personalizado con "Pedir guion").</div>
       {lbl("Web de la tienda (el botón \"Ir a la web\" de su página)")}
       <input value={web} onChange={e=>setWeb(e.target.value)} placeholder="https://www.tutienda.com.ar" style={{...iS,fontSize:13,marginBottom:18}}/>
+      {lbl("WhatsApp de la marca (el botón \"Escribinos por WhatsApp\" de su página)")}
+      <input value={wa} onChange={e=>setWa(e.target.value)} inputMode="tel" placeholder="Ej.: 2214559252 (código de área sin 0 y número sin 15)" style={{...iS,fontSize:13,marginBottom:18}}/>
       {lbl("Ficha de la marca (PDF o imagen, hasta 650 KB)")}
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:18}}>
         {ficha?.id?<><span style={{fontSize:13,color:T.text,fontWeight:600}}>{ficha.nombre}</span><Btn T={T} size="sm" variant="secondary" onClick={()=>verArchivo(ficha.id)}>Ver</Btn></>:<span style={{fontSize:13,color:T.textSm}}>Todavía no subiste la ficha.</span>}
@@ -8536,7 +8539,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
   // plantillas de WhatsApp editables (users/{uid}.canjesPlantillas) y responsable por canje.
   const [plantillas,setPlantillas]=useState(GH_CANJE_PLANTILLAS);
   const [material,setMaterial]=useState({ficha:null,guiones:[]}); const [materialOpen,setMaterialOpen]=useState(false);
-  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>{ const u=s.data()||{}; const p=u.canjesPlantillas; if(p&&typeof p==="object") setPlantillas({...GH_CANJE_PLANTILLAS,...p}); setMaterial({ficha:u.canjesFicha||null,guiones:Array.isArray(u.canjesGuiones)?u.canjesGuiones:[],web:u.canjesWeb||""}); }).catch(()=>{}); },[user?.uid]);
+  useEffect(()=>{ if(!user?.uid) return; getDoc(doc(db,"users",user.uid)).then(s=>{ const u=s.data()||{}; const p=u.canjesPlantillas; if(p&&typeof p==="object") setPlantillas({...GH_CANJE_PLANTILLAS,...p}); setMaterial({ficha:u.canjesFicha||null,guiones:Array.isArray(u.canjesGuiones)?u.canjesGuiones:[],web:u.canjesWeb||"",wa:u.canjesWa||""}); }).catch(()=>{}); },[user?.uid]);
   async function guardarPlantillas(p){ setPlantillas({...GH_CANJE_PLANTILLAS,...p}); try{ await updateDoc(doc(db,"users",user.uid),{canjesPlantillas:p}); toast("Mensajes guardados","success"); }catch(e){ toast("No se pudieron guardar los mensajes","error"); } }
   const [pedidosPend,setPedidosPend]=useState(null); // null = sin buscar | {ts, lista, cargando, error}
   const [respFiltro,setRespFiltro]=useState(()=>{ try{ return localStorage.getItem(ghKey("growith_canjes_resp"))||""; }catch(_){ return ""; } });
@@ -9309,7 +9312,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
       // El influencer cargó links en su página (también si con eso se cerró el canje): avisar para revisarlo.
       const subioMs=ghCanjeMs(c.influencerUltimoLinkAt), vistoMs=ghCanjeMs(c.linksVistoAt)||0;
       if(subioMs&&subioMs>vistoMs){ const pzS=ghPiezasDe(c); const ent=pzS.filter(x=>(x.estado||"pendiente")!=="pendiente").length;
-        out.push({key:"sub"+c._docId,c,sev:1,antig:Math.floor((Date.now()-subioMs)/86400000),txt:`Subió contenido: ${ent} de ${pzS.length} entregado${pzS.length!==1?"s":""}${GH_CANJE_CERRADO.has(c.estado||"")?" (completó todo)":""}. Revisalo`,okLabel:"Ya lo revisé",onOk:()=>updateDoc(doc(db,"canjes",c._docId),{linksVistoAt:new Date().toISOString()}).catch(()=>{})}); }
+        out.push({key:"sub"+c._docId,c,sev:2,antig:Math.floor((Date.now()-subioMs)/86400000),txt:`${ghCanjeNovedad(c)||"Subió contenido"}: ${ent} de ${pzS.length} pieza${pzS.length!==1?"s":""} entregada${pzS.length!==1?"s":""}${GH_CANJE_CERRADO.has(c.estado||"")?" (completó todo)":""}. Revisalo`,okLabel:"Ya lo revisé",onOk:()=>updateDoc(doc(db,"canjes",c._docId),{linksVistoAt:new Date().toISOString()}).catch(()=>{})}); }
       if(GH_CANJE_CERRADO.has(c.estado||"")) continue;
       const a=acciones.map.get(c._docId);
       const dEnv=c.fechaEnvio&&isFinite(Date.parse(c.fechaEnvio))?Math.floor((Date.now()-Date.parse(c.fechaEnvio))/86400000):0;
@@ -9445,6 +9448,12 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
     cerrados:canjes.filter(c=>c.estado==="Cerrado"||c.estado==="Finalizado"||c.estado==="Contenido entregado").length,
   };
   const detailC=canjes.find(c=>c._docId===detail);
+  // Material recién subido: Drive tarda unos minutos en calcular resolución y duración; al abrir el canje se completa.
+  const metaPedidoRef=useRef(new Set());
+  useEffect(()=>{ const c=detailC; if(!c||!user?.uid||metaPedidoRef.current.has(c._docId)) return;
+    if(!(Array.isArray(c.material)?c.material:[]).some(m=>!m.w&&m.driveId)) return;
+    metaPedidoRef.current.add(c._docId); ghCanjesApi("material_meta",{uid:user.uid,canjeId:c._docId}).catch(()=>{});
+  },[detailC?._docId,detailC?.material?.length,user?.uid]);
 
   return (
     <div style={{fontFamily:"Inter,system-ui,sans-serif",background:T.bg,minHeight:"100vh",color:T.text}}>
@@ -9453,7 +9462,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
         onClose={()=>setFichaInf(null)} onMarca={(v,m)=>guardarInfluencer(fichaInf,{volverATrabajar:v,motivoNo:v===false?String(m||"").trim():""})} onNotas={n=>guardarInfluencer(fichaInf,{notas:n})}
         onAbrirCanje={id=>{ setFichaInf(null); setDetail(id); }} onNuevoCanje={()=>nuevoCanjeDe(fichaInf)}
         onEditar={fichaInf._docId?()=>{ const inf=fichaInf; setFichaInf(null); setEditInfluencer(inf); setInfForm({nombre:inf.nombre||"",usuario:inf.usuario||"",red:inf.red||"Instagram",codigoDescuento:inf.codigoDescuento||"",descuentoPct:inf.descuentoPct||"",comisionPct:inf.comisionPct||"",email:inf.email||"",telefono:inf.telefono||"",notas:inf.notas||"",driveFolder:inf.driveFolder||""}); setShowInfluencerForm(true); }:null}/>}
-{materialOpen&&<CanjesMaterialModal T={T} uid={user?.uid} ficha={material.ficha} guiones={material.guiones} web={material.web} onCambio={x=>setMaterial(m=>({...m,...x}))} onClose={()=>setMaterialOpen(false)}/>}
+{materialOpen&&<CanjesMaterialModal T={T} uid={user?.uid} ficha={material.ficha} guiones={material.guiones} web={material.web} wa={material.wa} onCambio={x=>setMaterial(m=>({...m,...x}))} onClose={()=>setMaterialOpen(false)}/>}
       {plantillasOpen&&<CanjesPlantillasModal T={T} plantillas={plantillas} onSave={guardarPlantillas} onClose={()=>setPlantillasOpen(false)}/>}
       {despachoOpen&&<CanjesDespachoModal T={T} candidatos={[...candidatosDespacho,...canjes.filter(c=>(despachoOpen.ids||[]).includes(c._docId)&&!candidatosDespacho.includes(c))]} preIds={despachoOpen.ids}
         armarFila={armarFilaCanje} onExcel={canjesExcelHecho} onTracking={canjesTrackings} onYaSalio={canjeYaSalio} trackingsUsados={new Set(canjes.map(c=>String(c.tracking||"").trim()).filter(Boolean))} depositoCliente={depositoCliente} depositoCfg={depositoCfg} uid={user?.uid} onClose={()=>setDespachoOpen(false)}/>}
@@ -9681,6 +9690,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                             </div>
                             {prods.length>0&&<div title={prods.map(p=>`${p.cantidad||1}x ${p.nombre}`).join(", ")} style={{fontSize:12,color:T.textMd,marginTop:9,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{prods.slice(0,2).map(p=>`${ghNombreCortoProducto(p.nombre,prefProds)}${(p.cantidad||1)>1?` ×${p.cantidad}`:""}`).join(" · ")}{prods.length>2?` +${prods.length-2}`:""}</div>}
                             {(c.revisar||[]).length>0&&<div style={{fontSize:11,fontWeight:600,color:T.yellow,marginTop:6}}>Revisar: {(c.revisar||[]).join(" · ")}</div>}
+                            {ghCanjeNovedad(c)&&<div style={{display:"inline-flex",alignSelf:"flex-start",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"3px 10px",marginTop:8}}><span style={{width:6,height:6,borderRadius:99,background:T.green}}/>{ghCanjeNovedad(c)}</div>}
                             {(()=>{ const est=c.estado; const tel=ghRecTel(c.telefono); const parar=e=>e.stopPropagation(); const it=ghCanjeParaEscribir(c);
                               const wa=tpl=>tel?`https://wa.me/${tel}?text=${encodeURIComponent(ghCanjeMensaje(tpl,c))}`:null;
                               const waHref=est==="Esperando pedido"?wa(it?.tipo==="pedido"?plantillas.pedido:plantillas.inicio):(it?wa(plantillas[it.tipo]||GH_CANJE_PLANTILLAS[it.tipo]):null);
@@ -10341,6 +10351,12 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                   <button onClick={()=>save({revisar:[]})} style={{...BtnSecondary(T),fontSize:12}}>Ya lo revisé</button>
                 </div>
               )}
+              {ghCanjeNovedad(c)&&(
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.green+"14",border:`1px solid ${T.green}55`,borderRadius:12,padding:"10px 14px"}}>
+                  <span style={{flex:"1 1 220px",fontSize:13,color:T.text}}><strong>{ghCanjeNovedad(c)}.</strong> Está en Contenido, debajo de cada pieza{c.driveSubidas?.carpetaLink?<> y en <a href={c.driveSubidas.carpetaLink} target="_blank" rel="noopener noreferrer" style={{color:T.accent,fontWeight:600}}>su carpeta de Drive</a></>:null}.</span>
+                  <button onClick={()=>save({linksVistoAt:new Date().toISOString()})} style={{...BtnSecondary(T),fontSize:12}}>Ya lo revisé</button>
+                </div>
+              )}
               {c.pedidoCancelError&&!c.pedidoCancelado&&(
                 <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:T.yellow+"14",border:`1px solid ${T.yellow}55`,borderRadius:12,padding:"10px 14px"}}>
                   <span style={{flex:"1 1 220px",fontSize:13,color:T.text}}><strong>No se canceló el pedido #{c.pedidoRef} en la tienda:</strong> {c.pedidoCancelError}</span>
@@ -10411,7 +10427,7 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                             {mat.map(m=><a key={m.id} href={m.link} target="_blank" rel="noopener noreferrer" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,textDecoration:"none"}}>
                               <span style={{fontSize:10,fontWeight:700,color:m.tipo==="editado"?T.purple:T.blue,background:(m.tipo==="editado"?T.purple:T.blue)+"18",borderRadius:99,padding:"2px 8px",flexShrink:0}}>{m.tipo==="editado"?"Editado":"Crudo"}</span>
                               <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{m.nombre}</span>
-                              <span style={{color:T.textSm,flexShrink:0}}>{m.size>=1073741824?(m.size/1073741824).toFixed(1).replace(".",",")+" GB":Math.max(1,Math.round((m.size||0)/1048576))+" MB"} · {new Date(m.at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
+                              <span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(m)?ghMediaInfo(m)+" · ":""}{m.size>=1073741824?(m.size/1073741824).toFixed(1).replace(".",",")+" GB":Math.max(1,Math.round((m.size||0)/1048576))+" MB"} · {new Date(m.at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span>
                             </a>)}
                           </div>}
                           </div>
@@ -24164,6 +24180,21 @@ async function ghDepPdfDeEtiquetas(b64List){
 // actual marcado y, debajo, SOLO lo que le toca hacer ahora; lo de siempre (lo acordado, su cupón, la ficha,
 // el guion, la carpeta y los links) en tarjetas simples. api/canjes.js, acciones portal*.
 function ghPortalPaso(d){ const e=d?.estado||""; if(/Cerrado|Finalizado|Contenido entregado|Cancelado/.test(e)) return 4; if(e==="Contenido pendiente"||d?.entregado) return 3; if(e==="Esperando pedido"&&!d?.pedido) return 1; return 2; }
+// Lo nuevo que subió el influencer desde la última vez que la marca lo revisó (linksVistoAt):
+// "Subió 2 crudos y 1 editado" / "Publicó el Reel". "" si no hay nada nuevo.
+function ghCanjeNovedad(c){
+  const visto=Date.parse(c?.linksVistoAt||"")||0, ult=Date.parse(c?.influencerUltimoLinkAt||"")||0;
+  if(!ult||ult<=visto) return "";
+  const mat=(Array.isArray(c.material)?c.material:[]).filter(m=>(Date.parse(m.at)||0)>visto);
+  const cr=mat.filter(m=>m.tipo!=="editado").length, ed=mat.length-cr;
+  const pub=(Array.isArray(c.piezas)?c.piezas:[]).filter(p=>p.porInfluencer&&(Date.parse(p.publicadaAt||"")||0)>visto).length;
+  const partes=[cr?`${cr} crudo${cr!==1?"s":""}`:"",ed?`${ed} editado${ed!==1?"s":""}`:""].filter(Boolean);
+  if(partes.length) return `Subió ${partes.join(" y ")}${pub?` y publicó ${pub}`:""}`;
+  if(pub) return `Publicó ${pub} pieza${pub!==1?"s":""}`;
+  return "Subió contenido";
+}
+// "1080×1920 · 0:42" del material subido (resolución y duración que lee Drive).
+function ghMediaInfo(m){ if(!m||!m.w||!m.h) return ""; const d=Number(m.dur)||0; return `${m.w}×${m.h}${d?` · ${Math.floor(d/60)}:${String(d%60).padStart(2,"0")}`:""}`; }
 function CanjePortalView({token}){
   const T=LIGHT;
   const [st,setSt]=useState({loading:true,d:null,error:""});
@@ -24215,6 +24246,7 @@ function CanjePortalView({token}){
       if(!fileId) throw new Error("Google no confirmó el archivo. Probá de nuevo.");
       const r=await api("portal_subida_fin",{sid:ini.sid,fileId});
       upd({estado:"ok",pct:100});
+      setMsg(m=>({...m,[p.id]:r.cerrado?"¡Listo! Entregaste todo. Muchas gracias.":`Recibimos tu material${p.tipo?` del ${p.tipo}`:""}. Te avisamos si necesitamos algo más.`}));
       setSt(s=>({...s,d:{...s.d,piezas:r.piezas,estado:r.cerrado?"Cerrado":s.d.estado,material:[...(s.d.material||[]),r.item]}}));
     }catch(e){ upd({estado:"error",msg:e.message||"No se pudo subir"}); }
   }
@@ -24230,6 +24262,54 @@ function CanjePortalView({token}){
   const resumenCont=Object.entries(piezas.reduce((m,p)=>({...m,[p.tipo]:(m[p.tipo]||0)+1}),{})).map(([t,n])=>`${n} ${t}`).join(" · ");
   const PASOS=["Pedido","Envío","Contenido","Listo"];
   const num=n=><span style={{width:24,height:24,borderRadius:99,background:T.accentSolid,color:"#fff",fontSize:12,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{n}</span>;
+  const waLink=d?.wa?`https://wa.me/${d.wa.startsWith("54")?d.wa:"549"+d.wa}`:"";
+  const tuContenido=()=>(d.puedeCargar&&piezas.length>0?<div style={card}>
+            {h("Tu contenido",d.subida?"Por cada pieza: 1) subí los videos crudos (sin editar, sin música ni marca de agua) y, si lo editás vos, también el editado; 2) cuando lo publiques, pegá el link de la publicación.":paso===2?"Cuando te llegue el paquete y publiques, pegá acá el link de cada publicación.":"Pegá el link de cada publicación (o del video en tu carpeta) y tocá Guardar.")}
+            {d.vence&&paso!==3&&<div style={{fontSize:DS.font.base,color:restan!=null&&restan<0?T.red:T.text,fontWeight:600,marginBottom:10}}>Fecha límite para todo: {fecha(d.vence)}</div>}
+            {d.subida&&<div style={{fontSize:DS.font.sm,color:T.textMd,background:T.surface,borderRadius:12,padding:"10px 12px",marginBottom:12,lineHeight:1.55}}>
+              <strong style={{color:T.text}}>Para que llegue en la mejor calidad:</strong> subí el archivo original desde acá (no lo mandes antes por WhatsApp, que lo comprime). En iPhone, si aparece "Comprimiendo video", cancelá y elegí el video desde <strong>Elegir archivo → Archivos</strong>. Mejor con wifi y sin cerrar la página hasta que termine.
+            </div>}
+            {!d.subida&&d.carpeta&&<a href={d.carpeta} target="_blank" rel="noopener noreferrer" style={{...btn2,width:"100%",boxSizing:"border-box",marginBottom:12}}>Abrir mi carpeta de Drive (subí ahí los videos sin marca de agua)</a>}
+            {piezas.map((p,i)=>{ const m=msg[p.id]||""; const err=m.startsWith("error:"); const cambio=(links[p.id]||"")!==(p.link||"");
+              return (
+              <div key={p.id} style={{padding:"12px 0",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,flex:1}}>{p.tipo}{piezas.filter(x=>x.tipo===p.tipo).length>1?` ${piezas.filter(x=>x.tipo===p.tipo).indexOf(p)+1}`:""}</span>
+                  {(()=>{ const tieneMat=(d.material||[]).some(x=>x.piezaId===p.id); const [lbl,col]=p.estado==="publicada"||p.link?["Publicado",T.green]:p.estado==="entregada"?[tieneMat?"Material recibido":"Entregado",T.blue]:[d.subida?"Falta el material":"Falta",T.textSm];
+                    return <span style={{fontSize:DS.font.sm,fontWeight:700,color:col,background:col===T.textSm?T.surface:col+"18",borderRadius:99,padding:"3px 10px"}}>{lbl}</span>; })()}
+                </div>
+                {d.subida&&<div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:4}}>Link de la publicación (cuando publiques)</div>}
+                <div style={{display:"flex",gap:8}}>
+                  <input value={links[p.id]||""} onChange={e=>setLinks(l=>({...l,[p.id]:e.target.value}))} inputMode="url" placeholder="Pegá el link acá" style={{...InputStyle(T),flex:1,minWidth:0,fontSize:16,height:44}}/>
+                  <button onClick={()=>guardarLink(p)} disabled={guardando===p.id||!cambio} style={{...btn,opacity:cambio?1:0.45,cursor:cambio?"pointer":"default"}}>{guardando===p.id?"…":"Guardar"}</button>
+                </div>
+                {m&&<div style={{fontSize:DS.font.sm,color:err?T.red:T.green,marginTop:6}}>{err?m.slice(6):m}</div>}
+                {d.subida&&(()=>{ const ya=(d.material||[]).filter(x=>x.piezaId===p.id); const enCurso=subs.filter(x=>x.piezaId===p.id&&x.estado!=="ok");
+                  const boton=(tipo,label,principal)=>(
+                    <label style={{...(principal?btn:btn2),flex:1,minWidth:150,boxSizing:"border-box",cursor:"pointer",height:40,fontSize:DS.font.md}}>
+                      {label}
+                      <input type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.heic" style={{display:"none"}} onChange={e=>{ const fs=[...(e.target.files||[])]; e.target.value=""; fs.forEach(f=>subirArchivo(p,tipo,f)); }}/>
+                    </label>);
+                  return (
+                  <div style={{marginTop:10}}>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                      {boton("crudo",ya.some(x=>x.tipo==="crudo")?"Subir más crudos":"Subir los crudos",!ya.some(x=>x.tipo==="crudo"))}
+                      {boton("editado","Subir el editado (opcional)",false)}
+                    </div>
+                    {(ya.length>0||enCurso.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+                      {ya.map(x=><div key={x.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,color:T.textMd}}>
+                        <GhI n="check" size={13} style={{color:T.green}}/><span style={{fontWeight:700,color:T.text}}>{x.tipo==="editado"?"Editado":"Crudo"}</span>
+                        <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(x)||tam(x.size||0)}</span></div>)}
+                      {enCurso.map(x=><div key={x.k} style={{fontSize:DS.font.sm,color:x.estado==="error"?T.red:T.textMd}}>
+                        <div style={{display:"flex",gap:8}}><span style={{fontWeight:700}}>{x.tipo==="editado"?"Editado":"Crudo"}</span><span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span>{x.estado==="error"?"No se subió":x.pct+" %"}</span></div>
+                        {x.estado==="subiendo"&&<div style={{height:5,borderRadius:99,background:T.surface,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:x.pct+"%",background:T.accentSolid,transition:"width .2s"}}/></div>}
+                        {x.estado==="error"&&<div style={{marginTop:2}}>{x.msg}</div>}
+                      </div>)}
+                    </div>}
+                  </div>); })()}
+              </div>); })}
+            {d.subida&&subiendo&&<div style={{fontSize:DS.font.sm,color:T.textMd,background:T.surface,borderRadius:12,padding:"10px 12px",marginTop:6}}>Subiendo… no cierres esta página hasta que termine.</div>}
+          </div>:null);
   return (
     <div style={{minHeight:"100vh",background:T.bg,color:T.text,fontFamily:"'Inter',system-ui,sans-serif",padding:"24px 16px 48px"}}>
       <div style={{maxWidth:560,margin:"0 auto"}}>
@@ -24265,10 +24345,11 @@ function CanjePortalView({token}){
             {d.tracking&&<a href={`https://www.andreani.com/envio/${d.tracking}`} target="_blank" rel="noopener noreferrer" style={{...btn,width:"100%",boxSizing:"border-box"}}>Seguir mi paquete</a>}
           </div>}
           {paso===3&&<div style={{...card,border:`2px solid ${restan!=null&&restan<0?T.red:T.accentSolid}`}}>
-            {h(restan==null?"Ahora: grabá y subí el contenido":restan<0?"Se pasó la fecha del contenido":restan===0?"Hoy es el último día para el contenido":`Te quedan ${restan} día${restan!==1?"s":""} para el contenido`,
-              d.vence?`Fecha límite: ${fecha(d.vence)}. ${faltan?`Te falta${faltan!==1?"n":""} ${faltan} de ${piezas.length}.`:""}`:"")}
-            <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>{d.subida?"Mirá la ficha y tu guion más abajo. En \"Tu contenido\" subí los videos crudos de cada pieza (y el editado si lo editás vos) y, cuando publiques, pegá el link.":"Mirá la ficha y tu guion más abajo, subí los videos a tu carpeta y pegá el link de cada publicación en \"Tu contenido\"."}</div>
+            {h(restan==null?"Ahora: grabá y subí el contenido":restan<0?"Se pasó la fecha, pero todavía podés subirlo":restan===0?"Hoy es el último día para el contenido":`Te quedan ${restan} día${restan!==1?"s":""} para el contenido`,
+              restan!=null&&restan<0?`La fecha era el ${fecha(d.vence)}. Subí lo que tengas abajo y avisanos por WhatsApp.`:d.vence?`Fecha límite para todo: ${fecha(d.vence)}. ${faltan?`Te falta${faltan!==1?"n":""} ${faltan} de ${piezas.length}.`:""}`:"")}
+            <div style={{fontSize:DS.font.base,color:T.textMd,lineHeight:1.5}}>{d.subida?"Abajo subís el material de cada pieza. Más abajo tenés la ficha de la marca, tu guion y tu código.":"Mirá la ficha y tu guion más abajo, subí los videos a tu carpeta y pegá el link de cada publicación en \"Tu contenido\"."}</div>
           </div>}
+          {paso===3&&tuContenido()}
           {paso===4&&<div style={{...card,border:`2px solid ${d.cancelado?T.border:T.green}`}}>{d.cancelado?h("Este canje quedó cancelado","Si creés que es un error, escribinos por WhatsApp."):h("¡Listo! Entregaste todo","Muchas gracias por tu contenido. Cualquier cosa nos escribís por WhatsApp.")}</div>}
           {/* Lo acordado */}
           <div style={card}>
@@ -24299,48 +24380,9 @@ function CanjePortalView({token}){
                 {d.guion.link&&<a href={d.guion.link} target="_blank" rel="noopener noreferrer" style={btn}>Ver el guion</a>}
               </div>)}
           </div>}
-          {d.puedeCargar&&piezas.length>0&&<div style={card}>
-            {h("Tu contenido",d.subida?"Por cada pieza: subí los videos crudos (sin editar, sin música ni marca de agua). Si lo editás vos, subí también el editado. Cuando lo publiques, pegá el link.":paso===2?"Cuando te llegue el paquete y publiques, pegá acá el link de cada publicación.":"Pegá el link de cada publicación (o del video en tu carpeta) y tocá Guardar.")}
-            {!d.subida&&d.carpeta&&<a href={d.carpeta} target="_blank" rel="noopener noreferrer" style={{...btn2,width:"100%",boxSizing:"border-box",marginBottom:12}}>Abrir mi carpeta de Drive (subí ahí los videos sin marca de agua)</a>}
-            {piezas.map((p,i)=>{ const m=msg[p.id]||""; const err=m.startsWith("error:"); const cambio=(links[p.id]||"")!==(p.link||"");
-              return (
-              <div key={p.id} style={{padding:"12px 0",borderTop:i?`1px solid ${T.borderL}`:"none"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <span style={{fontSize:DS.font.base,fontWeight:700,color:T.text,flex:1}}>{p.tipo}{piezas.filter(x=>x.tipo===p.tipo).length>1?` ${piezas.filter(x=>x.tipo===p.tipo).indexOf(p)+1}`:""}</span>
-                  <span style={{fontSize:DS.font.sm,fontWeight:700,color:p.estado==="pendiente"?T.textSm:T.green,background:p.estado==="pendiente"?T.surface:T.green+"18",borderRadius:99,padding:"3px 10px"}}>{p.estado==="pendiente"?"Falta":"Entregado"}</span>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <input value={links[p.id]||""} onChange={e=>setLinks(l=>({...l,[p.id]:e.target.value}))} inputMode="url" placeholder="Pegá el link acá" style={{...InputStyle(T),flex:1,minWidth:0,fontSize:16,height:44}}/>
-                  <button onClick={()=>guardarLink(p)} disabled={guardando===p.id||!cambio} style={{...btn,opacity:cambio?1:0.45,cursor:cambio?"pointer":"default"}}>{guardando===p.id?"…":"Guardar"}</button>
-                </div>
-                {m&&<div style={{fontSize:DS.font.sm,color:err?T.red:T.green,marginTop:6}}>{err?m.slice(6):m}</div>}
-                {d.subida&&(()=>{ const ya=(d.material||[]).filter(x=>x.piezaId===p.id); const enCurso=subs.filter(x=>x.piezaId===p.id&&x.estado!=="ok");
-                  const boton=(tipo,label,principal)=>(
-                    <label style={{...(principal?btn:btn2),flex:1,minWidth:150,boxSizing:"border-box",cursor:"pointer",height:40,fontSize:DS.font.md}}>
-                      {label}
-                      <input type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.heic" style={{display:"none"}} onChange={e=>{ const fs=[...(e.target.files||[])]; e.target.value=""; fs.forEach(f=>subirArchivo(p,tipo,f)); }}/>
-                    </label>);
-                  return (
-                  <div style={{marginTop:10}}>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                      {boton("crudo",ya.some(x=>x.tipo==="crudo")?"Subir más crudos":"Subir los crudos",!ya.some(x=>x.tipo==="crudo"))}
-                      {boton("editado","Subir el editado (opcional)",false)}
-                    </div>
-                    {(ya.length>0||enCurso.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
-                      {ya.map(x=><div key={x.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,color:T.textMd}}>
-                        <GhI n="check" size={13} style={{color:T.green}}/><span style={{fontWeight:700,color:T.text}}>{x.tipo==="editado"?"Editado":"Crudo"}</span>
-                        <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span style={{color:T.textSm}}>{tam(x.size||0)}</span></div>)}
-                      {enCurso.map(x=><div key={x.k} style={{fontSize:DS.font.sm,color:x.estado==="error"?T.red:T.textMd}}>
-                        <div style={{display:"flex",gap:8}}><span style={{fontWeight:700}}>{x.tipo==="editado"?"Editado":"Crudo"}</span><span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span>{x.estado==="error"?"No se subió":x.pct+" %"}</span></div>
-                        {x.estado==="subiendo"&&<div style={{height:5,borderRadius:99,background:T.surface,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:x.pct+"%",background:T.accentSolid,transition:"width .2s"}}/></div>}
-                        {x.estado==="error"&&<div style={{marginTop:2}}>{x.msg}</div>}
-                      </div>)}
-                    </div>}
-                  </div>); })()}
-              </div>); })}
-            {d.subida&&subiendo&&<div style={{fontSize:DS.font.sm,color:T.textMd,background:T.surface,borderRadius:12,padding:"10px 12px",marginTop:6}}>Subiendo… no cierres esta página hasta que termine.</div>}
-          </div>}
-          <div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center",marginTop:8,lineHeight:1.5}}>¿Dudas? Escribinos por WhatsApp, al mismo número de siempre.</div>
+          {paso!==3&&tuContenido()}
+          {waLink?<a href={waLink} target="_blank" rel="noopener noreferrer" style={{...btn2,width:"100%",boxSizing:"border-box",marginTop:8,gap:8}}><svg width="18" height="18" viewBox="0 0 24 24" fill="#25D366"><path d={GH_WA_PATH}/></svg>¿Dudas? Escribinos por WhatsApp</a>
+            :<div style={{fontSize:DS.font.sm,color:T.textSm,textAlign:"center",marginTop:8,lineHeight:1.5}}>¿Dudas? Escribinos por WhatsApp, al mismo número de siempre.</div>}
         </>)}
       </div>
     </div>
