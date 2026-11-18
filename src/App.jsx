@@ -10438,6 +10438,19 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
                         );
                       })}
                     </div>}
+                    {(()=>{ const ex=(Array.isArray(c.material)?c.material:[]).filter(m=>m.piezaId==="extra"); if(!ex.length) return null; return (
+                      <div style={{border:`1px solid ${T.borderL}`,borderRadius:12,padding:"8px 10px",marginBottom:10}}>
+                        <div style={{fontSize:12,fontWeight:700,color:T.text,marginBottom:6}}>Contenido extra que sumó <span style={{fontWeight:500,color:T.textSm}}>(no cambia lo acordado)</span></div>
+                        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                          {ex.map(m=><div key={m.id} style={{display:"flex",alignItems:"center",gap:8}}><a href={m.link} target="_blank" rel="noopener noreferrer" style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.textMd,textDecoration:"none"}}>
+                            <span style={{fontSize:10,fontWeight:700,color:T.green,background:T.green+"18",borderRadius:99,padding:"2px 8px",flexShrink:0}}>{m.extraTipo||"Extra"} · {m.tipo==="editado"?"editado":"crudo"}</span>
+                            <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.text}}>{m.nombre}</span>
+                            <span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(m)?ghMediaInfo(m)+" · ":""}{Math.max(1,Math.round((m.size||0)/1048576))} MB · {new Date(m.at).toLocaleDateString("es-AR",{day:"2-digit",month:"short"})}</span></a>
+                            <button title="Quitar este archivo" onClick={async()=>{ if(!await appConfirm(`¿Quitar "${m.nombre}"? También se manda a la papelera de Drive.`,{okLabel:"Quitar",danger:true})) return; try{ const r=await ghCanjesApi("material_quitar",{uid:user?.uid,canjeId:c._docId,id:m.id}); toast(r.enDrive?"Archivo quitado y enviado a la papelera de Drive":"Archivo quitado del canje (en Drive borralo a mano)",r.enDrive?"success":"warning",6000); }catch(e){ toast(e.message,"error"); } }}
+                              style={{background:"none",border:"none",color:T.textSm,cursor:"pointer",padding:4,display:"flex",flexShrink:0}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+                          </div>)}
+                        </div>
+                      </div>); })()}
                     <div style={{display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
                       {[...ACTIVIDADES,...tiposExtra].map(a=><button key={a} onClick={()=>addPieza(a)} style={chipBtn}>+ {a}</button>)}
                       <input value={customContenido} onChange={e=>setCustomContenido(e.target.value)}
@@ -24238,7 +24251,7 @@ function CanjePortalView({token}){
     const k=Math.random().toString(36).slice(2); const upd=o=>setSubs(l=>l.map(x=>x.k===k?{...x,...o}:x));
     setSubs(l=>[...l,{k,piezaId:p.id,tipo,nombre:file.name,pct:0,estado:"subiendo",msg:""}]);
     try{
-      const ini=await api("portal_subida_iniciar",{piezaId:p.id,tipo,nombre:file.name,mime:file.type||"",size:file.size});
+      const ini=await api("portal_subida_iniciar",{piezaId:p.id,...(p.extraTipo?{extraTipo:p.extraTipo}:{}),tipo,nombre:file.name,mime:file.type||"",size:file.size});
       const CH=8*1024*1024; let off=0, fin=null;
       while(off<file.size){
         const end=Math.min(off+CH,file.size);
@@ -24250,11 +24263,12 @@ function CanjePortalView({token}){
       if(!fileId) throw new Error("Google no confirmó el archivo. Probá de nuevo.");
       const r=await api("portal_subida_fin",{sid:ini.sid,fileId});
       upd({estado:"ok",pct:100});
-      setMsg(m=>({...m,[p.id]:r.cerrado?"¡Listo! Entregaste todo. Muchas gracias.":`Recibimos tu material${p.tipo?` del ${p.tipo}`:""}. Te avisamos si necesitamos algo más.`}));
+      setMsg(m=>({...m,[p.id]:p.extraTipo?`Recibimos tu contenido extra (${p.extraTipo}). ¡Gracias!`:r.cerrado?"¡Listo! Entregaste todo. Muchas gracias.":`Recibimos tu material${p.tipo?` del ${p.tipo}`:""}. Te avisamos si necesitamos algo más.`}));
       setSt(s=>({...s,d:{...s.d,piezas:r.piezas,estado:r.cerrado?"Cerrado":s.d.estado,material:[...(s.d.material||[]),r.item]}}));
     }catch(e){ upd({estado:"error",msg:e.message||"No se pudo subir"}); }
   }
   const [quitando,setQuitando]=useState("");
+  const [extraTipo,setExtraTipo]=useState("Historia");
   async function quitarMat(p,x){
     if(!window.confirm(`¿Quitar "${x.nombre}"? Se borra de la carpeta de la marca. Si te equivocaste de archivo, después subí el correcto.`)) return;
     setQuitando(x.id);
@@ -24321,6 +24335,33 @@ function CanjePortalView({token}){
                     </div>}
                   </div>); })()}
               </div>); })}
+            {d.subida&&(()=>{ const P={id:"extra",tipo:"",extraTipo}; const ya=(d.material||[]).filter(x=>x.piezaId==="extra"); const enCurso=subs.filter(x=>x.piezaId==="extra"&&x.estado!=="ok"); const m=msg.extra||""; const err=m.startsWith("error:");
+              const boton=(tipo,label,principal)=>(
+                <label style={{...(principal?btn:btn2),flex:1,minWidth:150,boxSizing:"border-box",cursor:"pointer",height:40,fontSize:DS.font.md}}>
+                  {label}
+                  <input type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.heic" style={{display:"none"}} onChange={e=>{ const fs=[...(e.target.files||[])]; e.target.value=""; fs.forEach(f=>subirArchivo(P,tipo,f)); }}/>
+                </label>);
+              return (
+              <div style={{padding:"14px 0 2px",borderTop:`1px solid ${T.borderL}`,marginTop:4}}>
+                <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>¿Querés sumar algo más?</div>
+                <div style={{fontSize:DS.font.sm,color:T.textMd,marginTop:3,marginBottom:10,lineHeight:1.5}}>Si hiciste una historia de más u otro contenido por tu cuenta, subilo acá. Suma, no cambia lo que acordamos.</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                  {["Historia","Reel","Post","TikTok","Fotos","Otro"].map(t=>{ const on=extraTipo===t; return <button key={t} onClick={()=>setExtraTipo(t)} style={{height:32,padding:"0 14px",borderRadius:99,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"14":"transparent",color:on?T.accentSolid:T.textMd,fontSize:DS.font.sm,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{t}</button>; })}
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{boton("crudo",`Subir ${extraTipo.toLowerCase()} (crudo)`,false)}{boton("editado",`Subir ${extraTipo.toLowerCase()} (editado)`,false)}</div>
+                {m&&<div style={{fontSize:DS.font.sm,color:err?T.red:T.green,marginTop:6}}>{err?m.slice(6):m}</div>}
+                {(ya.length>0||enCurso.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+                  {ya.map(x=><div key={x.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,color:T.textMd}}>
+                    <GhI n="check" size={13} style={{color:T.green}}/><span style={{fontWeight:700,color:T.text}}>{x.extraTipo||"Extra"} · {x.tipo==="editado"?"editado":"crudo"}</span>
+                    <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(x)||tam(x.size||0)}</span>
+                    <button onClick={()=>quitarMat(P,x)} disabled={quitando===x.id} style={{background:"none",border:"none",color:T.red,fontSize:DS.font.sm,fontWeight:600,cursor:"pointer",padding:"2px 4px",fontFamily:"'Inter',system-ui,sans-serif",flexShrink:0}}>{quitando===x.id?"…":"Quitar"}</button></div>)}
+                  {enCurso.map(x=><div key={x.k} style={{fontSize:DS.font.sm,color:x.estado==="error"?T.red:T.textMd}}>
+                    <div style={{display:"flex",gap:8}}><span style={{fontWeight:700}}>{x.tipo==="editado"?"Editado":"Crudo"}</span><span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span>{x.estado==="error"?"No se subió":x.pct+" %"}</span></div>
+                    {x.estado==="subiendo"&&<div style={{height:5,borderRadius:99,background:T.surface,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:x.pct+"%",background:T.accentSolid,transition:"width .2s"}}/></div>}
+                    {x.estado==="error"&&<div style={{marginTop:2}}>{x.msg}</div>}
+                  </div>)}
+                </div>}
+              </div>); })()}
             {d.subida&&subiendo&&<div style={{fontSize:DS.font.sm,color:T.textMd,background:T.surface,borderRadius:12,padding:"10px 12px",marginTop:6}}>Subiendo… no cierres esta página hasta que termine.</div>}
           </div>:null);
   return (

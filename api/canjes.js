@@ -256,7 +256,7 @@ export default async function handler(req, res) {
           puedeCargar: puedeCargar(c), cancelado: c.estado === "Cancelado",
           subida: !!dcP,
           wa: String(u.canjesWa || dcP?.u?.canjesWa || "").replace(/\D/g, "").slice(-13),
-          material: (Array.isArray(c.material) ? c.material : []).map(m => ({ id: m.id, piezaId: m.piezaId || "", tipo: m.tipo, nombre: m.nombre, size: m.size || 0, at: m.at, w: m.w || 0, h: m.h || 0, dur: m.dur || 0 })),
+          material: (Array.isArray(c.material) ? c.material : []).map(m => ({ id: m.id, piezaId: m.piezaId || "", extraTipo: m.extraTipo || "", tipo: m.tipo, nombre: m.nombre, size: m.size || 0, at: m.at, w: m.w || 0, h: m.h || 0, dur: m.dur || 0 })),
           ficha: ficha ? { id: ficha.id, nombre: ficha.nombre || "Ficha de la marca" } : null,
           guion: guion ? { nombre: guion.nombre || "Guion", texto: String(guion.texto || "").slice(0, 20000), archivo: guion.archivoId ? { id: guion.archivoId, nombre: guion.archivoNombre || guion.nombre || "Guion" } : null }
             : guionLink ? { nombre: "Tu guion", link: guionLink } : c.guionTareaId ? { nombre: "Tu guion", pendiente: true } : null,
@@ -293,7 +293,11 @@ export default async function handler(req, res) {
         if (!dc) return res.status(409).json({ error: "La marca todavía no activó la subida de archivos. Escribile por WhatsApp." });
         const tipo = body.tipo === "editado" ? "editado" : "crudo";
         const piezaId = String(body.piezaId || "");
-        const pz = piezasDe(c).find(x => String(x.id) === piezaId);
+        // Contenido EXTRA (17/nov/2026): algo que el influencer suma por su cuenta. No es una pieza acordada:
+        // no cambia estados ni frena el cierre; queda en material con piezaId "extra" y su tipo.
+        const esExtra = piezaId === "extra";
+        const extraTipo = esExtra ? String(body.extraTipo || "Otro").replace(/[^\p{L}\p{N} ._-]/gu, "").trim().slice(0, 40) || "Otro" : "";
+        const pz = esExtra ? { id: "extra", tipo: `Extra ${extraTipo}` } : piezasDe(c).find(x => String(x.id) === piezaId);
         if (!pz) return res.status(404).json({ error: "No encontré esa pieza." });
         const size = Number(body.size) || 0, mime = String(body.mime || "application/octet-stream").slice(0, 100);
         if (size <= 0 || size > MAX_SUBIDA) return res.status(400).json({ error: "El archivo es demasiado grande (máximo 10 GB)." });
@@ -305,7 +309,7 @@ export default async function handler(req, res) {
         let ds;
         try { ds = await carpetasCanje(db, d.ref, c, { ...dc.u, canjesDriveParent: dc.u.canjesDriveParent || u.canjesDriveParent }, H, dc.uid); }
         catch (e) { console.error("[canjes subida carpeta]", e.message); return res.status(502).json({ error: "No pudimos preparar la carpeta de la marca en Drive. Probá en un rato o avisale a la marca." }); }
-        const piezas = piezasDe(c), mismas = piezas.filter(x => x.tipo === pz.tipo);
+        const piezas = piezasDe(c), mismas = esExtra ? [] : piezas.filter(x => x.tipo === pz.tipo);
         const etiqueta = `${pz.tipo || "Contenido"}${mismas.length > 1 ? " " + (mismas.indexOf(pz) + 1) : ""}`;
         const fecha = diaAR(Date.now());
         const nombre = nomDrive(`${fecha} ${etiqueta} ${tipo} - ${String(body.nombre || "archivo")}`).slice(0, 200);
@@ -318,7 +322,7 @@ export default async function handler(req, res) {
         const url = r.headers.get("location");
         if (!r.ok || !url) { const j = await r.json().catch(() => ({})); console.error("[canjes subida]", r.status, j?.error?.message); return res.status(502).json({ error: "Drive no aceptó la subida. Probá de nuevo en un rato." }); }
         const sid = randomBytes(12).toString("hex");
-        await db.collection("canjes_subidas").doc(sid).set({ canjeId: d.id, uid, driveUid: dc.uid, piezaId, tipo, nombre, nombreOriginal: String(body.nombre || "").slice(0, 200), size, mime, folderId: tipo === "editado" ? ds.editados : ds.crudos, at: new Date().toISOString() });
+        await db.collection("canjes_subidas").doc(sid).set({ canjeId: d.id, uid, driveUid: dc.uid, piezaId, ...(esExtra ? { extraTipo } : {}), tipo, nombre, nombreOriginal: String(body.nombre || "").slice(0, 200), size, mime, folderId: tipo === "editado" ? ds.editados : ds.crudos, at: new Date().toISOString() });
         return res.json({ ok: true, sid, url });
       }
       if (action === "portal_subida_fin") {
@@ -333,13 +337,13 @@ export default async function handler(req, res) {
         const f = await fr.json().catch(() => ({}));
         if (!fr.ok || !(f.parents || []).includes(sub.folderId)) return res.status(409).json({ error: "No encontramos el archivo en la carpeta de la marca. Probá subirlo de nuevo." });
         const ahoraIso = new Date().toISOString();
-        const item = { id: sid, piezaId: sub.piezaId, tipo: sub.tipo, nombre: sub.nombreOriginal || f.name, size: Number(f.size) || sub.size, mime: f.mimeType || sub.mime, driveId: f.id, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, at: ahoraIso, ...metaDe(f) };
+        const item = { id: sid, piezaId: sub.piezaId, ...(sub.extraTipo ? { extraTipo: sub.extraTipo } : {}), tipo: sub.tipo, nombre: sub.nombreOriginal || f.name, size: Number(f.size) || sub.size, mime: f.mimeType || sub.mime, driveId: f.id, link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, at: ahoraIso, ...metaDe(f) };
         const fresco = (await d.ref.get()).data() || c;
-        const upd = aplicarMaterialPieza(fresco, sub.piezaId, ahoraIso) || {};
+        const upd = sub.piezaId === "extra" ? {} : (aplicarMaterialPieza(fresco, sub.piezaId, ahoraIso) || {});
         await d.ref.update({ ...upd, ...(upd.estado === "Cerrado" ? { finalizadoAt: FieldValue.serverTimestamp() } : {}), material: FieldValue.arrayUnion(item), influencerUltimoLinkAt: ahoraIso, updatedAt: FieldValue.serverTimestamp() });
         await sref.delete().catch(() => {});
         const piezasR = (upd.piezas || piezasDe(fresco)).map(p => ({ id: p.id, tipo: p.tipo || "Contenido", estado: p.estado || "pendiente", link: p.link || "" }));
-        return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: piezasR, item: { id: item.id, piezaId: item.piezaId, tipo: item.tipo, nombre: item.nombre, size: item.size, at: item.at, w: item.w || 0, h: item.h || 0, dur: item.dur || 0 } });
+        return res.json({ ok: true, cerrado: upd.estado === "Cerrado", piezas: piezasR, item: { id: item.id, piezaId: item.piezaId, extraTipo: item.extraTipo || "", tipo: item.tipo, nombre: item.nombre, size: item.size, at: item.at, w: item.w || 0, h: item.h || 0, dur: item.dur || 0 } });
       }
       if (action === "portal_material_quitar") {
         if (req.method !== "POST") return res.status(405).json({ error: "POST requerido" });
