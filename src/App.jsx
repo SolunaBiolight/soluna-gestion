@@ -22275,6 +22275,26 @@ function ghDepListaAPedidos(texto,etiquetas){
   if(n===1) return {pedidos:[{numero:filas.find(f=>f.numero)?.numero||"",comprador:filas.find(f=>f.comprador)?.comprador||"",items:filas.flatMap(f=>f.items),pags:[],tracking:""}],modo:"un_pedido",filas:filas.length};
   return {pedidos:[],modo:"nota",filas:filas.length};
 }
+// Orden de las páginas de un PDF subido a mano al depósito (17/nov/2026, pedido de Lautaro: "como las
+// etiquetas por API"). grupos = [{pags:[índices originales], items}] de las páginas cuyo contenido se conoce;
+// devuelve {orden, mapa} con el MISMO criterio que ghDepOrdenar (un solo producto primero, iguales juntos,
+// combinados después, sin productos al final); las páginas sin dato y las hojas de resumen van al final en su
+// orden original. orden = null si ya estaba en ese orden. Pura.
+function ghDepOrdenPaginas(total,grupos,resumenIdx){
+  const usadas=new Set(); const gs=(grupos||[]).filter(g=>(g.pags||[]).length&&g.pags.every(i=>i>=0&&i<total&&!usadas.has(i))&&(g.pags.forEach(i=>usadas.add(i)),true));
+  if(!gs.some(g=>(g.items||[]).length)) return {orden:null,mapa:null};
+  const res=new Set(resumenIdx||[]);
+  const orden=[...ghDepOrdenar(gs,g=>g.items).flatMap(g=>g.pags),...Array.from({length:total},(_,i)=>i).filter(i=>!usadas.has(i)&&!res.has(i)),...[...res].filter(i=>i<total&&!usadas.has(i))];
+  if(orden.length!==total||orden.every((v,i)=>v===i)) return {orden:null,mapa:null};
+  const mapa={}; orden.forEach((v,i)=>{ mapa[v]=i; });
+  return {orden,mapa};
+}
+async function ghPdfReordenar(bytes,orden){
+  const {PDFDocument}=await import("pdf-lib");
+  const src=await PDFDocument.load(bytes,{ignoreEncryption:true}); const out=await PDFDocument.create();
+  (await out.copyPages(src,orden)).forEach(pg=>out.addPage(pg));
+  return new Uint8Array(await out.save());
+}
 function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extraCfg=null,catalogo=null,tiendaUid=null,onClose,onDone}){
   const iS=InputStyle(T);
   const [tipo]=useState(especial?"especial":"tanda");
@@ -22348,6 +22368,24 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
     finally{ setEspBusc(false); }
   }
   const espInstr=[espPeds.length?`Pedido${espPeds.length>1?"s":""}: ${espPeds.map(p=>`#${p.num}${p.comp?` (${p.comp})`:""}`).join(", ")}`:"",esp.instrucciones.trim(),espVal.length?"Productos:\n"+espVal.map(x=>`${x.cant}x ${x.sku}`).join("\n"):""].filter(Boolean).join("\n\n");
+  // Etiquetas de Andreani subidas a mano con la tienda conectada: se lee el N° de pedido (o el destinatario) de cada
+  // página y se traen sus productos de la tienda → picking del depósito y orden de las páginas por producto.
+  const [andLeyendo,setAndLeyendo]=useState(false);
+  async function leerAndreani(bytes,resumenIdx){
+    if(!tiendaUid) return null; setAndLeyendo(true);
+    try{
+      const pags=await ghDepLineasPaginas(bytes); const out=[]; const usados=new Set(); const tokPages=pags.map(t=>new Set(ghNrmSuc(t).split(" ")));
+      for(let i=0;i<pags.length;i++){ if((resumenIdx||[]).includes(i)) continue; const d=ghRotuloDatos(pags[i]); if(!d.tracking&&!d.pedidoNum&&!d.destinatario) continue;
+        let o=d.pedidoNum?await pedidoPorNumero(d.pedidoNum):null;
+        if(!o){ const m=ghOrdenPorNombre(d.destinatario,await pedidosTienda(),pags[i],usados,tokPages); if(m&&!m.empate) o=m.order; }
+        if(!o||usados.has(o.numero)) continue; usados.add(o.numero);
+        const items=[...(o.productos||[]).filter(p=>String(p.sku||p.nombre||"").trim()).map(p=>`${Math.max(1,Math.round(Number(p.cantidad)||1))}x ${String(p.sku||p.nombre||"").trim()}`),...(o.notaDepo||[])];
+        out.push({numero:o.numero,comprador:o.nombreEnvio||o.comprador||"",items,pags:[i],tracking:d.tracking||""}); }
+      return out;
+    }catch(e){ console.error("leer etiquetas Andreani (tanda):",e); return null; }
+    finally{ setAndLeyendo(false); }
+  }
+  const ordRef=React.useRef(null); // PDF ya reordenado (se reusa si hay que reintentar)
   const [prog,setProg]=useState(null);
   const [drag,setDrag]=useState(false); const [verCant,setVerCant]=useState(false); const [verLista,setVerLista]=useState(!prefill?.pedidos?.length&&!especial);
   const estRef=React.useRef(null); // PDF con los productos ya escritos (se reusa si hay que reintentar)
@@ -22355,7 +22393,8 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
   const listaInfo=React.useMemo(()=>ghDepListaAPedidos(lista,etiquetasPdf),[lista,etiquetasPdf]);
   const pedidosLista=listaInfo.pedidos;
   const mlLeidos=esML&&pdf?.mlPeds?.length>0&&pdf.mlPeds.length===etiquetasPdf&&!verCant;
-  const pedidos=prefill?.pedidos?.length?prefill.pedidos:mlLeidos?pdf.mlPeds:pedidosLista;
+  const andLeidos=!esML&&tipo==="tanda"&&!prefill?.pedidos?.length&&!lista.trim()&&pdf?.andPeds?.length>0&&!verCant;
+  const pedidos=prefill?.pedidos?.length?prefill.pedidos:mlLeidos?pdf.mlPeds:andLeidos?pdf.andPeds:pedidosLista;
   const cant=tipo==="especial"?Math.max(1,pdf?.pages||1):(prefill?.pedidos?.length||etiquetasPdf||pedidos.length||0);
   const notaFinal=listaInfo.modo==="nota"&&!prefill?.pedidos?.length?[nota.trim(),"Productos:\n"+lista.trim()].filter(Boolean).join("\n").slice(0,600):nota;
   const extra=ghDepExtra(pedidos,extraCfg);
@@ -22373,6 +22412,7 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
       // Mercado Libre: los productos de cada paquete vienen impresos en la etiqueta → se leen para el picking del depósito.
       let mlPeds=[]; if(!resumen){ try{ mlPeds=ghDepMlPedidos(await ghDepLineasPaginas(bytes)); if(!mlPeds.length) mlPeds=ghDepMlPedidos(await ghDepTextoPaginas(bytes,"\n")); }catch(_){ } }
       setPdf({bytes,nombre:f.name,pages,resumen,resumenIdx,mlPeds}); if(tipo==="tanda"){ setN(pages||0); setVerCant(false); }
+      if(tipo==="tanda"&&!mlPeds.length&&tiendaUid){ leerAndreani(bytes,resumenIdx).then(andPeds=>{ if(andPeds&&andPeds.length) setPdf(p=>p&&p.bytes===bytes?{...p,andPeds}:p); }); }
       if(tipo==="especial"&&tiendaUid) leerEtiqueta(bytes); }catch(e){ toast(e.message,"error"); }
   }
   async function enviar(){
@@ -22416,11 +22456,29 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
       }
       pdfEnv={...pdf,bytes:estRef.current.bytes};
     }
+    // Orden por producto (17/nov/2026): con lo que se sabe de cada página (SKU de Mercado Libre, productos
+    // traídos de la tienda o la lista escrita por el cliente) las etiquetas quedan agrupadas igual que en el
+    // lote por API. Un PDF que vino armado desde Envíos (prefill) ya llega ordenado.
+    let pedidosEnv=pedidos;
+    if(tipo==="tanda"&&pdfEnv&&!prefill?.pdfBytes){
+      try{
+        const {PDFDocument}=await import("pdf-lib"); const totalP=(await PDFDocument.load(pdfEnv.bytes,{ignoreEncryption:true})).getPageCount();
+        const etiqPags=Array.from({length:totalP},(_,i)=>i).filter(i=>!(pdf.resumenIdx||[]).includes(i));
+        const conPags=pedidos.map((p,k)=>(p.pags&&p.pags.length)?p:(pedidos===pedidosLista&&listaInfo.modo==="uno_por_renglon"&&etiqPags[k]!=null?{...p,pags:[etiqPags[k]]}:p));
+        const {orden,mapa}=ghDepOrdenPaginas(totalP,conPags.map(p=>({pags:p.pags||[],items:p.items||[]})),pdf.resumenIdx);
+        if(orden){
+          const key=orden.join(",")+"|"+pdfEnv.bytes.length;
+          if(ordRef.current?.key!==key){ setProg("Ordenando las etiquetas por producto…"); ordRef.current={key,bytes:await ghPdfReordenar(pdfEnv.bytes,orden)}; }
+          pdfEnv={...pdfEnv,bytes:ordRef.current.bytes,resumenIdx:(pdf.resumenIdx||[]).map(i=>mapa[i])};
+          pedidosEnv=ghDepOrdenar(conPags,p=>p.items).map(p=>({...p,pags:(p.pags||[]).map(i=>mapa[i]).filter(i=>i!=null)}));
+        }
+      }catch(e){ console.error("ordenar etiquetas:",e); }
+    }
     setProg(borrRef.current?"Retomando…":"Creando…"); setFallo(null);
     try{
       const pdf=pdfEnv;
       if(pdf&&pdf.bytes.length>22*1024*1024){ toast("El PDF de etiquetas supera los 22 MB: mandá la tanda en dos partes.","warning",7000); setProg(null); return; }
-      if(!borrRef.current){ const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota:notaFinal,pedidos,n:cant,nManual:tipo==="tanda"&&verCant&&!prefill?.pedidos?.length,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?{...esp,instrucciones:espInstr}:undefined}); borrRef.current={id:c.id,hechos:{}}; }
+      if(!borrRef.current){ const c=await api("c_tanda_crear",{tipo,canal,fechaDespacho:fecha,nota:notaFinal,pedidos:pedidosEnv,n:cant,nManual:tipo==="tanda"&&verCant&&!prefill?.pedidos?.length,pages:pdf?.pages||0,origen:prefill?.origen||"manual",especial:tipo==="especial"?{...esp,instrucciones:espInstr}:undefined}); borrRef.current={id:c.id,hechos:{}}; }
       const b=borrRef.current;
       const subir=async(kind,bytes,label)=>{ const total=Math.max(1,Math.ceil(ghBytesToB64(bytes).length/GH_DEP_CHUNK)); const faltan=Array.from({length:total},(_,i)=>i).filter(i=>!b.hechos[`${kind}:${i}`]);
         await ghDepSubir(api,b.id,kind,bytes,(a,c2,t)=>setProg(`Subiendo ${label} ${a}/${c2}${c2!==t?` (de ${t})`:""}…`),faltan); for(const i of faltan) b.hechos[`${kind}:${i}`]=true; return total; };
@@ -22518,7 +22576,9 @@ function DepositoEnvioModal({T,api,cliente,prefill,especial=false,corte=15,extra
             <input style={{...iS,width:110,marginBottom:0}} type="number" min="1" value={n||""} onChange={e=>setN(e.target.value)}/>
             {pdf.pages>0&&<span style={{fontSize:DS.font.sm,color:T.textSm}}>El PDF tiene {pdf.pages+(pdf.resumen||0)} página{pdf.pages+(pdf.resumen||0)!==1?"s":""}{pdf.resumen?` (${pdf.resumen} de resumen)`:""}.</span>}
           </div>)}
-          {mlLeidos&&!prefill?.pedidos?.length&&<div style={{fontSize:DS.font.sm,color:T.green}}>Leímos los productos de las {pdf.mlPeds.length} etiquetas (el SKU que trae cada rótulo): el depósito los ve en la tanda.</div>}
+          {mlLeidos&&!prefill?.pedidos?.length&&<div style={{fontSize:DS.font.sm,color:T.green}}>Leímos los productos de las {pdf.mlPeds.length} etiquetas (el SKU que trae cada rótulo): el depósito los ve en la tanda y las etiquetas se ordenan por producto.</div>}
+          {!esML&&tipo==="tanda"&&!prefill?.pedidos?.length&&andLeyendo&&<div style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,color:T.textMd}}><Spinner size={12} color={T.accent}/>Leyendo los pedidos de las etiquetas para traer sus productos…</div>}
+          {andLeidos&&!andLeyendo&&<div style={{fontSize:DS.font.sm,color:T.green}}>Reconocimos {pdf.andPeds.length} de {etiquetasPdf} etiquetas y trajimos sus productos de tu tienda: el depósito ve qué bajar y las etiquetas se ordenan por producto{pdf.andPeds.length<etiquetasPdf?" (las que no reconocimos van al final)":""}.</div>}
           {verLista&&!esML&&tipo!=="especial"&&(<div>{lbl("Qué va en cada paquete · se imprime en la etiqueta")}
             <textarea style={{...iS,minHeight:74,resize:"vertical",fontFamily:"monospace",fontSize:DS.font.md}} placeholder={cant===1?"Qué lleva el paquete, un producto por renglón:\n1x ROJ-NN\n1x LIQ":"Un renglón por etiqueta, en el orden del PDF:\n2x ROJ-NN, 1x LIQ\n1x NARAN-TT"} value={listaTxt} onChange={e=>setLista(e.target.value)}/>
             {listaInfo.modo==="un_pedido"&&<div style={{fontSize:DS.font.sm,color:T.green,marginTop:-6}}>Es 1 etiqueta: todo esto se imprime en esa etiqueta.</div>}

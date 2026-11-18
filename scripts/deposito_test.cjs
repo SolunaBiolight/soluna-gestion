@@ -115,4 +115,16 @@ eq("vacío",M.ledgerDe([],[]),{saldo:0,cargos:0,creditos:0,porVerificar:0,movs:[
   eq("pedidos con problemas, el más nuevo primero",R.problemas.map(x=>[x.tipo,x.nota]),[["cancelado","sin stock"],["apartado","falta stock"]]);
   eq("sin deuda no hay 'debe desde'",S.cobranzaDe(S.ledgerDe([T("z","c9","2026-10-01",1,1000,"andreani")],[{id:"q",p:{clienteId:"c9",monto:1000,estado:"verificado",verificadoAt:d("2026-10-03")}}])),{ultimoPago:d("2026-10-03"),deudaDesde:null});
 }
+// Orden por producto de un PDF subido a mano (17/nov/2026)
+{ const app=fs.readFileSync("src/App.jsx","utf8"); const cut=nm=>{ const i=app.indexOf(`function ${nm}(`); const j=app.indexOf("\n",i); return app.slice(i,j+1); };
+  const i=app.indexOf("function ghDepOrdenPaginas("); const j=app.indexOf("\n}\n",i);
+  const O=new Function(cut("ghDepFirma")+cut("ghDepOrdenar")+app.slice(i,j+3)+"\nreturn ghDepOrdenPaginas;")();
+  const r=O(4,[{pags:[0],items:["1x ROJ","1x LIQ"]},{pags:[1],items:["1x NAR"]},{pags:[2],items:["1x ROJ"]},{pags:[3],items:["1x NAR"]}],[]);
+  eq("un producto primero, iguales juntos, combinados al final",r.orden,[1,3,2,0]);
+  eq("mapa de páginas",r.mapa,{1:0,3:1,2:2,0:3});
+  eq("ya ordenado = null",O(2,[{pags:[0],items:["1x A"]},{pags:[1],items:["1x B"]}],[]).orden,null);
+  eq("sin productos = null",O(3,[{pags:[0],items:[]}],[]).orden,null);
+  eq("páginas sin dato y resumen al final",O(5,[{pags:[1],items:["1x B"]},{pags:[2],items:["1x A"]}],[4]).orden,[2,1,0,3,4]);
+  eq("una página repetida en dos pedidos se ignora",O(3,[{pags:[0],items:["1x B"]},{pags:[0],items:["1x A"]},{pags:[2],items:["1x A"]}],[]).orden,[2,0,1]);
+}
 console.log(`${n-fails}/${n} ok${fails?" — "+fails+" FALLAS":""}`); if(fails) process.exit(1);
