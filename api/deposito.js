@@ -943,19 +943,30 @@ export default async function handler(req, res) {
     // Buscar cuentas de Growith con plan activo para darlas de alta como cliente
     // sin tipear el mail. Barrido en memoria (solo el dueño, uso esporádico).
     if (action === "usuarios_buscar") {
-      if (!soloOwner() || !soloSesion()) return;
-      const q = txt(body.q, 60).toLowerCase(); if (q.length < 2) return res.json({ usuarios: [] });
-      const s = await db.collection("users").select("email", "nombre", "displayName", "plan", "planExpiry", "isTrial", "stripeStatus", "deleted", "soloMiembro", "esTienda", "active_tienda_uid", "storeName", "tiendaNombre").get();
+      // 17/nov/2026 (Lautaro: "no encuentra ningún usuario"): busca en TODAS las cuentas (Google, mail, con o
+      // sin plan, tiendas de un perfil) por nombre, nombre de la tienda, mail o uid. Antes solo las de plan pago
+      // vigente y, desde el link del panel, devolvía 403 (soloSesion) y el front lo mostraba como "ninguna
+      // coincide". Desde el link de la dueña se permite, pero el mail va tapado (ve***@gmail.com) y el vínculo
+      // se hace por uid; la PC del depósito no puede (soloOwner).
+      if (!soloOwner()) return;
+      const porLink = dep.via === "panel";
+      const q = txt(body.q, 60).toLowerCase().trim(); if (q.length < 2) return res.json({ usuarios: [] });
+      const s = await db.collection("users").select("email", "nombre", "displayName", "plan", "planExpiry", "isTrial", "stripeStatus", "deleted", "soloMiembro", "esTienda", "active_tienda_uid", "storeName", "tiendaNombre", "nombreTienda", "businessName", "ownerUid").get();
       const now = Date.now(); const out = [];
+      const tapar = e => { const [a, b] = String(e || "").split("@"); return b ? `${a.slice(0, 2)}***@${b}` : ""; };
+      const perfiles = new Map(s.docs.map(d => [d.id, d.data()]));
       for (const d of s.docs) { const u = d.data();
         if (u.deleted || u.soloMiembro) continue;
-        const plan = u.plan || "free"; if (plan === "free") continue;
-        const exp = ms(u.planExpiry); const vigente = !exp || exp > now || ["active", "trialing"].includes(u.stripeStatus);
-        if (!vigente) continue;
-        const email = String(u.email || "").toLowerCase(), nombre = String(u.nombre || u.displayName || u.storeName || u.tiendaNombre || "");
-        if (!email.includes(q) && !nombre.toLowerCase().includes(q)) continue;
-        out.push({ id: d.id, email, nombre, plan, prueba: !!u.isTrial, tienda: !!u.esTienda });
-        if (out.length >= 12) break; }
+        const dueño = u.esTienda && u.ownerUid ? perfiles.get(String(u.ownerUid)) || {} : {};
+        const email = String(u.email || dueño.email || "").toLowerCase();
+        const nombre = String(u.nombreTienda || u.businessName || u.storeName || u.tiendaNombre || u.nombre || u.displayName || "").trim();
+        const hay = [email, nombre.toLowerCase(), String(u.nombre || "").toLowerCase(), String(u.displayName || "").toLowerCase(), d.id.toLowerCase()].some(x => x && x.includes(q));
+        if (!hay) continue;
+        const plan = u.plan || dueño.plan || "free"; const exp = ms(u.planExpiry || dueño.planExpiry);
+        const vigente = plan !== "free" && (!exp || exp > now || ["active", "trialing"].includes(u.stripeStatus || dueño.stripeStatus));
+        out.push({ id: d.id, vinc: u.esTienda ? d.id : String(u.active_tienda_uid || d.id), email: porLink ? tapar(email) : email, emailOculto: porLink, nombre, plan, vigente, prueba: !!(u.isTrial || dueño.isTrial), tienda: !!u.esTienda });
+        if (out.length >= 25) break; }
+      out.sort((a, b) => (b.vigente - a.vigente) || a.nombre.localeCompare(b.nombre));
       return res.json({ usuarios: out });
     }
     if (action === "clientes") {
