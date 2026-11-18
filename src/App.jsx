@@ -24268,7 +24268,7 @@ function CanjePortalView({token}){
     }catch(e){ upd({estado:"error",msg:e.message||"No se pudo subir"}); }
   }
   const [quitando,setQuitando]=useState("");
-  const [extraTipo,setExtraTipo]=useState("Historia");
+  const [extraTipo,setExtraTipo]=useState("Historia"); const [extraAbierto,setExtraAbierto]=useState(false);
   async function quitarMat(p,x){
     if(!window.confirm(`¿Quitar "${x.nombre}"? Se borra de la carpeta de la marca. Si te equivocaste de archivo, después subí el correcto.`)) return;
     setQuitando(x.id);
@@ -24342,15 +24342,9 @@ function CanjePortalView({token}){
                   <input type="file" multiple accept="video/*,image/*,audio/*,.mov,.mp4,.heic" style={{display:"none"}} onChange={e=>{ const fs=[...(e.target.files||[])]; e.target.value=""; fs.forEach(f=>subirArchivo(P,tipo,f)); }}/>
                 </label>);
               return (
-              <div style={{padding:"14px 0 2px",borderTop:`1px solid ${T.borderL}`,marginTop:4}}>
-                <div style={{fontSize:DS.font.base,fontWeight:700,color:T.text}}>¿Querés sumar algo más?</div>
-                <div style={{fontSize:DS.font.sm,color:T.textMd,marginTop:3,marginBottom:10,lineHeight:1.5}}>Si hiciste una historia de más u otro contenido por tu cuenta, subilo acá. Suma, no cambia lo que acordamos.</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {["Historia","Reel","Post","TikTok","Fotos","Otro"].map(t=>{ const on=extraTipo===t; return <button key={t} onClick={()=>setExtraTipo(t)} style={{height:32,padding:"0 14px",borderRadius:99,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"14":"transparent",color:on?T.accentSolid:T.textMd,fontSize:DS.font.sm,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{t}</button>; })}
-                </div>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{boton("crudo",`Subir ${extraTipo.toLowerCase()} (crudo)`,false)}{boton("editado",`Subir ${extraTipo.toLowerCase()} (editado)`,false)}</div>
-                {m&&<div style={{fontSize:DS.font.sm,color:err?T.red:T.green,marginTop:6}}>{err?m.slice(6):m}</div>}
-                {(ya.length>0||enCurso.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
+              <div style={{padding:"12px 0 2px",borderTop:`1px solid ${T.borderL}`}}>
+                {ya.length>0&&<div style={{fontSize:DS.font.base,fontWeight:700,color:T.text,marginBottom:6}}>Contenido extra</div>}
+                {(ya.length>0||enCurso.length>0)&&<div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:4}}>
                   {ya.map(x=><div key={x.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:DS.font.sm,color:T.textMd}}>
                     <GhI n="check" size={13} style={{color:T.green}}/><span style={{fontWeight:700,color:T.text}}>{x.extraTipo||"Extra"} · {x.tipo==="editado"?"editado":"crudo"}</span>
                     <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.nombre}</span><span style={{color:T.textSm,flexShrink:0}}>{ghMediaInfo(x)||tam(x.size||0)}</span>
@@ -24361,6 +24355,16 @@ function CanjePortalView({token}){
                     {x.estado==="error"&&<div style={{marginTop:2}}>{x.msg}</div>}
                   </div>)}
                 </div>}
+                {!extraAbierto?<button onClick={()=>setExtraAbierto(true)} style={{...btn2,width:"100%",boxSizing:"border-box",height:44,borderStyle:"dashed",gap:8,marginTop:(ya.length||enCurso.length)?8:0}}><span style={{fontSize:18,lineHeight:1}}>+</span> Agregar contenido</button>
+                :<div style={{background:T.surface,borderRadius:16,padding:"12px",marginTop:ya.length?8:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{flex:1,fontSize:DS.font.base,fontWeight:700,color:T.text}}>Agregar contenido</span><button onClick={()=>setExtraAbierto(false)} style={{background:"none",border:"none",color:T.textSm,fontSize:DS.font.sm,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>Cerrar</button></div>
+                <div style={{fontSize:DS.font.sm,color:T.textMd,marginBottom:10,lineHeight:1.5}}>¿Hiciste algo más de lo acordado? Elegí qué es y subilo. Suma, no cambia lo que acordamos.</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                  {["Historia","Reel","Post","TikTok","Fotos","Otro"].map(t=>{ const on=extraTipo===t; return <button key={t} onClick={()=>setExtraTipo(t)} style={{height:32,padding:"0 14px",borderRadius:99,border:`1px solid ${on?T.accentSolid:T.border}`,background:on?T.accentSolid+"14":"transparent",color:on?T.accentSolid:T.textMd,fontSize:DS.font.sm,fontWeight:on?700:500,cursor:"pointer",fontFamily:"'Inter',system-ui,sans-serif"}}>{t}</button>; })}
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{boton("crudo",`Subir ${extraTipo.toLowerCase()} (crudo)`,true)}{boton("editado",`Subir ${extraTipo.toLowerCase()} (editado)`,false)}</div>
+                </div>}
+                {m&&<div style={{fontSize:DS.font.sm,color:err?T.red:T.green,marginTop:6}}>{err?m.slice(6):m}</div>}
               </div>); })()}
             {d.subida&&subiendo&&<div style={{fontSize:DS.font.sm,color:T.textMd,background:T.surface,borderRadius:12,padding:"10px 12px",marginTop:6}}>Subiendo… no cierres esta página hasta que termine.</div>}
           </div>:null);
