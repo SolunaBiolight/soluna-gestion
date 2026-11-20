@@ -19374,6 +19374,7 @@ function ImpultiendaConexion({T,uid,onCambio}){
   const [gFijos,setGFijos]=useState(null);
   useEffect(()=>{ if(cfg&&gFijos===null) setGFijos((cfg.gastosFijos||[]).map(g=>({nombre:g.nombre,monto:String(g.monto)}))); /* eslint-disable-next-line */ },[cfg]);
   const [paises,setPaises]=useState({});
+  const [dominios,setDominios]=useState({}); // {store_id: "mitienda.com otra.com"}
   const [guardando,setGuardando]=useState(false);
   const [nueva,setNueva]=useState({nombre:"",pais:"",id:""});
   const [cuentas,setCuentas]=useState(null); // {cuentas:[{id,nombre,moneda}], elegidas:[]}
@@ -19382,12 +19383,12 @@ function ImpultiendaConexion({T,uid,onCambio}){
   useEffect(()=>{ if(!uid) return; authFetch(`/api/impultienda?action=meta_cuentas&uid=${uid}`).then(r=>r.json()).then(j=>{ if(!j.error){ setCuentas(j); setElegidas(j.elegidas||[]); } }).catch(()=>{}); },[uid]);
   const [pegado,setPegado]=useState("");
   const inp={...InputStyle(T),fontFamily:"'Inter',system-ui,sans-serif"};
-  const cargar=async()=>{ try{ const j=await (await authFetch(`/api/impultienda?action=config&uid=${uid}`)).json(); if(j.error) throw new Error(j.error); setCfg(j); setFee({pct:String(j.feePct),fijo:String(j.feeFijo)}); setPaises(j.paises||{}); }catch(e){ toast(e.message,"error"); } };
+  const cargar=async()=>{ try{ const j=await (await authFetch(`/api/impultienda?action=config&uid=${uid}`)).json(); if(j.error) throw new Error(j.error); setCfg(j); setFee({pct:String(j.feePct),fijo:String(j.feeFijo)}); setPaises(j.paises||{}); setDominios(Object.fromEntries(Object.entries(j.dominios||{}).map(([k,v])=>[k,(Array.isArray(v)?v:[v]).join(" ")]))); }catch(e){ toast(e.message,"error"); } };
   useEffect(()=>{ if(uid) cargar(); /* eslint-disable-next-line */ },[uid]);
   const guardar=async(extra={})=>{
     setGuardando(true);
     try{
-      const body={feePct:fee.pct,feeFijo:fee.fijo,paises,...extra};
+      const body={feePct:fee.pct,feeFijo:fee.fijo,paises,dominios,...extra};
       if(secret.trim()) body.secret=secret.trim();
       if(stripeKey.trim()) body.stripe_key=stripeKey.trim();
       const j=await (await authFetch(`/api/impultienda?action=config_set&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
@@ -19432,14 +19433,15 @@ function ImpultiendaConexion({T,uid,onCambio}){
       </Card>
       <Card T={T}>
         <div style={tit}>3. Tus tiendas y su código</div>
-        <div style={txt}>Las tiendas se agregan solas a medida que entran ventas de Impultienda. Acá elegís el código de cada una: Growith le asigna las campañas que tengan ese código en el nombre (por ejemplo "IT | Mi producto"). Puede ser un país (IT, PL), varios separados por espacio (RO MD) o cualquier otra etiqueta que uses en tus campañas (VERANO, EBOOK2).</div>
+        <div style={txt}>Las tiendas se agregan solas a medida que entran ventas de Impultienda. Acá elegís el código de cada una: Growith le asigna las campañas que tengan ese código en el nombre (por ejemplo "IT | Mi producto"). Puede ser un país (IT, PL), varios separados por espacio (RO MD) o cualquier otra etiqueta que uses en tus campañas (VERANO, EBOOK2). En <b>Dominio</b> pegá la dirección de la tienda (la de Impultienda o el dominio propio que tengas verificado): un anuncio cuyo link lleve ahí se asigna a esa tienda aunque la venta llegue sin UTM.</div>
         {Object.keys(cfg?.tiendas||{}).length===0 ? <div style={{fontSize:DS.font.sm,color:T.textSm,marginBottom:DS.sp.sm}}>Todavía no entraron ventas: las tiendas aparecen solas con la primera.</div> :
           Object.entries(cfg.tiendas).map(([id,ti])=>(
             <div key={id} style={{display:"flex",gap:DS.sp.sm,alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${T.borderL||T.border}`}}>
               <span style={{flex:1,fontSize:DS.font.base,color:T.text,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ti.nombre||id}</span>
-              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" title="País, varios (RO MD) u otra etiqueta de tus campañas" style={{...inp,width:150}}/>
+              <input value={paises[id]||""} onChange={e=>setPaises({...paises,[id]:e.target.value.toUpperCase()})} placeholder="IT" title="País, varios (RO MD) u otra etiqueta de tus campañas" style={{...inp,width:110}}/>
+              <input value={dominios[id]||""} onChange={e=>setDominios({...dominios,[id]:e.target.value})} placeholder="Dominio · mitienda.com" title="Dominio de la tienda (varios separados por espacio): los anuncios que lleven a ese dominio son de esta tienda" style={{...inp,width:220}}/>
             </div>))}
-        {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar códigos</Btn></div>}
+        {Object.keys(cfg?.tiendas||{}).length>0 && <div style={{marginTop:DS.sp.sm}}><Btn T={T} size="sm" onClick={()=>guardar()} disabled={guardando}>Guardar códigos y dominios</Btn></div>}
       </Card>
       <Card T={T}>
         <div style={tit}>4. Gastos fijos mensuales</div>
@@ -19544,6 +19546,11 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
   ghImpMon.cod = rMon ? mon : "USD"; ghImpMon.r = rMon || 1;
   const filas=data?.filas||[];
   const tiendas=[...new Map(filas.map(f=>[f.tienda,{id:f.tienda,nombre:f.tiendaNombre,pais:f.pais}])).values()].sort((a,b)=>a.id==="SIN_ASIGNAR"?1:b.id==="SIN_ASIGNAR"?-1:String(a.nombre).localeCompare(String(b.nombre)));
+  // Todas las tiendas registradas (Conexión → Tus tiendas) más las que aparecen en el período: cada una tiene su dashboard, tenga ventas o no.
+  const tiendasTodas=(()=>{ const m=new Map(); for(const x of (data?.tiendas||[])) m.set(x.id,{id:x.id,nombre:x.nombre||x.id,pais:x.pais||null,dominios:x.dominios||[]}); for(const x of tiendas) if(!m.has(x.id)) m.set(x.id,{...x,dominios:[]}); return [...m.values()]; })();
+  const hayAlgo=filas.length>0||tiendasTodas.length>0;
+  const [tAbiertas,setTAbiertasS]=useState(()=>{ try{ return JSON.parse(localStorage.getItem("growith_imp_tiendas_abiertas")||"{}"); }catch(_){ return {}; } });
+  const setTAbiertas=(v)=>{ setTAbiertasS(v); try{ localStorage.setItem("growith_imp_tiendas_abiertas",JSON.stringify(v)); }catch(_){} };
   const t=ghImpSumar(filas);
   const agrupar=(lista,clave)=>{ const m={}; for(const f of lista){ const k=clave(f); (m[k]=m[k]||[]).push(f); } return m; };
   const porDia=Object.entries(agrupar(filas,f=>f.fecha)).sort().map(([fecha,l])=>({fecha,...ghImpSumar(l)}));
@@ -19605,9 +19612,9 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
           </div>
           {err && <Card T={T}><span style={{color:T.red,fontSize:DS.font.base}}>{err}</span></Card>}
 
-          {data && filas.length===0 && !cargando && (
+          {data && !hayAlgo && !cargando && (
             <Card T={T}><DSEmpty T={T} icon="store" title="Todavía no hay ventas en este período" subtitle="Si recién conectás Impultienda, revisá la pestaña Conexión: la URL del webhook tiene que estar cargada en Impultienda con su clave de firma." action={<Btn T={T} onClick={()=>ir("conexion")}>Ir a Conexión</Btn>}/></Card>)}
-          {vista==="dashboard" && data && filas.length>0 && (<>
+          {vista==="dashboard" && data && hayAlgo && (<>
             <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0",display:"flex",alignItems:"center"}}>Métricas principales · todas las tiendas<button onClick={()=>setEditCards(v=>!v)} title="Elegir y ordenar las métricas" style={{marginLeft:"auto",background:editCards?T.accent+"18":"transparent",border:"none",cursor:"pointer",color:editCards?T.accent:T.textSm,padding:"2px 4px",borderRadius:5,display:"inline-flex"}}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button></div>
             {(()=>{ const serie=(desde===hasta?Object.entries(agrupar(filas,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(filas,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l)); const nT=new Set(filas.filter(f=>f.n>0).map(f=>f.tienda)).size; return <GhImpCards T={T} cards={ghImpCardsDe(t,serie,nT,data?.totales?.fijos||0,data?.totales?.fijosMes||0,data?.totales?.aceptaronPost)} editar={editCards} setEditar={setEditCards}/>; })()}
             {/* Desgloses en tabla (no tarjetas): por cuenta publicitaria y por tienda (solo las que vendieron). */}
@@ -19623,10 +19630,76 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
                   <thead><tr><th style={{...th,textAlign:"left"}}>{primera}</th><th style={th}>Facturación</th><th style={th}>Ventas</th><th style={th}>Anuncios</th><th style={th}>Comisiones</th><th style={th}>Reemb.</th><th style={th}>Ganancia</th><th style={th}>ROAS</th><th style={th}>CPA</th></tr></thead>
                   <tbody>{filasT}</tbody></table></Card></>);
               const ctas=data.porCuenta||[];
-              const porT=Object.entries(agrupar(filas,f=>f.tienda)).map(([id,l])=>{ const x=ghImpSumar(l); return {id,nombre:l[0].tiendaNombre,...x,cpa:x.n&&x.gasto?x.gasto/x.n:null}; }).filter(x=>x.n>0).sort((a,b)=>b.ganancia-a.ganancia);
               return (<>
                 {tabla("Por cuenta publicitaria","Cuenta",ctas.map(x=>fila(x.id,x.nombre,x.campanas?`${x.campanas} campaña${x.campanas===1?"":"s"}`:"",x)))}
-                {tabla("Por tienda","Tienda",porT.map(x=>fila(x.id,x.nombre,null,x,()=>{ setTiendaSel(x.id); ir("hora"); })))}
+              </>);
+            })()}
+            {/* Dashboard por tienda: cada tienda registrada (tenga ventas o no) con las mismas métricas, cuentas, campañas y ventas que el general. */}
+            {(()=>{
+              const porTienda=agrupar(filas,f=>f.tienda);
+              const fijosTot=data?.totales?.fijos||0, fijosMesTot=data?.totales?.fijosMes||0;
+              const lista=tiendasTodas.map(ti=>{ const fl=porTienda[ti.id]||[]; const x=ghImpSumar(fl); return {...ti,fl,x,cpa:x.n&&x.gasto?x.gasto/x.n:null}; })
+                .sort((a,b)=>{ if(a.id==="SIN_ASIGNAR") return 1; if(b.id==="SIN_ASIGNAR") return -1; const ma=a.x.ventas+a.x.gasto, mb=b.x.ventas+b.x.gasto; if((ma>0)!==(mb>0)) return ma>0?-1:1; return b.x.ganancia-a.x.ganancia||String(a.nombre).localeCompare(String(b.nombre)); });
+              if(!lista.length) return null;
+              const camps=data.campanas||[];
+              const chev=(ab)=>(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{transition:"transform .18s",transform:ab?"rotate(90deg)":"none",flexShrink:0}}><polyline points="9 6 15 12 9 18"/></svg>);
+              const mini=(lbl,val,color)=>(<div style={{minWidth:86}}><div style={{fontSize:DS.font.xs,color:T.textSm,whiteSpace:"nowrap"}}>{lbl}</div><div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:color||T.text,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>{val}</div></div>);
+              const filaT=(k,nombre,sub,x,extra)=>(<tr key={k} style={{borderTop:`1px solid ${T.borderL||T.border}`}}>
+                <td style={{...td,textAlign:"left",color:T.text,fontWeight:DS.w.semibold,maxWidth:320,overflow:"hidden",textOverflow:"ellipsis"}}>{nombre}{sub&&<span style={{fontWeight:400,color:T.textSm,fontSize:DS.font.sm}}> · {sub}</span>}{extra}</td>
+                <td style={td}>{GH_FMT_USD(x.ventas)}</td><td style={td}>{x.n||""}</td><td style={td}>{GH_FMT_USD(x.gasto)}</td><td style={td}>{GH_FMT_USD(x.comisiones||0)}</td>
+                <td style={{...td,fontWeight:DS.w.bold,color:(x.ganancia||0)>=0?T.green:T.red}}>{GH_FMT_USD(x.ganancia||0)}</td><td style={td}>{x.roas?x.roas.toFixed(2):"—"}</td><td style={td}>{x.cpa?GH_FMT_USD(x.cpa):"—"}</td>
+              </tr>);
+              const tablaT=(titulo,primera,filasT)=>filasT.length===0?null:(<div>
+                <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,margin:"4px 0 8px"}}>{titulo}</div>
+                <Card T={T} padding="sm" style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr><th style={{...th,textAlign:"left"}}>{primera}</th><th style={th}>Facturación</th><th style={th}>Ventas</th><th style={th}>Anuncios</th><th style={th}>Comisiones</th><th style={th}>Ganancia</th><th style={th}>ROAS</th><th style={th}>CPA</th></tr></thead>
+                  <tbody>{filasT}</tbody></table></Card></div>);
+              return (<>
+                <div style={{fontSize:16,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"6px 0 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>Dashboard por tienda
+                  <span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.regular}}>{lista.length} tienda{lista.length===1?"":"s"} · tocá una para desplegar su dashboard completo</span>
+                  <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+                    <Btn T={T} size="sm" variant="ghost" onClick={()=>setTAbiertas(Object.fromEntries(lista.map(x=>[x.id,true])))}>Abrir todas</Btn>
+                    <Btn T={T} size="sm" variant="ghost" onClick={()=>setTAbiertas({})}>Cerrar todas</Btn>
+                  </span></div>
+                {lista.map(ti=>{
+                  const ab=!!tAbiertas[ti.id]; const x=ti.x; const vacia=x.ventas<0.005&&x.gasto<0.005;
+                  const toggle=()=>setTAbiertas({...tAbiertas,[ti.id]:!ab});
+                  return (<Card key={ti.id} T={T} padding="sm" style={{opacity:vacia&&!ab?0.78:1}}>
+                    <div onClick={toggle} role="button" style={{display:"flex",alignItems:"center",gap:DS.sp.md,cursor:"pointer",padding:"4px 6px",flexWrap:"wrap"}}>
+                      <span style={{color:T.textMd,display:"inline-flex"}}>{chev(ab)}</span>
+                      <div style={{minWidth:180,flex:"1 1 200px"}}>
+                        <div style={{fontSize:DS.font.lg,fontWeight:DS.w.bold,color:T.text,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{ti.nombre}{ti.pais&&<DSBadge T={T} color={T.accent} size="sm">{ti.pais}</DSBadge>}{ti.id==="SIN_ASIGNAR"&&<span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:400}}>gasto que no se pudo asignar a una tienda</span>}</div>
+                        <div style={{fontSize:DS.font.sm,color:T.textSm,marginTop:2}}>{vacia?"Sin ventas ni gasto en el período":`${x.n} venta${x.n===1?"":"s"}${x.nUpsell?` · ${x.nUpsell} post-compra`:""}`}{ti.dominios?.length?` · ${ti.dominios.join(", ")}`:""}</div>
+                      </div>
+                      <div style={{display:"flex",gap:DS.sp.lg,flexWrap:"wrap",alignItems:"center"}}>
+                        {mini("Facturación",GH_FMT_USD(x.ventas),T.green)}
+                        {mini("Anuncios",GH_FMT_USD(x.gasto),T.blue)}
+                        {mini("Ganancia",GH_FMT_USD(x.ganancia),x.ganancia>=0?T.green:T.red)}
+                        {mini("ROAS",x.roas?x.roas.toFixed(2):"—")}
+                        {mini("CPA",ti.cpa?GH_FMT_USD(ti.cpa):"—")}
+                      </div>
+                    </div>
+                    {ab && (()=>{
+                      const serieT=(desde===hasta?Object.entries(agrupar(ti.fl,f=>String(f.hora).padStart(2,"0"))):Object.entries(agrupar(ti.fl,f=>f.fecha))).sort().map(([,l])=>ghImpSumar(l));
+                      const parte=t.ventas>0?x.ventas/t.ventas:0; // los gastos fijos se reparten por facturación
+                      const cT=camps.filter(c=>c.tienda===ti.id).sort((a,b)=>(b.ventas+b.gasto)-(a.ventas+a.gasto));
+                      const porCta={}; for(const c of cT){ const k=c.cuenta||"OTRA"; const y=porCta[k]||(porCta[k]={id:k,nombre:c.cuentaNombre||"Cuentas no elegidas",ventas:0,n:0,gasto:0,comisiones:0,campanas:0}); y.ventas+=c.ventas||0; y.n+=c.n||0; y.gasto+=c.gasto||0; y.comisiones+=c.comisiones||0; if(c.gasto>0) y.campanas++; }
+                      const sumC=cT.reduce((a,c)=>{ a.v+=c.ventas||0; a.n+=c.n||0; a.com+=c.comisiones||0; return a; },{v:0,n:0,com:0});
+                      if(x.n-sumC.n>0||x.ventas-sumC.v>0.01) porCta.SIN_CAMPANA={id:"SIN_CAMPANA",nombre:"Ventas sin campaña",ventas:Math.max(0,x.ventas-sumC.v),n:Math.max(0,x.n-sumC.n),gasto:0,comisiones:Math.max(0,x.comisiones-sumC.com),campanas:0};
+                      const ctasT=Object.values(porCta).map(y=>({...y,ganancia:y.ventas-y.comisiones-y.gasto,roas:y.gasto?y.ventas/y.gasto:null,cpa:y.n&&y.gasto?y.gasto/y.n:null})).filter(y=>y.gasto>0.01||y.ventas>0.01).sort((a,b)=>b.ganancia-a.ganancia);
+                      const ventasT=(data.ventas||[]).filter(v=>v.tid===ti.id);
+                      return (<div style={{display:"flex",flexDirection:"column",gap:DS.sp.lg,padding:"10px 6px 4px",borderTop:`1px solid ${T.borderL||T.border}`,marginTop:6}}>
+                        {vacia&&<div style={{fontSize:DS.font.sm,color:T.textSm}}>Esta tienda no tuvo ventas ni gasto en el período. Si tiene campañas, revisá que lleven su código o su dominio (Conexión → Tus tiendas).</div>}
+                        <GhImpCards T={T} cards={ghImpCardsDe(x,serieT,1,fijosTot*parte,fijosMesTot*parte,null)} editar={false} setEditar={()=>{}}/>
+                        {tablaT("Por cuenta publicitaria","Cuenta",ctasT.map(y=>filaT(y.id,y.nombre,y.campanas?`${y.campanas} campaña${y.campanas===1?"":"s"}`:"",y)))}
+                        {tablaT("Campañas de la tienda","Campaña",cT.map(c=>filaT(c.key,c.nombre,c.cuentaNombre||null,{ventas:c.ventas||0,n:c.n||0,gasto:c.gasto||0,comisiones:c.comisiones||0,ganancia:c.ganancia||0,roas:c.roas,cpa:c.cpa})))}
+                        {cT.length===0&&!vacia&&<div style={{fontSize:DS.font.sm,color:T.textSm}}>Ninguna campaña quedó asignada a esta tienda: el gasto de arriba viene del reparto por link de los anuncios.</div>}
+                        <div style={{display:"flex",gap:DS.sp.sm,flexWrap:"wrap"}}><Btn T={T} size="sm" variant="secondary" onClick={()=>{ setTiendaSel(ti.id); ir("hora"); }}>Ver por hora</Btn></div>
+                        {ventasT.length>0&&<GhImpVentasLista T={T} ventas={ventasT} prom={data.comisionPromedio} uid={uid} onCambio={()=>cargar(true)}/>}
+                      </div>);
+                    })()}
+                  </Card>);
+                })}
               </>);
             })()}
             <GhImpVentasLista T={T} ventas={data.ventas||[]} prom={data.comisionPromedio} uid={uid} onCambio={()=>cargar(true)}/>
@@ -45213,6 +45286,7 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   const PANELS = [
     {id:"metrics",   label:"Métricas principales"},
     {id:"dow",       label:"Profit diario por semana"},
+    {id:"cuentas",   label:"Gasto por cuenta publicitaria"},
     {id:"costos",    label:"Costos"},
     {id:"canal",     label:"Comparativa por canal"},
     {id:"clientes",  label:"Clientes y caja"},
@@ -46411,6 +46485,35 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
                     );
                   })}
                 </div>
+              </div>
+            </>);
+          })()}
+          </>)}
+
+          {panelWrap("cuentas", <>
+          {/* Gasto de Meta por cuenta publicitaria (igual que en el Dashboard de productos digitales). */}
+          {(()=>{
+            const ctas = rendData?.adSpendBreakdown?.porCuenta || [];
+            if (!ctas.length) return null;
+            const totAds = ctas.reduce((t,c)=>t+(c.ars||0),0);
+            const fmtOrig = (c) => c.moneda==="ARS" ? fmtM(c.orig) : (c.moneda==="USD"?"US$ ":c.moneda+" ")+Number(c.orig).toLocaleString("es-AR",{maximumFractionDigits:2});
+            const thS={textAlign:"right",padding:"8px 10px",fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.semibold,whiteSpace:"nowrap"};
+            const tdS={textAlign:"right",padding:"8px 10px",fontSize:DS.font.md,color:T.text,whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"};
+            return (<>
+              <div style={{fontSize:15,fontWeight:800,color:T.text,letterSpacing:-0.3,margin:"0 0 10px"}}>Gasto por cuenta publicitaria<span style={{fontSize:DS.font.sm,color:T.textSm,fontWeight:DS.w.regular,marginLeft:8}}>Meta · lo que cada cuenta gastó en el período</span></div>
+              <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:DS.r.lg,padding:"4px 6px",marginBottom:18,overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead><tr><th style={{...thS,textAlign:"left"}}>Cuenta</th><th style={thS}>Gasto original</th><th style={thS}>Fee</th><th style={thS}>Gasto</th><th style={{...thS,width:"26%"}}>% del total</th></tr></thead>
+                  <tbody>{ctas.map(c=>(
+                    <tr key={c.id} style={{borderTop:`1px solid ${T.borderL||T.border}`}}>
+                      <td style={{...tdS,textAlign:"left",fontWeight:DS.w.semibold,maxWidth:300,overflow:"hidden",textOverflow:"ellipsis"}}>{c.nombre}<span style={{fontWeight:400,color:T.textSm,fontSize:DS.font.sm}}> · {c.id.replace(/^act_/,"")}</span></td>
+                      <td style={tdS}>{fmtOrig(c)}</td>
+                      <td style={{...tdS,color:T.textMd}}>{c.feePct?`${c.feePct}%`:"—"}</td>
+                      <td style={{...tdS,fontWeight:DS.w.bold}}>{fmtM(c.ars)}</td>
+                      <td style={{padding:"8px 10px"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,height:6,borderRadius:DS.r.full,background:T.surface,overflow:"hidden"}}><div style={{height:"100%",width:`${totAds?Math.max(2,c.ars/totAds*100):0}%`,background:T.accent,borderRadius:DS.r.full}}/></div><span style={{fontSize:DS.font.sm,color:T.textMd,minWidth:38,textAlign:"right"}}>{totAds?(c.ars/totAds*100).toFixed(0):0}%</span></div></td>
+                    </tr>))}</tbody>
+                  <tfoot><tr style={{borderTop:`1px solid ${T.border}`}}><td style={{...tdS,textAlign:"left",fontWeight:DS.w.bold}}>Total · {ctas.length} cuenta{ctas.length===1?"":"s"}</td><td/><td/><td style={{...tdS,fontWeight:DS.w.bold}}>{fmtM(totAds)}</td><td/></tr></tfoot>
+                </table>
               </div>
             </>);
           })()}

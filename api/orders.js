@@ -724,6 +724,8 @@ export default async function handler(req, res) {
         "mlret:1",
         // 14/nov/2026: el aviso de Meta distingue "ninguna cuenta se leyó" de "falló una de varias"
         "metap:1",
+        // 20/nov/2026: gasto de Meta por cuenta publicitaria en el desglose
+        "metacta:1",
         // 3/nov/2026: Shopify reparte la venta por lo cobrado en cada línea (2x1 de un producto)
         ...(stores.some(s => s.type === "shopify") ? ["lpv:1"] : []),
         // 26/oct/2026: el fulfillment propio ya no se suma a las ventas de ML Full (solo invalida a quien lo usa)
@@ -1065,7 +1067,7 @@ export default async function handler(req, res) {
       // Desglose del Ad Spend del período ACTUAL (para el panel "cómo se compone
       // la inversión" del dashboard): gasto original por moneda según Meta,
       // convertido a ARS, cotización promedio usada y días sin cotización.
-      const adsBd = { porMoneda:{}, convertido:0, sinCotiz:0, rateSum:0, rateDias:0, feeMonto:0, fx:{} };
+      const adsBd = { porMoneda:{}, convertido:0, sinCotiz:0, rateSum:0, rateDias:0, feeMonto:0, fx:{}, porCuenta:[] };
       // Tabla de monedas → USD, se pide una sola vez por request y solo si hace falta.
       let _fxProm = null; const fxPorUsd = () => (_fxProm || (_fxProm = fetchFxPorUsd()));
       // Fee adicional POR CUENTA de Meta (recargo tarjeta/agencia). margenesMetaAdFees
@@ -1106,7 +1108,7 @@ export default async function handler(req, res) {
         const sinMoneda = accounts.filter(a => !a.currency);
         if (sinMoneda.length) {
           await Promise.all(sinMoneda.map(async a => {
-            try { const info = await metaGet(a.id, { fields: "currency" }, token); a.currency = info.currency || "ARS"; }
+            try { const info = await metaGet(a.id, { fields: "currency,name" }, token); a.currency = info.currency || "ARS"; if (info.name) a.nombre = info.name; }
             catch (_) { a.currency = "ARS"; }
           }));
         }
@@ -1116,6 +1118,7 @@ export default async function handler(req, res) {
         const arr = await Promise.all(accounts.map(async a => {
           const bd = await fetchMetaDailySpend({ access_token: token, ad_account_id: a.id, nombre: a.nombre }, s, u, eRef);
           const curCode = String(a.currency || "ARS").toUpperCase();
+          const origCuenta = Object.values(bd).reduce((t, v) => t + (v.spend || 0), 0); // gasto en la moneda de la cuenta, antes de convertir
           if (a.currency && a.currency !== "ARS") {
             // Moneda que no es USD ni ARS (COP, MXN, EUR…): primero a USD.
             const fxUnid = curCode === "USD" ? 1 : (fxMeta && parseFloat(fxMeta[curCode]) > 0 ? parseFloat(fxMeta[curCode]) : null);
@@ -1154,6 +1157,8 @@ export default async function handler(req, res) {
           // acá; el feeAd global queda en 0 para no duplicar.
           const accFee = metaFeeFor(a.id);
           if (accFee) for (const v of Object.values(bd)) { const add=(v.spend||0)*accFee; if(bdCollect) bdCollect.feeMonto += add; v.spend=(v.spend||0)+add; }
+          // Gasto por cuenta publicitaria (para el desglose del Dashboard): original en su moneda y lo que suma en ARS con fee.
+          if (bdCollect) bdCollect.porCuenta.push({ id: a.id, nombre: a.nombre || a.id, moneda: curCode, orig: +origCuenta.toFixed(2), ars: +Object.values(bd).reduce((t, v) => t + (v.spend || 0), 0).toFixed(2), feePct: +(accFee * 100).toFixed(2) });
           return bd;
         }));
         const merged = {};
@@ -2569,6 +2574,7 @@ export default async function handler(req, res) {
         feeMonto: +adsBd.feeMonto.toFixed(2),
         fx: Object.keys(adsBd.fx).length ? adsBd.fx : null, // unidades de cada moneda por 1 USD (cuentas que no están en ARS ni USD)
         total: +(adsBd.convertido + adsBd.feeMonto).toFixed(2), // convertido + fees por cuenta (feeAd global ya no aplica)
+        porCuenta: adsBd.porCuenta.filter(c => c.ars > 0.005 || c.orig > 0.005).sort((a, b) => b.ars - a.ars),
       } : null;
 
       // engineV: versión del motor de métricas. Se sube cuando cambia la DEFINICIÓN

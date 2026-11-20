@@ -651,7 +651,7 @@ export function armarTiendas(cfg, ordenes) {
   for (const [id, u] of Object.entries(ultimo)) if (tiendasMap[id]) tiendasMap[id].nombre = u.nombre;
   // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
   for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
-  for (const t of Object.values(tiendasMap)) { if (!t.pais) { const top = Object.entries(t.votos).sort((a, b) => b[1] - a[1])[0]; if (top) { t.pais = top[0]; t.paisAuto = true; } } delete t.votos; }
+  for (const t of Object.values(tiendasMap)) { if (!t.pais) { const top = Object.entries(t.votos).sort((a, b) => b[1] - a[1])[0]; if (top) { t.pais = top[0]; t.paisAuto = true; } } delete t.votos; t.dominios = (cfg.dominios || {})[t.id] || []; }
   return tiendasMap;
 }
 
@@ -706,6 +706,17 @@ export async function utmAtribucion(db, uid, desde, hasta, tz, idx, opts = {}) {
 // ── Tienda de cada anuncio por el link al que lleva ──
 // URL del creativo (link_data, video CTA, asset feed, link_url/object_url). Se guarda el host+primer tramo del path
 // en users/{uid}/impultienda_cfg/ad_links {a: {ad_id: "host/path"}} porque el link de un anuncio no cambia.
+// Dominios de una tienda escritos a mano ("mitienda.com, https://www.mitienda.impultienda.ar/oferta") → hosts limpios.
+function hostsDe(v) {
+  const arr = Array.isArray(v) ? v : String(v || "").split(/[\s,;]+/);
+  const out = [];
+  for (const x of arr) {
+    let h = String(x || "").trim().toLowerCase(); if (!h) continue;
+    h = h.replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[\/?#]/)[0];
+    if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) && !out.includes(h)) out.push(h);
+  }
+  return out.slice(0, 10);
+}
 function linkDeCreativo(cr) {
   if (!cr) return null;
   const o = cr.object_story_spec || {};
@@ -827,6 +838,10 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   }
   const tiendaDeLink = (l) => {
     if (!l) return null;
+    // Dominio cargado a mano en Conexión → Tus tiendas: manda sobre todo lo demás (sirve para anuncios sin UTM).
+    const host0 = String(l.split("/")[0] || "").toLowerCase();
+    const porDom = tiendasLista.find(t => (t.dominios || []).some(d => host0 === d || host0.endsWith("." + d)));
+    if (porDom) return porDom.id;
     const v = votos[l]; if (v) return Object.entries(v).sort((a, b) => b[1] - a[1])[0][0];
     const host = l.split("/")[0]; const hv = {}; for (const [k, x] of Object.entries(votos)) if (k.split("/")[0] === host) for (const [t, n] of Object.entries(x)) hv[t] = (hv[t] || 0) + n;
     const top = Object.entries(hv).sort((a, b) => b[1] - a[1])[0]; if (top) return top[0];
@@ -875,6 +890,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
     c.anuncios = Object.values(v.anuncios).sort((a, b) => b.ventas - a.ventas);
   }
   for (const c of Object.values(campanas)) { if (c.id && meta.metaDice?.[c.id]) c.metaDice = meta.metaDice[c.id];
+    c.cuenta = c.id ? meta.campCuenta?.[c.id] || null : null; c.cuentaNombre = c.cuenta ? meta.nombresCuenta?.[c.cuenta] || c.cuenta : null;
     c.ventas = c.ventas || 0; c.n = c.n || 0; c.comisiones = c.comisiones || 0; c.ganancia = c.ventas - c.comisiones - c.gasto; c.roas = c.gasto ? c.ventas / c.gasto : null; c.cpa = c.n && c.gasto ? c.gasto / c.n : null; }
   // Desglose por cuenta publicitaria: gasto de sus campañas (+ el de hoy aún sin hora) y las ventas reales de esas campañas por UTM.
   const reembCamp = {}; for (const v of ventasLista) reembCamp[v.campKey] = (reembCamp[v.campKey] || 0) + (v.reembolsoUsd || 0);
@@ -1073,7 +1089,7 @@ export default async function handler(req, res) {
         url: `https://${host}/api/impultienda?action=webhook&k=${cfg.hookKey}`,
         tieneFirma: !!cfg.secretEnc, tieneStripe: !!cfg.stripeEnc,
         feePct: cfg.feePct ?? 2.9, feeFijo: cfg.feeFijo ?? 0.3, gastosFijos: cfg.gastosFijos || [],
-        paises: cfg.paises || {}, tiendas, ordenes: os.size, ultimaPrueba: cfg.ultimaPrueba || null,
+        paises: cfg.paises || {}, dominios: cfg.dominios || {}, tiendas, ordenes: os.size, ultimaPrueba: cfg.ultimaPrueba || null,
       });
     }
     if (action === "meta_cuentas") {
@@ -1237,6 +1253,8 @@ export default async function handler(req, res) {
       if (Array.isArray(b.gastosFijos)) patch.gastosFijos = b.gastosFijos.slice(0, 50).map(g => ({ nombre: String(g.nombre || "").slice(0, 60), monto: Math.max(0, Number(g.monto) || 0) })).filter(g => g.nombre || g.monto);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
       if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), paisesDe(v).join(" ").slice(0, 60)]).filter(([, v]) => v));
+      // Dominios de cada tienda (el link de un anuncio que lleve ahí se asigna a esa tienda aunque no tenga UTM): {store_id: "host host"}.
+      if (b.dominios && typeof b.dominios === "object") patch.dominios = Object.fromEntries(Object.entries(b.dominios).map(([k, v]) => [String(k), hostsDe(v)]).filter(([, v]) => v.length));
       // Cuentas publicitarias que cuentan para esta tienda (vacío = todas).
       if (Array.isArray(b.metaCuentas)) patch.metaCuentas = b.metaCuentas.map(String).filter(x => /^act_\d+$/.test(x)).slice(0, 100);
       // Tiendas precargadas a mano (Impultienda no lista tiendas por API): {store_id: {nombre, pais}}
