@@ -4942,11 +4942,11 @@ async function ghLoadAndreaniLocations() {
 // Busca UN pedido por número en la tienda (misma API que el buscador) y lo
 // devuelve ya formateado, o null. Para completar el domicilio al exportar
 // cuando el canje/reclamo tiene pedidoRef pero no los datos de envío.
-async function ghFetchOrderByNum(uid, num) {
+async function ghFetchOrderByNum(uid, num, opts={}) {
   const n = String(num||"").trim();
   if(!n || !uid) return null;
   try {
-    const r = await authFetch(`/api/orders?uid=${uid}&q=${encodeURIComponent(n)}`);
+    const r = await authFetch(`/api/orders?uid=${uid}&q=${encodeURIComponent(n)}${opts.todos?"&todos=1":""}`);
     const data = await r.json();
     if(!Array.isArray(data)) return null;
     const built = buildOrdersFromAPI(data);
@@ -8132,7 +8132,7 @@ function CanjesMaterialModal({T,uid,ficha,guiones,web:webIni,wa:waIni,onCambio,o
 }
 // Alta de un canje en 3 pasos (12/nov/2026): Quién → Qué acordamos → Listo (con el link y el WhatsApp armado).
 // Lo que llega con el pedido (productos, dirección, seguimiento) no se pide acá.
-export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,responsables,plantillas,catalogoContenido,onCrear,onAbrir,onPedirGuion,onCargarPedido,onClose}){
+export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,responsables,plantillas,catalogoContenido,onCrear,onAbrir,onPedirGuion,onCargarPedido,onBuscarPedidos,onClose}){
   // Si ya hizo el pedido, el número trae todo (12/nov/2026, el flujo de siempre de Soluna): nombre, contacto,
   // productos exactos y envío. Si no, el canje queda "Esperando pedido" y se une solo.
   const [pedNum,setPedNum]=React.useState(""); const [pedEst,setPedEst]=React.useState(null); // null | "buscando" | {ok,txt} | {error}
@@ -8159,8 +8159,18 @@ export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,respon
       ...(perfil.descuentoPct?{descuentoPct:String(perfil.descuentoPct)}:{}),...(perfil.comisionPct?{comisionPct:String(perfil.comisionPct)}:{})})); },[perfil]);
   const cont=(f.contenido||[]); const nCont=t=>(cont.find(x=>x.tipo===t)?.acordados)||0;
   const setCont=(t,d)=>setF(o=>{ const l=[...(o.contenido||[])]; const i=l.findIndex(x=>x.tipo===t); const v=Math.max(0,(i>=0?l[i].acordados:0)+d); if(i>=0) l[i]={...l[i],acordados:v}; else if(v>0) l.push({tipo:t,acordados:v,entregados:0}); return {...o,contenido:l.filter(x=>x.acordados>0)}; });
-  async function traerPedido(){
-    const n=String(pedNum||"").replace(/[^\d]/g,""); if(!n||pedEst==="buscando") return;
+  // Por nombre (20/nov/2026): si lo escrito tiene letras, se buscan los pedidos de ese comprador y se elige uno.
+  const [pedHits,setPedHits]=React.useState(null); // null | [] | [{numero,comprador,fecha,total,pago,n}]
+  async function buscarPorNombre(q){
+    if(!onBuscarPedidos) return; setPedEst("buscando"); setPedHits(null);
+    try{ const l=await onBuscarPedidos(q); setPedHits(l||[]); setPedEst(l&&l.length?null:{error:`No encontré pedidos de "${q}" en la tienda.`}); }
+    catch(e){ setPedEst({error:"No pude buscar: "+String(e?.message||e).slice(0,80)}); }
+  }
+  async function traerPedido(numDirecto){
+    const crudo=String(numDirecto??pedNum??"").trim();
+    if(numDirecto==null&&/[a-záéíóúñ]/i.test(crudo)){ if(crudo.length>=3&&pedEst!=="buscando") buscarPorNombre(crudo); return; }
+    const n=crudo.replace(/[^\d]/g,""); if(!n||pedEst==="buscando") return;
+    setPedHits(null);
     if((canjes||[]).some(c=>String(c.pedidoRef||"").replace(/^#/,"").trim()===n)){ setPedEst({error:`El pedido #${n} ya está en otro canje.`}); return; }
     setPedEst("buscando");
     try{ const r=await onCargarPedido(n); if(!r){ setPedEst({error:`No encontré el pedido #${n} en la tienda.`}); return; }
@@ -8199,14 +8209,23 @@ export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,respon
       </div>
       {paso===1&&(<div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{background:T.surface,border:`1px solid ${pedEst?.ok?T.green+"66":T.borderL}`,borderRadius:14,padding:"12px 14px"}}>
-          {lbl("¿Ya hizo el pedido? Poné el número y se completa todo")}
+          {lbl("¿Ya hizo el pedido? Poné el número o su nombre y se completa todo")}
           <div style={{display:"flex",gap:8}}>
-            <input style={{...iS,flex:1}} value={pedNum} onChange={e=>{ setPedNum(e.target.value); if(pedEst&&pedEst!=="buscando") setPedEst(null); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); traerPedido(); } }} placeholder="N° de pedido (ej.: 8123)" inputMode="numeric"/>
-            <Btn T={T} variant="secondary" onClick={traerPedido} disabled={!pedNum.trim()||pedEst==="buscando"}>{pedEst==="buscando"?"Buscando…":"Traer"}</Btn>
+            <input style={{...iS,flex:1}} value={pedNum} onChange={e=>{ setPedNum(e.target.value); setPedHits(null); if(pedEst&&pedEst!=="buscando") setPedEst(null); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); traerPedido(); } }} placeholder="N° de pedido (8123) o nombre (Sofía Gómez)"/>
+            <Btn T={T} variant="secondary" onClick={()=>traerPedido()} disabled={!pedNum.trim()||pedEst==="buscando"}>{pedEst==="buscando"?"Buscando…":/[a-záéíóúñ]/i.test(pedNum)?"Buscar":"Traer"}</Btn>
           </div>
+          {pedHits&&pedHits.length>0&&<div style={{marginTop:8,border:`1px solid ${T.borderL}`,borderRadius:12,overflow:"hidden",background:T.card}}>
+            <div style={{fontSize:11,color:T.textSm,padding:"6px 12px",borderBottom:`1px solid ${T.borderL}`}}>{pedHits.length} pedido{pedHits.length!==1?"s":""}: elegí el del canje</div>
+            {pedHits.map(o=>{ const enCanje=(canjes||[]).some(c=>String(c.pedidoRef||"").replace(/^#/,"").trim()===String(o.numero)); return (
+              <button key={o.numero} disabled={enCanje} onClick={()=>{ setPedNum(String(o.numero)); setPedHits(null); traerPedido(String(o.numero)); }} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:`1px solid ${T.borderL}`,background:"transparent",color:T.text,cursor:enCanje?"default":"pointer",opacity:enCanje?0.5:1,fontFamily:"'Inter',system-ui,sans-serif"}}>
+                <span style={{fontSize:13,fontWeight:800,color:T.accentSolid,flexShrink:0}}>#{o.numero}</span>
+                <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.comprador||"Sin nombre"}</span>
+                  <span style={{display:"block",fontSize:11,color:T.textSm}}>{[o.fecha,o.n?`${o.n} producto${o.n!==1?"s":""}`:"",o.pago].filter(Boolean).join(" · ")}{enCanje?" · ya está en otro canje":""}</span></span>
+              </button>); })}
+          </div>}
           {pedEst?.ok&&<div style={{fontSize:12,color:T.green,marginTop:6,fontWeight:600}}>{pedEst.txt}</div>}
           {pedEst?.error&&<div style={{fontSize:12,color:T.red,marginTop:6}}>{pedEst.error}</div>}
-          {!pedEst&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>Si todavía no lo hizo, seguí sin número: queda esperando y se une solo cuando entre.</div>}
+          {!pedEst&&!pedHits&&<div style={{fontSize:11,color:T.textSm,marginTop:6}}>Si todavía no lo hizo, seguí sin número: queda esperando y se une solo cuando entre.</div>}
         </div>
         <div>{lbl("Instagram")}<input autoFocus style={iS} value={f.usuario} onChange={e=>{ const v=e.target.value.replace(/^@/,"").replace(/.*instagram\.com\//i,"").replace(/[/?].*$/,"").trim(); setF(o=>({...o,usuario:v,...(o._codigoTocado?{}:{codigoDescuento:ghCanjeCodigoDe(v)})})); }} placeholder="@usuario o el link de su perfil"/></div>
         {(perfil||hist?.n>0)&&(<div style={{background:perfil?.volverATrabajar===false?T.red+"12":T.surface,border:`1px solid ${perfil?.volverATrabajar===false?T.red+"55":T.borderL}`,borderRadius:12,padding:"10px 12px",fontSize:13,color:T.text,lineHeight:1.5}}>
@@ -10824,7 +10843,9 @@ export function AppCanjes({T, fbStatus, user, onHome, pendingCanje, onClearPendi
       </Modal>
 
       {/* Alta de canje en 3 pasos (12/nov/2026, reemplaza al formulario largo) */}
-      {form&&!form._docId&&<CanjeNuevoModal T={T} uid={user?.uid} onCargarPedido={async n=>{ const o=await ghFetchOrderByNum(user?.uid,n); if(!o||String(o.numero)!==String(n)) return null;
+      {form&&!form._docId&&<CanjeNuevoModal T={T} uid={user?.uid} onBuscarPedidos={async q=>{ const r=await authFetch(`/api/orders?uid=${user?.uid||""}&q=${encodeURIComponent(q)}&todos=1`); const d=await r.json().catch(()=>null); if(!r.ok||!Array.isArray(d)) throw new Error(d?.error||`HTTP ${r.status}`);
+          return buildOrdersFromAPI(d).slice(0,10).map(o=>({numero:o.numero,comprador:o.comprador||"",fecha:o.fecha||"",n:(o.productos||[]).reduce((a,p)=>a+(parseInt(p?.cantidad)||1),0),pago:o.estadoPago||""})); }}
+        onCargarPedido={async n=>{ const o=await ghFetchOrderByNum(user?.uid,n,{todos:true}); if(!o||String(o.numero)!==String(n)) return null;
           const d=datosDePedido(o); const prods=(o.productos||[]).map(p=>({nombre:ghNombreCortoProducto(typeof p==="string"?p:(p.nombre||""),prefProds),cantidad:parseInt(p.cantidad)||1,sku:p.sku||""})).filter(p=>p.nombre);
           const tot=prods.reduce((a,p)=>a+p.cantidad,0);
           return {patch:{...d,productosCanje:prods,producto:prods[0]?.nombre||"",anteojosAcordados:tot||1,influencer:o.comprador||"",telefono:o.telefono||"",email:o.email||"",pedidoId:String(o.tnId||"")},

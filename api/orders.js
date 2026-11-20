@@ -3593,12 +3593,17 @@ export default async function handler(req, res) {
     if (q) {
       const qTrim = q.trim();
       if (platform === 'shopify') {
-        const orders = (await shopifyFetchOrders("financial_status=any")).filter(o => SH_ENVIABLE.has(String(o.financial_status || "").toLowerCase()));
+        // todos=1 (alta de canje, 20/nov/2026): también los pedidos con pago PENDIENTE (el influencer paga
+        // "por transferencia" y nunca se confirma); sin eso solo los enviables.
+        const todosQ = req.query.todos === '1';
+        const orders = (await shopifyFetchOrders("financial_status=any")).filter(o => todosQ || SH_ENVIABLE.has(String(o.financial_status || "").toLowerCase()));
         const sq = qTrim.toLowerCase();
         const filtered = orders.filter(o => !o.cancelled_at && (
           String(o.order_number||o.name||"").toLowerCase().includes(sq) ||
           (o.customer?.first_name||"").toLowerCase().includes(sq) ||
           (o.customer?.last_name||"").toLowerCase().includes(sq) ||
+          `${o.customer?.first_name||""} ${o.customer?.last_name||""}`.toLowerCase().includes(sq) ||
+          `${o.shipping_address?.first_name||""} ${o.shipping_address?.last_name||""}`.toLowerCase().includes(sq) ||
           (o.email||"").toLowerCase().includes(sq)
         )).slice(0, 30).map(shopifyToTNFormat);
         return res.status(200).json(filtered);
