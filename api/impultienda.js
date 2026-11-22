@@ -652,6 +652,8 @@ export function armarTiendas(cfg, ordenes) {
   for (const [id, t] of Object.entries(cfg.tiendasManual || {})) if (t?.at && t.nombre) ultimo[id] = { ts: t.at, nombre: t.nombre };
   for (const o of ordenes) { if (!o.store_id || !o.store_nombre || o.importado) continue; const ts = o.actualizado || o.ev_approved || ""; if (!ultimo[o.store_id] || ts > ultimo[o.store_id].ts) ultimo[o.store_id] = { ts, nombre: o.store_nombre }; }
   for (const [id, u] of Object.entries(ultimo)) if (tiendasMap[id]) tiendasMap[id].nombre = u.nombre;
+  // Impultienda manda en el webhook un nombre que puede ser el viejo: la lista cargada a mano (con fecha) siempre manda.
+  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) if (t?.at && t.nombre && tiendasMap[id]) tiendasMap[id].nombre = t.nombre;
   // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
   for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
   for (const t of Object.values(tiendasMap)) { if (!t.pais) { const top = Object.entries(t.votos).sort((a, b) => b[1] - a[1])[0]; if (top) { t.pais = top[0]; t.paisAuto = true; } } delete t.votos; t.dominios = (cfg.dominios || {})[t.id] || []; }
@@ -1089,7 +1091,7 @@ export default async function handler(req, res) {
       const os = await db.collection("users").doc(uid).collection("impultienda_orders").orderBy("actualizado", "desc").limit(300).get();
       for (const d of os.docs) { const o = d.data(); if (o.store_id && !tiendas[o.store_id]) tiendas[o.store_id] = { nombre: o.store_nombre, pais: (cfg.paises || {})[o.store_id] || null }; }
       // Nombre actual: el del evento más reciente (os viene ordenado por actualizado desc), salvo una lista pegada más nueva.
-      { const vis = new Set(); for (const d of os.docs) { const o = d.data(); if (!o.store_id || !o.store_nombre || vis.has(o.store_id)) continue; vis.add(o.store_id); const man = (cfg.tiendasManual || {})[o.store_id]; if (tiendas[o.store_id] && !(man?.at && man.at > (o.actualizado || ""))) tiendas[o.store_id].nombre = o.store_nombre; } }
+      { const vis = new Set(); for (const d of os.docs) { const o = d.data(); if (!o.store_id || !o.store_nombre || vis.has(o.store_id)) continue; vis.add(o.store_id); const man = (cfg.tiendasManual || {})[o.store_id]; if (tiendas[o.store_id] && !man?.at) tiendas[o.store_id].nombre = o.store_nombre; } }
       return res.json({
         url: `https://${host}/api/impultienda?action=webhook&k=${cfg.hookKey}`,
         tieneFirma: !!cfg.secretEnc, tieneStripe: !!cfg.stripeEnc,
