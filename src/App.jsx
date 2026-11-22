@@ -19655,11 +19655,12 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
                 {tabla("Por cuenta publicitaria","Cuenta",ctas.map(x=>fila(x.id,x.nombre,x.campanas?`${x.campanas} campaña${x.campanas===1?"":"s"}`:"",x)))}
               </>);
             })()}
-            {/* Dashboard por tienda: cada tienda registrada (tenga ventas o no) con las mismas métricas, cuentas, campañas y ventas que el general. */}
+            {/* Dashboard por tienda: solo las tiendas con ventas o gasto en el período con las mismas métricas, cuentas, campañas y ventas que el general. */}
             {(()=>{
               const porTienda=agrupar(filas,f=>f.tienda);
               const fijosTot=data?.totales?.fijos||0, fijosMesTot=data?.totales?.fijosMes||0;
               const lista=tiendasTodas.map(ti=>{ const fl=porTienda[ti.id]||[]; const x=ghImpSumar(fl); return {...ti,fl,x,cpa:x.n&&x.gasto?x.gasto/x.n:null}; })
+                .filter(t=>t.x.n>0||t.x.ventas>0.005||t.x.gasto>0.005) // sin ventas ni gasto en el período: no se muestra
                 .sort((a,b)=>{ if(a.id==="SIN_ASIGNAR") return 1; if(b.id==="SIN_ASIGNAR") return -1; const ma=a.x.ventas+a.x.gasto, mb=b.x.ventas+b.x.gasto; if((ma>0)!==(mb>0)) return ma>0?-1:1; return b.x.ganancia-a.x.ganancia||String(a.nombre).localeCompare(String(b.nombre)); });
               if(!lista.length) return null;
               const camps=data.campanas||[];

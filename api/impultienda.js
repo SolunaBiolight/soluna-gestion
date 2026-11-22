@@ -1088,6 +1088,8 @@ export default async function handler(req, res) {
       for (const [id, t] of Object.entries(cfg.tiendasManual || {})) tiendas[id] = { nombre: t.nombre, pais: (cfg.paises || {})[id] || t.pais || null };
       const os = await db.collection("users").doc(uid).collection("impultienda_orders").orderBy("actualizado", "desc").limit(300).get();
       for (const d of os.docs) { const o = d.data(); if (o.store_id && !tiendas[o.store_id]) tiendas[o.store_id] = { nombre: o.store_nombre, pais: (cfg.paises || {})[o.store_id] || null }; }
+      // Nombre actual: el del evento más reciente (os viene ordenado por actualizado desc), salvo una lista pegada más nueva.
+      { const vis = new Set(); for (const d of os.docs) { const o = d.data(); if (!o.store_id || !o.store_nombre || vis.has(o.store_id)) continue; vis.add(o.store_id); const man = (cfg.tiendasManual || {})[o.store_id]; if (tiendas[o.store_id] && !(man?.at && man.at > (o.actualizado || ""))) tiendas[o.store_id].nombre = o.store_nombre; } }
       return res.json({
         url: `https://${host}/api/impultienda?action=webhook&k=${cfg.hookKey}`,
         tieneFirma: !!cfg.secretEnc, tieneStripe: !!cfg.stripeEnc,
