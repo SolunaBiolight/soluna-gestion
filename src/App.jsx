@@ -19625,7 +19625,7 @@ function AppImpultiendaDash({T,user,tab="dashboard",setTab}){
             {vista==="hora" && <DepSeg T={T} value={gran} onChange={setGran} items={[["hora","Por hora"],["dia","Por día"]]}/>}
             {vista==="hora" && tiendas.length>1 && (
               <select value={tiendaSel} onChange={e=>setTiendaSel(e.target.value)} style={{...inp,width:"auto"}}>
-                <option value="todas">Todas las tiendas</option>{tiendas.map(x=><option key={x.id} value={x.id}>{x.nombre}</option>)}
+                <option value="todas">Todas las tiendas</option>{tiendas.filter(x=>x.id===tiendaSel||filas.some(f=>f.tienda===x.id&&f.n>0)).map(x=><option key={x.id} value={x.id}>{x.nombre}</option>)}
               </select>)}
             <div style={{marginLeft:"auto",display:"flex",gap:DS.sp.sm,alignItems:"center"}}>
               <span style={{fontSize:DS.font.sm,color:T.textSm}}>{data?.generado?`${ghImpMon.cod}${ghImpMon.cod!=="USD"?` (1 US$ = ${ghImpMon.r.toLocaleString("es-AR",{maximumFractionDigits:2})}${ghImpMon.cod==="ARS"&&data?.arsCripto?" cripto":""})`:""} · actualizado ${new Date(data.generado).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",timeZone:tz})}`:""}</span>

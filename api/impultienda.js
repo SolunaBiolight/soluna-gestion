@@ -647,7 +647,10 @@ export function armarTiendas(cfg, ordenes) {
   for (const o of ordenes) if (o.store_id && !tiendasMap[o.store_id]) tiendasMap[o.store_id] = { id: o.store_id, nombre: o.store_nombre || o.store_id, pais: paises[o.store_id] || null, votos: {} };
   // La tienda se puede renombrar en Impultienda: vale el nombre de su venta más reciente (no el primero que se vio).
   const ultimo = {};
-  for (const o of ordenes) { if (!o.store_id || !o.store_nombre || o.importado) continue; const ts = o.ev_approved || o.actualizado || ""; if (!ultimo[o.store_id] || ts > ultimo[o.store_id].ts) ultimo[o.store_id] = { ts, nombre: o.store_nombre }; }
+  // Cuenta cualquier evento (orden creada, carrito abandonado, venta…): el nombre nuevo aparece con el primer movimiento.
+  // Una lista pegada a mano después del último evento manda sobre el nombre de los eventos.
+  for (const [id, t] of Object.entries(cfg.tiendasManual || {})) if (t?.at && t.nombre) ultimo[id] = { ts: t.at, nombre: t.nombre };
+  for (const o of ordenes) { if (!o.store_id || !o.store_nombre || o.importado) continue; const ts = o.actualizado || o.ev_approved || ""; if (!ultimo[o.store_id] || ts > ultimo[o.store_id].ts) ultimo[o.store_id] = { ts, nombre: o.store_nombre }; }
   for (const [id, u] of Object.entries(ultimo)) if (tiendasMap[id]) tiendasMap[id].nombre = u.nombre;
   // Sin país cargado: el que más se repite en las UTM de sus ventas (o la moneda/país del comprador).
   for (const o of ordenes) { const t = tiendasMap[o.store_id]; if (!t || t.pais) continue; const p = paisDeUtm(o.utm) || o.pais; if (p) t.votos[p] = (t.votos[p] || 0) + 1; }
@@ -1267,7 +1270,7 @@ export default async function handler(req, res) {
           const nombre = String(t?.nombre || "").trim().slice(0, 80);
           const id = /^[0-9a-f-]{20,40}$/i.test(id0) ? id0 : (nombre ? "n_" + norm(nombre).replace(/ /g, "_").slice(0, 60) : null);
           if (!id) continue;
-          tm[id] = { nombre: nombre || id, pais: paisesDe(t?.pais).join(" ").slice(0, 20) || null };
+          tm[id] = { nombre: nombre || id, pais: paisesDe(t?.pais).join(" ").slice(0, 20) || null, at: new Date().toISOString() };
         }
         patch.tiendasManual = tm;
         patch.paises = { ...(patch.paises || {}), ...Object.fromEntries(Object.entries(tm).filter(([, t]) => t.pais).map(([id, t]) => [id, t.pais])) };
