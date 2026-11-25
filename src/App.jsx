@@ -8158,6 +8158,7 @@ export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,respon
       ...(perfil.codigoDescuento?{codigoDescuento:String(perfil.codigoDescuento).toUpperCase(),_codigoTocado:true,crearCupon:false}:{}),
       ...(perfil.descuentoPct?{descuentoPct:String(perfil.descuentoPct)}:{}),...(perfil.comisionPct?{comisionPct:String(perfil.comisionPct)}:{})})); },[perfil]);
   const cont=(f.contenido||[]); const nCont=t=>(cont.find(x=>x.tipo===t)?.acordados)||0;
+  const [contTxt,setContTxt]=React.useState("");
   const setCont=(t,d)=>setF(o=>{ const l=[...(o.contenido||[])]; const i=l.findIndex(x=>x.tipo===t); const v=Math.max(0,(i>=0?l[i].acordados:0)+d); if(i>=0) l[i]={...l[i],acordados:v}; else if(v>0) l.push({tipo:t,acordados:v,entregados:0}); return {...o,contenido:l.filter(x=>x.acordados>0)}; });
   // Por nombre (20/nov/2026): si lo escrito tiene letras, se buscan los pedidos de ese comprador y se elige uno.
   const [pedHits,setPedHits]=React.useState(null); // null | [] | [{numero,comprador,fecha,total,pago,n}]
@@ -8259,11 +8260,24 @@ export function CanjeNuevoModal({T,uid,inicial,influencers,canjes,guiones,respon
           {elegidos.length>0&&<div style={{fontSize:12,color:T.textSm,marginTop:6}}>{totalElegidos} producto{totalElegidos!==1?"s":""} en total. Si en el pedido elige otros, Growith te avisa.</div>}
         </div>
         <div>{lbl("Responsable")}<input style={iS} list="gh-canje-resp2" value={f.responsable} onChange={e=>set({responsable:e.target.value})} placeholder="Quién lo sigue (opcional)"/><datalist id="gh-canje-resp2">{(responsables||[]).map(r=><option key={r} value={r}/>)}</datalist></div>
-        <div>{lbl("Contenido")}<div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {catalogoContenido.map(t=>{ const n=nCont(t); return n>0
-            ?<span key={t} style={chip(true)}>{t} <button style={mini} onClick={()=>setCont(t,-1)}>−</button><strong>{n}</strong><button style={mini} onClick={()=>setCont(t,1)}>+</button></span>
-            :<button key={t} onClick={()=>setCont(t,1)} style={{...chip(false),padding:"0 12px",cursor:"pointer"}}>+ {t}</button>; })}
-        </div></div>
+        {/* Contenido (25/nov/2026, Lautaro: "contenido personalizado escribiendo el nombre y achicame las opciones"):
+            pocas opciones a mano + lo ya elegido + un campo para escribir cualquier pieza con su nombre. */}
+        {(()=>{ const base=["Story","Reel","Reel colaboración","Video para pauta","UGC"];
+          const elegidos=cont.map(x=>x.tipo); const vis=[...new Set([...elegidos,...base])];
+          const agregarTxt=()=>{ const t=String(contTxt||"").replace(/\s+/g," ").trim().slice(0,40); if(!t) return;
+            const ya=vis.find(x=>x.toLowerCase()===t.toLowerCase()); setCont(ya||t,1); setContTxt(""); };
+          return (
+          <div>{lbl("Contenido")}<div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
+            {vis.map(t=>{ const n=nCont(t); return n>0
+              ?<span key={t} style={chip(true)}>{t} <button style={mini} onClick={()=>setCont(t,-1)}>−</button><strong>{n}</strong><button style={mini} onClick={()=>setCont(t,1)}>+</button></span>
+              :<button key={t} onClick={()=>setCont(t,1)} style={{...chip(false),padding:"0 12px",cursor:"pointer"}}>+ {t}</button>; })}
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,height:32,padding:"0 4px 0 12px",borderRadius:99,border:`1px dashed ${T.border}`}}>
+              <input value={contTxt} onChange={e=>setContTxt(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); agregarTxt(); } }} placeholder="Otro: escribilo" list="gh-canje-cont-sug"
+                style={{width:150,border:"none",outline:"none",background:"transparent",color:T.text,fontSize:12,fontFamily:"'Inter',system-ui,sans-serif"}}/>
+              <datalist id="gh-canje-cont-sug">{(catalogoContenido||[]).filter(t=>!vis.includes(t)).map(t=><option key={t} value={t}/>)}</datalist>
+              {contTxt.trim()&&<button onClick={agregarTxt} style={{...mini,width:"auto",padding:"0 8px",borderRadius:99,fontSize:11,fontWeight:700}}>Agregar</button>}
+            </span>
+          </div></div>); })()}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div>{lbl("Guion")}<select style={iS} value={f.guionPedir?"__pedir":f.guionId} onChange={e=>{ const v=e.target.value; set(v==="__pedir"?{guionPedir:true,guionId:""}:{guionPedir:false,guionId:v}); }}>
             <option value="">Sin guion</option>{(guiones||[]).map(g=><option key={g.id} value={g.id}>{g.nombre}</option>)}<option value="__pedir">Personalizado (lo pido después)</option></select></div>
