@@ -5329,6 +5329,7 @@ async function ghEtiquetaAndreaniXlsx(lista, nombreArchivo, opts={}) {
   const ssXml=await zip.file('xl/sharedStrings.xml').async('string');
   const existSS=[];const ssRx=/<t[^>]*>([\s\S]*?)<\/t>/g;let mx;while((mx=ssRx.exec(ssXml))!==null)existSS.push(mx[1]);
   const ssMap=new Map();existSS.forEach((s,i)=>ssMap.set(s,i));const newSS=[...existSS];
+  const sucNombres=new Set();
   function idx(s){const k=String(s==null?"":s);if(ssMap.has(k))return ssMap.get(k);const i=newSS.length;newSS.push(k);ssMap.set(k,i);return i;}
   function sC(ref,val){return '<c r="'+ref+'" t="s"><v>'+idx(val)+'</v></c>';}
   function nC(ref,val){return (val===''||val===null||val===undefined)?sC(ref,''):'<c r="'+ref+'"><v>'+val+'</v></c>';}
@@ -5386,6 +5387,7 @@ async function ghEtiquetaAndreaniXlsx(lista, nombreArchivo, opts={}) {
     // o.sucursal = elegida a mano por el usuario (selector de Canjes/Envíos).
     const sucursal=o.sucursal||ghMatchSucursal(locs, o.direccion, o.pickupDetails, o.dirNumero);
     if(!sucursal) throw new Error("es un envío a sucursal y no pude identificar cuál en la lista de Andreani. Generá esta etiqueta desde Envíos, que permite elegir la sucursal a mano");
+    sucNombres.add(sucursal);
     const cells=[...baseCells,sC('N'+rn,sucursal)].join('');
     filasSuc.push('<row r="'+rn+'" spans="1:14" x14ac:dyDescent="0.25">'+cells+'</row>'); rnSuc++;
   } else {
@@ -5404,6 +5406,14 @@ async function ghEtiquetaAndreaniXlsx(lista, nombreArchivo, opts={}) {
     if(!sheet2file) throw new Error("el template no tiene hoja de sucursales");
     const sheet2=await sheet2file.async('string');
     zip.file('xl/worksheets/sheet2.xml',sheet2.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:N'+(rnSuc-1)+'"/>').replace('</sheetData>',filasSuc.join('')+'</sheetData>').replace(/<dataValidations[\s\S]*?<\/dataValidations>/g,''));
+  }
+  // Igual que Envíos (25/nov/2026): antes de bajar el Excel se consulta a Andreani en vivo. Un punto HOP
+  // renombrado sale con su nombre VIGENTE (celda y lista); uno cerrado frena el archivo con el motivo.
+  if(sucNombres.size){
+    let dV=null; try{ const rV=await authFetch("/api/andreani",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validar_sucursales_tpl",nombres:[...sucNombres]})}); dV=rV.ok?await rV.json().catch(()=>null):null; }catch(_){}
+    const vg=dV?.vigentes||{}; if(Object.keys(vg).length) for(let i=0;i<newSS.length;i++){ if(vg[newSS[i]]) newSS[i]=vg[newSS[i]]; }
+    const cerr=(dV?.faltantes||[]).filter(n=>sucNombres.has(n));
+    if(cerr.length) throw new Error(`Andreani no tiene operativo ${cerr.length===1?"el punto":"los puntos"} ${cerr.join(", ")}. Elegí otra sucursal para ${cerr.length===1?"ese canje":"esos canjes"} (en el canje, Envío → sucursal) y volvé a exportar`);
   }
   const newSsItems=newSS.map(s=>{const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const sp=(s!==s.trim()||s.indexOf(String.fromCharCode(10))>=0)?' xml:space="preserve"':'';return '<si><t'+sp+'>'+esc+'</t></si>';}).join('');
   zip.file('xl/sharedStrings.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="'+newSS.length+'" uniqueCount="'+newSS.length+'">'+newSsItems+'</sst>');
@@ -11685,6 +11695,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
         const rS=await authFetch("/api/andreani",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validar_sucursales_tpl",nombres:nombresSuc})});
         const dS=await rS.json().catch(()=>null);
         if(rS.ok&&Array.isArray(dS?.faltantes)) faltantes=dS.faltantes.filter(n=>!usarIgualRef.current.has(n));
+        if(rS.ok&&dS?.vigentes&&typeof dS.vigentes==="object") vigTplRef.current={...vigTplRef.current,...dS.vigentes};
         else toast("No se pudo verificar con Andreani que las sucursales estén operativas: revisá el Excel antes de cargarlo","warning",7000);
       }catch(_){ toast("No se pudo verificar con Andreani que las sucursales estén operativas: revisá el Excel antes de cargarlo","warning",7000); }
       if(faltantes.length){
@@ -11786,6 +11797,8 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
       {const _i=newSheet2.indexOf('<dataValidations');if(_i>=0){const _j=newSheet2.indexOf('</dataValidations>');if(_j>=0)newSheet2=newSheet2.slice(0,_i)+newSheet2.slice(_j+18);}}
       zip.file('xl/worksheets/sheet2.xml',newSheet2);
     }
+    // Puntos renombrados por Andreani (25/nov/2026): la lista del Excel y la celda llevan el nombre VIGENTE.
+    { const vg=vigTplRef.current||{}; if(Object.keys(vg).length) for(let i=0;i<newSS.length;i++){ if(vg[newSS[i]]) newSS[i]=vg[newSS[i]]; } }
     const newSsItems=newSS.map(function(s){
       const esc=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       const sp=(s!==s.trim()||s.indexOf(String.fromCharCode(10))>=0)?' xml:space="preserve"':'';
@@ -11796,6 +11809,7 @@ function AppEnvios({T, orders, ordersStatus, fetchOrders, user, onHome, canjesPe
     return zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',compression:'DEFLATE'});
   }
   const locationOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_locOverrides"))||"{}");}catch(_){return {};}})());
+  const vigTplRef=useRef({}); // {nombre del desplegable: nombre vigente en Andreani} (puntos HOP renombrados)
   const sucursalOverridesRef=useRef((()=>{try{return JSON.parse(localStorage.getItem(ghKey("growith_sucOverrides"))||"{}");}catch(_){return {};}})());
   // Key de overrides por pedido: incluye el canal cuando no es TN para que un
   // pedido Shopify #1234 y uno TN #1234 no compartan la misma entrada.

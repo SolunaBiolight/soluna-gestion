@@ -1914,27 +1914,46 @@ export default async function handler(req, res) {
       let vivoGuard = {};
       try { const d = (await db.collection("andreani_config").doc("tpl_baja").get()).data(); vivoGuard = d?.vivo && typeof d.vivo === "object" ? d.vivo : {}; } catch (_) {}
       const resultado = new Map(); // K(nombre) → "baja" | "ok"
+      // Puntos RENOMBRADOS (25/nov/2026, canje #9239: el desplegable dice "PUNTO ANDREANI HOP AVENIDA CÓRDOBA
+      // 6193" y Andreani hoy lo tiene como "PUNTO ANDREANI HOP AV CORDOBA 6193", HOP9508; el importador no lo
+      // reconoce y rechaza el archivo entero sin explicar). Si el nombre del desplegable no corresponde a un
+      // punto abierto, se busca en el índice HOP un punto con la MISMA calle y número (abreviaturas y acentos
+      // normalizados), se confirma EN VIVO y se devuelve su nombre vigente en `vigentes {nombreDesplegable:
+      // nombreVigente}`; el front escribe ese nombre en el Excel (celda y lista) en vez del viejo.
+      const vigentes = {};
       try {
         const esHop = t => /^punto andreani hop /.test(K(t));
-        const frescas = t => { const v = vivoGuard[K(t)]; return v && Date.now() - Number(v) < 3 * 86400000; };
-        const aMirar = nombres.filter(t => esHop(t) && !frescas(t)).slice(0, 60);
+        const aMirar = nombres.filter(t => esHop(t)).slice(0, 60);
         if (aMirar.length) {
           const hops = await hopIndexTodas(db);
           const porNom = new Map(); for (const h of hops) { const k = K(h.descripcion); if (!porNom.has(k)) porNom.set(k, []); porNom.get(k).push(h.id); }
-          const t0 = Date.now(), vivo = new Map();
+          const ABREV = { av: "avenida", avda: "avenida", gral: "general", dr: "doctor", pte: "presidente", pres: "presidente", sta: "santa", sto: "santo", tte: "teniente", cnel: "coronel", ing: "ingeniero", bv: "boulevard", blvd: "boulevard", bvard: "boulevard", alte: "almirante", gdor: "gobernador", cmte: "comandante", pje: "pasaje", diag: "diagonal" };
+          const dirKey = t => K(t).replace(/^punto andreani hop /, "").replace(/[.,]/g, " ").split(/\s+/).filter(Boolean).map(w => ABREV[w] || w).join(" ");
+          const porDir = new Map(); for (const h of hops) { const k = dirKey(h.descripcion); if (!porDir.has(k)) porDir.set(k, []); porDir.get(k).push(h); }
+          const t0 = Date.now(), vivo = new Map(), vivoDesc = new Map();
           const estado = async id => { if (vivo.has(id)) return vivo.get(id); let st = "?";
             if (Date.now() - t0 < 9000) { try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 5000);
               const r = await fetch(`${ANDREANI_BASE}/v2/sucursales/${id}`, { signal: ac.signal }); clearTimeout(tm);
-              st = r.status === 200 ? "ok" : r.status === 404 ? "baja" : "?"; } catch (_) {} }
+              st = r.status === 200 ? "ok" : r.status === 404 ? "baja" : "?";
+              if (st === "ok") { const j = await r.json().catch(() => null); if (j?.descripcion) vivoDesc.set(id, String(j.descripcion).replace(/\s+/g, " ").trim()); } } catch (_) {} }
             vivo.set(id, st); return st; };
           const cola = [...aMirar];
           await Promise.all(Array.from({ length: 6 }, async () => { while (cola.length) { const t = cola.shift(); const k = K(t);
             let ids = porNom.get(k) || [];
             if (!ids.length && k.length >= 45) for (const [nk, v] of porNom) if (nk.startsWith(k)) ids = ids.concat(v);
-            if (!ids.length || ids.length > 12) continue;
-            const sts = []; for (const id of ids) { const st = await estado(id); sts.push(st); if (st === "ok") break; }
-            if (sts.includes("ok")) resultado.set(k, "ok");
-            else if (sts.length === ids.length && sts.every(x => x === "baja")) resultado.set(k, "baja"); } }));
+            const sts = [];
+            if (ids.length && ids.length <= 12) for (const id of ids) { const st = await estado(id); sts.push(st); if (st === "ok") break; }
+            if (sts.includes("ok")) { resultado.set(k, "ok"); continue; }
+            // Mismo lugar con otro nombre (y abierto) → nombre vigente.
+            const dk = dirKey(t);
+            let alt = (porDir.get(dk) || []);
+            if (!alt.length && dk.length >= 30) for (const [kk, v] of porDir) if (kk.startsWith(dk)) alt = alt.concat(v);
+            alt = alt.filter(h => K(h.descripcion) !== k).slice(0, 4);
+            let renombrado = false;
+            for (const h of alt) { if ((await estado(h.id)) === "ok") { vigentes[t] = vivoDesc.get(h.id) || h.descripcion; resultado.set(k, "ok"); renombrado = true; break; } }
+            if (renombrado) continue;
+            if (ids.length && sts.length === ids.length && sts.every(x => x === "baja")) resultado.set(k, "baja"); } }));
+          if (Object.keys(vigentes).length) console.log("[validar_sucursales_tpl] renombrados:", JSON.stringify(vigentes));
         }
       } catch (e) { console.warn("[validar_sucursales_tpl] consulta en vivo:", e.message); }
       const faltantes = nombres.filter(t => { const r = resultado.get(K(t)); return r ? r === "baja" : baja.has(K(t)) || !!vivoGuard[K(t)]; });
@@ -1947,7 +1966,7 @@ export default async function handler(req, res) {
         await db.collection("andreani_config").doc("tpl_baja").set({ nombres: extra.filter(n => !ab.has(K(n))), vivo: v2, updatedAt: new Date().toISOString() }, { merge: true });
         if (sacar.length) console.log("[validar_sucursales_tpl] abiertas que figuraban de baja:", sacar.join(" | "));
       } catch (_) {} }
-      return res.json({ faltantes, fuente: resultado.size ? "vivo+lista" : "lista" });
+      return res.json({ faltantes, vigentes, fuente: resultado.size ? "vivo+lista" : "lista" });
     }
 
     // ── admin_tpl_baja: agregar/quitar nombres del desplegable dados de baja
