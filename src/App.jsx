@@ -19432,12 +19432,12 @@ function ImpultiendaConexion({T,uid,onCambio}){
   useEffect(()=>{ if(!uid) return; authFetch(`/api/impultienda?action=meta_cuentas&uid=${uid}`).then(r=>r.json()).then(j=>{ if(!j.error){ setCuentas(j); setElegidas(j.elegidas||[]); } }).catch(()=>{}); },[uid]);
   const [pegado,setPegado]=useState("");
   const inp={...InputStyle(T),fontFamily:"'Inter',system-ui,sans-serif"};
-  const cargar=async()=>{ try{ const j=await (await authFetch(`/api/impultienda?action=config&uid=${uid}`)).json(); if(j.error) throw new Error(j.error); setCfg(j); setFee({pct:String(j.feePct),fijo:String(j.feeFijo)}); setPaises(j.paises||{}); setDominios(Object.fromEntries(Object.entries(j.dominios||{}).map(([k,v])=>[k,(Array.isArray(v)?v:[v]).join(" ")]))); }catch(e){ toast(e.message,"error"); } };
+  const cargar=async()=>{ try{ const j=await (await authFetch(`/api/impultienda?action=config&uid=${uid}`)).json(); if(j.error) throw new Error(j.error); setCfg(j); setFee({pct:String(j.feePct),fijo:String(j.feeFijo),xs:String(j.extraPct?.stripe||0),xm:String(j.extraPct?.mercadopago||0)}); setPaises(j.paises||{}); setDominios(Object.fromEntries(Object.entries(j.dominios||{}).map(([k,v])=>[k,(Array.isArray(v)?v:[v]).join(" ")]))); }catch(e){ toast(e.message,"error"); } };
   useEffect(()=>{ if(uid) cargar(); /* eslint-disable-next-line */ },[uid]);
   const guardar=async(extra={})=>{
     setGuardando(true);
     try{
-      const body={feePct:fee.pct,feeFijo:fee.fijo,paises,dominios,...extra};
+      const body={feePct:fee.pct,feeFijo:fee.fijo,extraPct:{stripe:fee.xs,mercadopago:fee.xm},paises,dominios,...extra};
       if(secret.trim()) body.secret=secret.trim();
       if(stripeKey.trim()) body.stripe_key=stripeKey.trim();
       const j=await (await authFetch(`/api/impultienda?action=config_set&uid=${uid}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})).json();
@@ -19479,6 +19479,15 @@ function ImpultiendaConexion({T,uid,onCambio}){
           <input value={fee.fijo} onChange={e=>setFee({...fee,fijo:e.target.value})} style={{...inp,width:70}}/><span style={{fontSize:DS.font.sm,color:T.textSm}}>US$ por venta</span>
           <Btn T={T} size="sm" variant="secondary" onClick={()=>guardar()} disabled={guardando}>Guardar</Btn>
         </div>)}
+        <div style={{marginTop:DS.sp.sm,fontSize:DS.font.sm,color:cfg?.tieneMp?T.green:T.textMd,lineHeight:1.55}}>{cfg?.tieneMp?"Mercado Pago conectado: Growith toma la comisión real de cada venta cobrada por MP, con Checkout o con tarjeta.":"Mercado Pago no está conectado: conectalo en Config → Integraciones → Mercado Pago para ver la comisión real."}</div>
+        <div style={{marginTop:DS.sp.md,fontSize:DS.font.sm,color:T.textMd,lineHeight:1.55}}><b>Porcentaje extra por medio de pago</b>: lo que pagás encima de la comisión (cueva para retirar, compra de facturas, Ingresos Brutos). Se suma a la comisión de cada venta de ese medio.</div>
+        <div style={{display:"flex",gap:DS.sp.sm,alignItems:"center",marginTop:DS.sp.sm,flexWrap:"wrap"}}>
+          <span style={{fontSize:DS.font.sm,color:T.textMd}}>Stripe +</span>
+          <input value={fee.xs??""} onChange={e=>setFee({...fee,xs:e.target.value})} style={{...inp,width:70}}/><span style={{fontSize:DS.font.sm,color:T.textSm}}>%</span>
+          <span style={{fontSize:DS.font.sm,color:T.textMd,marginLeft:DS.sp.md}}>Mercado Pago +</span>
+          <input value={fee.xm??""} onChange={e=>setFee({...fee,xm:e.target.value})} style={{...inp,width:70}}/><span style={{fontSize:DS.font.sm,color:T.textSm}}>%</span>
+          <Btn T={T} size="sm" variant="secondary" onClick={()=>guardar()} disabled={guardando}>Guardar</Btn>
+        </div>
       </Card>
       <Card T={T}>
         <div style={tit}>3. Tus tiendas y su código</div>

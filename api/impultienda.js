@@ -421,7 +421,9 @@ function resumenMovs(txs) {
 
 // ── Mercado Pago: comisión real por venta (cuenta conectada como "Mercado Pago") ──
 async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
-  const deMp = ordenes.filter(o => o.pasarela === "mercadopago" && !o.mp?.id);
+  // Mercado Pago Checkout llega como "mercadopago"; la tarjeta cobrada por MP llega como "card" (u otro método):
+  // también se buscan en MP las que Stripe no cruzó. El cruce exige mail + monto + ±10 min, así que no hay falsos.
+  const deMp = ordenes.filter(o => !o.mp?.id && o.stripe?.fee == null && o.pasarela !== "stripe");
   if (!deMp.length) return { conectado: null };
   let tok = null;
   try { tok = await getValidMLToken(db, uid); } catch (_) {}
@@ -766,7 +768,8 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const ordenes = todas.filter(o => !o.ignorada && (!o.importado || !delWebhook.has(String(o.orden))));
   const fx = await fxPorUsd();
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
-  const [stripe, mp, movs] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), mpComisiones(db, uid, delRango, desdeMs, hastaMs), stripeMovimientos(db, uid, cfg)]);
+  const [stripe, movs] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), stripeMovimientos(db, uid, cfg)]);
+  const mp = await mpComisiones(db, uid, delRango, desdeMs, hastaMs);
   if (movs.error) stripe.errorMovimientos = movs.error;
   if (movs.d && stripe) stripe.disputas = Object.entries(movs.d).map(([bt, x]) => ({ estado: x.st, motivo: x.motivo || null, venta: (ordenes.find(o => o.stripe?.bt === bt) || {}).orden ?? null, movimientos: Object.values(movs.m[bt] || {}) }));
   // Con Stripe conectado, la comisión de las ventas que no se pudieron cruzar es el PROMEDIO REAL de las cruzadas
@@ -808,7 +811,10 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
       const adRaw = String(o.utm?.utm_content || ""); const ad = String(idxUtm?.a?.[adRaw]?.[0] || adRaw || "sin anuncio").slice(0, 80);
       const av = cv.anuncios[ad] || (cv.anuncios[ad] = { anuncio: ad, ventas: 0, n: 0 }); av.ventas += usd; if (!o.post_compra) av.n += 1;
       const real = o.stripe?.fee ?? o.mp?.fee;
-      const com = real != null ? real : usd * feePct / 100 + feeFijo;
+      // % extra por método (cueva, compra de facturas, IIBB…) que el usuario suma a la comisión de ese medio.
+      const esMp = o.mp?.fee != null || o.pasarela === "mercadopago";
+      const extraPct = Number((cfg.extraPct || {})[esMp ? "mercadopago" : "stripe"]) || 0;
+      const com = (real != null ? real : usd * feePct / 100 + feeFijo) + usd * extraPct / 100;
       f.comisiones += com; if (real == null) f.comisionesEstimadas += com;
       // Reembolso/contracargo: se resta en el DÍA DE LA VENTA (para que el profit de ese día sea el real).
       // Stripe no devuelve la comisión: la comisión queda y se resta todo lo devuelto.
@@ -1095,7 +1101,7 @@ export default async function handler(req, res) {
       return res.json({
         url: `https://${host}/api/impultienda?action=webhook&k=${cfg.hookKey}`,
         tieneFirma: !!cfg.secretEnc, tieneStripe: !!cfg.stripeEnc,
-        feePct: cfg.feePct ?? 2.9, feeFijo: cfg.feeFijo ?? 0.3, gastosFijos: cfg.gastosFijos || [],
+        feePct: cfg.feePct ?? 2.9, feeFijo: cfg.feeFijo ?? 0.3, extraPct: cfg.extraPct || {}, tieneMp: await (async () => { try { return !!(await getValidMLToken(db, uid))?.accessToken; } catch (_) { return false; } })(), gastosFijos: cfg.gastosFijos || [],
         paises: cfg.paises || {}, dominios: cfg.dominios || {}, tiendas, ordenes: os.size, ultimaPrueba: cfg.ultimaPrueba || null,
       });
     }
@@ -1259,6 +1265,7 @@ export default async function handler(req, res) {
       if (b.feePct != null && isFinite(Number(b.feePct))) patch.feePct = Number(b.feePct);
       if (Array.isArray(b.gastosFijos)) patch.gastosFijos = b.gastosFijos.slice(0, 50).map(g => ({ nombre: String(g.nombre || "").slice(0, 60), monto: Math.max(0, Number(g.monto) || 0) })).filter(g => g.nombre || g.monto);
       if (b.feeFijo != null && isFinite(Number(b.feeFijo))) patch.feeFijo = Number(b.feeFijo);
+      if (b.extraPct && typeof b.extraPct === "object") patch.extraPct = { stripe: Math.min(100, Math.max(0, Number(b.extraPct.stripe) || 0)), mercadopago: Math.min(100, Math.max(0, Number(b.extraPct.mercadopago) || 0)) };
       if (b.paises && typeof b.paises === "object") patch.paises = Object.fromEntries(Object.entries(b.paises).map(([k, v]) => [String(k), paisesDe(v).join(" ").slice(0, 60)]).filter(([, v]) => v));
       // Dominios de cada tienda (el link de un anuncio que lleve ahí se asigna a esa tienda aunque no tenga UTM): {store_id: "host host"}.
       if (b.dominios && typeof b.dominios === "object") patch.dominios = Object.fromEntries(Object.entries(b.dominios).map(([k, v]) => [String(k), hostsDe(v)]).filter(([, v]) => v.length));
