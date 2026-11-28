@@ -462,7 +462,9 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
     batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(o.order_id), { mp: o.mp }, { merge: true }); n++; cruzadas++;
   }
   if (n) await batch.commit().catch(() => {});
-  return { conectado: true, cruzadas, pagos: pagos.length };
+  // Diagnóstico sin datos personales: pagos de MP sin usar (monto, moneda, hora) para ver por qué una venta no cruza.
+  const libres = pagos.filter(p => !usados.has(p.id)).slice(0, 15).map(p => ({ monto: p.transaction_amount, moneda: p.currency_id, at: p.date_approved || p.date_created, ref: p.external_reference ? String(p.external_reference).slice(0, 40) : null, tipo: p.payment_type_id }));
+  return { conectado: true, cruzadas, pagos: pagos.length, libres };
 }
 
 // Tienda a la que va el gasto de una campaña: la que tiene su código de país en el
