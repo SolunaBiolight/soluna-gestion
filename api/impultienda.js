@@ -423,7 +423,7 @@ function resumenMovs(txs) {
 async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
   // Mercado Pago Checkout llega como "mercadopago"; la tarjeta cobrada por MP llega como "card" (u otro método):
   // también se buscan en MP las que Stripe no cruzó. El cruce exige mail + monto + ±10 min, así que no hay falsos.
-  const deMp = ordenes.filter(o => !o.mp?.id && o.stripe?.fee == null && o.pasarela !== "stripe");
+  const deMp = ordenes.filter(o => !o.mp?.v2 && o.stripe?.fee == null && o.pasarela !== "stripe");
   if (!deMp.length) return { conectado: null };
   let tok = null;
   try { tok = await getValidMLToken(db, uid); } catch (_) {}
@@ -441,9 +441,11 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
   const usados = new Set(); let cruzadas = 0;
   const batch = db.batch(); let n = 0;
   for (const o of deMp) {
+    let cand0 = null;
     const tAp = Date.parse(o.ev_approved || ""); if (!isFinite(tAp)) continue;
     // 1) external_reference = id/número de la orden de Impultienda, si MP lo trae.
-    const ref = pagos.filter(p => !usados.has(p.id) && p.external_reference && [String(o.order_id), String(o.orden)].includes(String(p.external_reference)));
+    if (o.mp?.id) { const p0 = pagos.find(p => String(p.id) === String(o.mp.id)); if (p0) { cand0 = p0; } }
+    const ref = cand0 ? [cand0] : pagos.filter(p => !usados.has(p.id) && p.external_reference && [String(o.order_id), String(o.orden)].includes(String(p.external_reference)));
     // 2) monto + ±10 min. El mail del pagador en MP suele ser el de SU cuenta de MP (distinto al del checkout):
     //    solo desempata si hay más de un pago igual.
     let cand = ref.length === 1 ? ref : pagos.filter(p => {
@@ -456,9 +458,11 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
     if (cand.length > 1 && o.email) { const m = cand.filter(p => String(p.payer?.email || "").toLowerCase() === o.email); if (m.length) cand = m; }
     if (cand.length !== 1) continue;
     const p = cand[0]; usados.add(p.id);
-    const fee = (p.fee_details || []).filter(fd => fd.fee_payer !== "payer").reduce((a, fd) => a + (Number(fd.amount) || 0), 0);
+    // Todo lo que MP descuenta: su cargo + el de la plataforma (Impultienda) + retenciones. = cobrado − lo que te llega.
+    const neto = Number(p.transaction_details?.net_received_amount);
+    const fee = isFinite(neto) && neto > 0 ? Number(p.transaction_amount) - neto : (p.fee_details || []).filter(fd => fd.fee_payer !== "payer").reduce((a, fd) => a + (Number(fd.amount) || 0), 0);
     const usd = aUsd(fee, p.currency_id, fx); if (usd == null) continue;
-    o.mp = { id: p.id, fee: usd };
+    o.mp = { id: p.id, fee: usd, v2: true };
     batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(o.order_id), { mp: o.mp }, { merge: true }); n++; cruzadas++;
   }
   if (n) await batch.commit().catch(() => {});
