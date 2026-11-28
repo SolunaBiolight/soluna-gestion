@@ -442,15 +442,18 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
   const batch = db.batch(); let n = 0;
   for (const o of deMp) {
     const tAp = Date.parse(o.ev_approved || ""); if (!isFinite(tAp)) continue;
-    const cand = pagos.filter(p => {
+    // 1) external_reference = id/número de la orden de Impultienda, si MP lo trae.
+    const ref = pagos.filter(p => !usados.has(p.id) && p.external_reference && [String(o.order_id), String(o.orden)].includes(String(p.external_reference)));
+    // 2) monto + ±10 min. El mail del pagador en MP suele ser el de SU cuenta de MP (distinto al del checkout):
+    //    solo desempata si hay más de un pago igual.
+    let cand = ref.length === 1 ? ref : pagos.filter(p => {
       if (usados.has(p.id)) return false;
       if (Math.abs(Date.parse(p.date_approved || p.date_created) - tAp) > 10 * 60000) return false;
-      const mail = String(p.payer?.email || "").toLowerCase();
-      if (o.email && mail && mail !== o.email) return false;
       const cur = String(p.currency_id || "").toUpperCase();
       const esperado = cur === String(o.buyer_moneda || "").toUpperCase() && o.buyer_total != null ? Number(o.buyer_total) : (cur === String(o.moneda || "").toUpperCase() ? o.total : null);
       return esperado != null && Math.abs(Number(p.transaction_amount) - esperado) <= Math.max(1, esperado * 0.01);
     });
+    if (cand.length > 1 && o.email) { const m = cand.filter(p => String(p.payer?.email || "").toLowerCase() === o.email); if (m.length) cand = m; }
     if (cand.length !== 1) continue;
     const p = cand[0]; usados.add(p.id);
     const fee = (p.fee_details || []).filter(fd => fd.fee_payer !== "payer").reduce((a, fd) => a + (Number(fd.amount) || 0), 0);
