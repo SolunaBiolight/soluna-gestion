@@ -424,7 +424,6 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
   // Mercado Pago Checkout llega como "mercadopago"; la tarjeta cobrada por MP llega como "card" (u otro método):
   // también se buscan en MP las que Stripe no cruzó. El cruce exige mail + monto + ±10 min, así que no hay falsos.
   const deMp = ordenes.filter(o => !o.mp?.v2 && o.stripe?.fee == null && o.pasarela !== "stripe");
-  if (!deMp.length) return { conectado: null };
   let tok = null;
   try { tok = await getValidMLToken(db, uid); } catch (_) {}
   if (!tok?.accessToken) return { conectado: false };
@@ -445,7 +444,7 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
     const tAp = Date.parse(o.ev_approved || ""); if (!isFinite(tAp)) continue;
     // 1) external_reference = id/número de la orden de Impultienda, si MP lo trae.
     if (o.mp?.id) { const p0 = pagos.find(p => String(p.id) === String(o.mp.id)); if (p0) { cand0 = p0; } }
-    const ref = cand0 ? [cand0] : pagos.filter(p => !usados.has(p.id) && p.external_reference && [String(o.order_id), String(o.orden)].includes(String(p.external_reference)));
+    const ref = cand0 ? [cand0] : pagos.filter(p => !usados.has(p.id) && p.external_reference && [String(o.order_id), String(o.orden)].includes(String(p.external_reference).split(":").pop()));
     // 2) monto + ±10 min. El mail del pagador en MP suele ser el de SU cuenta de MP (distinto al del checkout):
     //    solo desempata si hay más de un pago igual.
     let cand = ref.length === 1 ? ref : pagos.filter(p => {
@@ -465,10 +464,36 @@ async function mpComisiones(db, uid, ordenes, desdeMs, hastaMs) {
     o.mp = { id: p.id, fee: usd, v2: true };
     batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(o.order_id), { mp: o.mp }, { merge: true }); n++; cruzadas++;
   }
+  // Ventas cuyo webhook de Impultienda nunca llegó: el pago de MP trae external_reference "<store_id>:<order_id>"
+  // (mismo order_id que el webhook → si el aviso llega después, cae en el mismo doc). Se crean acá.
+  const UU = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+  const yaEst = new Set(ordenes.map(o => String(o.order_id)));
+  const nombres = {}; for (const o of ordenes) if (o.store_id && o.store_nombre) nombres[o.store_id] = o.store_nombre;
+  const recuperadas = [];
+  for (const p of pagos) {
+    if (usados.has(p.id)) continue;
+    const m = new RegExp(`^(${UU}):(${UU})$`, "i").exec(String(p.external_reference || "")); if (!m) continue;
+    const [, sid, oid] = m; if (yaEst.has(oid)) continue;
+    const prev = await db.collection("users").doc(uid).collection("impultienda_orders").doc(oid).get().catch(() => null);
+    if (prev?.exists && prev.data()?.ev_approved) continue;
+    const neto = Number(p.transaction_details?.net_received_amount);
+    const feeUsd = isFinite(neto) && neto > 0 ? aUsd(Number(p.transaction_amount) - neto, p.currency_id, fx) : null;
+    const at = new Date(p.date_approved || p.date_created).toISOString();
+    const orden = {
+      order_id: oid, orden: null, store_id: sid, store_nombre: nombres[sid] || String(p.description || "").split(" + ")[0].slice(0, 80) || null,
+      estado: "approved", total: Number(p.transaction_amount) || 0, moneda: String(p.currency_id || "ARS").toUpperCase(),
+      buyer_total: Number(p.transaction_amount) || 0, buyer_moneda: String(p.currency_id || "ARS").toUpperCase(),
+      pasarela: p.payment_type_id === "account_money" ? "mercadopago" : "card", post_compra: false,
+      recuperada_mp: true, ev_approved: at, actualizado: new Date().toISOString(),
+      ...(feeUsd != null ? { mp: { id: p.id, fee: feeUsd, v2: true } } : {}),
+    };
+    usados.add(p.id); yaEst.add(oid); recuperadas.push(orden);
+    batch.set(db.collection("users").doc(uid).collection("impultienda_orders").doc(oid), orden, { merge: true }); n++;
+  }
   if (n) await batch.commit().catch(() => {});
   // Diagnóstico sin datos personales: pagos de MP sin usar (monto, moneda, hora) para ver por qué una venta no cruza.
   const libres = pagos.filter(p => !usados.has(p.id)).slice(0, 15).map(p => ({ monto: p.transaction_amount, moneda: p.currency_id, at: p.date_approved || p.date_created, ref: p.external_reference ? String(p.external_reference).slice(0, 40) : null, tipo: p.payment_type_id }));
-  return { conectado: true, cruzadas, pagos: pagos.length, libres };
+  return { conectado: true, cruzadas, pagos: pagos.length, libres, recuperadas };
 }
 
 // Tienda a la que va el gasto de una campaña: la que tiene su código de país en el
@@ -779,6 +804,7 @@ export async function porHora(db, uid, desde, hasta, tz = "America/Argentina/Bue
   const delRango = ordenes.filter(o => o.ev_approved && Date.parse(o.ev_approved) >= desdeMs && Date.parse(o.ev_approved) < hastaMs);
   const [stripe, movs] = await Promise.all([stripeComisiones(db, uid, cfg, delRango, desdeMs, hastaMs), stripeMovimientos(db, uid, cfg)]);
   const mp = await mpComisiones(db, uid, delRango, desdeMs, hastaMs);
+  for (const o of mp.recuperadas || []) { ordenes.push(o); delRango.push(o); }
   if (movs.error) stripe.errorMovimientos = movs.error;
   if (movs.d && stripe) stripe.disputas = Object.entries(movs.d).map(([bt, x]) => ({ estado: x.st, motivo: x.motivo || null, venta: (ordenes.find(o => o.stripe?.bt === bt) || {}).orden ?? null, movimientos: Object.values(movs.m[bt] || {}) }));
   // Con Stripe conectado, la comisión de las ventas que no se pudieron cruzar es el PROMEDIO REAL de las cruzadas
