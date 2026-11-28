@@ -183,6 +183,30 @@ const priceData = (plan, periodo) => {
   return { currency: "usd", unit_amount: Math.round(p.unit * 100), recurring: { interval: p.interval }, product_data: { name: `Growith ${p.nombre} — ${p.anual ? "anual" : "mensual"}`, metadata: { plan, periodo } } };
 };
 
+// Para CAMBIAR una suscripción ya creada (subir/bajar de plan, tiendas adicionales) Stripe NO acepta
+// `price_data.product_data` (solo existe en Checkout): exige `price_data.product` = id de un producto.
+// Antes se mandaba product_data y TODO cambio de plan de un cliente con tarjeta fallaba con "Received
+// unknown parameter" (28/nov/2026: "se le acaba el Facturador, quiere pasarse al Pro y le da error").
+// Un producto por plan + período (y por tienda adicional), creado una vez y guardado en system/stripe.productos.
+const _productos = {};
+async function conProducto(db, pd) {
+  const md = pd.product_data?.metadata || {};
+  const key = `${md.kind || "plan"}_${md.plan || "x"}_${md.periodo || "x"}`;
+  let id = _productos[key];
+  if (!id) {
+    const ref = db.doc("system/stripe");
+    id = ((await ref.get()).data()?.productos || {})[key];
+    if (id) { const pr = await stripe("GET", `/products/${id}`).catch(() => null); if (!pr || pr.deleted || pr.active === false) id = null; }
+    if (!id) {
+      const pr = await stripe("POST", "/products", { name: pd.product_data.name, metadata: md }, `growith_prod_${key}`);
+      id = pr.id; await ref.set({ productos: { [key]: id } }, { merge: true });
+    }
+    _productos[key] = id;
+  }
+  const { product_data, ...resto } = pd;
+  return { ...resto, product: id };
+}
+
 // ── Activación / renovación a partir de una factura cobrada (idempotente) ──
 async function procesarInvoicePaid(db, inv) {
   const subId = typeof inv.subscription === "string" ? inv.subscription : inv.subscription?.id;
@@ -300,7 +324,7 @@ export async function syncTiendasExtra(db, uid) {
   const extraItem = items.find(i => i.id === u.stripeExtraItemId) || items.find(i => i.id !== planItemId) || null;
   const cambios = [];
   if (extraItem) cambios.push({ id: extraItem.id, deleted: true });
-  if (extra > 0 && PRECIO_EXTRA_TIENDA[plan]) cambios.push({ price_data: extraPriceData(plan, periodo), quantity: extra });
+  if (extra > 0 && PRECIO_EXTRA_TIENDA[plan]) cambios.push({ price_data: await conProducto(db, extraPriceData(plan, periodo)), quantity: extra });
   if (!cambios.length) return { ok: true, extra, sinCambios: true };
   const upd = await stripe("POST", `/subscriptions/${sub.id}`, { items: cambios, proration_behavior: "always_invoice" });
   const nuevoExtra = (upd.items?.data || []).find(i => i.id !== planItemId && i.id !== extraItem?.id) || null;
@@ -404,7 +428,9 @@ export default async function handler(req, res) {
           return res.json({ url, deuda: true });
         }
         if (sub && ["active", "trialing"].includes(sub.status)) {
-          const itemId = sub.items?.data?.[0]?.id;
+          // El renglón del PLAN (no el de tiendas adicionales, que puede venir primero).
+          const its = sub.items?.data || [];
+          const itemId = (its.find(i => i.id === u.stripePlanItemId) || its.find(i => (i.price?.metadata?.kind || i.plan?.metadata?.kind) !== "tienda_extra" && i.id !== u.stripeExtraItemId) || its[0])?.id;
           if (sub.metadata?.plan === plan && sub.metadata?.periodo === periodo && !sub.cancel_at_period_end) {
             // Stripe dice que está al día: si acá figura vencido (se perdió un webhook), se sincroniza
             // el vencimiento para que el cliente no quede trabado en la pantalla de pago.
@@ -417,10 +443,17 @@ export default async function handler(req, res) {
             return res.json({ already: true });
           }
           const upd = await stripe("POST", `/subscriptions/${sub.id}`, {
-            items: [{ id: itemId, price_data: priceData(plan, periodo) }],
+            items: [{ id: itemId, price_data: await conProducto(db, priceData(plan, periodo)) }],
             proration_behavior: "always_invoice", cancel_at_period_end: false,
             metadata: { uid, plan, periodo },
           });
+          // Si el cobro de la diferencia no pasó (tarjeta rechazada), el plan NO se da por cambiado: se manda
+          // a pagar esa factura; al pagarla, invoice.paid lo activa.
+          if (!["active", "trialing"].includes(upd.status)) {
+            const invId = typeof upd.latest_invoice === "string" ? upd.latest_invoice : upd.latest_invoice?.id;
+            const inv = invId ? await stripe("GET", `/invoices/${invId}`).catch(() => null) : null;
+            if (inv?.hosted_invoice_url && inv.status === "open") return res.json({ url: inv.hosted_invoice_url, deuda: true });
+          }
           await userRef.set({ plan, cancelAtPeriodEnd: false, stripeStatus: upd.status || "active", ...(upd.current_period_end ? { planExpiry: new Date(upd.current_period_end * 1000) } : {}), planActivadoBy: "stripe", planActivadoAt: new Date() }, { merge: true });
           // El precio de la tienda adicional depende del plan → re-preciar el ítem extra.
           try { await syncTiendasExtra(db, uid); } catch (e) { console.warn("[stripe] sync extra tras cambio de plan:", e.message); }

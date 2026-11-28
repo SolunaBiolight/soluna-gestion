@@ -20661,7 +20661,7 @@ function AppPlanes({T, user, userPlan, planExpiry, onBack, USDT_ADDRESS, SUPPORT
         setTimeout(()=>setLoadingPlan(null),4000);
         return;
       }
-      if(d.changed){ toast(`Plan cambiado a ${pl?.nombre}${anual?" anual":""}`,"success"); setLoadingPlan(null); return; }
+      if(d.changed){ toast(`Plan cambiado a ${pl?.nombre}${anual?" anual":""}`,"success"); setLoadingPlan(null); if(isTrialExpired) setTimeout(()=>window.location.reload(),1500); return; }
       if(d.already&&d.sincronizado){ toast("Tu suscripción estaba al día en Stripe: ya quedó activa","success"); setTimeout(()=>window.location.reload(),1500); return; }
       if(d.already){ setPagoErr("Ese plan ya está activo con tu tarjeta. Si la app te sigue pidiendo pagar, recargá la página."); setLoadingPlan(null); return; }
       throw new Error("Respuesta inesperada");
