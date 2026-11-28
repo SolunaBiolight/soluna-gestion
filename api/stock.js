@@ -850,22 +850,28 @@ export default async function handler(req, res) {
   // repetía en CADA request aunque el catálogo casi nunca cambia. Con caché de
   // 1h el stock mostrado puede quedar hasta 1h desfasado — las ventas/órdenes
   // siguen siempre en vivo.
-  async function tnProductsCached(sid, tok) {
-    const ref = dbRef.collection("users").doc(uid).collection("stock_cache").doc("tn_products");
+  // catalogo=cache (lo manda el Dashboard, 28/nov/2026): el catálogo solo pone nombres y variantes a las
+  // ventas, así que ahí sirve el guardado de hasta 24 h en vez de volver a recorrer toda la tienda en cada
+  // período nuevo (eran 10-20 s fijos por cálculo). La sección Stock sigue con 1 h.
+  const catTtl = (ms) => req.query.catalogo === "cache" ? Math.max(ms, 86400000) : ms;
+  async function catCached(docId, ttlMs, fn) {
+    const ref = dbRef.collection("users").doc(uid).collection("stock_cache").doc(docId);
     try {
       const s = await ref.get();
       if (s.exists) {
         const c = s.data() || {};
-        if (c.cachedAt && (Date.now() - Date.parse(c.cachedAt)) < 3600000 && Array.isArray(c.items)) return c.items;
+        if (c.cachedAt && (Date.now() - Date.parse(c.cachedAt)) < catTtl(ttlMs) && c.items != null) return c.items;
       }
     } catch (_) {}
-    const items = await tnProducts(sid, tok);
+    const items = await fn();
     try {
       const str = JSON.stringify(items);
       if (str.length <= 850000) await ref.set({ cachedAt: new Date().toISOString(), items: JSON.parse(str) }); // guard 850KB — si no entra, no se cachea
     } catch (_) {}
     return items;
   }
+  const tnProductsCached = (sid, tok) => catCached("tn_products", 3600000, () => tnProducts(sid, tok));
+  const shProductsCached = (sh, tok) => catCached("sh_products", 3600000, () => shProducts(sh, tok));
 
   // Techo duro para TODA la consulta de ventas — sin importar cuántas páginas
   // reintenten en cascada bajo una red inestable, esto garantiza una respuesta
@@ -968,7 +974,7 @@ export default async function handler(req, res) {
         const [mlOrd, coupons, pubs] = await Promise.all([
           mlOrders(mlSellerId, mlToken, effectiveDays, sinceDate, untilDate),
           mlCouponFees(mlToken, sinceDate, untilDate).catch(() => ({ fees: {}, prov: {} })),
-          mlPublications(mlSellerId, mlToken).catch(() => ({})),
+          catCached(`ml_pubs_${mlSellerId}`, 6 * 3600000, () => mlPublications(mlSellerId, mlToken)).catch(() => ({})),
         ]);
         const out = processML(mlOrd, coupons.fees || {}, coupons.prov || {});
         out.truncated = !!mlOrd.truncated;
@@ -982,7 +988,7 @@ export default async function handler(req, res) {
       };
       if(platform==="shopify"){
         const [products, orders, mlAnalytics] = await withDeadline(Promise.all([
-          shProducts(shop, accessToken),
+          shProductsCached(shop, accessToken),
           shOrders(shop, accessToken, effectiveDays, sinceDate, untilDate),
           fetchML(),
         ]), "Shopify/ML");

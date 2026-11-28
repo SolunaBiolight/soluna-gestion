@@ -190,6 +190,45 @@ if (typeof window !== "undefined") {
 
 // ── Cache SWR local: pintar al instante lo último conocido y refrescar de fondo ──
 // (mismo patrón que growith_envios_cache — la app "abre" en 0ms y se actualiza sola)
+// Precálculo de fondo del Dashboard (28/nov/2026, "cambio de día o pongo el mes anterior y tarda 1 minuto"):
+// al entrar, después de la primera carga, se piden de a UNO los períodos habituales (Ayer, 7 y 30 días, este
+// mes, mes pasado y los últimos 7 días sueltos). Si el servidor ya los tiene guardados no se hace nada; si no,
+// se calculan y quedan guardados, así cambiar de período abre al instante. Espera mientras haya una carga del
+// usuario en curso o la pestaña esté oculta, y no repite en la misma sesión.
+async function ghPrecalcularDashboard(uid, sigue, ocupado) {
+  const ar = (ms) => new Intl.DateTimeFormat("en-CA",{timeZone:"America/Argentina/Buenos_Aires"}).format(new Date(ms));
+  const hoy = ar(Date.now()), dia = (n) => ar(Date.now() - n*86400000);
+  const [y, m] = hoy.split("-").map(Number);
+  const ini = (yy, mm) => `${yy}-${String(mm).padStart(2,"0")}-01`;
+  const finMesAnt = ar(Date.parse(`${ini(y,m)}T12:00:00-03:00`) - 86400000);
+  const base = `/api/orders?action=daily_metrics&uid=${uid}`;
+  const rango = (a, b) => `${base}&date_from=${a}&date_to=${b}`;
+  const lista = [
+    rango(dia(1), dia(1)), `${base}&days=7`, `${base}&days=30`, rango(ini(y,m), hoy),
+    rango(m===1 ? ini(y-1,12) : ini(y,m-1), finMesAnt),
+    ...[2,3,4,5,6,7].map(n => rango(dia(n), dia(n))),
+  ];
+  const marca = `growith_precalc_${uid}_${hoy}`;
+  let hechos = []; try { hechos = JSON.parse(sessionStorage.getItem(marca) || "[]"); } catch (_) {}
+  const espera = (ms) => new Promise(r => setTimeout(r, ms));
+  for (const url of lista) {
+    if (hechos.includes(url)) continue;
+    // No competir con lo que el usuario está mirando ni trabajar con la pestaña oculta.
+    for (let i = 0; i < 600 && sigue() && (ocupado() || document.visibilityState === "hidden"); i++) await espera(1000);
+    if (!sigue()) return;
+    try {
+      const jc = await (await fetch(url + "&cache=only")).json();
+      if (jc && jc.noCache) {
+        const r = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(100000) : undefined });
+        await r.text();
+      }
+      hechos.push(url);
+      try { sessionStorage.setItem(marca, JSON.stringify(hechos)); } catch (_) {}
+    } catch (_) { /* es un extra: si falla, ese período se calcula cuando se lo elija */ }
+    if (!sigue()) return;
+    await espera(1500);
+  }
+}
 function ghSwrGet(key, maxAgeMs=6*3600000){ try{ const c=JSON.parse(localStorage.getItem(key)||"null"); if(c&&c.ts&&(Date.now()-c.ts)<maxAgeMs) return c.data; }catch(_){} return null; }
 function ghSwrSet(key, data){ try{ localStorage.setItem(key, JSON.stringify({ts:Date.now(), data})); }catch(_){ try{localStorage.removeItem(key);}catch(__){}} }
 
@@ -45381,7 +45420,13 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   // Anti-carrera: si el usuario cambia el período mientras una carga (o sus
   // reintentos) sigue en vuelo, la carga vieja no debe pisar la vista nueva.
   const reqIdRef = React.useRef(0);
-  async function loadData(overrideDays, overrideFrom, overrideTo, silent, fresh) {
+  // Cargas del usuario en curso: el precálculo de fondo de los períodos habituales espera a que terminen.
+  const cargasRef = React.useRef(0);
+  async function loadData(...args) {
+    cargasRef.current++;
+    try { return await loadDataInner(...args); } finally { cargasRef.current--; }
+  }
+  async function loadDataInner(overrideDays, overrideFrom, overrideTo, silent, fresh) {
     if(!uid){setError("Sin sesión");return;}
     const myReq = ++reqIdRef.current;
     const vigente = () => reqIdRef.current === myReq;
@@ -45524,11 +45569,12 @@ function AppRendimiento({T, user, onHome, tab, setTab}) {
   loadRef.current = loadData;
   useEffect(()=>{
     if(!uid) return;
-    loadRef.current();
+    let vivo = true;
+    loadRef.current().finally(()=>{ if(vivo) ghPrecalcularDashboard(uid, ()=>vivo, ()=>cargasRef.current>0); });
     const iv = setInterval(()=>{ if(document.visibilityState!=="hidden") loadRef.current(undefined,undefined,undefined,true); }, 240000);
     // Al desmontar: invalidar la carga en vuelo (corta el polling de cache=only
     // del rango nuevo y evita setState sobre un componente desmontado).
-    return ()=>{ clearInterval(iv); reqIdRef.current++; };
+    return ()=>{ vivo = false; clearInterval(iv); reqIdRef.current++; };
   },[uid]);
 
   const [reproc, setReproc] = useState(false);

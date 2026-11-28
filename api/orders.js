@@ -784,6 +784,7 @@ export default async function handler(req, res) {
         const stockUrl = new URL(`https://${req.headers.host}/api/stock`);
         stockUrl.searchParams.set("uid", uid); stockUrl.searchParams.set("action", "products");
         stockUrl.searchParams.set("date_from", from); stockUrl.searchParams.set("date_to", to);
+        stockUrl.searchParams.set("catalogo", "cache"); // catálogo guardado de hasta 24 h (solo nombra las ventas)
         // /api/stock exige auth: este subrequest es server→server, así que va
         // con el CRON_SECRET (que stock.js acepta vía isCronRequest). El uid ya
         // fue validado contra el token del usuario en el gate de arriba.
@@ -1177,6 +1178,7 @@ export default async function handler(req, res) {
       // secuencial. Ambas funciones (declaradas más abajo — hoisting) atrapan
       // sus errores y devuelven null → el dashboard sale sin ese gasto, igual
       // que antes.
+      const _tFuentes = Date.now();
       const mlAdsDebug = {};
       let gadsDiag = null; // por qué Google Ads no devolvió gasto (se muestra como aviso en el Dashboard)
       let ttDiag = null;   // ídem TikTok Ads
@@ -1207,6 +1209,16 @@ export default async function handler(req, res) {
         } catch (e) { console.warn("[ml-retenciones]", e?.message||e); return vacio; }
       }
       const [mlRetCurr, mlRetPrev] = await Promise.all([fetchMlRetenciones(since, until, mpCommCurr), fetchMlRetenciones(prevSince, prevUntil, mpCommPrev)]);
+      // Presupuesto de tiempo para los detalles por venta (28/nov/2026, "cada período nuevo tarda 1 minuto"):
+      // los cargos reales de cada venta (Tienda Nube, envíos de ML, pagos de Shopify) se consultan de a una y
+      // quedan guardados para siempre. En un período que nunca se miró eran cientos de consultas en fila ANTES
+      // de responder. Ahora, pasado el presupuesto, se responde con lo que ya se sabe (las ventas que faltan van
+      // con la tarifa de respaldo, como siempre) y el resto lo completan la revalidación de fondo y el cron.
+      const _tEnr = Date.now();
+      const _enrMs = req.query.warm === "1" ? 30000 : 7000;
+      const sinTiempo = () => Date.now() - _tEnr > _enrMs;
+      let enrParcial = false;
+      const _ms = { fuentes: _tEnr - _tFuentes };
       // commission=0: las filas se re-derivan después con el motor real
       // (alinearRowsExacto) — el % legacy quedó eliminado.
       let rows = buildRendRows(since, until, curr.dailyRevenue, curr.dailyOrders, metaCurr, 0);
@@ -1596,6 +1608,7 @@ export default async function handler(req, res) {
             } else ids.push(id);
           }
           for (let i=0; i<ids.length; i+=20) {
+            if (sinTiempo()) { enrParcial = true; break; }
             const rs = await Promise.all(ids.slice(i,i+20).map(async id => {
               try {
                 // /shipments/{id} y /shipments/{id}/costs en PARALELO (antes iban
@@ -1743,6 +1756,7 @@ export default async function handler(req, res) {
         try {
           const lote = pendAll.slice(0, 400);
           for (let i=0; i<lote.length; i+=50) {
+            if (sinTiempo()) { enrParcial = true; break; }
             const ids = lote.slice(i,i+50).map(o => `gid://shopify/Order/${o.id}`);
             const r = await fetch(`https://${shStoreRef.shop}/admin/api/2026-07/graphql.json`, {
               method: "POST", headers: { "X-Shopify-Access-Token": shStoreRef.accessToken, "Content-Type": "application/json" },
@@ -1767,6 +1781,7 @@ export default async function handler(req, res) {
         // 2) REST: lo que quedó sin resolver (y la muestra de diagnóstico).
         const pend = pendAll.filter(o => !mpRefCache[o.id]).slice(0, gqlOk ? 8 : 40);
         for (let i=0; i<pend.length; i+=8) {
+          if (sinTiempo()) { enrParcial = true; break; }
           const rs = await Promise.all(pend.slice(i,i+8).map(async o => {
             try {
               const r = await fetch(`https://${shStoreRef.shop}/admin/api/2026-07/orders/${o.id}/transactions.json`, { headers: { "X-Shopify-Access-Token": shStoreRef.accessToken } });
@@ -1888,6 +1903,7 @@ export default async function handler(req, res) {
         const val = a => { if (a == null) return 0; if (typeof a === "object") return parseFloat(a.value) || 0; return parseFloat(a) || 0; };
         let changedT = false, bloqueado = false;
         for (let i=0; i<pendT.length && !bloqueado; i+=3) {
+          if (sinTiempo()) { enrParcial = true; break; }
           const rs = await Promise.all(pendT.slice(i,i+3).map(async o => {
             try {
               // Vía oficial indicada por Tienda Nube (Partners, 14/9): las
@@ -2600,7 +2616,9 @@ export default async function handler(req, res) {
           recompra = { ...recompraDe(vCurr, idx), prev: vPrev.length ? recompraDe(vPrev, idx) : null, historialDesde: desde, historialCompleto: !!userData.clientesIdxCompleto };
         }
       } catch (e) { console.warn("[daily_metrics] recompra:", e.message); }
-      const responseBody = { engineV: 6, fp, rows, recompra, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
+      _ms.detalles = Date.now() - _tEnr;
+      console.log(`[daily_metrics] ${uid} ${cacheKey} ms`, JSON.stringify(_ms), enrParcial ? "detalles parciales" : "");
+      const responseBody = { engineV: 6, fp, _ms, enrParcial, rows, recompra, prevRows, totals, prevTotals, prevTotalsHora, prevHasta, byDow, byChannel, byChannelDaily, sales, byProduct, byProductAdsModo: "prorrateo_revenue_diario", clientes, facturacionBreakdown, adSpendBreakdown,
         cashflow: { ...(mpCommCurr.cashflow||{}), financingFee: mpCommCurr.financingFee||0, retenciones: mpCommCurr.retenciones||0 },
         // Percepciones/retenciones de ML del período: total leído de los pagos, si se
         // descuentan (opt-in) y cuántas órdenes del período tienen el dato.
@@ -2664,7 +2682,8 @@ export default async function handler(req, res) {
           // lastAccess solo lo actualizan los requests de usuarios reales — el
           // warmer no se retroalimenta a sí mismo para siempre.
           ...(req.query.warm === "1" ? {} : { lastAccess: nowIso }),
-          lastWarm: nowIso,
+          // Con detalles por venta sin terminar, al frente de la cola del cron (que tiene más tiempo y los completa).
+          lastWarm: enrParcial ? new Date(0).toISOString() : nowIso,
         }, { merge: true });
       } catch(e) { console.error("margenes cache set error:", e.message); }
       return res.json(responseBody);
